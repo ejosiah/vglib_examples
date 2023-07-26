@@ -1,0 +1,47 @@
+#version 450
+
+#extension GL_EXT_shader_atomic_float : enable
+
+#include "noise.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform image3D lowFreqencyNoises;
+layout(set = 0, binding = 1, rgba32f) uniform image3D highFreqencyNoises;
+
+layout(push_constant) uniform Constants {
+    vec2 gridSize;
+    vec2 uvScale;
+    int noiseType;
+    int octaves;
+    float H;
+    int tile;
+    int z;
+};
+
+void main(){
+    vec3 uv = vec3(gl_GlobalInvocationID)/vec3(gl_WorkGroupSize * gl_NumWorkGroups);
+
+    vec4 col = vec4(0.);
+
+    float freq = 4.;
+
+    float pfbm= mix(1., perlinfbm(uv, 4., 7), .5);
+    pfbm = abs(pfbm * 2. - 1.); // billowy perlin noise
+
+    col.g += worleyFbm(uv, freq);
+    col.b += worleyFbm(uv, freq*2.);
+    col.a += worleyFbm(uv, freq*4.);
+    col.r += remap(pfbm, 0., 1., col.g, 1.); // perlin-worley
+
+    imageStore(lowFreqencyNoises, ivec3(gl_GlobalInvocationID), col);
+
+    freq = 8.;
+
+    col = vec4(0);
+    col.r += worleyFbm(uv, freq);
+    col.g += worleyFbm(uv, freq*2.);
+    col.b += worleyFbm(uv, freq*4.);
+
+    imageStore(highFreqencyNoises, ivec3(gl_GlobalInvocationID), col);
+}

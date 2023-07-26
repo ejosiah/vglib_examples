@@ -1,0 +1,24 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D image_real;
+layout(set = 0, binding = 1, rgba32f) uniform image2D image_imaginary;
+layout(set = 1, binding = 0, rgba32f) uniform image2D image_mask;
+
+ivec2 shift(ivec2 id){
+    ivec2 Size = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+    return (id + Size/2) % (Size);
+}
+
+void main(){
+    ivec2 id = ivec2(gl_GlobalInvocationID);
+    float mask = imageLoad(image_mask, id).r;
+
+    id = shift(id);
+    float real = imageLoad(image_real, id).r * mask;
+    float imaginary = imageLoad(image_imaginary, id).r * mask;
+
+    imageStore(image_real, id, vec4(real));
+    imageStore(image_imaginary, id, vec4(imaginary));
+}

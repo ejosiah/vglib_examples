@@ -1,0 +1,94 @@
+#version 460
+
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_buffer_reference2 : require
+
+#include "ray_tracing_lang.glsl"
+#include "ray_query_lang.glsl"
+#include "constants.glsl"
+#include "scene.glsl"
+#include "util.glsl"
+#include "sampling.glsl"
+#include "scene_push_constants.glsl"
+#include "medium.glsl"
+
+layout(set = 0, binding = 0) uniform accelerationStructure topLevelAs;
+
+hitAttribute vec2 attribs;
+
+layout(buffer_reference, buffer_reference_align=8) buffer MediumBuffer{
+    Medium at[];
+};
+layout(shaderRecord, std430) buffer SBT {
+    MediumBuffer mediums;
+};
+
+
+
+layout(location = 1) rayPayloadIn OcclusionData occData;
+
+void main(){
+    SurfaceRef ref;
+    vec3 wo = -gl_WorldRayDirection;
+    ref.objToWorld = gl_ObjectToWorld;
+    ref.attribs = attribs;
+    ref.instanceId = gl_InstanceID;
+    ref.vertexOffsetId = gl_InstanceCustomIndex;
+    ref.primitiveId = gl_PrimitiveID;
+    Surface surface = getSurfaceData(ref, wo);
+    surface.volume = true;
+
+    vec3 origin;
+    if(surface.inside){
+        // FIXME We don't need this, just get gl_HitT and use that to compute transmitance
+        surface.x += surface.gN * gl_HitT;
+        origin = surface.x;
+    }else{
+        origin = offsetRay(surface.x, -surface.gN);
+    }
+
+    vec3 direction = gl_WorldRayDirection;
+
+    rayQuery rQuery;
+    rayQueryInitialize(rQuery, topLevelAs, gl_RayFlagsNoOpaque, mask, origin, 0, direction, gl_RayTmax);
+    while(rayQueryProceed(rQuery)){
+        if(rayQueryGetIntersectionInstanceId(rQuery, false) != gl_InstanceID){
+            continue;
+        }
+        rayQueryConfirmIntersection(rQuery);
+    }
+
+    if(rayQueryGetIntersectionType(rQuery, true) == gl_RayQueryCommittedIntersectionNone){
+        ignoreIntersection;
+        return;
+    }else{
+
+        ref.objToWorld = rayQueryGetIntersectionObjectToWorld(rQuery, true);
+        ref.attribs = rayQueryGetIntersectionBarycentrics(rQuery, true);
+        ref.instanceId = rayQueryGetIntersectionInstanceId(rQuery, true);
+        ref.vertexOffsetId = rayQueryGetIntersectionInstanceCustomIndex(rQuery, true);
+        ref.primitiveId = rayQueryGetIntersectionPrimitiveIndex(rQuery, true);
+        Surface surface1 = getSurfaceData(ref, wo);
+
+        if(surface.id != surface1.id){
+            ignoreIntersection;
+            return;
+        }
+
+        float density = surface.opacity;
+        float dist = rayQueryGetIntersectionT(rQuery, true);
+
+        int mediumId = 0;
+        Medium medium = mediums.at[mediumId];
+        vec3 tc = medium.ac + medium.sc;
+
+
+        occData.transmission *= exp(-tc * dist);    // TODO check this is correct
+        occData.ray.origin = offsetRay(surface1.x, -surface1.gN);
+        terminateRay;
+    }
+
+}

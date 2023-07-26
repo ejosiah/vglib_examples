@@ -1,0 +1,124 @@
+#version 460
+
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_buffer_reference2 : require
+
+#include "ray_tracing_lang.glsl"
+#include "ray_query_lang.glsl"
+#include "constants.glsl"
+#include "scene.glsl"
+#include "util.glsl"
+#include "sampling.glsl"
+#include "scene_push_constants.glsl"
+#include "medium.glsl"
+
+layout(buffer_reference, buffer_reference_align=8) buffer MediumBuffer{
+    Medium at[];
+};
+layout(shaderRecord, std430) buffer SBT {
+    MediumBuffer mediums;
+};
+
+
+layout(set = 0, binding = 0) uniform accelerationStructure topLevelAs;
+
+layout(location = 0) rayPayloadIn HitData hitData;
+
+hitAttribute vec2 attribs;
+
+void main(){
+    SurfaceRef ref;
+    vec3 wo = -gl_WorldRayDirection;
+    ref.objToWorld = gl_ObjectToWorld;
+    ref.attribs = attribs;
+    ref.instanceId = gl_InstanceID;
+    ref.vertexOffsetId = gl_InstanceCustomIndex;
+    ref.primitiveId = gl_PrimitiveID;
+    Surface surface = getSurfaceData(ref, wo);
+    surface.volume = true;
+
+    vec3 origin;
+    if(surface.inside){     // FIXME if we already inside the surface we don't need to shoot another ray
+        surface.x += surface.gN * gl_HitT;
+        origin = surface.x;
+    }else{
+        origin = offsetRay(surface.x, -surface.gN);
+    }
+
+    vec3 direction = gl_WorldRayDirection;
+
+    rayQuery rQuery;
+    rayQueryInitialize(rQuery, topLevelAs, gl_RayFlagsNoOpaque, mask, origin, 0, direction, gl_RayTmax);
+    while(rayQueryProceed(rQuery)){
+        if(rayQueryGetIntersectionInstanceId(rQuery, false) != gl_InstanceID){
+            continue;
+        }
+        rayQueryConfirmIntersection(rQuery);
+    }
+
+    if(rayQueryGetIntersectionType(rQuery, true) == gl_RayQueryCommittedIntersectionNone){
+        ignoreIntersection;
+        return;
+    }else{
+
+        ref.objToWorld = rayQueryGetIntersectionObjectToWorld(rQuery, true);
+        ref.attribs = rayQueryGetIntersectionBarycentrics(rQuery, true);
+        ref.instanceId = rayQueryGetIntersectionInstanceId(rQuery, true);
+        ref.vertexOffsetId = rayQueryGetIntersectionInstanceCustomIndex(rQuery, true);
+        ref.primitiveId = rayQueryGetIntersectionPrimitiveIndex(rQuery, true);
+        Surface surface1 = getSurfaceData(ref, wo);
+
+        if(surface.id != surface1.id){
+            ignoreIntersection;
+            return;
+        }
+
+        int mediumId = 0;
+        Medium medium = mediums.at[mediumId];
+        vec3 tc = medium.ac + medium.sc;
+        int channel = int(rand(hitData.rngState) * 3);
+
+        if(tc[channel] == 0){
+            hitData.transmission = vec3(1);
+            ignoreIntersection;
+            return;
+        }
+
+        float dist = rayQueryGetIntersectionT(rQuery, true);
+        float hitDistance = (-1/tc[channel]) * log(1 - rand(hitData.rngState));
+        vec3 Tr =  exp(-tc * hitDistance);
+
+        bool noHit = hitDistance > dist;
+        vec3 density = noHit ? Tr : tc * Tr;
+        float pdf = dot(density, vec3(1)) / 3;
+        if(pdf == 0){
+            while(isBlack(Tr)){};   // crash shader, transimission shouldn't be black
+            pdf = 1;
+        }
+
+        hitData.transmission = noHit ? (Tr / pdf) : (Tr * medium.sc / pdf);
+
+        if(noHit){
+            ignoreIntersection;
+            return;
+        }
+
+        hitData.hit = true;
+        hitData.surface = surface;
+        hitData.ray.origin = surface.x;
+        hitData.ray.medium = mediumId;
+        hitData.surface.gN = vec3(1, 0, 0);
+        hitData.surface.sN = vec3(1, 0, 0);
+
+        vec3 wi;
+        vec2 u = randomVec2(hitData.rngState);
+        HG_sample_P(medium.g, wo, wi, u);
+        hitData.ray.direction = wi;
+        terminateRay;
+    }
+
+    return;
+}

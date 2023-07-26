@@ -1,0 +1,57 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_debug_printf : require
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform sampler2D sourceImage;
+
+layout(set = 0, binding = 1) buffer NORMALS{
+    vec3 normals[];
+};
+
+
+int PATCH_SIZE = 64;
+int x = int(gl_GlobalInvocationID.x);
+int y = int(gl_GlobalInvocationID.y);
+float pixelCenter = 0.5;
+
+void main(){
+//    if(x > PATCH_SIZE + 1 || y > PATCH_SIZE + 1) return;
+
+    float n = PATCH_SIZE;
+    float heights[3][3];
+    for(int hx = -1; hx <= 1; hx++){
+        for(int hy = -1; hy <= 1; hy++){
+            vec2 uv;
+            uv.x = float(hx + x + pixelCenter)/n;
+            uv.y = float(hy + y + pixelCenter)/n;
+            uv = clamp(uv, pixelCenter/n,  1 - pixelCenter/n);
+
+            heights[hx+1][hy+1] = texture(sourceImage, uv).r;
+
+//            if(x == 55 && y == 64){
+//                debugPrintfEXT("heights: %.5f uv: [%.5f, %.5f]\n",heights[hx+1][hy+1], uv.x, uv.y);
+//            }
+        }
+    }
+
+
+    // Calculate the normal
+    vec3 normal;
+    // Gx sobel filter
+    normal.x = heights[0][0] - heights[2][0] + 2.0f * heights[0][1] - 2.0f * heights[2][1] + heights[0][2] - heights[2][2];
+    // Gy sobel filter
+    normal.z = heights[0][0] + 2.0f * heights[1][0] + heights[2][0] - heights[0][2] - 2.0f * heights[1][2] - heights[2][2];
+    // Calculate missing up component of the normal using the filtered x and y axis
+    // The first value controls the bump strength
+    normal.y = 0.25f * sqrt( 1.0f -  normal.x * normal.x - normal.z * normal.z);
+
+    if(x == 55 && y == 64){
+        debugPrintfEXT("xzy: [%.10f, %.10f, %.5f]\n", normal.x, normal.z, 1.0f - normal.x * normal.x - normal.z * normal.z);
+    }
+
+    vec3 N = normalize(normal * vec3(2.0f, 1.0f, 2.0f));
+    normals[x + y * (PATCH_SIZE + 1)] = N;
+}
+

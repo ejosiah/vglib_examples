@@ -1,0 +1,24 @@
+#version 460
+
+#include "atmosphere_model.glsl"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 1, binding = 1) uniform sampler2D transmittance_texture;
+
+layout(set = 2, binding = 2, rgba32f) uniform image3D scattering_image;
+
+layout(set = 3, binding = 1, rgba32f) uniform image3D delta_rayleigh_image;
+layout(set = 3, binding = 2, rgba32f) uniform image3D delta_mie_image;
+
+vec3 voxelCoord = vec3(gl_GlobalInvocationID) + 0.5;
+
+void main(){
+    vec3 delta_rayleigh, delta_mie;
+    ComputeSingleScatteringTexture(ATMOSPHERE, transmittance_texture, voxelCoord, delta_rayleigh, delta_mie);
+
+    ivec3 loc = ivec3(gl_GlobalInvocationID);
+    imageStore(delta_rayleigh_image, loc, vec4(delta_rayleigh, 0));
+    imageStore(delta_mie_image, loc, vec4(delta_mie, 0));
+    imageStore(scattering_image, loc, vec4(delta_rayleigh.rgb, delta_mie.r));
+}

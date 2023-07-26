@@ -1,0 +1,59 @@
+#version 460
+
+#define SIZE vec3(gl_NumWorkGroups * gl_WorkGroupSize)
+#define gID ivec3(gl_GlobalInvocationID)
+#define LOC ivec3(gl_GlobalInvocationID)
+
+#define RADIANCE_API_ENABLED
+#include "random.glsl"
+#include "atmosphere_lut.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 2, binding = 0) uniform SCENE_UBO{
+    mat4 inverse_projection;
+    mat4 inverse_view;
+    vec3 camera;
+    vec3 white_point;
+    vec3 earth_center;
+    vec3 sun_direction;
+    vec3 sun_size;
+    vec3 kSphereAlbedo;
+    vec3 kGroundAlbedo;
+    float exposure;
+    float near;
+    float far;
+    int frame;
+};
+
+layout(set = 3, binding = 0, rgba32f) uniform image3D transmittance_volume;
+layout(set = 3, binding = 1, rgba32f) uniform image3D in_scattering_volume;
+
+vec3 voxel_to_uv(vec3 voxel){
+    vec3 uv = vec3(voxel.xy/SIZE.xy, exponentialDepth(near, far, voxel.z, SIZE.z));
+    return uv;
+}
+
+vec3 remap(vec3 x, vec3 a, vec3 b, vec3 c, vec3 d){
+    return mix(c, d, (x-a)/(b - a));
+}
+
+RngStateType rngState;
+
+void main(){
+    rngState = initRNG(vec2(gID).xy, SIZE.xy, uint(frame + gID.z));
+    vec3 voxel = vec3(gl_GlobalInvocationID) + 0.5;
+//    voxel.z += (rand(rngState) - 0.5) * 0.999;
+    vec3 uv = voxel_to_uv(voxel);
+    vec3 clipPoint = uv_to_ndc(uv, near, far);
+    vec4 viewPoint = inverse_projection * vec4(clipPoint, 1);
+    viewPoint /= viewPoint.w;
+    vec3 worldPos = (inverse_view * viewPoint).xyz;
+
+    vec3 transmittance;
+    vec3 in_scatter = GetSkyRadianceToPoint(camera - earth_center, worldPos - earth_center, 0, sun_direction, transmittance);
+
+    imageStore(transmittance_volume, LOC, vec4(transmittance, 0));
+    imageStore(in_scattering_volume, LOC, vec4(in_scatter, 0));
+}

@@ -1,0 +1,41 @@
+#version 460
+#include "complex.glsl"
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 0, binding = 0, rgba32f) readonly uniform image2D src_image_real;
+layout(set = 0, binding = 1, rgba32f) readonly uniform image2D src_image_imaginary;
+layout(set = 1, binding = 0, rgba32f) uniform image2D dst_image_real;
+layout(set = 1, binding = 1, rgba32f) uniform image2D dst_image_imaginary;
+
+layout(set = 2, binding = 0) uniform isampler2D lookupIndex;
+layout(set = 2, binding = 1) uniform sampler2D butterflyLUT;
+
+layout(push_constant) uniform UBO {
+    int pass;
+};
+
+void main(){
+    ivec2 i = ivec2(gl_GlobalInvocationID);
+
+    ivec2 lookupId = ivec2(i.x, pass);
+    vec2 index = texelFetch(lookupIndex, lookupId, 0).xy;
+    vec2 wv = texelFetch(butterflyLUT, lookupId, 0).xy;
+    Complex w = complexFrom(wv);
+
+    float real = imageLoad(src_image_real, ivec2(index[0], i.y)).r;
+    float imag = imageLoad(src_image_imaginary, ivec2(index[0], i.y)).r;
+
+    Complex a = Complex(real, imag);
+
+    real = imageLoad(src_image_real, ivec2(index[1], i.y)).r;
+    imag = imageLoad(src_image_imaginary, ivec2(index[1], i.y)).r;
+
+    Complex b = Complex(real, imag);
+
+    Complex res = add(a, mul(b, w));
+
+    imageStore(dst_image_real, i, vec4(res.real, res.imaginary, 0, 0));
+    imageStore(dst_image_imaginary, i, vec4(res.imaginary, 0, 0, 0));
+
+}

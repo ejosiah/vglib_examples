@@ -1,0 +1,22 @@
+#version 460
+
+#include "util.glsl"
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 2, rgba32f) uniform image2D image;
+
+layout(push_constant) uniform Constants {
+    float exposure;
+};
+
+void main(){
+    vec2 uv = vec2(gl_GlobalInvocationID.xy)/(vec2(gl_WorkGroupSize.xy) * vec2(gl_NumWorkGroups.xy));
+    ivec2 id = ivec2(gl_GlobalInvocationID);
+    vec3 pixel = imageLoad(image, id).rgb;
+
+    pixel = 1 - exp(-pixel * 1);
+    pixel = linearToSrgb(pixel);
+    imageStore(image, id, vec4(pixel, 1));
+//    imageStore(image, id, vec4(uv, 0, 0));
+}

@@ -1,0 +1,29 @@
+#version 460
+
+#define PI 3.1415926535897932384626433832795
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 2, rgba32f) uniform image2D imageOut;
+layout(set = 1, binding = 0) uniform sampler3D lowFreqencyNoises;
+layout(set = 1, binding = 1) uniform sampler3D highFreqencyNoisesMap;
+layout(set = 1, binding = 2) uniform sampler2D weatherMap;
+
+layout(set = 0, binding = 0) uniform UBO {
+    mat4 viewInverse;
+    mat4 projInverse;
+    mat4 view_projection;
+    vec3 lightPosition;
+    vec3 viewPosition;
+    float sceneWidth;
+    float sceneHeigth;
+    float earthRadius;
+    float cloudMin;
+    float cloudMax;
+    float eccentricity;
+    float time;
+};
+
+void main(){
+
+}

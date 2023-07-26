@@ -1,0 +1,46 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 0, binding = 0, rgba32f) readonly uniform image2D src_image_real;
+layout(set = 0, binding = 1, rgba32f) readonly uniform image2D src_image_imaginary;
+layout(set = 1, binding = 0, rgba32f) uniform image2D dst_image;
+
+layout(set = 1, binding = 1) buffer StateData {
+    int maxMagnitude;
+};
+
+layout(push_constant) uniform Contants {
+    int pass;
+    int reverse_xform;
+};
+
+ivec2 shift(ivec2 id){
+    ivec2 Size = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+    return (id + Size/2) % (Size);
+}
+
+void main(){
+    ivec2 id = ivec2(gl_GlobalInvocationID);
+
+    if(pass == 0){
+        float real = imageLoad(src_image_real, id).r;
+        float imaginary = imageLoad(src_image_imaginary, id).r;
+
+        float magnitude = length(vec2(real, imaginary));
+        float c = magnitude;
+        if(reverse_xform != 1){
+            c = log(1 + c);
+            id = shift(id);
+        }
+        atomicMax(maxMagnitude, floatBitsToInt(c));
+
+        imageStore(dst_image, id, vec4(c));
+    }
+
+    if(pass == 1){
+        float maxValue = intBitsToFloat(maxMagnitude);
+        float c = imageLoad(dst_image, id).r/maxValue;
+        imageStore(dst_image, id, vec4(c));
+    }
+}

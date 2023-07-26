@@ -1,0 +1,14 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D src_image;
+layout(set = 0, binding = 1, r32f) uniform image2D dst_image;
+layout(set = 0, binding = 2, rgba32f) uniform image2D display_image;
+
+void main(){
+    vec3 color = texelFetch(src_image, ivec2(gl_GlobalInvocationID), 0).rgb;
+    float luminance = dot(color, vec3(0.2126f, 0.7152f, 0.0722f));
+    imageStore(dst_image, ivec2(gl_GlobalInvocationID), vec4(luminance));
+    imageStore(display_image, ivec2(gl_GlobalInvocationID), vec4(luminance));
+}

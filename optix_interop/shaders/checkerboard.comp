@@ -1,0 +1,13 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba8) uniform image2D image;
+
+void main(){
+    vec2 uv = vec2(gl_GlobalInvocationID)/vec2(gl_NumWorkGroups.xy * gl_WorkGroupSize.xy);
+    vec2 id = floor(uv * 8.);
+
+    float c = step(1., mod(id.x + id.y, 2.));
+    imageStore(image, ivec2(gl_GlobalInvocationID), vec4(c));
+}

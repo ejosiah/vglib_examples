@@ -1,0 +1,25 @@
+#version 460
+
+#include "atmosphere_model.glsl"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 1, binding = 1) uniform sampler2D transmittance_texture;
+layout(set = 3, binding = 9) uniform sampler3D scattering_density_texture;
+
+layout(set = 3, binding = 4, rgba32f) uniform image3D delta_multiple_scattering_image;
+layout(set = 2, binding = 2, rgba32f) uniform image3D scattering_image;
+
+vec3 voxelCoord = vec3(gl_GlobalInvocationID) + 0.5;
+ivec3 gid = ivec3(gl_GlobalInvocationID);
+
+void main(){
+    float nu;
+    vec3 delta_multiple_scattering =
+        ComputeMultipleScatteringTexture(ATMOSPHERE, transmittance_texture, scattering_density_texture, voxelCoord, nu);
+
+    vec4 scattering = imageLoad(scattering_image, gid);
+    scattering += vec4( delta_multiple_scattering.rgb / RayleighPhaseFunction(nu), 0.0);
+
+    imageStore(scattering_image, gid, scattering);
+}

@@ -1,0 +1,164 @@
+#version 450
+
+#extension GL_EXT_shader_atomic_float : enable
+
+#include "hash.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform image3D image;
+
+layout(push_constant) uniform Constants {
+    vec2 gridSize;
+    vec2 uvScale;
+    int noiseType;
+    int octaves;
+    float H;
+    int tile;
+    int z;
+};
+
+vec3 randomVec(vec3 p){
+    return 2 * hash33(p) - 1;
+}
+
+float trilerp(float a, float b, float c, float d, float e, float f, float g, float h, vec3 t){
+    float u = t.x;
+    float v = t.y;
+    float w = t.z;
+    float res = 0.;
+    res += a * (1. - u) * (1. - v) * (1. - w);
+    res += b * (1. - v) * (1. - w) * u ;
+    res += c * (1. - u) * v * (1. - w);
+    res += d * u * v * (1. - w);
+    res += e * (1. - v) * (1. - u) * w;
+    res += f * (1. - v) * u * w;
+    res += g * (1. - u) * v * w;
+    res += h * u * v * w;
+    return res;
+
+}
+
+float perlin(vec3 x, float freq){
+    // grid
+    vec3 p = floor(x);
+    vec3 w = fract(x);
+
+    // quintic interpolant
+    vec3 u = w * w * w * (w * (w * 6. - 15.) + 10.);
+
+    freq = tile == 0 ? 100000 : freq;
+
+
+    // gradients
+    vec3 ga = randomVec(mod(p + vec3(0., 0., 0.), freq));
+    vec3 gb = randomVec(mod(p + vec3(1., 0., 0.), freq));
+    vec3 gc = randomVec(mod(p + vec3(0., 1., 0.), freq));
+    vec3 gd = randomVec(mod(p + vec3(1., 1., 0.), freq));
+    vec3 ge = randomVec(mod(p + vec3(0., 0., 1.), freq));
+    vec3 gf = randomVec(mod(p + vec3(1., 0., 1.), freq));
+    vec3 gg = randomVec(mod(p + vec3(0., 1., 1.), freq));
+    vec3 gh = randomVec(mod(p + vec3(1., 1., 1.), freq));
+
+    // projections
+    float va = dot(ga, w - vec3(0., 0., 0.));
+    float vb = dot(gb, w - vec3(1., 0., 0.));
+    float vc = dot(gc, w - vec3(0., 1., 0.));
+    float vd = dot(gd, w - vec3(1., 1., 0.));
+    float ve = dot(ge, w - vec3(0., 0., 1.));
+    float vf = dot(gf, w - vec3(1., 0., 1.));
+    float vg = dot(gg, w - vec3(0., 1., 1.));
+    float vh = dot(gh, w - vec3(1., 1., 1.));
+
+    // interpolation
+    return va +
+    u.x * (vb - va) +
+    u.y * (vc - va) +
+    u.z * (ve - va) +
+    u.x * u.y * (va - vb - vc + vd) +
+    u.y * u.z * (va - vc - ve + vg) +
+    u.z * u.x * (va - vb - ve + vf) +
+    u.x * u.y * u.z * (-va + vb + vc - vd + ve - vf - vg + vh);
+}
+
+float worley(vec3 x, float freq){
+    vec3 id = floor(x);
+    vec3 p = fract(x);
+
+    freq = tile == 0 ? 100000 : freq;
+
+    float minDist = 10000.;
+    for (float x = -1.; x <= 1.; ++x)
+    {
+        for(float y = -1.; y <= 1.; ++y)
+        {
+            for(float z = -1.; z <= 1.; ++z)
+            {
+                vec3 offset = vec3(x, y, z);
+                vec3 h = hash33(mod(id + offset, vec3(freq))) * .5 + .5;
+                h += offset;
+                vec3 d = p - h;
+                minDist = min(minDist, dot(d, d));
+            }
+        }
+    }
+
+    return minDist;
+}
+
+float value(vec3 p, float freq){
+    vec3 i = floor(p);
+    vec3 ff = fract(p);
+
+    float r = tile == 0 ? 100000 : freq;
+
+
+    float a = hash13(mod(i + vec3(0., 0., 0.), r));
+    float b = hash13(mod(i + vec3(1., 0., 0.), r));
+    float c = hash13(mod(i + vec3(0., 1., 0.), r));
+    float d = hash13(mod(i + vec3(1., 1., 0.), r));
+    float e = hash13(mod(i + vec3(0., 0., 1.), r));
+    float f = hash13(mod(i + vec3(1., 0., 1.), r));
+    float g = hash13(mod(i + vec3(0., 1., 1.), r));
+    float h = hash13(mod(i + vec3(1., 1., 1.), r));
+
+    vec3 u = ff * ff * ff * (10 - 3 * ff * (5 - 2 * ff));
+
+    return trilerp(a, b, c, d, e, f, g, h, u);
+}
+
+float noise(vec3 p, float freq){
+    switch(noiseType){
+        case 0 :
+            return value(p, freq);
+        case 1:
+            return perlin(p, freq);
+        case 2:
+            return worley(p, freq);
+        default:
+            return 0;
+    }
+}
+
+float fbm(vec3 x){
+    float G = exp2(-H);
+    float f = 1.0;
+    float a = 1.0;
+    float t = 0.0;
+    for(int i = 0; i < octaves; i++){
+        t += a * noise(f * x, f);
+        f *= 2.0;
+        a *= G;
+    }
+    return t;
+}
+
+void main(){
+    vec3 uv = vec3(gl_GlobalInvocationID)/vec3(gl_WorkGroupSize * gl_NumWorkGroups);
+
+    vec3 p = uv * gridSize.x;
+
+    float c = fbm(p);
+
+    imageStore(image, ivec3(gl_GlobalInvocationID), vec4(c));
+}

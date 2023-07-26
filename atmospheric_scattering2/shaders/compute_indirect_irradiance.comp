@@ -1,0 +1,35 @@
+#version 460
+
+#include "atmosphere_model.glsl"
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 1, binding = 1) uniform sampler2D transmittance_texture;
+
+layout(set = 2, binding = 0, rgba32f) uniform image2D irradiance_image;
+layout(set = 3, binding = 0, rgba32f) uniform image2D delta_irradiance_image;
+
+layout(set = 3, binding = 6) uniform sampler3D single_rayleigh_scattering_texture;
+layout(set = 3, binding = 7) uniform sampler3D single_mie_scattering_texture;
+layout(set = 3, binding = 8) uniform sampler3D multiple_scattering_texture;
+
+layout(push_constant) uniform Constants {
+    int scattering_order;
+};
+
+vec2 frag_coord = vec2(gl_GlobalInvocationID) + 0.5;
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+void main(){
+    vec3 delta_irradiance =
+        ComputeIndirectIrradianceTexture(
+            ATMOSPHERE, single_rayleigh_scattering_texture, single_mie_scattering_texture,
+            multiple_scattering_texture, frag_coord, scattering_order);
+
+    imageStore(delta_irradiance_image, gid, vec4(delta_irradiance, 0));
+
+    vec4 irradiance = imageLoad(irradiance_image, gid);
+    irradiance.rgb += delta_irradiance;
+
+    imageStore(irradiance_image, ivec2(gl_GlobalInvocationID), irradiance);
+}

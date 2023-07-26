@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<project version="2">
+	<pipeline>
+		<pass name="waves" type="shader" active="true" patchverts="4">
+			<shader type="vs" path="shaders\wavesVS.glsl" entry="main" />
+			<shader type="ps" path="shaders\wavesPS.glsl" entry="main" />
+			<inputlayout>
+				<item value="Position" semantic="POSITION" />
+				<item value="Normal" semantic="NORMAL" />
+				<item value="Texcoord" semantic="TEXCOORD0" />
+			</inputlayout>
+			<rendertexture />
+			<items>
+				<item name="wireframe" type="renderstate">
+					<wireframe>true</wireframe>
+					<cullfront>true</cullfront>
+					<blend>false</blend>
+					<alpha2coverage>false</alpha2coverage>
+					<colorsrcfactor>Source Alpha</colorsrcfactor>
+					<colordstfactor>Inverse Source Alpha</colordstfactor>
+					<colorfunc>Add</colorfunc>
+					<alphasrcfactor>Source Alpha</alphasrcfactor>
+					<alphadstfactor>Inverse Source Alpha</alphadstfactor>
+					<alphafunc>Add</alphafunc>
+					<blendfactor_r>1</blendfactor_r>
+					<blendfactor_g>1</blendfactor_g>
+					<blendfactor_b>1</blendfactor_b>
+					<blendfactor_a>1</blendfactor_a>
+					<depthtest>true</depthtest>
+					<depthclamp>true</depthclamp>
+					<depthmask>true</depthmask>
+					<depthfunc>Less</depthfunc>
+					<depthbias>0</depthbias>
+					<stenciltest>false</stenciltest>
+					<stencilmask>0</stencilmask>
+					<stencilref>255</stencilref>
+					<stencilfrontfunc>Equal</stencilfrontfunc>
+					<stencilbackfunc>Equal</stencilbackfunc>
+					<stencilfrontpass>Keep</stencilfrontpass>
+					<stencilbackpass>Keep</stencilbackpass>
+					<stencilfrontfail>Keep</stencilfrontfail>
+					<stencilbackfail>Keep</stencilbackfail>
+					<depthfrontfail>Keep</depthfrontfail>
+					<depthbackfail>Keep</depthbackfail>
+				</item>
+				<item name="quad_patch" type="vertexbuffer">
+					<buffer>quad_patch</buffer>
+					<topology>Patches</topology>
+				</item>
+			</items>
+			<itemvalues />
+			<macros />
+		</pass>
+	</pipeline>
+	<objects>
+		<object type="buffer" name="quad_patch" size="196608" format="vec3" pausedpreview="false" />
+	</objects>
+	<cameras />
+	<settings>
+		<entry type="property" name="waves" item="pipe" />
+		<entry type="file" name="waves" shader="vs" />
+		<entry type="file" name="waves" shader="ps" />
+		<entry type="file" name="waves" shader="tcs" />
+		<entry type="file" name="waves" shader="tes" />
+		<entry type="camera" fp="false">
+			<distance>4</distance>
+			<pitch>27</pitch>
+			<yaw>317</yaw>
+			<roll>360</roll>
+		</entry>
+		<entry type="clearcolor" r="0" g="0" b="0" a="0" />
+		<entry type="usealpha" val="false" />
+	</settings>
+	<plugindata />
+</project>

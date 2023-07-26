@@ -1,0 +1,232 @@
+#version 460
+
+#include "model.glsl"
+
+#ifndef PI
+#define PI 3.1415926535897932384626433832795
+#endif // PI
+#define KM 1000
+#define GEN_REMAP(Type) Type remap(Type x, Type a, Type b, Type c, Type d){ return mix(c, d, (x - a)/(b - a)); }
+
+GEN_REMAP(vec3)
+GEN_REMAP(float)
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform UBO {
+    mat4 projection;
+    mat4 view;
+    mat4 inverse_projection;
+    mat4 inverse_view;
+    vec3 camera_pos;
+    vec3 earth_center;
+    vec3 sun_direction;
+    float inner_radius;
+    float outer_radius;
+    float earth_radius;
+    int viewPortWidth;
+    int viewPortHeight;
+    float eccentricity;
+    float time;
+} ubo;
+
+const float cloudType = 0.5;
+const float coverage = 0.2;
+const float precipitation = 0;
+const vec3 windDirection = normalize(vec3(1, 0, 1));
+const float windSpeed = 0;
+float AtmosphereThickness = (ubo.outer_radius - ubo.inner_radius);
+
+layout(set = 0, binding = 1) uniform sampler3D lowFreqencyNoise;
+layout(set = 0, binding = 2) uniform sampler3D highFreqencyNoise;
+layout(set = 0, binding = 3) uniform sampler2D curlNoise;
+
+layout(set = 1, binding = 0) uniform sampler2D albedo_in;
+layout(set = 1, binding = 4) uniform sampler2D depth_in;
+
+layout(set = 1, binding = 7, rgba32f) writeonly uniform image2D normal_out;
+layout(set = 1, binding = 8, rgba32f) writeonly uniform image2D albedo_out;
+layout(set = 1, binding = 10, r32f) writeonly uniform image2D depth_out;
+layout(set = 1, binding = 11, rg8ui) writeonly uniform uimage2D object_type_out;
+
+#define RADIANCE_API_ENABLED
+
+const float kLengthUnitInMeters = 1000.0;
+
+layout(set = 2, binding = 0) uniform sampler2D irradiance_texture;
+layout(set = 2, binding = 1) uniform sampler2D transmittance_texture;
+layout(set = 2, binding = 2) uniform sampler3D scattering_texture;
+layout(set = 2, binding = 3) uniform sampler3D single_mie_scattering_texture;
+
+//#include "atmosphere_api.h"
+
+
+
+const vec2 pixelCenter = vec2(.5);
+
+vec2 resolution = vec2(ubo.viewPortWidth, ubo.viewPortHeight);
+vec2 fid = vec2(gl_GlobalInvocationID);
+ivec2 id = ivec2(gl_GlobalInvocationID);
+
+vec3 getWorldPosition(vec2 uv, float depth);
+
+float densityHeightGradientForPoint(vec3 p, float height_fraction, float cloud_type);
+
+float getRelativeHeightInAtmosphere(vec3 point, vec3 entryPoint, Ray ray);
+
+float henyeyGreenstein(vec3 lightDir, vec3 viewDir, float g);
+
+float sampleCloudDensity(vec3 p, float height_fraction);
+
+float sampleCloudDensityAlongCone(vec3 samplePos, vec3 direction);
+
+vec3 skewSamplePointWithWind(in vec3 point, inout float height_fraction);
+
+vec3 getRelativePositionInAtmosphere(vec3 point);
+
+void main(){
+    if(fid.x >= resolution.x && fid.y >= resolution.y)
+        return;
+
+    vec2 uv = (fid + pixelCenter)/resolution;
+
+    Ray ray = generateRay(uv, ubo.camera_pos, ubo.inverse_view, ubo.inverse_projection);
+
+    // this code assumes up is always in the y direction
+    bool rayIsBelowHorizon = ray.direction.y < 0;
+
+    if(rayIsBelowHorizon) return;
+
+    Sphere cloudStart;
+    Sphere cloudEnd;
+
+    cloudStart.center = ubo.earth_center;
+    cloudStart.radius = ubo.inner_radius;
+    cloudEnd.center = ubo.earth_center;
+    cloudEnd.radius = ubo.outer_radius;
+
+
+    float tMin, tMax;
+    bool hit = cloudTest(ray, cloudStart, cloudEnd, tMin, tMax);
+    if(hit){
+
+        vec3 entryPoint = ray.origin + ray.direction * tMin;
+
+        float obstacle_depth = texture(depth_in, uv).r;
+        vec3 obstacle = getWorldPosition(uv, obstacle_depth);
+
+        if(obstacle_depth < 1 && entryPoint.z > obstacle.z) return;
+
+        vec3 exitPoint = ray.origin + ray.direction * tMax;
+        const float MaxSteps = floor(mix(35.0, 60.0, 1.0 - ray.direction.y));
+        const float StepSize = (tMax - tMin)/MaxSteps;
+
+//        float near_step_size = 3.0;
+//        float far_step_offset = 60.;
+//        float step_adjustment_distance = 16384000;
+//        float distance_from_camera = distance(ray.origin, entryPoint);
+//        float step_size = near_step_size + ((far_step_offset * distance_from_camera)/distance_from_camera);
+
+        vec4 color = vec4(0);
+        int i = 0;
+        for(float t = tMin; t < tMax; t += StepSize){
+            if(color.a > 0.99) break;
+//            if(i > 1) break;
+            vec3 point = ray.origin + ray.direction * t;
+
+            if(point.z > obstacle.z) break;
+            point +=  vec3(1, 0, 1) * ubo.time * 100;
+            vec3 samplePoint = getRelativePositionInAtmosphere(point);
+//            vec3 samplePoint = (point * 8)/100000000;
+            float height_fraction = getRelativeHeightInAtmosphere(point, entryPoint, ray);
+
+            float cloud = sampleCloudDensity(samplePoint, height_fraction);
+            float energy = 1;
+
+            float prev_alpha = cloud - (cloud * color.a);
+            color.rgb += prev_alpha * cloud * energy;
+            color.a += prev_alpha;
+            i++;
+        }
+
+        imageStore(albedo_out, id, color);
+    }
+}
+
+float sampleCloudDensity(vec3 point, float height_fraction){
+    vec3 skewedSamplePoint = skewSamplePointWithWind(point, height_fraction);
+    vec4 noiseComp = texture(lowFreqencyNoise, skewedSamplePoint);
+    float perlinWorly = noiseComp.x;
+    float wfbm = dot(vec3(.625, .25, .125), noiseComp.gba);
+    float cloud = remap(perlinWorly, wfbm - 1, 1, 0, 1);
+
+//    float densityHeightField = densityHeightGradientForPoint(point, height_fraction, cloudType);
+//    cloud *= densityHeightField;
+
+    cloud = remap(cloud, 1 - coverage, 1, 0, 1);
+    cloud *= coverage;
+
+//    vec3 highFreqencyNoises = texture(highFreqencyNoisesMap, point * 0.1).rgb;
+//
+//    float highFreqencyFBM = dot(highFreqencyNoises, vec3(.625, .25, .125));
+//    float hightFraction = heightFractionForPoint(point);
+//
+//    float highFreqencyNoiseModifier = mix(highFreqencyFBM, 1 - highFreqencyFBM, clamp(hightFraction * 10, 0, 1));
+//
+//    cloud = remap(cloud, highFreqencyNoiseModifier * 0.2, 1.0, 0.0, 1.0);
+
+    return cloud;
+}
+
+vec3 getWorldPosition(vec2 uv, float depth){
+    uv = 2 * uv - 1;
+    vec4 clipSpacePosition = vec4(uv, depth, 1);
+    vec4 viewSpacePosition = ubo.inverse_projection * clipSpacePosition;
+    viewSpacePosition /= viewSpacePosition.w;
+
+    vec4 worldSpacePosition = ubo.inverse_view * viewSpacePosition;
+
+    return worldSpacePosition.xyz;
+}
+
+vec3 skewSamplePointWithWind(in vec3 point, inout float height_fraction){
+    return point;
+}
+
+float getRelativeHeightInAtmosphere(vec3 point, vec3 entryPoint, Ray ray){
+    float distance_of_ray_from_camera = distance(point, ray.origin);
+    float distance_ray_from_entryPoint = distance(entryPoint, ray.origin);
+    vec3 point_from_earth = normalize(point - ubo.earth_center);
+
+    float cos0 = dot(ray.direction, point_from_earth);
+
+    float numerator = abs(cos0 * (distance_of_ray_from_camera - distance_ray_from_entryPoint));
+    return numerator / AtmosphereThickness;
+}
+
+vec3 getRelativePositionInAtmosphere(vec3 point){
+    vec3 atmosphereStartPoint = ubo.earth_center + normalize(point - ubo.earth_center) * ubo.inner_radius;
+    return (point - atmosphereStartPoint)/AtmosphereThickness;
+}
+
+float densityHeightGradientForPoint(vec3 p, float height, float cloud_type){
+    const vec4 stratusGrad = vec4(0.02f, 0.05f, 0.09f, 0.11f);
+    const vec4 stratocumulusGrad = vec4(0.02f, 0.2f, 0.48f, 0.625f);
+    const vec4 cumulusGrad = vec4(0.01f, 0.0625f, 0.78f, 1.0f);
+    float stratus = 1.0f - clamp(cloud_type * 2.0f, 0, 1);
+    float stratocumulus = 1.0f - abs(cloud_type - 0.5f) * 2.0f;
+    float cumulus = clamp(cloud_type - 0.5f, 0, 1) * 2.0f;
+    vec4 cloudGradient = stratusGrad * stratus + stratocumulusGrad * stratocumulus + cumulusGrad * cumulus;
+    return smoothstep(cloudGradient.x, cloudGradient.y, height) - smoothstep(cloudGradient.z, cloudGradient.w, height);
+}
+
+float henyeyGreenstein(vec3 lightDir, vec3 viewDir, float g){
+    vec3 L = normalize(lightDir);
+    vec3 V = normalize(viewDir);
+    float _2gcos0 = 2 * g * max(0, dot(L, V));
+    float gg = g * g;
+    float num = 1 - gg;
+    float denum = 4 * PI * pow(1 + gg - _2gcos0, 1.5);
+
+    return num / denum;
+}

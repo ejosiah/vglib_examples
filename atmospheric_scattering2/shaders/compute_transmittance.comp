@@ -1,0 +1,14 @@
+#version 460
+
+#include "atmosphere_model.glsl"
+layout(local_size_x = 1, local_size_y = 1) in;
+
+
+layout(set = 1, binding = 1, rgba32f) uniform image2D oImage;
+
+vec2 frag_coord = vec2(gl_GlobalInvocationID) + 0.5;
+
+void main(){
+    vec3 transmittance = ComputeTransmittanceToTopAtmosphereBoundaryTexture(ATMOSPHERE, vec2(gl_GlobalInvocationID));
+    imageStore(oImage, ivec2(gl_GlobalInvocationID), vec4(transmittance, 0));
+}
