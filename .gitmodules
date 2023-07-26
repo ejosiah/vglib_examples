@@ -1,0 +1,3 @@
+[submodule "dependencies/vglib.github.io"]
+	path = dependencies/vglib.github.io
+	url = git@github.com:ejosiah/vglib.github.io.git
