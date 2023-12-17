@@ -1,5 +1,6 @@
 #include "VulkanBaseApp.h"
-#include "atmosphere.hpp"
+#include "AtmosphereGenerator.hpp"
+
 class AtmosphericScattering2 : public VulkanBaseApp{
 public:
     explicit AtmosphericScattering2(const Settings& settings = {});
@@ -63,7 +64,8 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<FirstPersonCameraController> camera;
-    std::unique_ptr<Atmosphere> atmosphere;
+    std::unique_ptr<AtmosphereGenerator> atmosphereGenerator;
+    AtmosphereDescriptor* atmosphere;
 
     struct {
         Texture transmittance;

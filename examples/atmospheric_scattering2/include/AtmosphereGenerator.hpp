@@ -1,36 +1,21 @@
 #pragma once
 #include "Texture.h"
 #include "common.h"
-#include <glm/glm.hpp>
-#include <array>
 #include "VulkanBuffer.h"
 #include "VulkanDevice.h"
 #include "VulkanDescriptorSet.h"
 #include "filemanager.hpp"
+#include "AtmosphereContants.hpp"
+#include "AtmosphereDescriptor.hpp"
+
+#include <glm/glm.hpp>
+
+#include <array>
 #include <functional>
+#include <filesystem>
 
-class Atmosphere{
+class AtmosphereGenerator{
 public:
-    static constexpr int TRANSMITTANCE_TEXTURE_WIDTH = 256;
-    static constexpr int TRANSMITTANCE_TEXTURE_HEIGHT = 64;
-    static constexpr int SCATTERING_TEXTURE_R_SIZE = 32;
-    static constexpr int SCATTERING_TEXTURE_MU_SIZE = 128;
-    static constexpr int SCATTERING_TEXTURE_MU_S_SIZE = 32;
-    static constexpr int SCATTERING_TEXTURE_NU_SIZE = 8;
-    static constexpr int IRRADIANCE_TEXTURE_WIDTH = 64;
-    static constexpr int IRRADIANCE_TEXTURE_HEIGHT = 16;
-    static constexpr float MAX_SUN_ZENITH_ANGLE = glm::radians(120.f);
-    static constexpr int DENSITY_PROFILE_RAYLEIGH = 0;
-    static constexpr int DENSITY_PROFILE_MIE = 1;
-    static constexpr int DENSITY_PROFILE_OZONE = 2;
-    static constexpr int NUM_DENSITY_PROFILES  = 4;
-    static constexpr int BOTTOM = 0;
-    static constexpr int TOP = 1;
-
-    static constexpr int SCATTERING_TEXTURE_WIDTH = SCATTERING_TEXTURE_NU_SIZE * SCATTERING_TEXTURE_MU_S_SIZE;
-    static constexpr int SCATTERING_TEXTURE_HEIGHT = SCATTERING_TEXTURE_MU_SIZE;
-    static constexpr int SCATTERING_TEXTURE_DEPTH = SCATTERING_TEXTURE_R_SIZE;
-
     struct Params{
         glm::vec3 solarIrradiance{1.474000, 1.850400, 1.911980};
         float sunAngularRadius{0.004675};
@@ -72,28 +57,23 @@ public:
     };
 
 
-     struct alignas(16) DensityProfileLayer {
-        float width;
-        float exp_term;
-        float exp_scale;
-        float linear_term;
-        float constant_term;
-    };
-
-    Atmosphere(VulkanDevice* device, VulkanDescriptorPool* descriptorPool, FileManager* fileManager);
+    AtmosphereGenerator(VulkanDevice* device, VulkanDescriptorPool* descriptorPool, FileManager* fileManager);
 
     void generateLUT();
 
-    static std::function<void()> ui(Atmosphere& atmosphere);
+    std::function<void()> ui();
+
+    const AtmosphereDescriptor& atmosphereDescriptor() const;
 
 protected:
-    void createBuffers();
+
+    void initAtmosphereDescriptor();
 
     void createBarriers();
 
     void createSampler();
 
-    void createLutTextures();
+    void createTextures();
 
     void createDescriptorSetLayout();
 
@@ -113,46 +93,37 @@ protected:
 
     void computeMultipleScattering(VkCommandBuffer commandBuffer);
 
-    void barrier(VkCommandBuffer commandBuffer, std::vector<int> images);
+    void barrier(VkCommandBuffer commandBuffer, const std::vector<int>& images);
 
     void refresh();
+
+    void save(const std::filesystem::path& path);
+
+    Texture& transmittanceLUT();
+
+    Texture& irradianceLut();
+
+    Texture& scatteringLUT();
+
+    AtmosphereDescriptor::UBO* ubo();
+
+    Atmosphere::DensityProfileLayer* layers();
+
+    VulkanDescriptorSetLayout& uboDescriptorSetLayout();
+
+    VkDescriptorSet uboDescriptorSet();
+
+    VulkanDescriptorSetLayout& lutDescriptorSetLayout();
+
+    VkDescriptorSet lutDescriptorSet();
 
 public:
     Params params;
 
-    Texture transmittanceLUT;
-    Texture irradianceLut;
-    Texture scatteringLUT;
-
-    VulkanDescriptorSetLayout uboDescriptorSetLayout;
-    VkDescriptorSet uboDescriptorSet;
-
     VulkanDescriptorSetLayout  imageDescriptorSetLayout;
     VkDescriptorSet  imageDescriptorSet;
 
-    VulkanDescriptorSetLayout lutDescriptorSetLayout;
-    VkDescriptorSet lutDescriptorSet;
-
 private:
-    struct UBO {
-        alignas(16) glm::vec3 solarIrradiance;
-        alignas(16) glm::vec3 rayleighScattering;
-        alignas(16) glm::vec3 mieScattering;
-        alignas(16) glm::vec3 mieExtinction;
-        alignas(16) glm::vec3 absorptionExtinction;
-        alignas(16) glm::vec3 groundAlbedo;
-        float sunAngularRadius;
-        float bottomRadius;
-        float topRadius;
-        float mu_s_min;
-        float lengthUnitInMeters;
-        float mieAnisotropicFactor;
-    };
-
-    UBO* ubo;
-    DensityProfileLayer* layers;
-    VulkanBuffer m_densityProfileBuffer;
-    VulkanBuffer m_uboBuffer;
     VulkanDevice* m_device;
     VulkanDescriptorPool* m_descriptorPool;
     FileManager* m_fileMgr;
@@ -180,6 +151,8 @@ private:
         Pipeline compute_indirect_irradiance;
         Pipeline compute_multiple_scattering;
     } pipelines;
+
+    AtmosphereDescriptor m_atmosphereDescriptor;
 
     std::vector<VkImageMemoryBarrier> m_barriers{};
     static constexpr int TRANSMITTANCE_BARRIER = 0;

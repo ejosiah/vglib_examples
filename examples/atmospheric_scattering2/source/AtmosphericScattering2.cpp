@@ -16,8 +16,9 @@ AtmosphericScattering2::AtmosphericScattering2(const Settings& settings) : Vulka
 void AtmosphericScattering2::initApp() {
     initCamera();
     createDescriptorPool();
-    atmosphere = std::make_unique<Atmosphere>(&device, &descriptorPool, &fileManager);
-    atmosphere->generateLUT();
+    atmosphereGenerator = std::make_unique<AtmosphereGenerator>(&device, &descriptorPool, &fileManager);
+    atmosphereGenerator->generateLUT();
+    atmosphere = const_cast<AtmosphereDescriptor*>(&atmosphereGenerator->atmosphereDescriptor());
     initUBO();
     createTextures();
     createDescriptorSetLayouts();
@@ -34,7 +35,7 @@ void AtmosphericScattering2::initUBO() {
 
     ubo->white_point = glm::vec3(1);
     ubo->earth_center = {0, -6360000, 0};
-    auto kSunAngularRadius = atmosphere->params.sunAngularRadius;
+    auto kSunAngularRadius = atmosphereGenerator->params.sunAngularRadius;
     ubo->sun_size = glm::vec3(glm::tan(kSunAngularRadius), glm::cos(kSunAngularRadius), 0);
     ubo->sphereAlbedo = glm::vec3(0.8);
     ubo->groundAlbedo = {0.0, 0.0, 0.04};
@@ -73,8 +74,8 @@ void AtmosphericScattering2::createCameraVolume() {
         sets[3] = cameraVolumeSet;
         auto dim = atmosphereVolume.size;
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, cameraVolume.pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, cameraVolume.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, cameraVolume.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, cameraVolume.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdDispatch(commandBuffer, dim.x, dim.y, dim.z);
     });
 }
@@ -218,14 +219,14 @@ void AtmosphericScattering2::updateDescriptorSets(){
     writes[1].dstBinding = 0;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo transmittanceInfo{atmosphereVolume.transmittance.sampler, atmosphereVolume.transmittance.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo transmittanceInfo{atmosphereVolume.transmittance.sampler.handle, atmosphereVolume.transmittance.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[1].pImageInfo = &transmittanceInfo;
 
     writes[2].dstSet = cameraVolumeSet;
     writes[2].dstBinding = 1;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo inScatteringInfo{atmosphereVolume.inScattering.sampler, atmosphereVolume.inScattering.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo inScatteringInfo{atmosphereVolume.inScattering.sampler.handle, atmosphereVolume.inScattering.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &inScatteringInfo;
 
     writes[3].dstSet = atmosphereVolumeSet;
@@ -313,9 +314,9 @@ void AtmosphericScattering2::createComputePipelines() {
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = cameraVolume.layout;
+    computeCreateInfo.layout = cameraVolume.layout.handle;
     device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("camera_volume_layout",
-                                                   cameraVolume.layout.pipelineLayout);
+                                                   cameraVolume.layout.handle);
 
     cameraVolume.pipeline = device.createComputePipeline(computeCreateInfo);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("camera_volume",
@@ -328,6 +329,7 @@ void AtmosphericScattering2::onSwapChainDispose() {
 }
 
 void AtmosphericScattering2::onSwapChainRecreation() {
+    initCamera();
     updateDescriptorSets();
     createRenderPipeline();
 }
@@ -360,8 +362,8 @@ VkCommandBuffer *AtmosphericScattering2::buildCommandBuffers(uint32_t imageIndex
     sets[3] = atmosphereVolumeSet;
 
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, preview.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, preview.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, preview.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, preview.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenBuffer, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 
@@ -393,7 +395,7 @@ void AtmosphericScattering2::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::ColorEdit3("ground albedo", &ubo->groundAlbedo.x);
     ImGui::End();
 
-    static auto atmosphereUI = Atmosphere::ui(*atmosphere);
+    static auto atmosphereUI = atmosphereGenerator->ui();
 
     atmosphereUI();
 
@@ -418,7 +420,7 @@ void AtmosphericScattering2::update(float time) {
 
 //    static float updateLut = 0;
 //    updateLut += time;
-//        atmosphere->generateLUT();
+//        atmosphereGenerator->generateLUT();
 }
 
 void AtmosphericScattering2::updateSunDirection() {
@@ -447,7 +449,6 @@ void AtmosphericScattering2::onPause() {
 
 int main(){
     try{
-
         Settings settings;
         settings.depthTest = true;
 
