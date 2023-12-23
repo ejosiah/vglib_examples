@@ -129,7 +129,7 @@ std::vector<glm::vec3> Terrain::generateNormals() {
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo imageInfo{ heightMap.displacement.sampler, heightMap.displacement.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo imageInfo{ heightMap.displacement.sampler.handle, heightMap.displacement.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[0].pImageInfo = &imageInfo;
     
     writes[1].dstSet = descriptorSet;
@@ -140,21 +140,21 @@ std::vector<glm::vec3> Terrain::generateNormals() {
     writes[1].pBufferInfo = &bufferInfo;
     device().updateDescriptorSets(writes);
 
-    auto module = VulkanShaderModule{resource("stats.comp.spv"), device()};
+    auto module = device().createShaderModule(resource("stats.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     auto layout = device().createPipelineLayout( {descriptorSetLayout}, {{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(resolution)}} );
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = layout;
+    computeCreateInfo.layout = layout.handle;
 
     auto pipeline = device().createComputePipeline(computeCreateInfo);
 
     device().graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
-        vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(resolution), &resolution);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout.handle, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
+        vkCmdPushConstants(commandBuffer, layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(resolution), &resolution);
         auto groupX = static_cast<uint32_t>(glm::ceil(float(resolution.x)/32.f));
         auto groupY = static_cast<uint32_t>(glm::ceil(float(resolution.y)/32.f));
 
@@ -371,14 +371,14 @@ void Terrain::updateDescriptorSet() {
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo dispInfo{heightMap.displacement.sampler, heightMap.displacement.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo dispInfo{heightMap.displacement.sampler.handle, heightMap.displacement.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[1].pImageInfo = &dispInfo;
 
     writes[2].dstSet = descriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo normalInfo{heightMap.normal.sampler, heightMap.normal.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo normalInfo{heightMap.normal.sampler.handle, heightMap.normal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &normalInfo;
 
 
@@ -386,7 +386,7 @@ void Terrain::updateDescriptorSet() {
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo randomInfo{randomTexture.sampler, randomTexture.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo randomInfo{randomTexture.sampler.handle, randomTexture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[3].pImageInfo = &randomInfo;
 
     device().updateDescriptorSets(writes);
@@ -399,49 +399,49 @@ void Terrain::updateDescriptorSet() {
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo albedoInfo{shadingMap.albedo.sampler, shadingMap.albedo.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo albedoInfo{shadingMap.albedo.sampler.handle, shadingMap.albedo.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[0].pImageInfo = &albedoInfo;
 
     writes[1].dstSet = shadingSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo metalInfo{shadingMap.metalness.sampler, shadingMap.metalness.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo metalInfo{shadingMap.metalness.sampler.handle, shadingMap.metalness.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[1].pImageInfo = &metalInfo;
 
     writes[2].dstSet = shadingSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo roughnessInfo{shadingMap.roughness.sampler, shadingMap.roughness.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo roughnessInfo{shadingMap.roughness.sampler.handle, shadingMap.roughness.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &roughnessInfo;
 
     writes[3].dstSet = shadingSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo shadingNormalInfo{shadingMap.normal.sampler, shadingMap.normal.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo shadingNormalInfo{shadingMap.normal.sampler.handle, shadingMap.normal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[3].pImageInfo = &shadingNormalInfo;
 
     writes[4].dstSet = shadingSet;
     writes[4].dstBinding = 4;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
-    VkDescriptorImageInfo aoInfo{shadingMap.ambientOcclusion.sampler, shadingMap.ambientOcclusion.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo aoInfo{shadingMap.ambientOcclusion.sampler.handle, shadingMap.ambientOcclusion.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[4].pImageInfo = &aoInfo;
 
     writes[5].dstSet = shadingSet;
     writes[5].dstBinding = 5;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[5].descriptorCount = 1;
-    VkDescriptorImageInfo displacementInfo{shadingMap.displacement.sampler, shadingMap.displacement.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo displacementInfo{shadingMap.displacement.sampler.handle, shadingMap.displacement.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[5].pImageInfo = &displacementInfo;
 
     writes[6].dstSet = shadingSet;
     writes[6].dstBinding = 6;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[6].descriptorCount = 1;
-    VkDescriptorImageInfo groundMaskInfo{shadingMap.groundMask.sampler, shadingMap.groundMask.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo groundMaskInfo{shadingMap.groundMask.sampler.handle, shadingMap.groundMask.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[6].pImageInfo = &groundMaskInfo;
 
     device().updateDescriptorSets(writes);
@@ -567,8 +567,8 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
         sets[1] = shadingSet;
         sets[2] = trianglesSet;
         VkDeviceSize offset = 0;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainDebug.pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainDebug.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainDebug.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrainDebug.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, patchesBuffer, &offset);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffer, indexBuffer.sizeAs<uint32_t>(), 1, 0, 0, 0);
@@ -578,8 +578,8 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
         sets[0] = descriptorSet;
         sets[1] = gBuffer->descriptorSet;
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screen.pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screen.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screen.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screen.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenBuffer, &offset);
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
     }
@@ -743,12 +743,12 @@ void Terrain::createGBufferFrameBuffer() {
     m_gBufferRenderPass = device().createRenderPass(attachmentDesc, subpassDesc, dependencies);
 
     std::vector<VkImageView> attachments{
-        gBuffer->position.imageView,
-        gBuffer->normal.imageView,
-        gBuffer->albedo.imageView,
-        gBuffer->material.imageView,
-        gBuffer->depth.imageView,
-        depthBuffer.imageView,
+        gBuffer->position.imageView.handle,
+        gBuffer->normal.imageView.handle,
+        gBuffer->albedo.imageView.handle,
+        gBuffer->material.imageView.handle,
+        gBuffer->depth.imageView.handle,
+        depthBuffer.imageView.handle,
     };
     m_gBufferFramebuffer = device().createFramebuffer(m_gBufferRenderPass, attachments, m_width, m_height);
 }
@@ -779,8 +779,8 @@ void Terrain::renderTerrain() {
         sets[1] = shadingSet;
         sets[2] = trianglesSet;
         VkDeviceSize offset = 0;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrain.pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrain.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrain.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, terrain.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, patchesBuffer, &offset);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffer, indexBuffer.sizeAs<uint32_t>(), 1, 0, 0, 0);

@@ -1,6 +1,5 @@
 #include "SkeletalAnimationDemo.hpp"
 #include "GraphicsPipelineBuilder.hpp"
-#include "DescriptorSetBuilder.hpp"
 
 SkeletalAnimationDemo::SkeletalAnimationDemo(const Settings& settings) : VulkanBaseApp("Skeletal Animation", settings) {
     fileManager.addSearchPath(".");
@@ -14,7 +13,7 @@ SkeletalAnimationDemo::SkeletalAnimationDemo(const Settings& settings) : VulkanB
     fileManager.addSearchPath("../../data");
     jump = &mapToKey(Key::SPACE_BAR, "jump", Action::detectInitialPressOnly());
     dance = &mapToKey(Key::O, "dance", Action::detectInitialPressOnly());
-    walk = &mapToKey(Key::P, "walk", Action::detectInitialPressOnly());
+    walk = &mapToKey(Key::M, "walk", Action::detectInitialPressOnly());
 }
 
 void SkeletalAnimationDemo::initApp() {
@@ -132,16 +131,16 @@ void SkeletalAnimationDemo::createRenderPipeline() {
 }
 
 void SkeletalAnimationDemo::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -151,6 +150,7 @@ void SkeletalAnimationDemo::onSwapChainDispose() {
 }
 
 void SkeletalAnimationDemo::onSwapChainRecreation() {
+    initCamera();
     createRenderPipeline();
     createComputePipeline();
 }
@@ -182,15 +182,15 @@ VkCommandBuffer *SkeletalAnimationDemo::buildCommandBuffers(uint32_t imageIndex,
     sets[1] = model->descriptor.sets[1];
 
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, outline.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, outline.layout, 0, 1, sets.data(), 0, VK_NULL_HANDLE);
-    cameraController->push(commandBuffer, outline.layout);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, outline.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, outline.layout.handle, 0, 1, sets.data(), 0, VK_NULL_HANDLE);
+    cameraController->push(commandBuffer, outline.layout.handle);
     model->render(commandBuffer);
 
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-    cameraController->push(commandBuffer, render.layout);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    cameraController->push(commandBuffer, render.layout.handle);
     model->render(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);

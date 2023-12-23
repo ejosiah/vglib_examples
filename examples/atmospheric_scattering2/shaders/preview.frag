@@ -2,7 +2,7 @@
 
 #define RADIANCE_API_ENABLED
 
-#include "atmosphere_lut.glsl"
+#include "atmosphere_api.glsl"
 #include "common.glsl"
 
 layout(set = 2, binding = 0) uniform SCENE_UBO{

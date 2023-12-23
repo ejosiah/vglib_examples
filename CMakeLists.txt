@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
 conan_basic_setup()
 
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/dependencies/vglib.github.io/cmake ${CMAKE_MODULE_PATH})
+
 find_package(Vulkan)
 
 set(LIB_DEPENDENCIES VulkanBase Vulkan::Vulkan ${CONAN_LIBS})

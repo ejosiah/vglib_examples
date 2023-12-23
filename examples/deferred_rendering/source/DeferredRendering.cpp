@@ -216,7 +216,7 @@ VkCommandBuffer *DeferredRendering::buildCommandBuffers(uint32_t imageIndex, uin
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.depthPrePass.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.depthPrePass.pipeline.handle);
     cameraController->push(commandBuffer, pipelines.depthPrePass.layout);
     sponza.draw(commandBuffer);
 
@@ -229,14 +229,14 @@ VkCommandBuffer *DeferredRendering::buildCommandBuffers(uint32_t imageIndex, uin
     }
 
     vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.gBuffer.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.gBuffer.pipeline.handle);
     cameraController->push(commandBuffer, pipelines.gBuffer.layout);
     cameraProps.isLight = 0;
-    vkCmdPushConstants(commandBuffer, pipelines.gBuffer.layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(CameraProps), &cameraProps);
+    vkCmdPushConstants(commandBuffer, pipelines.gBuffer.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(CameraProps), &cameraProps);
     sponza.draw(commandBuffer, pipelines.gBuffer.layout);
 
     cameraProps.isLight = 1;
-    vkCmdPushConstants(commandBuffer, pipelines.gBuffer.layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(CameraProps), &cameraProps);
+    vkCmdPushConstants(commandBuffer, pipelines.gBuffer.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(CameraProps), &cameraProps);
     for(auto i = 0; i < lights.count; i++){
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, lights.vertices[i], &offset);
         vkCmdBindIndexBuffer(commandBuffer, lights.indices[i], 0, VK_INDEX_TYPE_UINT32);
@@ -247,9 +247,9 @@ VkCommandBuffer *DeferredRendering::buildCommandBuffers(uint32_t imageIndex, uin
     sets[0] = gBuffer.descriptorSets[imageIndex];
     sets[1] = lights.descriptorSet;
     vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.pipeline);
-    vkCmdPushConstants(commandBuffer, pipelines.render.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(renderConstants), &renderConstants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.layout, 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, pipelines.render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(renderConstants), &renderConstants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenBuffer, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 
@@ -415,7 +415,7 @@ void DeferredRendering::updateDescriptorSets() {
         device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("{}_{}", "g_buffer", i), gBuffer.descriptorSets[i]);
 
         VkDescriptorImageInfo albedoInfo{};
-        albedoInfo.imageView = gBuffer.albedo[i].imageView;
+        albedoInfo.imageView = gBuffer.albedo[i].imageView.handle;
         albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         auto writes = initializers::writeDescriptorSets<4>();
@@ -426,7 +426,7 @@ void DeferredRendering::updateDescriptorSets() {
         writes[kLayoutBinding_ALBDO].pImageInfo = &albedoInfo;
 
         VkDescriptorImageInfo normalInfo{};
-        normalInfo.imageView = gBuffer.normal[i].imageView;
+        normalInfo.imageView = gBuffer.normal[i].imageView.handle;
         normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[kLayoutBinding_NORMAL].dstSet = gBuffer.descriptorSets[i];
         writes[kLayoutBinding_NORMAL].dstBinding = kLayoutBinding_NORMAL;
@@ -435,7 +435,7 @@ void DeferredRendering::updateDescriptorSets() {
         writes[kLayoutBinding_NORMAL].pImageInfo = &normalInfo;
 
         VkDescriptorImageInfo positionInfo{};
-        positionInfo.imageView = gBuffer.position[i].imageView;
+        positionInfo.imageView = gBuffer.position[i].imageView.handle;
         positionInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[kLayoutBinding_POSITION].dstSet = gBuffer.descriptorSets[i];
         writes[kLayoutBinding_POSITION].dstBinding = kLayoutBinding_POSITION;
@@ -444,7 +444,7 @@ void DeferredRendering::updateDescriptorSets() {
         writes[kLayoutBinding_POSITION].pImageInfo = &positionInfo;
 
         VkDescriptorImageInfo emissionInfo{};
-        emissionInfo.imageView = gBuffer.emission[i].imageView;
+        emissionInfo.imageView = gBuffer.emission[i].imageView.handle;
         emissionInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[kLayoutBinding_EMISSION].dstSet = gBuffer.descriptorSets[i];
         writes[kLayoutBinding_EMISSION].dstBinding = kLayoutBinding_EMISSION;
@@ -621,11 +621,11 @@ void DeferredRendering::createFramebuffer() {
     for(int i = 0; i< swapChainImageCount; i++){
         std::vector<VkImageView> attachments(attachmentIndices.size());
         attachments[attachmentIndices[kAttachment_BACK]] = swapChain.imageViews[i];
-        attachments[attachmentIndices[kAttachment_DEPTH]] = depthBuffer.imageView;
-        attachments[attachmentIndices[kAttachment_GBUFFER_ALBDEO]] = gBuffer.albedo[i].imageView;
-        attachments[attachmentIndices[kAttachment_GBUFFER_NORMAL]] = gBuffer.normal[i].imageView;
-        attachments[attachmentIndices[kAttachment_GBUFFER_POSITION]] = gBuffer.position[i].imageView;
-        attachments[attachmentIndices[kAttachment_GBUFFER_EMISSION]] = gBuffer.emission[i].imageView;
+        attachments[attachmentIndices[kAttachment_DEPTH]] = depthBuffer.imageView.handle;
+        attachments[attachmentIndices[kAttachment_GBUFFER_ALBDEO]] = gBuffer.albedo[i].imageView.handle;
+        attachments[attachmentIndices[kAttachment_GBUFFER_NORMAL]] = gBuffer.normal[i].imageView.handle;
+        attachments[attachmentIndices[kAttachment_GBUFFER_POSITION]] = gBuffer.position[i].imageView.handle;
+        attachments[attachmentIndices[kAttachment_GBUFFER_EMISSION]] = gBuffer.emission[i].imageView.handle;
         framebuffers[i] = device.createFramebuffer(renderPass, attachments,  static_cast<uint32_t>(width), static_cast<uint32_t>(height) );
     }
 }

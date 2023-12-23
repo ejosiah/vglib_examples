@@ -37,6 +37,8 @@ protected:
 
     void onPause() override;
 
+
+
 protected:
     struct {
         VulkanPipelineLayout layout;

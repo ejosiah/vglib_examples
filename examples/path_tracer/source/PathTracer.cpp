@@ -660,14 +660,14 @@ void PathTracer::updateDescriptorSets(){
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, rayTracedTexture.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, rayTracedTexture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &imageInfo;
     
     writes[3].dstSet = raytrace.descriptorSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo envMapInfo{environmentMap.sampler, environmentMap.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo envMapInfo{environmentMap.sampler.handle, environmentMap.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[3].pImageInfo = &envMapInfo;
 
     std::vector<VkDescriptorBufferInfo> materialBufferInfo;
@@ -772,28 +772,28 @@ void PathTracer::updateDescriptorSets(){
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo cFuncImageInfo{VK_NULL_HANDLE, envMapDistribution.pConditionalVFunc.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo cFuncImageInfo{VK_NULL_HANDLE, envMapDistribution.pConditionalVFunc.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[1].pImageInfo = &cFuncImageInfo;
 
     writes[2].dstSet = envMapDescriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo cCdfImageInfo{VK_NULL_HANDLE, envMapDistribution.pConditionalVCdf.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo cCdfImageInfo{VK_NULL_HANDLE, envMapDistribution.pConditionalVCdf.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &cCdfImageInfo;
 
     writes[3].dstSet = envMapDescriptorSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo mFuncImageInfo{VK_NULL_HANDLE, envMapDistribution.pMarginal.func.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo mFuncImageInfo{VK_NULL_HANDLE, envMapDistribution.pMarginal.func.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[3].pImageInfo = &mFuncImageInfo;
 
     writes[4].dstSet = envMapDescriptorSet;
     writes[4].dstBinding = 4;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
-    VkDescriptorImageInfo mCdfImageInfo{VK_NULL_HANDLE, envMapDistribution.pMarginal.cdf.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo mCdfImageInfo{VK_NULL_HANDLE, envMapDistribution.pMarginal.cdf.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[4].pImageInfo = &mCdfImageInfo;
 
     device.updateDescriptorSets(writes);
@@ -805,21 +805,21 @@ void PathTracer::updateDescriptorSets(){
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo dgAlbedoInfo{VK_NULL_HANDLE, denoiserGuide.albedo.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo dgAlbedoInfo{VK_NULL_HANDLE, denoiserGuide.albedo.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[0].pImageInfo = &dgAlbedoInfo;
 
     writes[1].dstSet = denoiserGuideSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo dgNormalInfo{VK_NULL_HANDLE, denoiserGuide.normal.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo dgNormalInfo{VK_NULL_HANDLE, denoiserGuide.normal.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[1].pImageInfo = &dgNormalInfo;
 
     writes[2].dstSet = denoiserGuideSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo dgFlowInfo{VK_NULL_HANDLE, denoiserGuide.flow.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo dgFlowInfo{VK_NULL_HANDLE, denoiserGuide.flow.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &dgFlowInfo;
 
     device.updateDescriptorSets(writes);
@@ -906,21 +906,21 @@ void PathTracer::createInverseCam() {
 }
 
 void PathTracer::createRayTracingPipeline() {
-    auto rayGenShaderModule = VulkanShaderModule{ resource("raygen.rgen.spv"), device };
-    auto missShaderModule = VulkanShaderModule{ resource("miss.rmiss.spv"), device };
-    auto lightMissShaderModule = VulkanShaderModule{ resource("light.rmiss.spv"), device };
+    auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
+    auto missShaderModule = device.createShaderModule( resource("miss.rmiss.spv"));
+    auto lightMissShaderModule = device.createShaderModule( resource("light.rmiss.spv"));
 
-    auto closestHitShaderModule = VulkanShaderModule{ resource("closesthit.rchit.spv"), device };
-    auto occlusionPrimaryHitShaderModule = VulkanShaderModule{ resource("occlusion.rchit.spv"), device };
+    auto closestHitShaderModule = device.createShaderModule( resource("closesthit.rchit.spv"));
+    auto occlusionPrimaryHitShaderModule = device.createShaderModule( resource("occlusion.rchit.spv"));
 
-    auto volumeHitShaderModule = VulkanShaderModule{ resource("volume.rchit.spv"), device };
-    auto volumeAnyHitShaderModule = VulkanShaderModule{ resource("volume.rahit.spv"), device };
+    auto volumeHitShaderModule = device.createShaderModule( resource("volume.rchit.spv"));
+    auto volumeAnyHitShaderModule = device.createShaderModule( resource("volume.rahit.spv"));
 
-    auto volumeOcclusionHitShaderModule = VulkanShaderModule(resource("volume_occlusion.rchit.spv"), device);
-    auto volumeOcclusionAnyHitShaderModule = VulkanShaderModule(resource("volume_occlusion.rahit.spv"), device);
+    auto volumeOcclusionHitShaderModule = device.createShaderModule(resource("volume_occlusion.rchit.spv"));
+    auto volumeOcclusionAnyHitShaderModule = device.createShaderModule(resource("volume_occlusion.rahit.spv"));
 
-    auto glassHitShaderModule = VulkanShaderModule{ resource("glass.rchit.spv"), device};
-    auto glassOcclusionHitShaderModule = VulkanShaderModule{ resource("occlusion_glass.rchit.spv"), device };
+    auto glassHitShaderModule = device.createShaderModule( resource("glass.rchit.spv"));
+    auto glassOcclusionHitShaderModule = device.createShaderModule( resource("occlusion_glass.rchit.spv"));
 
     std::vector<ShaderInfo> shaders(eShaderCount);
     shaders[eRayGen] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
@@ -1022,23 +1022,23 @@ void PathTracer::createRayTracingPipeline() {
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
     createInfo.maxPipelineRayRecursionDepth = 31;
-    createInfo.layout = raytrace.layout;
+    createInfo.layout = raytrace.layout.handle;
 
     raytrace.pipeline = device.createRayTracingPipeline(createInfo);
     bindingTables = shaderTablesDesc.compile(device, raytrace.pipeline);
 }
 
 void PathTracer::createPostProcessPipeline() {
-    auto module = VulkanShaderModule{resource("post_process.comp.spv"), device};
+    auto module = device.createShaderModule(resource("post_process.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     postProcess.layout = device.createPipelineLayout({ raytrace.descriptorSetLayout }, { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float)} });
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = postProcess.layout;
+    computeCreateInfo.layout = postProcess.layout.handle;
 
-    postProcess.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    postProcess.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 void PathTracer::rayTrace(VkCommandBuffer commandBuffer) {
@@ -1049,9 +1049,9 @@ void PathTracer::rayTrace(VkCommandBuffer commandBuffer) {
     accelerationStructureBuildBarrier(commandBuffer);
     std::vector<VkDescriptorSet> sets{ raytrace.descriptorSet, raytrace.instanceDescriptorSet, raytrace.vertexDescriptorSet, sceneDescriptorSet, envMapDescriptorSet, denoiserGuideSet  };
     assert(raytrace.pipeline);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, raytrace.layout, ALL_RAY_TRACE_STAGES, 0, sizeof(m.sceneConstants), &m.sceneConstants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, raytrace.layout.handle, ALL_RAY_TRACE_STAGES, 0, sizeof(m.sceneConstants), &m.sceneConstants);
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);
 
@@ -1460,6 +1460,8 @@ int main(){
     try{
 
         Settings settings;
+        settings.width = 2048;
+        settings.height = 1080;
         settings.depthTest = true;
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
 

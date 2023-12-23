@@ -503,6 +503,8 @@ int main(){
         Settings settings;
         settings.depthTest = true;
 
+        spdlog::set_level(spdlog::level::debug);
+
         auto app = WhittedRayTracer{ settings };
         app.run();
     }catch(std::runtime_error& err){

@@ -49,24 +49,20 @@ void SsaoDemo::initCamera() {
 
 void SsaoDemo::createDescriptorPool() {
     constexpr uint32_t maxSets = 300;
-    std::array<VkDescriptorPoolSize, 16> poolSizes{
+    std::array<VkDescriptorPoolSize, 12> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
                     { VK_DESCRIPTOR_TYPE_SAMPLER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets }
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
@@ -180,16 +176,16 @@ void SsaoDemo::createRenderPipeline() {
 }
 
 void SsaoDemo::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -228,11 +224,11 @@ VkCommandBuffer *SsaoDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &nu
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.pipeline.handle);
 
     lighting.constants.view = cameraController->cam().view;
-    vkCmdPushConstants(commandBuffer, lighting.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(lighting.constants), &lighting.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.layout, 0, 1, &ssao.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, lighting.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(lighting.constants), &lighting.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.layout.handle, 0, 1, &ssao.descriptorSet, 0, VK_NULL_HANDLE);
 
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, quad.vertices, &offset);
@@ -264,8 +260,8 @@ void SsaoDemo::renderScene(VkCommandBuffer commandBuffer) {
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline);
-    cameraController->push(commandBuffer, render.layout);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    cameraController->push(commandBuffer, render.layout.handle);
     model.draw(commandBuffer, render.layout);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -414,10 +410,10 @@ void SsaoDemo::initGBuffer() {
 
     auto createFrameBuffer = [&]{
         std::vector<VkImageView> attachments{
-            gBuffer.depth.imageView,
-            gBuffer.position.imageView,
-            gBuffer.normal.imageView,
-            gBuffer.color.imageView
+            gBuffer.depth.imageView.handle,
+            gBuffer.position.imageView.handle,
+            gBuffer.normal.imageView.handle,
+            gBuffer.color.imageView.handle
         };
 
         gBuffer.framebuffer = device.createFramebuffer(gBuffer.renderpass, attachments, width, height);
@@ -520,7 +516,7 @@ void SsaoDemo::updateSsaoDescriptorSet() {
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
 
-    VkDescriptorImageInfo posImageInfo{VK_NULL_HANDLE, gBuffer.position.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo posImageInfo{VK_NULL_HANDLE, gBuffer.position.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[0].pImageInfo = &posImageInfo;
 
     writes[1].dstSet = ssao.descriptorSet;
@@ -528,7 +524,7 @@ void SsaoDemo::updateSsaoDescriptorSet() {
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
 
-    VkDescriptorImageInfo normalImageInfo{VK_NULL_HANDLE, gBuffer.normal.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo normalImageInfo{VK_NULL_HANDLE, gBuffer.normal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[1].pImageInfo = &normalImageInfo;
 
     writes[2].dstSet = ssao.descriptorSet;
@@ -536,7 +532,7 @@ void SsaoDemo::updateSsaoDescriptorSet() {
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
 
-    VkDescriptorImageInfo colorImageInfo{VK_NULL_HANDLE, gBuffer.color.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo colorImageInfo{VK_NULL_HANDLE, gBuffer.color.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &colorImageInfo;
 
     writes[3].dstSet = ssao.descriptorSet;
@@ -544,7 +540,7 @@ void SsaoDemo::updateSsaoDescriptorSet() {
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
 
-    VkDescriptorImageInfo aoImageInfo{VK_NULL_HANDLE, ssao.blur.blurOutput.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo aoImageInfo{VK_NULL_HANDLE, ssao.blur.blurOutput.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[3].pImageInfo = &aoImageInfo;
 
     writes[4].dstSet = ssao.descriptorSet;
@@ -552,7 +548,7 @@ void SsaoDemo::updateSsaoDescriptorSet() {
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
 
-    VkDescriptorImageInfo noiseImageInfo{ssao.noise.sampler, ssao.noise.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo noiseImageInfo{ssao.noise.sampler.handle, ssao.noise.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[4].pImageInfo = &noiseImageInfo;
 
     writes[5].dstSet = ssao.blur.descriptorSet;
@@ -560,7 +556,7 @@ void SsaoDemo::updateSsaoDescriptorSet() {
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[5].descriptorCount = 1;
 
-    VkDescriptorImageInfo imageInfo{VK_NULL_HANDLE, ssao.occlusion.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo imageInfo{VK_NULL_HANDLE, ssao.occlusion.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[5].pImageInfo = &imageInfo;
 
     writes[6].dstSet = ssao.descriptorSet;
@@ -701,7 +697,7 @@ void SsaoDemo::createSsaoFrameBuffer() {
     };
 
     auto createFramebuffer = [&]{
-        std::vector<VkImageView> attachments{ ssao.occlusion.imageView };
+        std::vector<VkImageView> attachments{ ssao.occlusion.imageView.handle };
         ssao.framebuffer = device.createFramebuffer(ssao.renderpass, attachments, swapChain.width(), swapChain.height());
     };
 
@@ -766,7 +762,7 @@ void SsaoDemo::createBlurFrameBuffer() {
     };
 
     auto createFramebuffer = [&]{
-        std::vector<VkImageView> attachments{ ssao.blur.blurOutput.imageView };
+        std::vector<VkImageView> attachments{ ssao.blur.blurOutput.imageView.handle };
         ssao.blur.framebuffer = device.createFramebuffer(ssao.blur.renderpass, attachments, swapChain.width(), swapChain.height());
     };
 
@@ -789,11 +785,11 @@ void SsaoDemo::ssaoPass(VkCommandBuffer commandBuffer) {
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.pipeline.handle);
     ssao.constants.projection = cameraController->cam().proj;
 
-    vkCmdPushConstants(commandBuffer, ssao.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ssao.constants), &ssao.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.layout, 0, 1, &ssao.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, ssao.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ssao.constants), &ssao.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.layout.handle, 0, 1, &ssao.descriptorSet, 0, VK_NULL_HANDLE);
 
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, quad.vertices, &offset);
@@ -816,10 +812,10 @@ void SsaoDemo::blurPass(VkCommandBuffer commandBuffer) {
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.blur.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.blur.pipeline.handle);
 
-    vkCmdPushConstants(commandBuffer, ssao.blur.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(int), &ssao.blur.on);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.blur.layout, 0, 1, &ssao.blur.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, ssao.blur.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(int), &ssao.blur.on);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssao.blur.layout.handle, 0, 1, &ssao.blur.descriptorSet, 0, VK_NULL_HANDLE);
 
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, quad.vertices, &offset);

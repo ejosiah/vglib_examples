@@ -10,9 +10,9 @@
 #include <glm/glm.hpp>
 #include "scene.hpp"
 
-class Atmosphere{
+class AtmosphereG{
 public:
-    Atmosphere(const VulkanDevice& device, const VulkanDescriptorPool& descriptorPool, const FileManager& fileManager,
+    AtmosphereG(const VulkanDevice& device, const VulkanDescriptorPool& descriptorPool, const FileManager& fileManager,
                VulkanRenderPass& renderPass, uint32_t width, uint32_t height,
                std::shared_ptr<AtmosphereLookupTable> atmosphereLUT, std::shared_ptr<SceneGBuffer> terrainGBuffer,
                std::shared_ptr<ShadowVolume> terrainShadowVolume);

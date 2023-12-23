@@ -2,7 +2,11 @@ if (NOT NO_OPENCL)
     find_package(OpenCL QUIET)
 endif()
 
+find_package(OptiX REQUIRED)
+_add_package_Cuda()
+
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
+include_directories(${OptiX_INCLUDE})
 
 file(GLOB_RECURSE CPP_FILES ${CMAKE_CURRENT_LIST_DIR}/include/*.*)
 file(GLOB_RECURSE HPP_FILES ${CMAKE_CURRENT_LIST_DIR}/source/*.cpp)

@@ -1,5 +1,5 @@
 #include "VulkanBaseApp.h"
-#include "AtmosphereGenerator.hpp"
+#include "atmosphere/AtmosphereGenerator.hpp"
 
 class AtmosphericScattering2 : public VulkanBaseApp{
 public:

@@ -83,7 +83,7 @@ void SPHFluidSimulation::createDescriptorSetLayouts() {
 void SPHFluidSimulation::createDescriptorSets() {
     descriptorPool.allocate({ particles.descriptorSetLayout, particles.descriptorSetLayout }, particles.descriptorSets);
 
-    std::array<VkWriteDescriptorSet, 4> writes = initializers::writeDescriptorSets<4>();
+    auto writes = initializers::writeDescriptorSets<4>();
 
     VkDescriptorBufferInfo info0{ particles.buffers[0], 0, particles.pointSize};
     writes[0].dstSet = particles.descriptorSets[0];
@@ -491,7 +491,7 @@ void SPHFluidSimulation::initCamera() {
 }
 
 void SPHFluidSimulation::addParticleBufferBarrier(VkCommandBuffer commandBuffer, int index) {
-    addBufferMemoryBarriers(commandBuffer, { &particles.buffers[index] }
+    addBufferMemoryBarriers(commandBuffer, { particles.buffers[index] }
     , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 

@@ -43,7 +43,7 @@ public:
     std::shared_ptr<SceneGBuffer> gBuffer;
     int* triangleCount;
     VulkanBuffer vertexBuffer;
-    bool debugMode = false;
+    bool debugMode = true;
 
 
 private:

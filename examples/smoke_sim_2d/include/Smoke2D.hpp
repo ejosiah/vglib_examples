@@ -120,7 +120,7 @@ protected:
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
         struct {
-            glm::vec3 dye = rgb(2, 255, 255);
+            glm::vec3 dye{2, 255, 255};
         } constants;
     } smokeRender;
 

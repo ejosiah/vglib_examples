@@ -1,4 +1,9 @@
+#define XR_USE_GRAPHICS_API_VULKAN
+
+
 #include "VulkanCube.h"
+#include <openxr/openxr.h>
+#include <openxr/openxr_platform.h>
 #include  <stb_image.h>
 
 VulkanCube::VulkanCube(const Settings& settings): VulkanBaseApp("VulkanCube", settings, {}){
@@ -56,8 +61,8 @@ void VulkanCube::onSwapChainRecreation() {
 void VulkanCube::
 createGraphicsPipeline() {
     assert(renderPass != VK_NULL_HANDLE);
-    auto vertexShaderModule = VulkanShaderModule{resource("shaders/triangle.vert.spv"), device};
-    auto fragmentShaderModule = VulkanShaderModule{resource("shaders/triangle.frag.spv"), device};
+    auto vertexShaderModule = device.createShaderModule(resource("shaders/triangle.vert.spv"));
+    auto fragmentShaderModule = device.createShaderModule(resource("shaders/triangle.frag.spv"));
 
     std::vector<VkPipelineShaderStageCreateInfo> stages = initializers::vertexShaderStages(
             {
@@ -121,13 +126,13 @@ createGraphicsPipeline() {
     createInfo.pDepthStencilState = &depthStencilState;
     createInfo.pColorBlendState = &blendState;
     createInfo.pDynamicState = &dynamicState;
-    createInfo.layout = layout;
+    createInfo.layout = layout.handle;
     createInfo.renderPass = renderPass;
     createInfo.subpass = 0;
     createInfo.basePipelineIndex = -1;
     createInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    pipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    pipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 }
 
 VkCommandBuffer* VulkanCube::buildCommandBuffers(uint32_t imageIndex, uint32_t& numCommandBuffers) {
@@ -155,9 +160,9 @@ VkCommandBuffer* VulkanCube::buildCommandBuffers(uint32_t imageIndex, uint32_t& 
     std::vector<VkDescriptorSet> descriptorSets{ descriptorSet };
  //   std::vector<VkDescriptorSet> descriptorSets{ cameraController->descriptorSet(i), descriptorSet };
 
-    vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(descriptorSets), descriptorSets.data(), 0, nullptr);
-    vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline );
-    cameraController->push(commandBuffers[i], layout);
+    vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, layout.handle, 0, COUNT(descriptorSets), descriptorSets.data(), 0, nullptr);
+    vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle );
+    cameraController->push(commandBuffers[i], layout.handle);
     VkDeviceSize offset = 0;
     vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &vertexBuffer.buffer, &offset);
@@ -217,7 +222,7 @@ void VulkanCube::createDescriptorPool() {
 void VulkanCube::createDescriptorSet() {
     const auto swapChainImageCount = 1;
 
-    std::vector<VkDescriptorSetLayout> layouts(swapChainImageCount, descriptorSetLayout);
+    std::vector<VulkanDescriptorSetLayout> layouts(swapChainImageCount, descriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
@@ -235,8 +240,8 @@ void VulkanCube::createDescriptorSet() {
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = texture.imageView;
-    imageInfo.sampler = texture.sampler;
+    imageInfo.imageView = texture.imageView.handle;
+    imageInfo.sampler = texture.sampler.handle;
     textureWrites.pImageInfo = &imageInfo;
 
     std::vector<VkWriteDescriptorSet> writes{
@@ -298,6 +303,7 @@ int main() {
         settings.relativeMouseMode = false;
         settings.width = 1080;
         settings.height = 720;
+        settings.instanceExtensions.push_back(XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME);
         VulkanCube app{settings};
         app.run();
     }catch(const std::runtime_error& err){

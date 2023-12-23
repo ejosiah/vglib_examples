@@ -117,16 +117,16 @@ void ShadowMapping::createRenderPipeline() {
 }
 
 void ShadowMapping::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -180,9 +180,9 @@ VkCommandBuffer *ShadowMapping::buildCommandBuffers(uint32_t imageIndex, uint32_
     sets[0] = render.uboDescriptorSet;
     sets[1] = render.shadowMapDescriptorSet;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout, 0, COUNT(sets), sets.data(), 0, nullptr);
-    vkCmdPushConstants(commandBuffer, render.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(int), &lightType );
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(int), &lightType );
     drawCubes(commandBuffer);
 
     if(displayFrustum) {
@@ -221,8 +221,8 @@ void ShadowMapping::constructShadowMap(VkCommandBuffer commandBuffer) {
     shadowMap.lightSpaceMatrix = shadowMap.lightProjection * shadowMap.lightView;
 
 //    vkCmdSetDepthBias(commandBuffer, shadowMap.depthBiasConstant, 0, shadowMap.depthBiasSlope);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMap.pipeline);
-    vkCmdPushConstants(commandBuffer, shadowMap.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &shadowMap.lightSpaceMatrix);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMap.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, shadowMap.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &shadowMap.lightSpaceMatrix);
     drawCubes(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -357,7 +357,7 @@ void ShadowMapping::initShadowMap() {
     };
 
     auto createFrameBuffer = [&]{
-        std::vector<VkImageView> attachments{ shadowMap.framebufferAttachment.imageView };
+        std::vector<VkImageView> attachments{ shadowMap.framebufferAttachment.imageView.handle };
         shadowMap.framebuffer = device.createFramebuffer(shadowMap.renderPass, attachments, shadowMap.size, shadowMap.size);
     };
 
@@ -458,7 +458,7 @@ void ShadowMapping::updateShadowMapDescriptorSet() {
     device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("shadow_map", render.shadowMapDescriptorSet);
     auto writes = initializers::writeDescriptorSets<1>();
 
-    VkDescriptorImageInfo imageInfo{ shadowMap.sampler, shadowMap.framebufferAttachment.imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo imageInfo{ shadowMap.sampler.handle, shadowMap.framebufferAttachment.imageView.handle, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL };
     writes[0].dstSet = render.shadowMapDescriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -554,7 +554,7 @@ void ShadowMapping::initFrustum() {
 
 void ShadowMapping::drawFrustum(VkCommandBuffer commandBuffer) {
     static VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, frustum.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, frustum.pipeline.handle);
     cameraController->push(commandBuffer, frustum.layout);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, frustum.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, frustum.indices, 0, VK_INDEX_TYPE_UINT32);

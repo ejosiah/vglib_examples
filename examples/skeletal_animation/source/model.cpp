@@ -431,7 +431,7 @@ namespace mdl {
 
     void Model::updateDescriptorSet(const VulkanDevice &device, const VulkanDescriptorPool &descriptorPool) {
         int numSets = int(primitives.size());
-        std::vector<VkDescriptorSetLayout> setLayouts(numSets + 1); // primitive materials + 1 bone set
+        std::vector<VulkanDescriptorSetLayout> setLayouts(numSets + 1); // primitive materials + 1 bone set
         setLayouts[kSet_BONE] = descriptor.boneLayout;
         
         auto first = begin(setLayouts);
@@ -463,7 +463,7 @@ namespace mdl {
             writes[set + kSetBinding_DIFFUSE].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[set + kSetBinding_DIFFUSE].descriptorCount = 1;
 
-            imageInfos[set + kSetBinding_DIFFUSE] = { material.diffuse.sampler, material.diffuse.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+            imageInfos[set + kSetBinding_DIFFUSE] = { material.diffuse.sampler.handle, material.diffuse.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
             writes[set + kSetBinding_DIFFUSE].pImageInfo = &imageInfos[set + kSetBinding_DIFFUSE];
 
             writes[set + kSetBinding_AMBIENT].dstSet = descriptor.sets[set];
@@ -471,7 +471,7 @@ namespace mdl {
             writes[set + kSetBinding_AMBIENT].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[set + kSetBinding_AMBIENT].descriptorCount = 1;
 
-            imageInfos[set + kSetBinding_AMBIENT] = { material.ambient.sampler, material.ambient.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+            imageInfos[set + kSetBinding_AMBIENT] = { material.ambient.sampler.handle, material.ambient.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
             writes[set + kSetBinding_AMBIENT].pImageInfo = &imageInfos[set + kSetBinding_AMBIENT];
 
             writes[set + kSetBinding_SPECULAR].dstSet = descriptor.sets[set];
@@ -479,7 +479,7 @@ namespace mdl {
             writes[set + kSetBinding_SPECULAR].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[set + kSetBinding_SPECULAR].descriptorCount = 1;
 
-            imageInfos[set + kSetBinding_SPECULAR] = { material.specular.sampler, material.specular.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+            imageInfos[set + kSetBinding_SPECULAR] = { material.specular.sampler.handle, material.specular.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
             writes[set + kSetBinding_SPECULAR].pImageInfo = &imageInfos[set + kSetBinding_SPECULAR];
 
             writes[set + kSetBinding_NORMAL].dstSet = descriptor.sets[set];
@@ -487,7 +487,7 @@ namespace mdl {
             writes[set + kSetBinding_NORMAL].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[set + kSetBinding_NORMAL].descriptorCount = 1;
 
-            imageInfos[set + kSetBinding_NORMAL] = { material.normal.sampler, material.normal.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+            imageInfos[set + kSetBinding_NORMAL] = { material.normal.sampler.handle, material.normal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
             writes[set + kSetBinding_NORMAL].pImageInfo = &imageInfos[set + kSetBinding_NORMAL];
 
         }

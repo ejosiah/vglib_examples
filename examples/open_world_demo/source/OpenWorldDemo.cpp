@@ -2,6 +2,7 @@
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
+#include "atmosphere/AtmosphereContants.hpp"
 
 OpenWorldDemo::OpenWorldDemo(const Settings& settings) : VulkanBaseApp("Open World Demo", settings) {
     fileManager.addSearchPathFront(".");
@@ -27,14 +28,14 @@ void OpenWorldDemo::initApp() {
     createComputePipeline();
     terrain = std::make_unique<Terrain>(device, descriptorPool, fileManager, swapChain.width(), swapChain.height(), renderPass, sceneGBuffer);
     skyDome = std::make_unique<SkyDome>(device, descriptorPool, fileManager, renderPass, swapChain.width(), swapChain.height());
-    shadowVolumeGenerator = std::make_unique<ShadowVolumeGenerator>(device, descriptorPool, fileManager, swapChain.width(), swapChain.height(), renderPass);
-    atmosphere = std::make_unique<Atmosphere>(device, descriptorPool, fileManager, renderPass, swapChain.width(),
-                                              swapChain.height(), atmosphereLUT, terrain->gBuffer, shadowVolumeGenerator->shadowVolume);
-
-    clouds = std::make_unique<Clouds>(device, descriptorPool, fileManager, swapChain.width(), swapChain.height(), terrain->gBuffer, atmosphereLUT);
+//    shadowVolumeGenerator = std::make_unique<ShadowVolumeGenerator>(device, descriptorPool, fileManager, swapChain.width(), swapChain.height(), renderPass);
+//    atmosphere = std::make_unique<AtmosphereG>(device, descriptorPool, fileManager, renderPass, swapChain.width(),
+//                                              swapChain.height(), atmosphereLUT, terrain->gBuffer, shadowVolumeGenerator->shadowVolume);
+//
+//    clouds = std::make_unique<Clouds>(device, descriptorPool, fileManager, swapChain.width(), swapChain.height(), terrain->gBuffer, atmosphereLUT);
 
     terrain->renderTerrain();
-    shadowVolumeGenerator->initAdjacencyBuffers(terrain->vertexBuffer, *terrain->triangleCount);
+//    shadowVolumeGenerator->initAdjacencyBuffers(terrain->vertexBuffer, *terrain->triangleCount);
 }
 
 void OpenWorldDemo::initCamera() {
@@ -143,21 +144,21 @@ void OpenWorldDemo::createDescriptorSetLayouts() {
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo irradianceInfo{atmosphereLUT-> irradiance.sampler, atmosphereLUT-> irradiance.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo irradianceInfo{atmosphereLUT-> irradiance.sampler.handle, atmosphereLUT-> irradiance.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[0].pImageInfo = &irradianceInfo;
 
     writes[1].dstSet = atmosphereLUT->descriptorSet ;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo transmittanceInfo{atmosphereLUT-> transmittance.sampler, atmosphereLUT-> transmittance.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo transmittanceInfo{atmosphereLUT-> transmittance.sampler.handle, atmosphereLUT-> transmittance.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[1].pImageInfo = &transmittanceInfo;
 
     writes[2].dstSet = atmosphereLUT->descriptorSet ;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo scatteringInfo{atmosphereLUT-> scattering.sampler, atmosphereLUT-> scattering.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo scatteringInfo{atmosphereLUT-> scattering.sampler.handle, atmosphereLUT-> scattering.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &scatteringInfo;
 
     // single_mie_scattering
@@ -237,42 +238,42 @@ void OpenWorldDemo::updateDescriptorSets(){
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo gPositionInfo{VK_NULL_HANDLE, sceneGBuffer->position.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo gPositionInfo{VK_NULL_HANDLE, sceneGBuffer->position.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[0].pImageInfo = &gPositionInfo;
 
     writes[1].dstSet = sceneGBuffer->descriptorSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo gNormalInfo{VK_NULL_HANDLE, sceneGBuffer->normal.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo gNormalInfo{VK_NULL_HANDLE, sceneGBuffer->normal.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[1].pImageInfo = &gNormalInfo;
 
     writes[2].dstSet = sceneGBuffer->descriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo gAlbedoInfo{VK_NULL_HANDLE, sceneGBuffer->albedo.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo gAlbedoInfo{VK_NULL_HANDLE, sceneGBuffer->albedo.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &gAlbedoInfo;
 
     writes[3].dstSet = sceneGBuffer->descriptorSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo gMaterialInfo{VK_NULL_HANDLE, sceneGBuffer->material.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo gMaterialInfo{VK_NULL_HANDLE, sceneGBuffer->material.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[3].pImageInfo = &gMaterialInfo;
 
     writes[4].dstSet = sceneGBuffer->descriptorSet;
     writes[4].dstBinding = 4;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
-    VkDescriptorImageInfo gDepthInfo{VK_NULL_HANDLE, sceneGBuffer->depth.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo gDepthInfo{VK_NULL_HANDLE, sceneGBuffer->depth.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[4].pImageInfo = &gDepthInfo;
 
     writes[5].dstSet = sceneGBuffer->descriptorSet;
     writes[5].dstBinding = 5;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[5].descriptorCount = 1;
-    VkDescriptorImageInfo gObjectTypetInfo{VK_NULL_HANDLE, sceneGBuffer->objectType.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo gObjectTypetInfo{VK_NULL_HANDLE, sceneGBuffer->objectType.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[5].pImageInfo = &gObjectTypetInfo;
 
     device.updateDescriptorSets(writes);
@@ -359,16 +360,16 @@ void OpenWorldDemo::createRenderPipeline() {
 }
 
 void OpenWorldDemo::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -382,8 +383,8 @@ void OpenWorldDemo::onSwapChainRecreation() {
     createRenderPipeline();
     createComputePipeline();
     terrain->resize(renderPass, width, height);
-    shadowVolumeGenerator->resize(renderPass, width, height);
-    atmosphere->resize(renderPass, terrain->gBuffer, shadowVolumeGenerator->shadowVolume, width, height);
+//    shadowVolumeGenerator->resize(renderPass, width, height);
+//    atmosphere->resize(renderPass, terrain->gBuffer, shadowVolumeGenerator->shadowVolume, width, height);
     skyDome->resize(renderPass, width, height);
 }
 
@@ -411,9 +412,9 @@ VkCommandBuffer *OpenWorldDemo::buildCommandBuffers(uint32_t imageIndex, uint32_
     if(terrain->debugMode){
         skyDome->render(commandBuffer);
         terrain->render(commandBuffer);
-        shadowVolumeGenerator->render(commandBuffer);
+//        shadowVolumeGenerator->render(commandBuffer);
     }else{
-        atmosphere->render(commandBuffer);
+//        atmosphere->render(commandBuffer);
     }
 
     renderUI(commandBuffer);
@@ -481,10 +482,10 @@ void OpenWorldDemo::update(float time) {
 
     updateScene(time);
     terrain->update(sceneData);
-    clouds->update(sceneData);
+//    clouds->update(sceneData);
     skyDome->update(sceneData);
-    atmosphere->update(sceneData);
-    shadowVolumeGenerator->update(sceneData);
+//    atmosphere->update(sceneData);
+//    shadowVolumeGenerator->update(sceneData);
 
 //    glm::vec3 contactPoint;
 //    static auto groundOffset = 2 * meter;
@@ -525,7 +526,7 @@ void OpenWorldDemo::onPause() {
 
 void OpenWorldDemo::newFrame() {
     terrain->renderTerrain();
-    clouds->renderClouds();
+//    clouds->renderClouds();
 //    shadowVolumeGenerator->generate(sceneData, terrain->vertexBuffer, *terrain->triangleCount);
 }
 

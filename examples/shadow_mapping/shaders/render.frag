@@ -33,6 +33,7 @@ float shadowCalculation(vec4 lightSpacePos){
     float shadow = currentDepth > closestDepth ? 1.0 : 0.0;
     return shadow;
 }
+
 float pcfFilteredShadow(vec4 lightSpacePos){
     vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
     projCoords.xy = projCoords.xy * 0.5 + 0.5;

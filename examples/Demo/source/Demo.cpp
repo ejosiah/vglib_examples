@@ -110,7 +110,7 @@ void Demo::createFloorDescriptors() {
 
     std::array<VkWriteDescriptorSet, 2> writes{};
 
-    VkDescriptorImageInfo imageInfo0{ floor.texture.sampler, floor.texture.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo imageInfo0{ floor.texture.sampler.handle, floor.texture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[0] = initializers::writeDescriptorSet();
     writes[0].dstSet = floor.descriptorSet;
     writes[0].dstBinding = 0;
@@ -119,7 +119,7 @@ void Demo::createFloorDescriptors() {
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].pImageInfo = &imageInfo0;
 
-    VkDescriptorImageInfo imageInfo1{ floor.lightMap.sampler, floor.lightMap.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo imageInfo1{ floor.lightMap.sampler.handle, floor.lightMap.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[1] = initializers::writeDescriptorSet();
     writes[1].dstSet = floor.descriptorSet;
     writes[1].dstBinding = 1;
@@ -133,8 +133,8 @@ void Demo::createFloorDescriptors() {
 }
 
 void Demo::createPipelines() {
-    VulkanShaderModule vertexShaderModule{resource("shaders/demo/floor.vert.spv"), device};
-    VulkanShaderModule fragmentShaderModule{resource("shaders/demo/floor.frag.spv"), device};
+    auto vertexShaderModule = device.createShaderModule(resource("shaders/demo/floor.vert.spv"));
+    auto fragmentShaderModule = device.createShaderModule(resource("shaders/demo/floor.frag.spv"));
 
     auto shaderStages = initializers::vertexShaderStages(
             {
@@ -196,7 +196,7 @@ void Demo::createPipelines() {
     createInfo.pDepthStencilState = &depthStencilState;
     createInfo.pColorBlendState = &blendState;
     createInfo.pDynamicState = &dynamicState;
-    createInfo.layout = layouts.floorLayout;
+    createInfo.layout = layouts.floorLayout.handle;
     createInfo.renderPass = renderPass;
     createInfo.subpass = 0;
     createInfo.basePipelineIndex = -1;
@@ -204,8 +204,8 @@ void Demo::createPipelines() {
 
     pipelines.floor = device.createGraphicsPipeline(createInfo);
 
-    VulkanShaderModule vertexShaderModule1 = VulkanShaderModule{resource("shaders/demo/spaceship.vert.spv"), device};
-    VulkanShaderModule fragmentShaderModule1 = VulkanShaderModule{resource("shaders/demo/spaceship.frag.spv"), device};
+    auto vertexShaderModule1 = device.createShaderModule(resource("shaders/demo/spaceship.vert.spv"));
+    auto fragmentShaderModule1 = device.createShaderModule(resource("shaders/demo/spaceship.frag.spv"));
 
     shaderStages = initializers::vertexShaderStages(
             {
@@ -219,10 +219,10 @@ void Demo::createPipelines() {
 
     createInfo.flags = VK_PIPELINE_CREATE_DERIVATIVE_BIT;
     createInfo.pStages = shaderStages.data();
-    createInfo.layout = layouts.spaceShipLayout;
+    createInfo.layout = layouts.spaceShipLayout.handle;
     createInfo.pInputAssemblyState = &inputAssemblyState;
     createInfo.basePipelineIndex = -1;
-    createInfo.basePipelineHandle = pipelines.floor;
+    createInfo.basePipelineHandle = pipelines.floor.handle;
 
     pipelines.spaceShip = device.createGraphicsPipeline(createInfo);
 
@@ -261,15 +261,15 @@ VkCommandBuffer *Demo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCom
 
     vkCmdBeginRenderPass(commandBuffer, &rpassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.floor);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layouts.floorLayout, 0, 1, &floor.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.floor.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layouts.floorLayout.handle, 0, 1, &floor.descriptorSet, 0, VK_NULL_HANDLE);
     cameraController->push(commandBuffer, layouts.floorLayout, glm::mat4(1));
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, floor.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, floor.indices, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, floor.indexCount, 1, 0, 0, 0);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.spaceShip);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.spaceShip.handle);
 
 
     if(cameraController->isInObitMode()) {

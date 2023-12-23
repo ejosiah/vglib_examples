@@ -74,9 +74,6 @@ protected:
     SceneData sceneData;
     std::unique_ptr<Terrain> terrain;
     std::unique_ptr<SkyDome> skyDome;
-    std::unique_ptr<Atmosphere> atmosphere;
-    std::unique_ptr<ShadowVolumeGenerator> shadowVolumeGenerator;
-    std::unique_ptr<Clouds> clouds;
     glm::vec3 gravity{0, -9.8, 0};
 
     std::shared_ptr<SceneGBuffer> sceneGBuffer;

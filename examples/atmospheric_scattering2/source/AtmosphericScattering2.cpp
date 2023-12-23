@@ -17,7 +17,8 @@ void AtmosphericScattering2::initApp() {
     initCamera();
     createDescriptorPool();
     atmosphereGenerator = std::make_unique<AtmosphereGenerator>(&device, &descriptorPool, &fileManager);
-    atmosphereGenerator->generateLUT();
+    atmosphereGenerator->load();
+//    atmosphereGenerator->generateLUT();
     atmosphere = const_cast<AtmosphereDescriptor*>(&atmosphereGenerator->atmosphereDescriptor());
     initUBO();
     createTextures();
