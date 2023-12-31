@@ -30,6 +30,7 @@ layout(set = 1, binding = 0) uniform VOLUME_UBO {
     vec3 boxMin;
     vec3 boxMax;
     vec3 lightPosition;
+    vec3 color;
     float invMaxDensity;
     float scatteringCoefficient;
     float absorptionCoefficient;
@@ -179,7 +180,7 @@ vec4 ray_march(Ray ray, Bounds bounds){
         vec3 sample_pos = uvw(position, bounds);
         float voxel = texture(volume, sample_pos).r;
         vec3 lightDirection = normalize(vd.lightPosition - position);
-        float energy = vd.lightIntensity * sampleLightEnergy(sample_pos, ray.direction, lightDirection, voxel);
+        vec3 energy = vd.lightIntensity * sampleLightEnergy(sample_pos, ray.direction, lightDirection, voxel) * vd.color;
 
 
         if(!entryPointFound){
@@ -190,7 +191,7 @@ vec4 ray_march(Ray ray, Bounds bounds){
         }
 
         float prev_alpha = voxel - (voxel * color.a);
-        color.rgb = prev_alpha * vec3(voxel * energy) + color.rgb;
+        color.rgb = prev_alpha * voxel * energy + color.rgb;
         color.a += prev_alpha;
 
         position += step_dir + randomVec3(rngState) * 0.2;

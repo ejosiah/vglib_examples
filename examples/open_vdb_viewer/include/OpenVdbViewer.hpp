@@ -1,3 +1,7 @@
+#pragma once
+
+#define MAX_IN_FLIGHT_FRAMES 1
+
 #include "VulkanBaseApp.h"
 #include "VulkanDescriptorSet.h"
 #include <glm/glm.hpp>
@@ -8,6 +12,22 @@
 
 enum class LoadState{
     READY, REQUESTED, LOADING, FAILED
+};
+
+struct Voxel {
+    glm::vec3 position;
+    float value;
+};
+
+struct Bounds {
+    glm::vec3 min, max;
+};
+
+struct Volume {
+    int id{-1};
+    std::string name;
+    std::vector<Voxel> voxels;
+    Bounds bounds;
 };
 
 struct VolumeData{
@@ -29,6 +49,7 @@ struct VolumeUbo{
     alignas(16) glm::vec3 boxMin;
     alignas(16) glm::vec3 boxMax;
     alignas(16) glm::vec3 lightPosition;
+    alignas(16) glm::vec3 color;
     float invMaxDensity;
     float scatteringCoefficient;
     float absorptionCoefficient;
@@ -58,6 +79,14 @@ enum class Renderer :  int {
     RAY_MARCHING = 0, DELTA_TRACKING, PATH_TRACING
 };
 
+struct Frame {
+    VolumeData volume;
+    VkDescriptorSet descriptorSet;
+    int index{0};
+    int durationMS{std::numeric_limits<int>::max()};
+    int elapsedMS{};
+};
+
 class OpenVdbViewer : public VulkanBaseApp{
 public:
     explicit OpenVdbViewer(const Settings& settings = {});
@@ -81,6 +110,8 @@ protected:
 
     void createDescriptorSetLayouts();
 
+    void createFrameDescriptorSets(int numFrames);
+
     void updateDescriptorSets();
 
     void updateVolumeDescriptorSets();
@@ -88,6 +119,8 @@ protected:
     void updateSceneDescriptorSets();
 
     void loadVolume();
+
+    Volume loadVolume(fs::path path);
 
     void createCommandPool();
 
@@ -120,6 +153,8 @@ protected:
     void renderFullscreenQuad(VkCommandBuffer commandBuffer);
 
     void renderVolumeSlices(VkCommandBuffer commandBuffer);
+
+    void advanceVolumeFrame();
 
     bool openFileDialog();
 
@@ -173,6 +208,7 @@ protected:
         VulkanPipeline pipeline;
     } screenQuad;
 
+    VulkanDescriptorPool cpuDescriptorPool;
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
@@ -186,6 +222,8 @@ protected:
     VulkanDescriptorSetLayout volumeDescriptorSetLayout;
     VkDescriptorSet descriptorSet;
     VkDescriptorSet volumeDescriptor;
+    std::vector<Frame> frames;
+
     Texture volumeTexture;
     Texture previousFrameTexture;
 
@@ -204,7 +242,6 @@ protected:
 
     } sliceRenderer;
 
-    VolumeData volumeData{};
     LoadState loadState{LoadState::READY};
 
     VulkanBuffer cameraUboBuffer;
@@ -235,13 +272,21 @@ protected:
     } renderTarget;
 
     VkPhysicalDeviceSynchronization2Features syncFeatures;
+    std::vector<Texture> frameTextures;
 
     struct {
         ColorBuffer color;
         DepthBuffer  depth;
     } GBuffer;
+    VulkanBuffer stagingBuffer;
 
     static constexpr int MAX_SAMPLES = 100000000;
+    bool playback{};
+    int frameIndex = 0;
+    int frameDuration = 0;
+    static constexpr int MaxFrames = std::numeric_limits<int>::max();
+//    static constexpr int MaxFrames = 12;
+    bool frameUpdated{};
 
     VulkanSampler linearSampler;
 };

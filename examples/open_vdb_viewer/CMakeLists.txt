@@ -6,11 +6,11 @@ find_package(ZLIB REQUIRED)
 find_package(blosc  REQUIRED)
 find_package(Boost REQUIRED)
 
-include_directories(${CMAKE_CURRENT_LIST_DIR}/3rdParty/openvdb/include)
+include_directories(${CMAKE_CURRENT_LIST_DIR}/../../dependencies/openvdb/include)
 
-find_library(OPENVDB_LIBRARY NAMES openvdb HINTS "${CMAKE_CURRENT_LIST_DIR}/3rdParty/openvdb/lib" REQUIRED)
+find_library(OPENVDB_LIBRARY NAMES openvdb HINTS "${CMAKE_CURRENT_LIST_DIR}/../../dependencies/openvdb/lib" REQUIRED)
 
-file(INSTALL "${CMAKE_CURRENT_LIST_DIR}/3rdParty/openvdb/bin/openvdb.dll" DESTINATION "${CMAKE_BINARY_DIR}/bin/")
+file(INSTALL "${CMAKE_CURRENT_LIST_DIR}/../../dependencies/openvdb/bin/openvdb.dll" DESTINATION "${CMAKE_BINARY_DIR}/bin/")
 
 set(OPEN_VDB_LIBS
         ZLIB::ZLIB

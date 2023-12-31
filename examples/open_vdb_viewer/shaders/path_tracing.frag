@@ -62,6 +62,7 @@ layout(set = 1, binding = 0) uniform VOLUME_UBO {
     vec3 boxMin;
     vec3 boxMax;
     vec3 lightPosition;
+    vec3 color;
     float invMaxDensity;
     float scatteringCoefficient;
     float absorptionCoefficient;
@@ -92,7 +93,7 @@ layout(set = 2, binding = 0) uniform SCENE_UBO {
 layout(set = 2, binding = 1) uniform sampler2D previousFrameTex;
 
 uint rngState;
-const int bounces = 25;
+const int bounces = 100;
 
 layout(location = 0) in struct {
     vec2 uv;
@@ -139,7 +140,7 @@ void main(){
         }
 
         if(hitCloud){
-            Lo += throughput * sampleLight(ray, bounds, g, rngState);
+            Lo += throughput * sampleLight(ray, bounds, g, rngState) * vd.color;
             ray = nextRay(ray, g, rngState);
         }else{
             Lo += throughput * backgroundColor;

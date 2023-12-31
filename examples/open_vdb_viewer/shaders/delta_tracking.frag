@@ -30,6 +30,7 @@ layout(set = 1, binding = 0) uniform VOLUME_UBO {
     vec3 boxMin;
     vec3 boxMax;
     vec3 lightPosition;
+    vec3 color;
     float invMaxDensity;
     float scatteringCoefficient;
     float absorptionCoefficient;
@@ -204,10 +205,10 @@ vec4 ray_march(Ray ray, Bounds bounds){
 
         vec3 pos = ray.origin + ray.direction * t;
         vec3 lightDirection = normalize(pos - vd.lightPosition);
-        float energy = vd.lightIntensity * sampleLightEnergy(samplePos, ray.direction, lightDirection, voxel);
+        vec3 energy = vd.lightIntensity * sampleLightEnergy(samplePos, ray.direction, lightDirection, voxel) * vd.color;
 
         float prev_alpha = voxel - (voxel * color.a);
-        color.rgb = prev_alpha * vec3(voxel * energy) + color.rgb;
+        color.rgb = prev_alpha * voxel * energy + color.rgb;
         color.a += prev_alpha;
     }
 
