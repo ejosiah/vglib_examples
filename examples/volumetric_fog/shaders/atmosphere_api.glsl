@@ -116,7 +116,11 @@ struct AtmosphereParameters {
 #ifndef ATMOSPHERE_MODEL_GLSL
 #define ATMOSPHERE_MODEL_GLSL
 
-layout(set = 0, binding = 0) uniform UBO {
+#ifndef ATMOSPHERE_PARAMS_SET
+#define ATMOSPHERE_PARAMS_SET 0
+#endif // ATMOSPHERE_PARAMS_SET
+
+layout(set = ATMOSPHERE_PARAMS_SET, binding = 0) uniform UBO {
     vec3 solarIrradiance;
     vec3 rayleighScattering;
     vec3 mieScattering;
@@ -132,7 +136,7 @@ layout(set = 0, binding = 0) uniform UBO {
 } ubo;
 
 
-layout(set = 0, binding = 1) buffer DENSITY_PROFILES {
+layout(set = ATMOSPHERE_PARAMS_SET, binding = 1) buffer DENSITY_PROFILES {
     DensityProfileLayer v;
 } density_profiles[NUM_DENSITY_PROFILES];
 
@@ -1047,11 +1051,14 @@ Luminance3 GetSolarLuminance() {
 #ifndef ATMOSPHERE_LUT_GLSL
 #define ATMOSPHERE_LUT_GLSL
 
+#ifndef ATMOSPHERE_LUT_SET
+#define ATMOSPHERE_LUT_SET 1
+#endif // ATMOSPHERE_LUT_SET
 
-layout(set = 1, binding = 0) uniform sampler2D irradiance_texture;
-layout(set = 1, binding = 1) uniform sampler2D transmittance_texture;
-layout(set = 1, binding = 2) uniform sampler3D scattering_texture;
-layout(set = 1, binding = 3) uniform sampler3D single_mie_scattering_texture;
+layout(set = ATMOSPHERE_LUT_SET, binding = 0) uniform sampler2D irradiance_texture;
+layout(set = ATMOSPHERE_LUT_SET, binding = 1) uniform sampler2D transmittance_texture;
+layout(set = ATMOSPHERE_LUT_SET, binding = 2) uniform sampler3D scattering_texture;
+layout(set = ATMOSPHERE_LUT_SET, binding = 3) uniform sampler3D single_mie_scattering_texture;
 
 #ifdef RADIANCE_API_ENABLED
 RadianceSpectrum GetSolarRadiance() {

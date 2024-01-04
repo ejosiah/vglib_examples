@@ -12,5 +12,5 @@ layout(location = 4) in vec3 color;
 layout(location = 5) in vec2 uv;
 
 void main(){
-    gl_Position = lightViewProjection  * position;
+    gl_Position = lightViewProjection * position;
 }

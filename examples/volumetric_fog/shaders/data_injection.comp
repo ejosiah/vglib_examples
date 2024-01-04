@@ -1,0 +1,39 @@
+#version 460
+
+
+#define FOG_SET 0
+#define SCENE_SET 1
+
+#include "fog.glsl"
+#include "scene.glsl"
+
+vec4 constantFog();
+vec4 heightFog(vec3 pos);
+vec4 boxFog(vec3 pos);
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = FOG_SET, binding = 4, rgba32f) uniform image3D ifogData;
+
+ivec3 froxelCoord = ivec3(gl_GlobalInvocationID);
+
+void main() {
+    vec3 pos = worldFromFroxel(froxelCoord);
+    vec4 scatteringExtinction = constantFog() + heightFog(pos) + boxFog(pos);
+    imageStore(ifogData, froxelCoord, scatteringExtinction);
+}
+
+vec4 constantFog() {
+    float density = fog.constantDensity;
+    return scatteringExtinctionFromColorDensity(FOG_COLOR, density);
+}
+
+vec4 heightFog(vec3 pos) {
+    float h = max(0, pos.y);
+    float density = fog.heightFogDensity * exp(-fog.heightFogFalloff * h);
+    return scatteringExtinctionFromColorDensity(FOG_COLOR, density);
+}
+
+vec4 boxFog(vec3 pos) {
+    return vec4(0);
+}

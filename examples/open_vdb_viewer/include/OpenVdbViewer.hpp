@@ -9,26 +9,12 @@
 #include <taskflow/taskflow.hpp>
 #include "blur_image.hpp"
 #include "Canvas.hpp"
+#include "VdbAnimation.hpp"
 
 enum class LoadState{
     READY, REQUESTED, LOADING, FAILED
 };
 
-struct Voxel {
-    glm::vec3 position;
-    float value;
-};
-
-struct Bounds {
-    glm::vec3 min, max;
-};
-
-struct Volume {
-    int id{-1};
-    std::string name;
-    std::vector<Voxel> voxels;
-    Bounds bounds;
-};
 
 struct VolumeData{
     std::string name;
@@ -79,13 +65,6 @@ enum class Renderer :  int {
     RAY_MARCHING = 0, DELTA_TRACKING, PATH_TRACING
 };
 
-struct Frame {
-    VolumeData volume;
-    VkDescriptorSet descriptorSet;
-    int index{0};
-    int durationMS{std::numeric_limits<int>::max()};
-    int elapsedMS{};
-};
 
 class OpenVdbViewer : public VulkanBaseApp{
 public:
@@ -97,6 +76,12 @@ protected:
     void createPlaceHolderTexture();
 
     void initCamera();
+
+    void initAnimation();
+
+    void onFrameReady();
+
+    void onFrameLoadFailure();
 
     void updateCamera();
 
@@ -110,17 +95,11 @@ protected:
 
     void createDescriptorSetLayouts();
 
-    void createFrameDescriptorSets(int numFrames);
-
     void updateDescriptorSets();
 
     void updateVolumeDescriptorSets();
 
     void updateSceneDescriptorSets();
-
-    void loadVolume();
-
-    Volume loadVolume(fs::path path);
 
     void createCommandPool();
 
@@ -153,8 +132,6 @@ protected:
     void renderFullscreenQuad(VkCommandBuffer commandBuffer);
 
     void renderVolumeSlices(VkCommandBuffer commandBuffer);
-
-    void advanceVolumeFrame();
 
     bool openFileDialog();
 
@@ -222,6 +199,7 @@ protected:
     VulkanDescriptorSetLayout volumeDescriptorSetLayout;
     VkDescriptorSet descriptorSet;
     VkDescriptorSet volumeDescriptor;
+    uint32_t volumeBinding{1};
     std::vector<Frame> frames;
 
     Texture volumeTexture;
@@ -281,12 +259,9 @@ protected:
     VulkanBuffer stagingBuffer;
 
     static constexpr int MAX_SAMPLES = 100000000;
-    bool playback{};
-    int frameIndex = 0;
-    int frameDuration = 0;
     static constexpr int MaxFrames = std::numeric_limits<int>::max();
 //    static constexpr int MaxFrames = 12;
-    bool frameUpdated{};
 
     VulkanSampler linearSampler;
+    std::unique_ptr<VdbAnimation> animation;
 };

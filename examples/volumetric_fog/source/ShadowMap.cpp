@@ -126,7 +126,7 @@ void ShadowMap::createPipeline() {
 				.enableDepthBias()
 				.depthBiasConstantFactor(depthBiasConstant)
 				.depthBiasSlopeFactor(depthBiasSlope)
-				.cullFrontFace()
+				.cullBackFace()
 				.frontFaceCounterClockwise()
 				.polygonModeFill()
 			.depthStencilState()

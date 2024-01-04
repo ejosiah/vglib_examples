@@ -1,0 +1,45 @@
+#version 460
+
+#define RADIANCE_API_ENABLED
+
+#define FOG_SET 0
+#define SCENE_SET 1
+#define ATMOSPHERE_PARAMS_SET 2
+#define ATMOSPHERE_LUT_SET 3
+
+#include "atmosphere_api.glsl"
+#include "scene.glsl"
+#include "fog.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = FOG_SET, binding = 6, rgba32f) uniform image3D iIntegratedScattering;
+
+ivec3 froxelCoord = ivec3(gl_GlobalInvocationID);
+
+void main() {
+    vec3 scattering = vec3(0);
+    float transmittance = 1;
+    float zCurrent = 0;
+    ivec3 fCoord = froxelCoord;
+
+    const int zDim = fog.froxelDim.z;
+    for(int z = 0; z < zDim; ++z){
+        fCoord.z = z;
+        float zNext = sliceToExponentialDepth(scene.znear, scene.zfar, z + 1, zDim);
+        float zStep = abs(zNext - zCurrent);
+        zCurrent = zNext;
+
+        const vec4 seSample = texelFetch(lightContribution, fCoord, 0);
+        const vec3 sampledScattering = seSample.rgb;
+        const float sampledExtinction = seSample.a;
+        const float clampedExtinction = max(sampledExtinction, 0.00001);
+        const float T = exp(-sampledExtinction * zStep);
+        const vec3 S = (sampledScattering - (sampledScattering * T))/ clampedExtinction;
+
+        scattering += S * transmittance;
+        transmittance *= T;
+
+        imageStore(iIntegratedScattering, fCoord, vec4(scattering, transmittance));
+    }
+}

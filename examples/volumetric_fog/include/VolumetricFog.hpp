@@ -2,6 +2,7 @@
 #include "Sky.hpp"
 #include "ShadowMap.hpp"
 #include "VulkanBaseApp.h"
+#include "Fog.hpp"
 
 class VolumetricFog : public VulkanBaseApp{
 public:
@@ -11,6 +12,10 @@ protected:
     void initApp() override;
 
     void initSky();
+
+    void initFog();
+
+    void createFogTextures();
 
     void initShadowMap();
 
@@ -25,6 +30,8 @@ protected:
     void createDescriptorSetLayouts();
 
     void updateDescriptorSets();
+
+    void updateFogDescriptorSets();
 
     void createCommandPool();
 
@@ -41,6 +48,10 @@ protected:
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
     void renderUI(VkCommandBuffer commandBuffer);
+
+    void renderWithVolumeTextures(VkCommandBuffer commandBuffer);
+
+    void renderWithRayMarching(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -63,6 +74,11 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
+    } rayMarch;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
     } compute;
 
     VulkanDescriptorPool descriptorPool;
@@ -79,6 +95,7 @@ protected:
         float azimuth{0};
     } sun;
 
+    Fog m_fog;
     Scene m_scene;
     ShadowMap m_shadowMap;
 };

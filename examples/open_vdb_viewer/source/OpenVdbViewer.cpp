@@ -34,6 +34,7 @@ void OpenVdbViewer::initApp() {
     openvdb::initialize();
     createRenderTarget();
     initCamera();
+    initAnimation();
     createBuffers();
     createPlaceHolderTexture();
     createDescriptorPool();
@@ -156,6 +157,26 @@ void OpenVdbViewer::initCamera() {
     camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 }
 
+void OpenVdbViewer::initAnimation() {
+    animation = std::make_unique<VdbAnimation>( &device, 24);
+    animation->onFramesReady([this]{ onFrameReady(); });
+    animation->onFrameLoadFailed([this]{ onFrameLoadFailure(); });
+    animation->init();
+}
+
+void OpenVdbViewer::onFrameReady() {
+    onIdle([this]{
+        vkDeviceWaitIdle(device);
+        spdlog::info("exporting volume to GPU");
+        animation->updateDescriptorSet();
+        loadState = LoadState::READY;
+        vdbPath.clear();
+    });
+}
+
+void OpenVdbViewer::onFrameLoadFailure() {
+    onIdle([this]{ loadState = LoadState::FAILED; });
+}
 
 void OpenVdbViewer::updateCamera() {
     auto diagonal = volumeUbo->boxMax - volumeUbo->boxMin;
@@ -312,37 +333,6 @@ void OpenVdbViewer::createDescriptorSetLayouts() {
 
 }
 
-void OpenVdbViewer::createFrameDescriptorSets(int numFrames) {
-    cpuDescriptorPool.reset();
-
-    static VulkanDescriptorSetLayout fDescriptorSetLayout;
-    fDescriptorSetLayout =
-        device.descriptorSetLayoutBuilder()
-            .binding(0)
-                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
-            .createLayout();
-
-    static std::vector<VulkanDescriptorSetLayout> setLayouts(numFrames, fDescriptorSetLayout);
-
-    std::vector<VkWriteDescriptorSet> writes(numFrames, { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET });
-
-    std::vector<VkDescriptorImageInfo> imageInfos(numFrames);
-    for(int i = 0; i < numFrames; ++i) {
-        frames[i].descriptorSet = cpuDescriptorPool.allocate({ fDescriptorSetLayout }).front();
-        const auto& texture = frameTextures[i];
-        writes[i].dstSet = frames[i].descriptorSet;
-        writes[i].dstBinding = 0;
-        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[i].descriptorCount = 1;
-        imageInfos[i] = { texture.sampler.handle, texture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-        writes[i].pImageInfo = &imageInfos[i];
-    }
-
-    device.updateDescriptorSets(writes);
-}
-
 void OpenVdbViewer::updateDescriptorSets(){
     
     auto writes = initializers::writeDescriptorSets();
@@ -368,7 +358,7 @@ void OpenVdbViewer::updateVolumeDescriptorSets() {
     writes[0].pBufferInfo = &bufferInfo;
     
     writes[1].dstSet = volumeDescriptor;
-    writes[1].dstBinding = 1;
+    writes[1].dstBinding = volumeBinding;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
     VkDescriptorImageInfo imageInfo{ volumeTexture.sampler.handle, volumeTexture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
@@ -769,7 +759,15 @@ void OpenVdbViewer::renderUI(VkCommandBuffer commandBuffer) {
     if(ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             auto enabled = loadState == LoadState::READY;
-            FileDialog::file_dialog_open = ImGui::MenuItem("Open...", nullptr, false, enabled);
+            if(ImGui::MenuItem("Open File...", nullptr, false, enabled)) {
+                FileDialog::file_dialog_open = true;
+                FileDialog::file_dialog_open_type = FileDialog::FileDialogType::OpenFile;
+            }
+
+            if(ImGui::MenuItem("Open Folder...", nullptr, false, enabled)) {
+                FileDialog::file_dialog_open = true;
+                FileDialog::file_dialog_open_type = FileDialog::FileDialogType::SelectFolder;
+            }
 
             if(ImGui::MenuItem("Exit")){
                 this->exit->press();
@@ -828,14 +826,9 @@ void OpenVdbViewer::renderUI(VkCommandBuffer commandBuffer) {
     }
 
     ImGui::Separator();
-    ImGui::Checkbox("playback", &playback);
-    if(playback) {
-        if(ImGui::Button("next frame")) {
-            frameIndex++;
-            frameIndex %= frames.size();
-            frameUpdated = true;
-        }
+    if(ImGui::Button("next frame")) {
     }
+
     ImGui::Separator();
     ImGui::ColorEdit3("color", &volumeUbo->color.x);
     ImGui::End();
@@ -847,11 +840,7 @@ bool OpenVdbViewer::openFileDialog() {
     static char* file_dialog_buffer = nullptr;
     static char path[500] = R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack)";
 
-    file_dialog_buffer = path;
-    FileDialog::file_dialog_open_type =
-            playback ?
-            FileDialog::FileDialogType::SelectFolder
-            : FileDialog::FileDialogType::OpenFile;
+    file_dialog_buffer = path;;
 
     static bool closed = false;
     if (FileDialog::file_dialog_open) {
@@ -896,10 +885,7 @@ void OpenVdbViewer::update(float time) {
 
     glfwSetWindowTitle(window, fmt::format("{} - fps: {}", title, framePerSecond).c_str());
 
-    if(!frames.empty()){
-        auto& currentFrame = frames[frameIndex];
-        currentFrame.elapsedMS += time * 1000;
-    }
+    animation->update(time);
 }
 
 void OpenVdbViewer::checkAppInputs() {
@@ -938,279 +924,11 @@ void OpenVdbViewer::onPause() {
     VulkanBaseApp::onPause();
 }
 
-void OpenVdbViewer::loadVolume() {
-    loadState = LoadState::LOADING;
-    loadVolumeFlow.clear();
-
-    static std::vector<Frame> lFrames;
-    static std::vector<Volume> lVolumes;
-    static size_t pathsPerQueue = 90;
-
-
-    lFrames.clear();
-    lVolumes.clear();
-
-    auto A = loadVolumeFlow.emplace([&](tf::Subflow& subflow) {
-        std::vector<tf::Task> tasks;
-
-        fs::path path{vdbPath};
-        int numVolumeFrames = 0;
-        if(fs::is_directory(path)){
-
-            size_t queueId = 0;
-            static std::array<std::vector<fs::path>, 8> loadQueues{};
-            for(const auto& entry : fs::directory_iterator{path}) {
-                if(numVolumeFrames >= MaxFrames) break;
-
-                auto& queue = loadQueues[queueId];
-                queue.push_back(entry.path());
-                queueId += (queue.size() / pathsPerQueue);
-                numVolumeFrames++;
-            }
-
-            lFrames.resize(numVolumeFrames);
-            lVolumes.resize(numVolumeFrames);
-
-            size_t offset = 0;
-            int taskId = 0;
-            for(auto& queue : loadQueues) {
-                if(!queue.empty()) {
-                    tasks.push_back(subflow.emplace([&, offset, queue, id=taskId]() mutable {
-                        std::vector<Volume> tVolumes{};
-                        for (auto& path : queue) {
-                            auto volume = loadVolume(path);
-                            tVolumes.push_back(volume);
-                        }
-                        for(auto i = 0; i < tVolumes.size(); i++) {
-                            lVolumes[i + offset] = tVolumes[i];
-                        }
-                        spdlog::info("task:{} loaded {} volumes", id, tVolumes.size());
-
-                    }));
-
-                    spdlog::info("offset: {}", offset);
-                    offset += queue.size();
-                    taskId++;
-                }
-            }
-        }else {
-            tasks.push_back(subflow.emplace([&]{
-                auto volume = loadVolume(vdbPath);
-                lVolumes.push_back(volume);
-                lFrames.resize(1);
-            }));
-        }
-
-        auto sortTask = subflow.emplace([&](){
-            std::sort(lVolumes.begin(), lVolumes.end(), [](const auto& a, const auto& b) {
-                return a.id < b.id;
-            });
-        });
-
-        auto resizeVolumesTask = subflow.emplace([&](){
-            glm::vec3 boxMin{MAX_FLOAT};
-            glm::vec3 boxMax{MIN_FLOAT};
-
-            for(const auto& volume : lVolumes) {
-                boxMin = glm::min(boxMin, volume.bounds.min);
-                boxMax = glm::max(boxMax, volume.bounds.max);
-            }
-
-            for(auto& volume : lVolumes) {
-                volume.bounds.min = boxMin;
-                volume.bounds.max = boxMax;
-
-            }
-        });
-
-        auto volumesToFramesTask = subflow.emplace([&]() {
-
-            auto to_uvw = [=](glm::vec3 x, glm::vec3 bMin, glm::vec3 bMax){
-                glm::vec3 d{bMax - bMin};
-                d -= 1.0f;
-
-                auto uvw = remap(x, bMin, bMax, glm::vec3(0), d);
-                return glm::ivec3(uvw);
-            };
-
-            for(int i = 0; i < lVolumes.size(); i++){
-                auto& volume = lVolumes[i];
-                auto& frame = lFrames[i];
-
-                glm::ivec3 iSize{volume.bounds.max - volume.bounds.min};
-                frame.volume.data.resize(iSize.x * iSize.y * iSize.z);
-                frame.volume.boxMin = volume.bounds.min;
-                frame.volume.boxMax = volume.bounds.max;
-                frame.volume.name = volume.name;
-                auto maxDensity = 0.f;
-
-                for(auto& voxel : volume.voxels) {
-                    auto vid = to_uvw(voxel.position, volume.bounds.min, volume.bounds.max);
-                    int loc = (vid.z * iSize.y + vid.y) * iSize.x + vid.x;
-                    frame.volume.data[loc] = voxel.value;
-                    maxDensity = glm::max(maxDensity, voxel.value);
-                }
-                frame.volume.invMaxDensity = maxDensity == 0 ? 0 : 1/maxDensity;
-                frame.index = volume.id;
-
-                if(playback) {
-                    frame.durationMS = 20;
-                }
-
-            }
-        });
-
-        for(const auto& task : tasks) {
-            sortTask.succeed(task);
-        }
-        resizeVolumesTask.succeed(sortTask);
-        volumesToFramesTask.succeed(resizeVolumesTask);
-
-    });
-
-    auto B = loadVolumeFlow.emplace([&]() {
-            spdlog::info("registering task on main thread to export volume to GPU");
-            onIdle([&]{
-                vkDeviceWaitIdle(device);
-                spdlog::info("exporting volume to GPU");
-                vdbPath.clear();
-                loadState = LoadState::READY;
-
-                auto& volumeData = lFrames.front().volume;
-                auto debugFrames = lFrames;
-
-                auto maxId = 0;
-
-                auto size = glm::ivec3(volumeData.boxMax - volumeData.boxMin);
-                VkDeviceSize byteSize = volumeData.data.size() * sizeof(float);
-
-                frameTextures.clear();
-                frameTextures.resize(lFrames.size());
-
-                for(int i = 0; i < lFrames.size(); i++) {
-                    auto& frame = lFrames[i];
-
-                    auto fSize = glm::ivec3(frame.volume.boxMax - frame.volume.boxMin);
-
-                    if(frame.volume.data.size() <= 1) {
-                        fSize = glm::ivec3(1);
-                        frame.volume.boxMin = glm::vec3(0);
-                        frame.volume.boxMax = glm::vec3(1);
-                        if(frame.volume.data.empty()) {
-                            frame.volume.data.push_back(0);
-                        }
-                    }
-
-                    size = glm::max(size, fSize);
-                    if(glm::all(glm::equal(fSize, size))) {
-                        maxId = i;
-                    }
-                    byteSize = glm::max(byteSize, static_cast<VkDeviceSize>(frame.volume.data.size()) * sizeof(float));
-
-                    textures::create(device, frameTextures[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT,
-                                     lFrames[i].volume.data.data(),
-                                     fSize, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, sizeof(float));
-                }
-
-
-                if(stagingBuffer.size < byteSize) {
-                    stagingBuffer = device.createStagingBuffer(byteSize);
-                }
-
-                updateVolumeDescriptorSets();
-                spdlog::info("loaded volume {} with dimensions [[{}], [{}]]", lFrames.front().volume.name, volumeUbo->boxMin, volumeUbo->boxMax);
-                frames.resize(lFrames.size());
-                std::copy(lFrames.begin(), lFrames.end(), frames.begin());
-                createFrameDescriptorSets(frames.size());
-                advanceVolumeFrame();
-            });
-        }
-    );
-    A.precede(B);
-    B.succeed(A);
-
-    loadVolumeRequest = executor.run(loadVolumeFlow);
-}
-
-Volume OpenVdbViewer::loadVolume(fs::path path) {
-//    spdlog::info("loading volume grid from {}", fs::path(path).filename().string());
-    openvdb::io::File file(path.string());
-
-    try {
-        file.open();
-    }catch(...){
-        onIdle([&]{ loadState = LoadState::FAILED; });
-        loadVolumeRequest.cancel();
-        return {};
-    }
-
-    static auto to_glm_vec3 = [](openvdb::Vec3i v){
-        return glm::vec3(v.x(), v.y(), v.z());
-    };
-    auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
-    openvdb::Vec3i boxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
-    openvdb::Vec3i boxMax = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_max")->value();
-
-    openvdb::Vec3i size;
-    size = size.sub(boxMax, boxMin);
-
-    auto getId = [](auto str) {
-        auto start = str.find_last_of("_") + 1;
-        auto id = atoi(str.substr(start, 4).c_str());
-        return id;
-    };
-
-    Volume result{};
-    result.id = getId(path.string());
-    result.name = grid->getName();
-
-    openvdb::Coord xyz;
-    auto accessor = grid->getAccessor();
-
-    auto& z = xyz.z();
-    auto& y = xyz.y();
-    auto& x = xyz.x();
-
-    auto to_uvw = [=](openvdb::Coord& xyz){
-        glm::vec3 x{xyz.x(), xyz.y(), xyz.z()};
-        glm::vec3 a = to_glm_vec3(boxMin);
-        glm::vec3 b = to_glm_vec3(boxMax);
-        glm::vec3 c{0};
-        glm::vec3 d{size.x(), size.y(), size.z()};
-        d -= 1.0f;
-
-        auto uvw = remap(x, a, b, c, d);
-        return glm::ivec3(uvw);
-    };
-
-    static int count = 0;
-    float maxDensity = MIN_FLOAT;
-    for(z = boxMin.z(); z <= boxMax.z(); z++){
-        for(y = boxMin.y(); y <= boxMax.y(); y++){
-            for(x = boxMin.x(); x <= boxMax.x(); x++){
-                auto value = accessor.getValue(xyz);
-                if(value != 0 && count < 10){
-                    count++;
-                    spdlog::info("value: {}", value);
-                }
-                Voxel voxel{ .position{xyz.x(), xyz.y(), xyz.z()}, .value = value };
-                result.voxels.push_back(voxel);
-            }
-        }
-    }
-
-    result.bounds.min = to_glm_vec3(boxMin);
-    result.bounds.max = to_glm_vec3(boxMax);
-    file.close();
-//    spdlog::info("loading volume grid {} successfully loaded", result.name);
-
-    return result;
-}
-
 void OpenVdbViewer::fileInfo() {
     if(loadState == LoadState::REQUESTED){
         spdlog::info("requesting load of vdb file {}", vdbPath);
-        loadVolume();
+        loadState = LoadState::LOADING;
+        animation->load(vdbPath);
     }
 }
 
@@ -1219,68 +937,6 @@ void OpenVdbViewer::newFrame() {
     offscreenRender();
 }
 
-void OpenVdbViewer::advanceVolumeFrame() {
-    const auto& currentFrame = frames[frameIndex];
-
-//    stagingBuffer.copy(currentFrame.volume.data);
-//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-//        VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-//        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-//        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-//        barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-//        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-//        barrier.image = volumeTexture.image;
-//        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-//        barrier.subresourceRange.baseMipLevel = 0;
-//        barrier.subresourceRange.levelCount = 1;
-//        barrier.subresourceRange.baseArrayLayer = 0;
-//        barrier.subresourceRange.layerCount = 1;
-//
-//        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-//
-//        VkBufferImageCopy region{ 0, 0, 0};
-//        region.imageOffset = {0, 0, 0};
-//        region.imageExtent = volumeTexture.spec.extent;
-//        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-//        region.imageSubresource.mipLevel = 0;
-//        region.imageSubresource.baseArrayLayer = 0;
-//        region.imageSubresource.layerCount = 1;
-//        vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, volumeTexture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-//
-//        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-//        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-//        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-//        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-//        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-//
-//    });
-
-    VkCopyDescriptorSet copySet{ VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET };
-    copySet.srcSet = currentFrame.descriptorSet;
-    copySet.srcBinding = 0;
-    copySet.dstSet = volumeDescriptor;
-    copySet.dstBinding = 1;
-    copySet.descriptorCount = 1;
-
-    device.updateDescriptorSets({}, { copySet });
-
-    auto size = glm::ivec3(currentFrame.volume.boxMax - currentFrame.volume.boxMin);
-    auto scale = size;
-    auto max = glm::max(scale.x, glm::max(scale.y, scale.z));
-    sliceRenderer.constants.scale = scale / max;
-
-    light.position = (volumeUbo->boxMax + volumeUbo->boxMin) * .5f;
-    light.position.y += size.y * 0.01f;
-    light.scale = max * 0.01f;
-
-    auto offset = glm::vec3(0, -currentFrame.volume.boxMin.y, 0);
-    offset = glm::vec3(0);
-    volumeUbo->boxMin = currentFrame.volume.boxMin + offset;
-    volumeUbo->boxMax = currentFrame.volume.boxMax + offset;
-    volumeUbo->invMaxDensity = currentFrame.volume.invMaxDensity;
-//    updateCamera();
-
-}
 
 void OpenVdbViewer::endFrame() {
     sceneUbo->currentSample = glm::clamp(sceneUbo->currentSample, 0, sceneUbo->numSamples - 1);
@@ -1289,19 +945,20 @@ void OpenVdbViewer::endFrame() {
         sceneUbo->currentSample = 0;
     }
 
-    if(!frames.empty()){
-        auto& currentFrame = frames[frameIndex];
-        if(currentFrame.elapsedMS >= currentFrame.durationMS) {
-            currentFrame.elapsedMS = 0;
-            frameIndex++;
-            frameIndex %= frames.size();
-            advanceVolumeFrame();
-        }
+    bool frameAdvanced = animation->advanceFrame(volumeDescriptor, volumeBinding);
+    if(frameAdvanced) {
+        auto size = glm::ivec3(animation->maxBounds() - animation->minBounds());
+        auto scale = size;
+        auto max = glm::max(scale.x, glm::max(scale.y, scale.z));
+        light.position = (volumeUbo->boxMax + volumeUbo->boxMin) * .5f;
+        light.position.y += size.y * 0.01f;
+        light.scale = max * 0.01f;
+        volumeUbo->boxMin = animation->minBounds();
+        volumeUbo->boxMax = animation->maxBounds();
+        volumeUbo->invMaxDensity = animation->inverseMaxDensity();
+        volumeUbo->lightPosition = light.position;
     }
-    if(frameUpdated) {
-        advanceVolumeFrame();
-        frameUpdated = false;
-    }
+
 }
 
 int main(){
