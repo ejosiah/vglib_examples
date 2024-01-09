@@ -1,6 +1,7 @@
 #include "BindLessDescriptorsDemo.hpp"
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
+#include <plugins/BindLessDescriptorPlugin.hpp>
 
 BindLessDescriptorsDemo::BindLessDescriptorsDemo(const Settings& settings) : VulkanBaseApp("Bindless descriptors", settings) {
     fileManager.addSearchPathFront(".");
@@ -9,35 +10,63 @@ BindLessDescriptorsDemo::BindLessDescriptorsDemo(const Settings& settings) : Vul
     fileManager.addSearchPathFront("../../examples/bindless_descriptors/spv");
     fileManager.addSearchPathFront("../../examples/bindless_descriptors/models");
     fileManager.addSearchPathFront("../../examples/bindless_descriptors/textures");
+
+    static VkPhysicalDeviceSynchronization2Features sync2Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES};
+    sync2Features.synchronization2 = VK_TRUE;
+
+    deviceCreateNextChain = &sync2Features;
 }
 
 void BindLessDescriptorsDemo::initApp() {
-    initCamera();
+    initGlobals();
+    loader = std::make_unique<asyncml::Loader>( &device, 32);
+    loader->start();
     createDescriptorPool();
     createDescriptorSetLayouts();
+    loadModel();
     updateDescriptorSets();
+    initCamera();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
 }
 
-void BindLessDescriptorsDemo::initCamera() {
-    OrbitingCameraSettings cameraSettings;
-//    FirstPersonSpectatorCameraSettings cameraSettings;
-    cameraSettings.orbitMinZoom = 0.1;
-    cameraSettings.orbitMaxZoom = 512.0f;
-    cameraSettings.offsetDistance = 1.0f;
-    cameraSettings.modelHeight = 0.5;
-    cameraSettings.fieldOfView = 60.0f;
-    cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
-
-    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+void BindLessDescriptorsDemo::loadModel() {
+    _sponza = loader->load(R"(C:\Users\Josiah Ebhomenye\source\repos\VolumetricLighting\bin\Debug\meshes\sponza.obj)", centimetre);
+//    phong::load(R"(C:\Users\Josiah Ebhomenye\source\repos\VolumetricLighting\bin\Debug\meshes\sponza.obj)", device, descriptorPool, sponza, {}, false, 1, centimetre);
+//    using namespace std::chrono_literals;
+//    std::this_thread::sleep_for(5s);
 }
 
+void BindLessDescriptorsDemo::initCamera() {
+//    OrbitingCameraSettings cameraSettings;
+    FirstPersonSpectatorCameraSettings cameraSettings;
+//    cameraSettings.orbitMinZoom = 0.1;
+//    cameraSettings.orbitMaxZoom = 512.0f;
+//    cameraSettings.offsetDistance = 1.0f;
+//    cameraSettings.modelHeight = 0.5;
+    cameraSettings.fieldOfView = 60.0f;
+    cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
+    cameraSettings.acceleration = glm::vec3(1 * m);
+    cameraSettings.velocity = glm::vec3(5 * m);
+    cameraSettings.zFar = 200 * m;
+    cameraSettings.zNear = 1 * cm;
+
+//    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+//    auto position = (sponza.bounds.max + sponza.bounds.min) * 0.5f;
+    auto position = glm::vec3(-0.6051893234, 6.5149531364, -0.3869051933);
+    spdlog::info("camera position: {}", position);
+    camera->position(position);
+}
+
+void BindLessDescriptorsDemo::initGlobals() {
+    textures::color(device, dummyTexture, glm::vec3{0.2}, glm::uvec3{64});
+}
 
 void BindLessDescriptorsDemo::createDescriptorPool() {
-    constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 16> poolSizes{
+    constexpr uint32_t maxSets = 400;
+    std::array<VkDescriptorPoolSize, 15> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
@@ -54,16 +83,54 @@ void BindLessDescriptorsDemo::createDescriptorPool() {
                     { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets }
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
 }
 
 void BindLessDescriptorsDemo::createDescriptorSetLayouts() {
+    meshSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("mesh_descriptor_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .createLayout();
+
+    meshDescriptorSet = descriptorPool.allocate( { meshSetLayout }).front();
+    bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
 }
 
 void BindLessDescriptorsDemo::updateDescriptorSets(){
+
+    auto writes = initializers::writeDescriptorSets();
+    writes.resize(BindLessDescriptorPlugin::MaxDescriptorResources);
+
+    VkDescriptorImageInfo dummyImageInfo{ dummyTexture.sampler.handle, dummyTexture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    for(auto i = 0; i < writes.size(); i++) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = bindlessDescriptor.descriptorSet;
+        writes[i].dstBinding = BindLessDescriptorPlugin::TextureResourceBindingPoint;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].dstArrayElement = i;
+        writes[i].descriptorCount = 1;
+        writes[i].pImageInfo = &dummyImageInfo;
+    }
+
+    device.updateDescriptorSets(writes);
+
+    writes.resize(1);
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = meshDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorCount = 1;
+    VkDescriptorBufferInfo meshInfo{ _sponza->meshBuffer, 0, VK_WHOLE_SIZE };
+    writes[0].pBufferInfo = &meshInfo;
+
+    device.updateDescriptorSets(writes);
 }
 
 void BindLessDescriptorsDemo::createCommandPool() {
@@ -78,12 +145,17 @@ void BindLessDescriptorsDemo::createPipelineCache() {
 
 void BindLessDescriptorsDemo::createRenderPipeline() {
     //    @formatter:off
+        auto bindlessDescriptorSetLayout = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSetLayout();
         auto builder = prototypes->cloneGraphicsPipeline();
         render.pipeline =
             builder
                 .shaderStage()
-                    .vertexShader(resource("shaders/pass_through.vert.spv"))
-                    .fragmentShader(resource("shaders/pass_through.frag.spv"))
+                    .vertexShader(resource("render.vert.spv"))
+                    .fragmentShader(resource("render2.frag.spv"))
+                .layout()
+//                    .addDescriptorSetLayout(sponza.descriptorSetLayout)
+                    .addDescriptorSetLayout(meshSetLayout)
+                    .addDescriptorSetLayout(bindlessDescriptorSetLayout)
                 .name("render")
                 .build(render.layout);
     //    @formatter:on
@@ -118,7 +190,22 @@ VkCommandBuffer *BindLessDescriptorsDemo::buildCommandBuffers(uint32_t imageInde
     rPassInfo.renderArea.extent = swapChain.extent;
     rPassInfo.renderPass = renderPass;
 
+
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    static std::array<VkDescriptorSet, 2> sets{};
+    sets[0] = meshDescriptorSet;
+    sets[1] = bindlessDescriptor.descriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+    camera->push(commandBuffer, render.layout);
+//    sponza.draw(commandBuffer);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, _sponza->vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, _sponza->indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexedIndirect(commandBuffer, _sponza->draw.gpu, 0, _sponza->draw.count, sizeof(VkDrawIndexedIndirectCommand));
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -137,11 +224,16 @@ void BindLessDescriptorsDemo::checkAppInputs() {
 }
 
 void BindLessDescriptorsDemo::cleanup() {
-    VulkanBaseApp::cleanup();
+    loader->stop();
 }
 
 void BindLessDescriptorsDemo::onPause() {
     VulkanBaseApp::onPause();
+}
+
+void BindLessDescriptorsDemo::endFrame() {
+    _sponza->updateDrawState(device, bindlessDescriptor.descriptorSet);
+
 }
 
 
@@ -150,6 +242,8 @@ int main(){
 
         Settings settings;
         settings.depthTest = true;
+        settings.uniqueQueueFlags |= VK_QUEUE_TRANSFER_BIT;
+        settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
 
         auto app = BindLessDescriptorsDemo{ settings };
         app.run();

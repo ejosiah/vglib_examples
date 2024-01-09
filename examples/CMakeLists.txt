@@ -1,3 +1,6 @@
+include_directories(${CMAKE_CURRENT_LIST_DIR}/common/include)
+
+add_subdirectory(common)
 add_subdirectory(atmospheric_scattering)
 add_subdirectory(atmospheric_scattering2)
 add_subdirectory(bindless_descriptors)
