@@ -2,10 +2,10 @@
 
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#define ALBEDO_TEXTURE gTextures[nonuniformEXT(meshes[drawId].textures0.x)]
-#define AMBIENT_TEXTURE gTextures[nonuniformEXT(meshes[drawId].textures0.y)]
-#define NORMAL_TEXTURE gTextures[nonuniformEXT(meshes[drawId].textures0.w)]
-#define ROUGHNESS_TEXTURE gTextures[nonuniformEXT(meshes[drawId].textures1.z)]
+#define DIFFUSE_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.x)]
+#define AMBIENT_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.y)]
+#define NORMAL_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.z)]
+#define ROUGHNESS_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.w)]
 
 const vec3 globalAmbient = vec3(0.2);
 const vec3 Light = vec3(1);
@@ -13,7 +13,10 @@ const vec3 Light = vec3(1);
 struct Mesh {
     mat4 model;
     mat4 model_inverse;
+    int materialId;
+};
 
+struct Material {
     vec3 diffuse;
     float shininess;
 
@@ -35,6 +38,10 @@ layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
 };
 
+layout(set = 0, binding = 1) buffer MaterialData {
+    Material materials[];
+};
+
 layout(set = 1, binding = 10) uniform sampler2D gTextures[];
 
 
@@ -43,13 +50,14 @@ layout(location = 0) in struct {
     vec3 bitangent;
     vec3 color;
     vec3 pos;
+    vec3 localPos;
     vec3 normal;
     vec3 eyes;
     vec3 lightPos;
     vec2 uv;
 } fs_in;
 
-layout(location = 9)  in flat uint drawId;
+layout(location = 10)  in flat uint drawId;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -58,8 +66,8 @@ float saturate(float x){
 }
 
 void main(){
-    vec3 T = normalize(fs_in.tanget);
-    vec3 B = normalize(fs_in.bitangent);
+    vec3 T = normalize(dFdx(fs_in.localPos));
+    vec3 B = normalize(cross(fs_in.normal, fs_in.localPos));
     vec3 N = normalize(fs_in.normal);
 
     mat3 TBN = mat3(T, B, N);
@@ -71,9 +79,9 @@ void main(){
     vec3 H = normalize(E + L);
     vec3 R = reflect(-L, N);
 
-    vec3 albedo = texture(ALBEDO_TEXTURE, fs_in.uv).rgb;
-    vec3 specular = meshes[drawId].specular;
-    float shininess = meshes[drawId].shininess;
+    vec3 albedo = texture(DIFFUSE_TEXTURE, fs_in.uv).rgb;
+    vec3 specular = materials[meshes[drawId].materialId].specular;
+    float shininess = materials[meshes[drawId].materialId].shininess;
 
     vec3 color = Light * (saturate(dot(L, N)) * albedo + saturate(pow(dot(H, N), shininess)) * specular);
     color += globalAmbient * albedo;

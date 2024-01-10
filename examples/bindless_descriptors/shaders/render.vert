@@ -9,24 +9,9 @@ layout(push_constant) uniform MVP {
 struct Mesh {
     mat4 model;
     mat4 model_inverse;
-
-    vec3 diffuse;
-    float shininess;
-
-    vec3 ambient;
-    float ior;
-
-    vec3 specular;
-    float opacity;
-
-    vec3 emission;
-    float illum;
-
-    uvec4 textures0;
-    uvec4 textures1;
-
-    vec3 transmittance;
+    int materialId;
 };
+
 layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
 };
@@ -44,13 +29,14 @@ layout(location = 0) out struct {
     vec3 bitangent;
     vec3 color;
     vec3 pos;
+    vec3 localPos;
     vec3 normal;
     vec3 eyes;
     vec3 lightPos;
     vec2 uv;
 } vs_out;
 
-layout(location = 9)  out flat uint drawId;
+layout(location = 10)  out flat uint drawId;
 
 void main(){
     vs_out.tanget = tanget;
@@ -60,6 +46,7 @@ void main(){
     mat4 mModel = meshes[gl_DrawID].model;
     vec4 worldPos = mModel * position;
     vs_out.pos = worldPos.xyz;
+    vs_out.localPos = position.xyz;
     vs_out.normal = mat3(mModel) * normal;
     vs_out.eyes = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
     vs_out.lightPos = vs_out.eyes;

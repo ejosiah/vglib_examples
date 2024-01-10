@@ -44,7 +44,7 @@ namespace asyncml {
     Loader::Loader(VulkanDevice *device, size_t reserve)
     : _device{device}
     , _pending{reserve}
-    , _pendingUploads(2048)
+    , _pendingUploads(256)
     {}
 
     void Loader::start() {
@@ -57,6 +57,7 @@ namespace asyncml {
 
     std::shared_ptr<Model> asyncml::Loader::load(const std::filesystem::path &path, float unit) {
         spdlog::info("Mesh size: {}", sizeof(MeshData));
+        spdlog::info("Material size: {}", sizeof(MaterialData));
         if(_pending.full()) {
             return {};
         }
@@ -65,7 +66,7 @@ namespace asyncml {
         Pending pending{.model = std::make_shared<Model>(), .scene = _importer.ReadFile(path.string(), DEFAULT_PROCESS_FLAGS), .path = path, .unit = unit};
         const auto numMeshes = pending.scene->mNumMeshes;
         pending.model->meshes.reset(numMeshes);
-        pending.model->materials.reset(2048);
+        pending.model->uploadedTextures.reset(256);
         pending.model->draw.gpu = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
                                                         , VMA_MEMORY_USAGE_CPU_TO_GPU, numMeshes * sizeof(VkDrawIndexedIndirectCommand));
         pending.model->draw.cpu = reinterpret_cast<VkDrawIndexedIndirectCommand*>(pending.model->draw.gpu.map());
@@ -81,6 +82,9 @@ namespace asyncml {
 
         std::vector<MeshData> meshes(numMeshes);
         pending.model->meshBuffer = _device->createCpuVisibleBuffer(meshes.data(), BYTE_SIZE(meshes), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+        std::vector<MaterialData> materials(pending.scene->mNumMaterials);
+        pending.model->materialBuffer = _device->createCpuVisibleBuffer(materials.data(), BYTE_SIZE(materials), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
         _pending.push(pending);
 
@@ -126,8 +130,6 @@ namespace asyncml {
             for(auto meshId = 0; meshId < meshes.size(); meshId++) {
                 const auto aiMesh = meshes[meshId];
                 const glm::vec4 defaultAlbedo{0.6, 0.6, 0.6, 1.0};
-
-                extractTextures(pending, aiMesh, meshId);
 
                 std::vector<Vertex> vertices;
                 vertices.reserve(aiMesh->mNumVertices);
@@ -203,9 +205,9 @@ namespace asyncml {
                         .instanceCount = 1u,
                         .firstIndex = firstIndex,
                         .vertexOffset = vertexOffset,
-                        .firstInstance = 0
+                        .firstInstance = 0,
+                        .materialId = aiMesh->mMaterialIndex
                 };
-                extractMaterial(pending.scene->mMaterials[aiMesh->mMaterialIndex], mesh);
                 model->meshes.push(mesh);
 
                 firstIndex += mesh.indexCount;
@@ -213,128 +215,87 @@ namespace asyncml {
                 regions[0].dstOffset += regions[0].size;
                 regions[1].dstOffset += regions[1].size;
             }
+
+            for(auto i = 0; i < scene->mNumMaterials; i++) {
+                auto material = extractMaterial(scene->mMaterials[i]);
+                material.textures = extractTextures(*scene->mMaterials[i], pending.model, pending.path);
+                pending.model->materials.push_back(material);
+            }
+
         }
     }
 
 
-    void Loader::extractTextures(const Pending& pending, const aiMesh* mesh, uint32_t meshId) {
-        const auto rootPath = pending.path.parent_path();
 
-        auto material = pending.scene->mMaterials[mesh->mMaterialIndex];
+    std::set<std::filesystem::path> Loader::extractTextures(const aiMaterial& material, const std::shared_ptr<Model>& model, const std::filesystem::path& path) {
+        const auto rootPath = path.parent_path();
+
         aiString texPath;
-
-        if(material->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest diffuse{ rootPath / texPath.C_Str(), pending.model, 0, meshId };
+        std::set<std::filesystem::path> textures;
+        if(material.GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == aiReturn_SUCCESS) {
+            TextureUploadRequest diffuse{ rootPath / texPath.C_Str(),  model, TextureType::DIFFUSE};
+            textures.insert(diffuse.path);
             _pendingUploads.push(diffuse);
         }
 
-        if(material->GetTexture(aiTextureType_AMBIENT, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest ambient{ rootPath / texPath.C_Str(), pending.model, 1, meshId };
+        if(material.GetTexture(aiTextureType_AMBIENT, 0, &texPath) == aiReturn_SUCCESS) {
+            TextureUploadRequest ambient{ rootPath / texPath.C_Str(), model, TextureType::AMBIENT };
+            textures.insert(ambient.path);
             _pendingUploads.push(ambient);
         }
 
-        if(material->GetTexture(aiTextureType_SPECULAR, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest specular{ rootPath / texPath.C_Str(), pending.model, 2, meshId };
+        if(material.GetTexture(aiTextureType_SPECULAR, 0, &texPath) == aiReturn_SUCCESS) {
+            TextureUploadRequest specular{ rootPath / texPath.C_Str(), model, TextureType::REFLECTION };
+            textures.insert(specular.path);
             _pendingUploads.push(specular);
         }
 
-        if(material->GetTexture(aiTextureType_NORMALS, 0, &texPath) == aiReturn_SUCCESS){
-            TextureUploadRequest normal{ rootPath / texPath.C_Str(), pending.model, 3, meshId };
-            _pendingUploads.push(normal);
-        }else if(material->GetTexture(aiTextureType_HEIGHT, 0, &texPath) == aiReturn_SUCCESS){
-            TextureUploadRequest normal{ rootPath / texPath.C_Str(), pending.model, 3, meshId };
+        if(material.GetTexture(aiTextureType_NORMALS, 0, &texPath) == aiReturn_SUCCESS
+          || material.GetTexture(aiTextureType_HEIGHT, 0, &texPath) == aiReturn_SUCCESS){
+            TextureUploadRequest normal{ rootPath / texPath.C_Str(), model, TextureType::NORMAL };
+            textures.insert(normal.path);
             _pendingUploads.push(normal);
         }
 
-        if(material->GetTexture(aiTextureType_OPACITY, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest opacity{ rootPath / texPath.C_Str(), pending.model, 4, meshId };
+        if(material.GetTexture(aiTextureType_OPACITY, 0, &texPath) == aiReturn_SUCCESS) {
+            TextureUploadRequest opacity{ rootPath / texPath.C_Str(), model, TextureType::OPACITY };
+            textures.insert(opacity.path);
             _pendingUploads.push(opacity);
         }
 
-        if(material->GetTexture(aiTextureType_DISPLACEMENT, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest displacement{ rootPath / texPath.C_Str(), pending.model, 5, meshId };
+        if(material.GetTexture(aiTextureType_DISPLACEMENT, 0, &texPath) == aiReturn_SUCCESS) {
+            TextureUploadRequest displacement{ rootPath / texPath.C_Str(), model, TextureType::DISPLACEMENT };
+            textures.insert(displacement.path);
             _pendingUploads.push(displacement);
         }
 
-        if(material->GetTexture(aiTextureType_SHININESS, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest shininess{ rootPath / texPath.C_Str(), pending.model, 6, meshId };
+        if(material.GetTexture(aiTextureType_SHININESS, 0, &texPath) == aiReturn_SUCCESS) {
+            TextureUploadRequest shininess{ rootPath / texPath.C_Str(), model, TextureType::ROUGHNESS };
+            textures.insert(shininess.path);
             _pendingUploads.push(shininess);
         }
-
-
-//        if(material->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_DIFFUSE: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_SPECULAR, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_SPECULAR: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_AMBIENT, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_AMBIENT: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_EMISSIVE, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_EMISSIVE: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_HEIGHT, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_HEIGHT: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_NORMALS, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_NORMALS: {}", texPath.C_Str());
-//        }
-//
-//        if(material->GetTexture(aiTextureType_SHININESS, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_SHININESS: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_OPACITY, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_OPACITY: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_DISPLACEMENT, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_DISPLACEMENT: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_LIGHTMAP, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_LIGHTMAP: {}", texPath.C_Str());
-//        }
-//
-//        if(material->GetTexture(aiTextureType_REFLECTION, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_REFLECTION: {}", texPath.C_Str());
-//        }
-//
-//        if(material->GetTexture(aiTextureType_BASE_COLOR, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_BASE_COLOR: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_NORMAL_CAMERA, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_NORMAL_CAMERA: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_EMISSION_COLOR, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_EMISSION_COLOR: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_METALNESS, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_METALNESS: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_DIFFUSE_ROUGHNESS, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_DIFFUSE_ROUGHNESS: {}", texPath.C_Str());
-//        }
-//        if(material->GetTexture(aiTextureType_AMBIENT_OCCLUSION, 0, &texPath) == aiReturn_SUCCESS){
-//            spdlog::info("aiTextureType_AMBIENT_OCCLUSION: {}", texPath.C_Str());
-//        }
-
+        return textures;
     }
 
     void Loader::uploadTextures() {
         while(!_pendingUploads.empty()) {
             auto request = _pendingUploads.pop();
-            createTexture(request);
+            if(!_uploadedTextures.contains(request.path)) {
+                createTexture(request);
+                _uploadedTextures.insert(request.path);
+            }
         }
     }
 
     void Loader::createTexture(const TextureUploadRequest &request) {
-        Material tReady{ .id = request.id, .meshId = request.meshId };
+        UploadedTexture tReady{ .path = request.path, .type = request.type };
         int texWidth, texHeight, texChannels;
         stbi_set_flip_vertically_on_load(1);
         stbi_uc* pixels = stbi_load(request.path.string().data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         tReady.texture.width = texWidth;
         tReady.texture.height = texHeight;
         tReady.texture.depth = 1;
-        tReady.texture.format = request.id == 0 ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        tReady.texture.format = request.type == TextureType::DIFFUSE ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
         if(!pixels){
             spdlog::warn("failed to load texture image {}!", request.path.string());
             return;
@@ -402,7 +363,7 @@ namespace asyncml {
 
         });
 
-        request.model->materials.push(std::move(tReady));
+        request.model->uploadedTextures.push(std::move(tReady));
     }
 
     void Loader::stop() {
@@ -410,63 +371,82 @@ namespace asyncml {
         _thread.join();
     }
 
-    void Loader::extractMaterial(const aiMaterial* aiMaterial, Mesh &mesh) {
+    Material Loader::extractMaterial(const aiMaterial* aiMaterial) {
+
+        aiString name;
+        auto ret = aiMaterial->Get(AI_MATKEY_NAME, name);
+        Material material{ .name = name.C_Str()};
 
         float scalar = 1.0f;
-        auto ret = aiMaterial->Get(AI_MATKEY_OPACITY, scalar);
+        ret = aiMaterial->Get(AI_MATKEY_OPACITY, scalar);
         if(ret == aiReturn_SUCCESS){
-            mesh.opacity = scalar;
+            material.opacity = scalar;
         }
 
         ret = aiMaterial->Get(AI_MATKEY_REFRACTI, scalar);
         if(ret == aiReturn_SUCCESS){
-            mesh.ior = scalar;
+            material.ior = scalar;
         }
 
 
         ret = aiMaterial->Get(AI_MATKEY_SHININESS, scalar);
         if(ret == aiReturn_SUCCESS){
-            mesh.shininess = scalar;
+            material.shininess = scalar;
         }
         ret = aiMaterial->Get(AI_MATKEY_SHADING_MODEL, scalar);
         if(ret == aiReturn_SUCCESS){
-            mesh.illum = scalar;
+            material.illum = scalar;
         }
 
         glm::vec3 color;
         uint32_t size = 3;
         ret = aiMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, glm::value_ptr(color), &size);
         if(ret == aiReturn_SUCCESS){
-            mesh.diffuse = color;
+            material.diffuse = color;
         }
 
         ret = aiMaterial->Get(AI_MATKEY_COLOR_AMBIENT, glm::value_ptr(color), &size);
         if(ret == aiReturn_SUCCESS){
-            mesh.ambient = color;
+            material.ambient = color;
         }
 
         ret = aiMaterial->Get(AI_MATKEY_COLOR_SPECULAR, glm::value_ptr(color), &size);
         if(ret == aiReturn_SUCCESS){
-            mesh.specular = color;
+            material.specular = color;
         }
 
         ret = aiMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, glm::value_ptr(color), &size);
         if(ret == aiReturn_SUCCESS){
-            mesh.emission = color;
+            material.emission = color;
         }
 
         ret = aiMaterial->Get(AI_MATKEY_COLOR_TRANSPARENT, glm::value_ptr(color), &size);
         if(ret == aiReturn_SUCCESS){
-            mesh.transmittance = color;
+            material.transmittance = color;
         }
+
+        return material;
     }
 
-    void Model::updateDrawState(const VulkanDevice& device, VkDescriptorSet bindlessDescriptor) {
+    void Model::updateDrawState(const VulkanDevice& device, BindlessDescriptor& bindlessDescriptor) {
         if(!meshes.empty()){
 //            spdlog::info("{} meshes ready", meshes.size());
         }
-
         auto meshData = reinterpret_cast<MeshData*>(meshBuffer.map());
+        auto materialData = reinterpret_cast<MaterialData*>(materialBuffer.map());
+
+        for(int i = 0; i < materials.size(); i++){
+            materialData[i].diffuse = materials[i].diffuse;
+            materialData[i].ambient = materials[i].ambient;
+            materialData[i].specular = materials[i].specular;
+            materialData[i].emission = materials[i].emission;
+            materialData[i].transmittance = materials[i].transmittance;
+            materialData[i].shininess = materials[i].shininess;
+            materialData[i].ior = materials[i].ior;
+            materialData[i].opacity = materials[i].opacity;
+            materialData[i].illum = materials[i].illum;
+        }
+
 
         while(!meshes.empty()) {
             const auto mesh = meshes.pop();
@@ -479,47 +459,36 @@ namespace asyncml {
             drawCommand.vertexOffset = mesh.vertexOffset;
             drawCommand.firstInstance = mesh.firstIndex;
 
-            meshData[mesh.meshId].diffuse = mesh.diffuse;
-            meshData[mesh.meshId].ambient = mesh.ambient;
-            meshData[mesh.meshId].specular = mesh.specular;
-            meshData[mesh.meshId].emission = mesh.emission;
-            meshData[mesh.meshId].transmittance = mesh.transmittance;
-            meshData[mesh.meshId].transmittance = mesh.transmittance;
-            meshData[mesh.meshId].shininess = mesh.shininess;
-            meshData[mesh.meshId].ior = mesh.ior;
-            meshData[mesh.meshId].opacity = mesh.opacity;
-            meshData[mesh.meshId].illum = mesh.illum;
+            meshData[mesh.meshId].materialId = mesh.materialId;
         }
 
-        // TODO allocate texture index from descriptor
-        const auto numMaterials = materials.size();
-        std::vector<VkDescriptorImageInfo> infos(numMaterials);
-        std::vector<VkWriteDescriptorSet> writes(numMaterials, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
+        auto numTextures = uploadedTextures.size();
+        std::vector<VkDescriptorImageInfo> infos(numTextures);
+        std::vector<VkWriteDescriptorSet> writes(numTextures, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET});
 
-        for(auto i = 0; i < numMaterials; i++) {
-            auto material = materials.pop();
-            auto& texture = material.texture;
-            auto drawId = meshDrawIds[material.meshId];   // TODO mesh might not be ready, return material in such a case
-            if(material.id / 4 < 1) {
-                meshData[drawId].textures0[material.id] = textures.size() + 1; // save slot zero for dummy texture
-            }else {
-                meshData[drawId].textures1[material.id % 4] = textures.size() + 1; // save slot zero for dummy texture
-            }
-
+        for(auto i = 0; i < numTextures; i++) {
+            auto uploaded = uploadedTextures.pop();
+            auto& texture = uploaded.texture;
             VkImageSubresourceRange subResourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             texture.imageView = texture.image.createView(texture.spec.format, VK_IMAGE_VIEW_TYPE_2D, subResourceRange);
-            infos[i] = {VK_NULL_HANDLE, texture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-
-            writes[i].dstSet = bindlessDescriptor;
-            writes[i].dstBinding = 10;
-            writes[i].dstArrayElement = textures.size() + 1; // save slot zero for dummy texture
-            writes[i].descriptorCount = 1;
-            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[i].pImageInfo = &infos[i];
-
+            uint32_t textureId = bindlessDescriptor.update(texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             textures.push_back(std::move(texture));
+
+            auto type = static_cast<int>(uploaded.type);
+
+            for(int j = 0; j < materials.size(); ++j) {
+                auto& material = materials[j];
+                if(material.textures.contains(uploaded.path)){
+                    if(type / 4 < 1) {
+                        materialData[j].textures0[type] = textureId;
+                    }else {
+                        materialData[j].textures1[type] = textureId;
+                    }
+                }
+            }
         }
 
-        device.updateDescriptorSets(writes);
+        meshBuffer.unmap();
+        materialBuffer.unmap();
     }
 }

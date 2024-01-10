@@ -13,6 +13,7 @@
 #include <memory>
 #include <atomic>
 #include <thread>
+#include <plugins/BindLessDescriptorPlugin.hpp>
 
 namespace asyncml {
 
@@ -75,6 +76,9 @@ namespace asyncml {
         std::atomic_int64_t _readIndex{0};
     };
 
+    enum class TextureType : int {
+        DIFFUSE = 0, AMBIENT, NORMAL, ROUGHNESS, REFLECTION, OPACITY, DISPLACEMENT, SPECULAR
+    };
 
     struct Mesh{
         uint32_t meshId{};
@@ -83,38 +87,14 @@ namespace asyncml {
         uint32_t firstIndex{};
         uint32_t  vertexOffset{};
         uint32_t firstInstance{};
-
-        glm::vec3 diffuse = glm::vec3(0.6f);
-        glm::vec3 ambient = glm::vec3(0.6f);
-        glm::vec3 specular = glm::vec3(1);
-        glm::vec3 emission = glm::vec3(0);
-        glm::vec3 transmittance = glm::vec3(0);
-        float shininess = 0;
-        float ior = 0;
-        float opacity = 1;
-        float illum = 1;
+        uint32_t materialId{};
     };
 
     struct MeshData {
         glm::mat4 model{1};
         glm::mat4 ModelInverse{1};
-        glm::vec3 diffuse;
-        float shininess = 0;
-
-        glm::vec3 ambient;
-        float ior = 0;
-
-        glm::vec3 specular;
-        float opacity = 1;
-
-        glm::vec3 emission;
-        float illum = 1;
-
-        glm::uvec4 textures0{0};
-        glm::uvec4 textures1{0};
-
-        glm::vec3 transmittance;
-        int padding;
+        int materialId{0};
+        char padding[12];   // spirv-dis - ArrayStride 144 bytesclear
     };
 
     struct Draw {
@@ -124,22 +104,58 @@ namespace asyncml {
     };
 
     struct Material {
+        std::string name;
+        glm::vec3 diffuse;
+        glm::vec3 emission;
+        glm::vec3 specular;
+        glm::vec3 ambient;
+        glm::vec3 transmittance;
+        float shininess = 0;
+        float ior = 0;
+        float opacity = 1;
+        float illum = 1;
+        std::set<std::filesystem::path> textures;
+    };
+
+    struct MaterialData {
+        glm::vec3 diffuse{0.8};
+        float shininess = 0;
+
+        glm::vec3 ambient{0.8};
+        float ior = 0;
+
+        glm::vec3 specular{1};
+        float opacity = 1;
+
+        glm::vec3 emission{0};
+        float illum = 1;
+
+        glm::uvec4 textures0{0};
+        glm::uvec4 textures1{0};
+
+        glm::vec3 transmittance{1};
+        int padding;
+    };
+
+    struct UploadedTexture {
+        std::filesystem::path path;
         Texture texture;
-        int id;
-        uint32_t meshId;
+        TextureType type;
     };
 
     struct Model {
         RingBuffer<Mesh> meshes;
-        RingBuffer<Material> materials;
+        RingBuffer<UploadedTexture> uploadedTextures;
+        std::vector<Material> materials;
         std::vector<Texture> textures;
         VulkanBuffer vertexBuffer;
         VulkanBuffer indexBuffer;
         VulkanBuffer meshBuffer;
+        VulkanBuffer materialBuffer;
         std::map<uint32_t, uint32_t> meshDrawIds{};
         Draw draw;
 
-        void updateDrawState(const VulkanDevice& device, VkDescriptorSet bindlessDescriptor);
+        void updateDrawState(const VulkanDevice& device, BindlessDescriptor& bindlessDescriptor);
     };
 
     struct Pending {
@@ -152,8 +168,12 @@ namespace asyncml {
     struct TextureUploadRequest {
         std::filesystem::path path;
         std::shared_ptr<Model> model;
-        int id;
-        uint32_t meshId;
+        TextureType type;
+    };
+
+    struct MaterialTexture {
+        std::filesystem::path path;
+        int materialId;
     };
 
 
@@ -172,7 +192,8 @@ namespace asyncml {
         void stop();
 
     private:
-         void extractTextures(const Pending& pending, const aiMesh* mesh, uint32_t meshId);
+
+         std::set<std::filesystem::path> extractTextures(const aiMaterial& material, const std::shared_ptr<Model>& model, const std::filesystem::path& path);
 
          void uploadMeshes();
 
@@ -180,7 +201,7 @@ namespace asyncml {
 
          void createTexture(const TextureUploadRequest& request);
 
-         void extractMaterial(const aiMaterial* aiMaterial, Mesh& mesh);
+         Material extractMaterial(const aiMaterial* aiMaterial);
 
     private:
         VulkanDevice* _device{};
@@ -191,6 +212,7 @@ namespace asyncml {
         std::thread _thread;
         VulkanBuffer _stagingBuffer;
         Assimp::Importer _importer;
+        std::set<std::filesystem::path> _uploadedTextures;
     };
 
 }

@@ -96,10 +96,14 @@ void BindLessDescriptorsDemo::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
             .createLayout();
 
     meshDescriptorSet = descriptorPool.allocate( { meshSetLayout }).front();
-    bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
+    bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(1);
 }
 
 void BindLessDescriptorsDemo::updateDescriptorSets(){
@@ -120,7 +124,7 @@ void BindLessDescriptorsDemo::updateDescriptorSets(){
 
     device.updateDescriptorSets(writes);
 
-    writes.resize(1);
+    writes.resize(2);
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[0].dstSet = meshDescriptorSet;
     writes[0].dstBinding = 0;
@@ -129,6 +133,15 @@ void BindLessDescriptorsDemo::updateDescriptorSets(){
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo meshInfo{ _sponza->meshBuffer, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &meshInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = meshDescriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo materialInfo{ _sponza->materialBuffer, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &materialInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -167,7 +180,7 @@ void BindLessDescriptorsDemo::onSwapChainDispose() {
 }
 
 void BindLessDescriptorsDemo::onSwapChainRecreation() {
-    updateDescriptorSets();
+    camera->perspective(swapChain.aspectRatio());
     createRenderPipeline();
 }
 
@@ -232,7 +245,7 @@ void BindLessDescriptorsDemo::onPause() {
 }
 
 void BindLessDescriptorsDemo::endFrame() {
-    _sponza->updateDrawState(device, bindlessDescriptor.descriptorSet);
+    _sponza->updateDrawState(device, bindlessDescriptor);
 
 }
 
