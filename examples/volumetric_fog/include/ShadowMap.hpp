@@ -24,6 +24,8 @@ public:
 
     void generate(CaptureScene&& captureScene);
 
+    const Texture& texture() const;
+
 
 public:
 

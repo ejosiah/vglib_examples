@@ -22,8 +22,8 @@ void BindLessDescriptorsDemo::initApp() {
     loader = std::make_unique<asyncml::Loader>( &device, 32);
     loader->start();
     createDescriptorPool();
-    createDescriptorSetLayouts();
     loadModel();
+    createDescriptorSetLayouts();
     updateDescriptorSets();
     initCamera();
     createCommandPool();
@@ -32,8 +32,11 @@ void BindLessDescriptorsDemo::initApp() {
 }
 
 void BindLessDescriptorsDemo::loadModel() {
-    _sponza = loader->load(R"(C:\Users\Josiah Ebhomenye\source\repos\VolumetricLighting\bin\Debug\meshes\sponza.obj)", centimetre);
-//    phong::load(R"(C:\Users\Josiah Ebhomenye\source\repos\VolumetricLighting\bin\Debug\meshes\sponza.obj)", device, descriptorPool, sponza, {}, false, 1, centimetre);
+    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
+//    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/OneDrive/media/models/amazon_lumberyard_bistro/Exterior/exterior.obj)", centimetre);
+//    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/OneDrive/media/models/amazon_lumberyard_bistro/Interior/interior.obj)", centimetre);
+//    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/OneDrive/media/models/sibenik/sibenik.obj)");
+//    phong::load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", device, descriptorPool, sponza, {}, false, 1, centimetre);
 //    using namespace std::chrono_literals;
 //    std::this_thread::sleep_for(5s);
 }
@@ -89,20 +92,21 @@ void BindLessDescriptorsDemo::createDescriptorPool() {
 }
 
 void BindLessDescriptorsDemo::createDescriptorSetLayouts() {
-    meshSetLayout =
+    auto bindings =
         device.descriptorSetLayoutBuilder()
             .name("mesh_descriptor_set_layout")
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
+                .descriptorCount(_sponza->numMeshes())
                 .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
             .binding(1)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
+                .descriptorCount(_sponza->numMaterials())
                 .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
-            .createLayout();
+            .build();
 
-    meshDescriptorSet = descriptorPool.allocate( { meshSetLayout }).front();
+    plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).addBindings(bindings);
+    plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).createDescriptorSetLayout();
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(1);
 }
 
@@ -124,24 +128,36 @@ void BindLessDescriptorsDemo::updateDescriptorSets(){
 
     device.updateDescriptorSets(writes);
 
+    const auto numMeshes = _sponza->numMeshes();
+    const VkDeviceSize meshDataSize = sizeof(asyncml::MeshData);
+    std::vector<VkDescriptorBufferInfo> meshInfos;
+    for(auto i = 0; i < numMeshes; i++) {
+        const VkDeviceSize offset = i * meshDataSize;
+        meshInfos.push_back({_sponza->meshBuffer, offset, meshDataSize  });
+    }
+
     writes.resize(2);
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = meshDescriptorSet;
+    writes[0].dstSet = bindlessDescriptor.descriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].dstArrayElement = 0;
-    writes[0].descriptorCount = 1;
-    VkDescriptorBufferInfo meshInfo{ _sponza->meshBuffer, 0, VK_WHOLE_SIZE };
-    writes[0].pBufferInfo = &meshInfo;
+    writes[0].descriptorCount = numMeshes;
+    writes[0].pBufferInfo = meshInfos.data();
 
+    const auto numMaterials = _sponza->numMaterials();
+    const VkDeviceSize materialDataSize = sizeof(asyncml::MaterialData);
+    std::vector<VkDescriptorBufferInfo> materialInfos;
+    for(auto i = 0; i < numMaterials; i++){
+        materialInfos.push_back({_sponza->materialBuffer, i * materialDataSize, materialDataSize});
+    }
     writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = meshDescriptorSet;
+    writes[1].dstSet = bindlessDescriptor.descriptorSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].dstArrayElement = 0;
-    writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo materialInfo{ _sponza->materialBuffer, 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &materialInfo;
+    writes[1].descriptorCount = numMaterials;
+    writes[1].pBufferInfo = materialInfos.data();
 
     device.updateDescriptorSets(writes);
 }
@@ -164,10 +180,8 @@ void BindLessDescriptorsDemo::createRenderPipeline() {
             builder
                 .shaderStage()
                     .vertexShader(resource("render.vert.spv"))
-                    .fragmentShader(resource("render2.frag.spv"))
+                    .fragmentShader(resource("sponza.frag.spv"))
                 .layout()
-//                    .addDescriptorSetLayout(sponza.descriptorSetLayout)
-                    .addDescriptorSetLayout(meshSetLayout)
                     .addDescriptorSetLayout(bindlessDescriptorSetLayout)
                 .name("render")
                 .build(render.layout);
@@ -206,9 +220,8 @@ VkCommandBuffer *BindLessDescriptorsDemo::buildCommandBuffers(uint32_t imageInde
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    static std::array<VkDescriptorSet, 2> sets{};
-    sets[0] = meshDescriptorSet;
-    sets[1] = bindlessDescriptor.descriptorSet;
+    static std::array<VkDescriptorSet, 1> sets{};
+    sets[0] = bindlessDescriptor.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);

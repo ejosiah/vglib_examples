@@ -1051,14 +1051,33 @@ Luminance3 GetSolarLuminance() {
 #ifndef ATMOSPHERE_LUT_GLSL
 #define ATMOSPHERE_LUT_GLSL
 
+#ifdef BIND_LESS_ENABLED
+
+#define IRRADIANCE_TEXTURE_ID 2
+#define TRANSMITTANCE_TEXTURE_ID 3
+#define SCATTERING_TEXTURE_ID 4
+
+#define IRRADIANCE_TEXTURE gTextures[IRRADIANCE_TEXTURE_ID]
+#define TRANSMITTANCE_TEXTURE gTextures[TRANSMITTANCE_TEXTURE_ID]
+#define SCATTERING_TEXTURE gTextures3d[SCATTERING_TEXTURE_ID]
+#define SIGNLE_MIE_SCATTERING_TEXTURE gTextures3d[SCATTERING_TEXTURE_ID]
+
+#else
+
 #ifndef ATMOSPHERE_LUT_SET
 #define ATMOSPHERE_LUT_SET 1
 #endif // ATMOSPHERE_LUT_SET
+
+#define IRRADIANCE_TEXTURE irradiance_texture
+#define TRANSMITTANCE_TEXTURE transmittance_texture
+#define SCATTERING_TEXTURE scattering_texture
+#define SIGNLE_MIE_SCATTERING_TEXTURE single_mie_scattering_texture
 
 layout(set = ATMOSPHERE_LUT_SET, binding = 0) uniform sampler2D irradiance_texture;
 layout(set = ATMOSPHERE_LUT_SET, binding = 1) uniform sampler2D transmittance_texture;
 layout(set = ATMOSPHERE_LUT_SET, binding = 2) uniform sampler3D scattering_texture;
 layout(set = ATMOSPHERE_LUT_SET, binding = 3) uniform sampler3D single_mie_scattering_texture;
+#endif // BIND_LESS_ENABLED
 
 #ifdef RADIANCE_API_ENABLED
 RadianceSpectrum GetSolarRadiance() {
@@ -1068,19 +1087,19 @@ RadianceSpectrum GetSolarRadiance() {
 RadianceSpectrum GetSkyRadiance(Position camera, Direction view_ray, Length shadow_length, Direction sun_direction, out DimensionlessSpectrum transmittance) {
     camera /= ubo.lengthUnitInMeters;
     shadow_length /= ubo.lengthUnitInMeters;
-    return GetSkyRadiance(ATMOSPHERE, transmittance_texture,scattering_texture, single_mie_scattering_texture, camera, view_ray, shadow_length, sun_direction, transmittance);
+    return GetSkyRadiance(ATMOSPHERE, TRANSMITTANCE_TEXTURE,SCATTERING_TEXTURE, SIGNLE_MIE_SCATTERING_TEXTURE, camera, view_ray, shadow_length, sun_direction, transmittance);
 }
 
 RadianceSpectrum GetSkyRadianceToPoint(Position camera, Position point, Length shadow_length, Direction sun_direction, out DimensionlessSpectrum transmittance) {
     camera /= ubo.lengthUnitInMeters;
     point /= ubo.lengthUnitInMeters;
     shadow_length /= ubo.lengthUnitInMeters;
-    return GetSkyRadianceToPoint(ATMOSPHERE, transmittance_texture,scattering_texture, single_mie_scattering_texture, camera, point, shadow_length, sun_direction, transmittance);
+    return GetSkyRadianceToPoint(ATMOSPHERE, TRANSMITTANCE_TEXTURE,SCATTERING_TEXTURE, SIGNLE_MIE_SCATTERING_TEXTURE, camera, point, shadow_length, sun_direction, transmittance);
 }
 
 IrradianceSpectrum GetSunAndSkyIrradiance(Position p, Direction normal, Direction sun_direction, out IrradianceSpectrum sky_irradiance) {
     p /= ubo.lengthUnitInMeters;
-    return GetSunAndSkyIrradiance(ATMOSPHERE, transmittance_texture, irradiance_texture, p, normal, sun_direction, sky_irradiance);
+    return GetSunAndSkyIrradiance(ATMOSPHERE, TRANSMITTANCE_TEXTURE, IRRADIANCE_TEXTURE, p, normal, sun_direction, sky_irradiance);
 }
 #endif// RADIANCE_API_ENABLED
 
@@ -1091,7 +1110,7 @@ Luminance3 GetSkyLuminance(Position camera, Direction view_ray, Length shadow_le
     shadow_length /= ubo.lengthUnitInMeters;
 
     return
-            GetSkyRadiance(ATMOSPHERE, transmittance_texture, scattering_texture, single_mie_scattering_texture,
+            GetSkyRadiance(ATMOSPHERE, TRANSMITTANCE_TEXTURE, SCATTERING_TEXTURE, SIGNLE_MIE_SCATTERING_TEXTURE,
                            camera, view_ray, shadow_length, sun_direction, transmittance) *
             SKY_SPECTRAL_RADIANCE_TO_LUMINANCE;
 }
@@ -1107,7 +1126,7 @@ Luminance3 GetSkyLuminanceToPoint(
     point /= ubo.lengthUnitInMeters;
     shadow_length /= ubo.lengthUnitInMeters;
 
-    return GetSkyRadianceToPoint(ATMOSPHERE, transmittance_texture, scattering_texture, single_mie_scattering_texture,
+    return GetSkyRadianceToPoint(ATMOSPHERE, TRANSMITTANCE_TEXTURE, SCATTERING_TEXTURE, SIGNLE_MIE_SCATTERING_TEXTURE,
                                  camera, point, shadow_length, sun_direction, transmittance) *
            SKY_SPECTRAL_RADIANCE_TO_LUMINANCE;
 }
@@ -1117,7 +1136,7 @@ GetSunAndSkyIlluminance(Position p, Direction normal, Direction sun_direction, o
     p /= ubo.lengthUnitInMeters;
 
     IrradianceSpectrum sun_irradiance =
-            GetSunAndSkyIrradiance(ATMOSPHERE, transmittance_texture, irradiance_texture, p, normal, sun_direction,
+            GetSunAndSkyIrradiance(ATMOSPHERE, TRANSMITTANCE_TEXTURE, IRRADIANCE_TEXTURE, p, normal, sun_direction,
                                    sky_irradiance);
     sky_irradiance *= SKY_SPECTRAL_RADIANCE_TO_LUMINANCE;
     return sun_irradiance * SUN_SPECTRAL_RADIANCE_TO_LUMINANCE;

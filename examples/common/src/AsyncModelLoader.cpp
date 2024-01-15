@@ -11,6 +11,8 @@ namespace asyncml {
                                                | aiProcess_CalcTangentSpace | aiProcess_JoinIdenticalVertices
                                                | aiProcess_ValidateDataStructure;
 
+//    constexpr uint32_t DEFAULT_PROCESS_FLAGS = aiProcess_CalcTangentSpace;
+
     constexpr VkDeviceSize _64MB = 64 * 1024 * 1024;
 
 //    void visit(const aiNode* node, auto visitor) {
@@ -44,7 +46,7 @@ namespace asyncml {
     Loader::Loader(VulkanDevice *device, size_t reserve)
     : _device{device}
     , _pending{reserve}
-    , _pendingUploads(256)
+    , _pendingUploads(1024)
     {}
 
     void Loader::start() {
@@ -66,7 +68,7 @@ namespace asyncml {
         Pending pending{.model = std::make_shared<Model>(), .scene = _importer.ReadFile(path.string(), DEFAULT_PROCESS_FLAGS), .path = path, .unit = unit};
         const auto numMeshes = pending.scene->mNumMeshes;
         pending.model->meshes.reset(numMeshes);
-        pending.model->uploadedTextures.reset(256);
+        pending.model->uploadedTextures.reset(1024);
         pending.model->draw.gpu = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
                                                         , VMA_MEMORY_USAGE_CPU_TO_GPU, numMeshes * sizeof(VkDrawIndexedIndirectCommand));
         pending.model->draw.cpu = reinterpret_cast<VkDrawIndexedIndirectCommand*>(pending.model->draw.gpu.map());
@@ -176,7 +178,7 @@ namespace asyncml {
                 regions[0].size = vertices.size() * sizeof(Vertex);
                 _stagingBuffer.copy(vertices, 0);
 
-                regions[1].srcOffset += regions[0].size;
+                regions[1].srcOffset = regions[0].size;
                 regions[1].size = indexes.size() * sizeof(uint32_t);
                 _stagingBuffer.copy(indexes, regions[1].srcOffset);
 
@@ -245,7 +247,7 @@ namespace asyncml {
         }
 
         if(material.GetTexture(aiTextureType_SPECULAR, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest specular{ rootPath / texPath.C_Str(), model, TextureType::REFLECTION };
+            TextureUploadRequest specular{ rootPath / texPath.C_Str(), model, TextureType::SPECULAR };
             textures.insert(specular.path);
             _pendingUploads.push(specular);
         }
@@ -270,7 +272,7 @@ namespace asyncml {
         }
 
         if(material.GetTexture(aiTextureType_SHININESS, 0, &texPath) == aiReturn_SUCCESS) {
-            TextureUploadRequest shininess{ rootPath / texPath.C_Str(), model, TextureType::ROUGHNESS };
+            TextureUploadRequest shininess{ rootPath / texPath.C_Str(), model, TextureType::SHININESS };
             textures.insert(shininess.path);
             _pendingUploads.push(shininess);
         }
@@ -482,7 +484,7 @@ namespace asyncml {
                     if(type / 4 < 1) {
                         materialData[j].textures0[type] = textureId;
                     }else {
-                        materialData[j].textures1[type] = textureId;
+                        materialData[j].textures1[type%4] = textureId;
                     }
                 }
             }

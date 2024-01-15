@@ -2,19 +2,22 @@
 
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#define MATERIAL materials[meshes[drawId].materialId]
+
+#define DIFFUSE_TEXTURE_ID materials[meshes[drawId].materialId].textures0.x
+#define AMBIENT_TEXTURE_ID materials[meshes[drawId].materialId].textures0.y
+#define SPECULAR_TEXTURE_ID materials[meshes[drawId].materialId].textures0.z
+#define SHININESS_TEXTURE_ID materials[meshes[drawId].materialId].textures0.w
+#define NORMAL_TEXTURE_ID materials[meshes[drawId].materialId].textures1.x
+
 #define DIFFUSE_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.x)]
 #define AMBIENT_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.y)]
-#define NORMAL_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.z)]
-#define ROUGHNESS_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.w)]
+#define SPECULAR_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.z)]
+#define SHININESS_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures0.w)]
+#define NORMAL_TEXTURE gTextures[nonuniformEXT(materials[meshes[drawId].materialId].textures1.x)]
 
 const vec3 globalAmbient = vec3(0.2);
 const vec3 Light = vec3(1);
-
-struct Mesh {
-    mat4 model;
-    mat4 model_inverse;
-    int materialId;
-};
 
 struct Material {
     vec3 diffuse;
@@ -35,8 +38,10 @@ struct Material {
 };
 
 layout(set = 0, binding = 0) buffer MeshData {
-    Mesh meshes[];
-};
+    mat4 model;
+    mat4 model_inverse;
+    int materialId;
+} meshes[];
 
 layout(set = 0, binding = 1) buffer MaterialData {
     Material materials[];
@@ -65,23 +70,57 @@ float saturate(float x){
     return max(0, x);
 }
 
-void main(){
-    vec3 T = normalize(dFdx(fs_in.localPos));
-    vec3 B = normalize(cross(fs_in.normal, fs_in.localPos));
-    vec3 N = normalize(fs_in.normal);
+vec3 getDiffuse() {
+    if(DIFFUSE_TEXTURE_ID == 0){
+        return MATERIAL.diffuse;
+    }
+    return texture(DIFFUSE_TEXTURE, fs_in.uv).rgb;
+}
 
+vec3 getSpecular() {
+    if(SPECULAR_TEXTURE_ID == 0){
+        return MATERIAL.specular;
+    }
+    return texture(SPECULAR_TEXTURE, fs_in.uv).rgb;
+}
+
+float getShininess() {
+    if(SHININESS_TEXTURE_ID == 0) {
+        return MATERIAL.shininess;
+    }
+    return texture(SHININESS_TEXTURE, fs_in.uv).r;
+}
+
+vec3 getNormal(){
+    if(NORMAL_TEXTURE_ID == 0) {
+        return normalize(fs_in.normal);
+    }
+    vec3 tangentNormal = texture(NORMAL_TEXTURE, fs_in.uv).xyz * 2.0 - 1.0;
+
+    vec3 Q1  = dFdx(fs_in.pos);
+    vec3 Q2  = dFdy(fs_in.pos);
+    vec2 st1 = dFdx(fs_in.uv);
+    vec2 st2 = dFdy(fs_in.uv);
+
+    vec3 N   = normalize(fs_in.normal);
+    vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
+    vec3 B  = -normalize(cross(N, T));
     mat3 TBN = mat3(T, B, N);
-    vec3 Ns = texture(NORMAL_TEXTURE, fs_in.uv).xyz;
-    N = 2 * Ns - 1;
-    N = TBN * N;
+
+    return normalize(TBN * tangentNormal);
+}
+
+void main(){
+    vec3 N = getNormal();
+
     vec3 L = normalize(fs_in.lightPos - fs_in.pos);
     vec3 E = normalize(fs_in.eyes - fs_in.pos);
     vec3 H = normalize(E + L);
     vec3 R = reflect(-L, N);
 
-    vec3 albedo = texture(DIFFUSE_TEXTURE, fs_in.uv).rgb;
-    vec3 specular = materials[meshes[drawId].materialId].specular;
-    float shininess = materials[meshes[drawId].materialId].shininess;
+    vec3 albedo = getDiffuse();
+    vec3 specular = getSpecular();
+    float shininess = getShininess();
 
     vec3 color = Light * (saturate(dot(L, N)) * albedo + saturate(pow(dot(H, N), shininess)) * specular);
     color += globalAmbient * albedo;

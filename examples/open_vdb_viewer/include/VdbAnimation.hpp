@@ -15,7 +15,7 @@ struct Voxel {
 };
 
 struct Bounds {
-    glm::vec3 min, max;
+    glm::vec3 min{0}, max{0};
 };
 
 struct Volume {

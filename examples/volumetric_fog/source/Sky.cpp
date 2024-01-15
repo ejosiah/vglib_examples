@@ -9,8 +9,9 @@ Sky::Sky(FileManager* fileManager,
          VulkanRenderPass* renderPass,
          glm::uvec2 screenDimension,
          Camera* camera,
-         Scene* scene)
-: m_descriptor{ device, descriptorPool }
+         Scene* scene,
+         BindlessDescriptor* bindlessDescriptor)
+: m_descriptor{ device, descriptorPool, bindlessDescriptor }
 , m_filemanager{ fileManager }
 , m_device{ device }
 , m_pool{ descriptorPool }
@@ -153,7 +154,7 @@ void Sky::createPipeline() {
                     .add()
                 .layout()
                     .addDescriptorSetLayout(m_descriptor.uboDescriptorSetLayout)
-                    .addDescriptorSetLayout(m_descriptor.lutDescriptorSetLayout)
+                    .addDescriptorSetLayout(m_descriptor.bindnessSetLayout())
                     .addDescriptorSetLayout(m_scene->sceneSetLayout)
                     .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4))
                 .dynamicRenderPass()
@@ -233,7 +234,7 @@ void Sky::generateSkybox() {
     m_device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         static std::array<VkDescriptorSet, 3> sets;
         sets[0] = m_descriptor.uboDescriptorSet;
-        sets[1] = m_descriptor.lutDescriptorSet;
+        sets[1] = m_descriptor.bindessDescriptorSet();
         sets[2] = m_scene->sceneSet;
 
         std::array<VkClearValue, 6> clearColors{};

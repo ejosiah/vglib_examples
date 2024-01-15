@@ -175,6 +175,10 @@ void ShadowMap::generate(CaptureScene &&captureScene) {
     });
 }
 
+const Texture& ShadowMap::texture() const {
+    return m_texture;
+}
+
 void ShadowMap::calculateFittingFrustum() {
 //    auto camViewToWorldSpace = glm::inverse(m_scene->camera->proj * m_scene->camera->view);
 //

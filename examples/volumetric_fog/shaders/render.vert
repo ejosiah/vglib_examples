@@ -26,7 +26,10 @@ layout(location = 0) out struct {
     vec2 uv;
 } vs_out;
 
+layout(location = 6) out flat int drawId;
+
 void main(){
+    drawId = gl_DrawID;
     vec4 worldPos = model * position;
     vs_out.position = worldPos.xyz;
     vs_out.normal = mat3(model) * normal;

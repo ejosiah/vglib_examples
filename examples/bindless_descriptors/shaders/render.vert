@@ -1,20 +1,18 @@
 #version 460 core
 
+#extension GL_EXT_nonuniform_qualifier : require
+
 layout(push_constant) uniform MVP {
     mat4 model;
     mat4 view;
     mat4 projection;
 };
 
-struct Mesh {
+layout(set = 0, binding = 0) buffer MeshData {
     mat4 model;
     mat4 model_inverse;
     int materialId;
-};
-
-layout(set = 0, binding = 0) buffer MeshData {
-    Mesh meshes[];
-};
+} meshes[];
 
 layout(location = 0) in vec4 position;
 layout(location = 1) in vec3 normal;
@@ -43,7 +41,7 @@ void main(){
     vs_out.bitangent = bitangent;
     vs_out.uv = uv;
     drawId = gl_DrawID;
-    mat4 mModel = meshes[gl_DrawID].model;
+    mat4 mModel = meshes[nonuniformEXT(gl_DrawID)].model;
     vec4 worldPos = mModel * position;
     vs_out.pos = worldPos.xyz;
     vs_out.localPos = position.xyz;

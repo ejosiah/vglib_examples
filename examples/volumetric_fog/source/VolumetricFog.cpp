@@ -11,13 +11,19 @@ VolumetricFog::VolumetricFog(const Settings& settings) : VulkanBaseApp("Volumetr
     fileManager.addSearchPathFront("../../examples/volumetric_fog/models");
     fileManager.addSearchPathFront("../../examples/volumetric_fog/textures");
 
+    static VkPhysicalDeviceSynchronization2Features sync2Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES};
+    sync2Features.synchronization2 = VK_TRUE;
+
+    deviceCreateNextChain = &sync2Features;
     static VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
+    dynamicRenderingFeatures.pNext = &sync2Features;
     dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
     deviceCreateNextChain = &dynamicRenderingFeatures;
 }
 
 void VolumetricFog::initApp() {
-    Texture texture;
+    textures::color(device, dummyTexture, glm::vec3{0.2}, glm::uvec3{64});
+    initLoader();
     createDescriptorPool();
     loadModel();
     initCamera();
@@ -36,8 +42,14 @@ void VolumetricFog::initApp() {
 
 }
 
+void VolumetricFog::initLoader() {
+    m_bindLessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(5);
+    m_loader = std::make_unique<asyncml::Loader>( &device, 32);
+    m_loader->start();
+}
+
 void VolumetricFog::initSky() {
-    sky = Sky{&fileManager, &device, &descriptorPool, &renderPass, {width, height}, &camera->camera, &m_scene};
+    sky = Sky{&fileManager, &device, &descriptorPool, &renderPass, {width, height}, &camera->camera, &m_scene, &m_bindLessDescriptor};
     sky.init();
 }
 
@@ -62,12 +74,11 @@ void VolumetricFog::createFogTextures() {
 void VolumetricFog::initShadowMap() {
     m_shadowMap = ShadowMap{ &fileManager, &device, &descriptorPool, &m_scene };
     m_shadowMap.init();
+    m_bindLessDescriptor.update({ &m_shadowMap.texture(), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1U});
 }
 
 void VolumetricFog::loadModel() {
-//    phong::load(fileManager.getFullPath("Sponza/sponza.obj")->string(), device, descriptorPool, m_sponza);
-    phong::load(R"(C:\Users\Josiah Ebhomenye\source\repos\VolumetricLighting\bin\Debug\meshes\sponza.obj)", device, descriptorPool, m_sponza, {}, false, 1, centimetre);
-    spdlog::info("Sponza bounds: min: {}, max: {}", m_sponza.bounds.min, m_sponza.bounds.max);
+    m_sponza = m_loader->load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
 }
 
 void VolumetricFog::initScene() {
@@ -88,7 +99,9 @@ void VolumetricFog::initScene() {
     m_scene.camera = &camera->camera;
     m_scene.zNear = camera->znear;
     m_scene.zFar = camera->zfar;
-    m_scene.bounds = std::make_tuple(m_sponza.bounds.min, m_sponza.bounds.max);
+    m_scene.bounds =
+            std::make_tuple(glm::vec3{-19.2094593048, -1.2644249201, -11.8280706406}
+                            , glm::vec3{17.9990806580, 14.2943315506, 11.0542602539});
 
     camera->camera.proj * glm::vec4(2, 3, 4, 1);
 }
@@ -109,14 +122,14 @@ void VolumetricFog::initCamera() {
 
 //    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    auto position = (m_sponza.bounds.max + m_sponza.bounds.min) * 0.5f;
+    auto position = glm::vec3(-0.6051893234, 6.5149531364, -0.3869051933);
     spdlog::info("camera position: {}", position);
     camera->position(position);
 }
 
 
 void VolumetricFog::createDescriptorPool() {
-    constexpr uint32_t maxSets = 400;
+    constexpr uint32_t maxSets = 500;
     std::array<VkDescriptorPoolSize, 8> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
@@ -175,10 +188,24 @@ void VolumetricFog::createDescriptorSetLayouts() {
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
 
-    auto sets = descriptorPool.allocate({ m_scene.sceneSetLayout, m_fog.descriptorSetLayout });
+    m_meshSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("mesh_descriptor_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(m_sponza->numMeshes())
+                .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(m_sponza->numMaterials())
+                .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .createLayout();
+
+    auto sets = descriptorPool.allocate({ m_scene.sceneSetLayout, m_fog.descriptorSetLayout, m_meshSetLayout });
 
     m_scene.sceneSet = sets[0];
     m_fog.descriptorSet = sets[1];
+    m_meshDescriptorSet= sets[2];
 
 }
 
@@ -246,6 +273,58 @@ void VolumetricFog::updateDescriptorSets(){
     writes[0].pBufferInfo = &sceneInfo;
 
     device.updateDescriptorSets(writes);
+    updateMeshDescriptorSet();
+}
+
+void VolumetricFog::updateMeshDescriptorSet() {
+    auto writes = initializers::writeDescriptorSets();
+    writes.resize(BindLessDescriptorPlugin::MaxDescriptorResources);
+
+    VkDescriptorImageInfo dummyImageInfo{ dummyTexture.sampler.handle, dummyTexture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    for(auto i = 0; i < writes.size(); i++) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = m_bindLessDescriptor.descriptorSet;
+        writes[i].dstBinding = BindLessDescriptorPlugin::TextureResourceBindingPoint;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].dstArrayElement = i;
+        writes[i].descriptorCount = 1;
+        writes[i].pImageInfo = &dummyImageInfo;
+    }
+
+    device.updateDescriptorSets(writes);
+
+    const auto numMeshes = m_sponza->numMeshes();
+    const VkDeviceSize meshDataSize = sizeof(asyncml::MeshData);
+    std::vector<VkDescriptorBufferInfo> meshInfos;
+    for(auto i = 0; i < numMeshes; i++) {
+        const VkDeviceSize offset = i * meshDataSize;
+        meshInfos.push_back({m_sponza->meshBuffer, offset, meshDataSize  });
+    }
+
+    writes.resize(2);
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_meshDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorCount = numMeshes;
+    writes[0].pBufferInfo = meshInfos.data();
+
+    const auto numMaterials = m_sponza->numMaterials();
+    const VkDeviceSize materialDataSize = sizeof(asyncml::MaterialData);
+    std::vector<VkDescriptorBufferInfo> materialInfos;
+    for(auto i = 0; i < numMaterials; i++){
+        materialInfos.push_back({m_sponza->materialBuffer, i * materialDataSize, materialDataSize});
+    }
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_meshDescriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorCount = numMaterials;
+    writes[1].pBufferInfo = materialInfos.data();
+
+    device.updateDescriptorSets(writes);
 }
 
 void VolumetricFog::createCommandPool() {
@@ -259,29 +338,31 @@ void VolumetricFog::createPipelineCache() {
 
 
 void VolumetricFog::createRenderPipeline() {
-    //    @formatter:off
-        auto builder = prototypes->cloneGraphicsPipeline();
-        render.pipeline =
+    auto builder = prototypes->cloneGraphicsPipeline();
+
+    render.pipeline =
             builder
-                .allowDerivatives()
-                .shaderStage()
+                    .allowDerivatives()
+                    .shaderStage()
                     .vertexShader(resource("render.vert.spv"))
                     .fragmentShader(resource("render.frag.spv"))
-                .layout()
+                    .layout()
                     .addDescriptorSetLayout(sky.descriptor().uboDescriptorSetLayout)
                     .addDescriptorSetLayout(sky.descriptor().lutDescriptorSetLayout)
-                    .addDescriptorSetLayout(m_sponza.descriptorSetLayout)
+                    .addDescriptorSetLayout(m_meshSetLayout)
                     .addDescriptorSetLayout(m_scene.sceneSetLayout)
                     .addDescriptorSetLayout(m_shadowMap.lightMatrixDescriptorSetLayout)
                     .addDescriptorSetLayout(m_shadowMap.shadowMapDescriptorSetLayout)
-                .name("render")
-                .build(render.layout);
-
+                    .addDescriptorSetLayout(*m_bindLessDescriptor.descriptorSetLayout)
+                    .name("render")
+                    .build(render.layout);
+    //    @formatter:off
         rayMarch.pipeline =
             builder
                 .basePipeline(render.pipeline)
                 .shaderStage()
-                    .fragmentShader(resource("ray_march.frag.spv"))
+                    .vertexShader(resource("render1.vert.spv"))
+                    .fragmentShader(resource("ray_march1.frag.spv"))
                 .layout()
                     .addDescriptorSetLayout(m_fog.descriptorSetLayout)
                 .name("render_ray_march")
@@ -349,47 +430,47 @@ VkCommandBuffer *VolumetricFog::buildCommandBuffers(uint32_t imageIndex, uint32_
 }
 
 void VolumetricFog::renderWithVolumeTextures(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 6> sets;
-    sets[0] = sky.descriptor().uboDescriptorSet;
-    sets[1] = sky.descriptor().lutDescriptorSet;
-    sets[3] = m_scene.sceneSet;
-    sets[4] = m_shadowMap.lightMatrixDescriptorSet;
-    sets[5] = m_shadowMap.shadowMapDescriptorSet;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-    camera->push(commandBuffer, render.layout);
-
-    auto numPrims = m_sponza.meshes.size();
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_sponza.vertexBuffer.buffer, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, m_sponza.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-    for (auto i = 0; i < numPrims; i++) {
-        sets[2] = m_sponza.meshes[i].material.descriptorSet;
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-        m_sponza.meshes[i].drawIndexed(commandBuffer);
-    }
+//    static std::array<VkDescriptorSet, 8> sets;
+//    sets[0] = sky.descriptor().uboDescriptorSet;
+//    sets[1] = sky.descriptor().lutDescriptorSet;
+//    sets[3] = m_scene.sceneSet;
+//    sets[4] = m_shadowMap.lightMatrixDescriptorSet;
+//    sets[5] = m_shadowMap.shadowMapDescriptorSet;
+//    sets[6] = m_bindLessDescriptor.descriptorSet;
+//    sets[7] = m_meshDescriptorSet;
+//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+//    camera->push(commandBuffer, render.layout);
+//
+//    auto numPrims = m_sponza.meshes.size();
+//    VkDeviceSize offset = 0;
+//    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_sponza.vertexBuffer.buffer, &offset);
+//    vkCmdBindIndexBuffer(commandBuffer, m_sponza.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+//    for (auto i = 0; i < numPrims; i++) {
+//        sets[2] = m_sponza.meshes[i].material.descriptorSet;
+//        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+//        m_sponza.meshes[i].drawIndexed(commandBuffer);
+//    }
 }
 
 void VolumetricFog::renderWithRayMarching(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 7> sets;
+    static std::array<VkDescriptorSet, 8> sets;
     sets[0] = sky.descriptor().uboDescriptorSet;
     sets[1] = sky.descriptor().lutDescriptorSet;
+    sets[2] = m_meshDescriptorSet;
     sets[3] = m_scene.sceneSet;
     sets[4] = m_shadowMap.lightMatrixDescriptorSet;
     sets[5] = m_shadowMap.shadowMapDescriptorSet;
-    sets[6] = m_fog.descriptorSet;
+    sets[6] = m_bindLessDescriptor.descriptorSet;
+    sets[7] = m_fog.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, rayMarch.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, rayMarch.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     camera->push(commandBuffer, rayMarch.layout);
 
-    auto numPrims = m_sponza.meshes.size();
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_sponza.vertexBuffer.buffer, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, m_sponza.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-    for (auto i = 0; i < numPrims; i++) {
-        sets[2] = m_sponza.meshes[i].material.descriptorSet;
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, rayMarch.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-        m_sponza.meshes[i].drawIndexed(commandBuffer);
-    }
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, m_sponza->vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, m_sponza->indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexedIndirect(commandBuffer, m_sponza->draw.gpu, 0, m_sponza->draw.count, sizeof(VkDrawIndexedIndirectCommand));
 }
 
 void VolumetricFog::renderUI(VkCommandBuffer commandBuffer) {
@@ -441,7 +522,7 @@ void VolumetricFog::checkAppInputs() {
 }
 
 void VolumetricFog::cleanup() {
-    VulkanBaseApp::cleanup();
+    m_loader->stop();
 }
 
 void VolumetricFog::onPause() {
@@ -461,8 +542,15 @@ void VolumetricFog::updateSunDirection() {
 
 void VolumetricFog::castShadow() {
     m_shadowMap.generate([this](auto commandBuffer){
-       m_sponza.draw(commandBuffer);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, m_sponza->vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, m_sponza->indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexedIndirect(commandBuffer, m_sponza->draw.gpu, 0, m_sponza->draw.count, sizeof(VkDrawIndexedIndirectCommand));
     });
+}
+
+void VolumetricFog::endFrame() {
+    m_sponza->updateDrawState(device, m_bindLessDescriptor);
 }
 
 
@@ -472,6 +560,8 @@ int main(){
         Settings settings;
         settings.depthTest = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
+        settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
 
         auto app = VolumetricFog{ settings };
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();

@@ -39,7 +39,12 @@ void VdbAnimation::createDescriptorSetLayout() {
 void VdbAnimation::updateDescriptorSet() {
     glm::uvec3 dimensions{bounds_.max - bounds_.min};
 
-    staging_ = device_->createStagingBuffer(dimensions.x * dimensions.y * dimensions.z * sizeof(float));
+    auto size = dimensions.x * dimensions.y * dimensions.z * sizeof(float);
+    if(size == 0){
+        dimensions = glm::vec3(1);
+        size = sizeof(float);
+    }
+    staging_ = device_->createStagingBuffer(size);
     textures::create(*device_, stagingTexture_, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT,
                      dimensions, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, sizeof(float));
 
@@ -179,15 +184,21 @@ void VdbAnimation::load(const std::filesystem::path &vdbPath) {
 }
 
 Frame VdbAnimation::loadFrame(fs::path path) {
+    static auto to_glm_vec3 = [](openvdb::Vec3i v) {
+        return glm::vec3(v.x(), v.y(), v.z());
+    };
+
+    auto getId = [](auto str) {
+        auto start = str.find_last_of("_") + 1;
+        auto id = atoi(str.substr(start, 4).c_str());
+        return id;
+    };
+
     try {
         spdlog::debug("loading volume grid from {}", fs::path(path).filename().string());
         openvdb::io::File file(path.string());
 
         file.open();
-
-        static auto to_glm_vec3 = [](openvdb::Vec3i v) {
-            return glm::vec3(v.x(), v.y(), v.z());
-        };
 
         std::vector<std::string> gridNames;
         for(auto itr = file.beginName(); itr != file.endName(); ++itr){
@@ -198,18 +209,18 @@ Frame VdbAnimation::loadFrame(fs::path path) {
         auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
         openvdb::Vec3i boxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
         openvdb::Vec3i boxMax = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_max")->value();
-
-        openvdb::Vec3i size;
-        size = size.sub(boxMax, boxMin);
-
-        auto getId = [](auto str) {
-            auto start = str.find_last_of("_") + 1;
-            auto id = atoi(str.substr(start, 4).c_str());
-            return id;
-        };
+        int64_t numVoxels = grid->getMetadata<openvdb::Int64Metadata>("file_voxel_count")->value();
 
         Volume volume{};
         volume.id = getId(path.string());
+
+        if(numVoxels <= 0) {
+            spdlog::info("{} contains no voxels", path.string());
+            return {.volume = volume};
+        }
+
+        openvdb::Vec3i size;
+        size = size.sub(boxMax, boxMin);
 
         openvdb::Coord xyz;
         auto accessor = grid->getAccessor();

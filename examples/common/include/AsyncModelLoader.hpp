@@ -77,7 +77,7 @@ namespace asyncml {
     };
 
     enum class TextureType : int {
-        DIFFUSE = 0, AMBIENT, NORMAL, ROUGHNESS, REFLECTION, OPACITY, DISPLACEMENT, SPECULAR
+        DIFFUSE = 0, AMBIENT, SPECULAR, SHININESS, NORMAL, OPACITY, DISPLACEMENT
     };
 
     struct Mesh{
@@ -156,6 +156,10 @@ namespace asyncml {
         Draw draw;
 
         void updateDrawState(const VulkanDevice& device, BindlessDescriptor& bindlessDescriptor);
+
+        size_t numMeshes() const { return meshBuffer.sizeAs<MeshData>(); }
+
+        size_t numMaterials() const { return materialBuffer.sizeAs<MaterialData>(); }
     };
 
     struct Pending {

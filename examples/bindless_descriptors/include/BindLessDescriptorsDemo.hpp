@@ -58,7 +58,5 @@ protected:
     std::shared_ptr<asyncml::Model> _sponza;
     std::unique_ptr<asyncml::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
-    VulkanDescriptorSetLayout meshSetLayout;
-    VkDescriptorSet meshDescriptorSet;
     Texture dummyTexture;
 };

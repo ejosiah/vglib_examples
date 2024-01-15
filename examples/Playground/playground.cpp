@@ -20,6 +20,7 @@
 #include <assimp/Exporter.hpp>
 #include "add_ts_vectors.h"
 #include "shader_reflect.hpp"
+#include "xforms.h"
 
 glm::vec2 randomPointOnSphericalAnnulus(glm::vec2 x, float r, auto rng) {
     float angle = rng() * glm::two_pi<float>();
@@ -210,7 +211,28 @@ int main(int argc, char** argv){
 //    }
 //    shader_reflect(argc, argv);
 
-    glm::vec3 v;
-    std::cin >> v;
-    fmt::print("{}\n", v);
+    auto projection = vkn::perspectiveVFov(glm::half_pi<float>(), 1, 1, 100);
+//    auto projection = glm::perspective(glm::half_pi<float>(), 1.f, 1.f, 100.f);
+
+    auto linearToRawDepth = [](float depth, float near, float far) {
+        return ( near * far ) / ( depth * ( near - far ) ) - far / ( near - far );
+    };
+
+    glm::vec4 x{0, 0, -1, 1};
+
+    auto xp = projection * x;
+    fmt::print("xp: {}\n", xp);
+    xp /= xp.w;
+    fmt::print("xp/w: {}\n", xp.z);
+
+    x.z = -100;
+    xp = projection * x;
+    fmt::print("xp: {}\n", xp);
+    xp /= xp.w;
+    fmt::print("xp/x: {}\n", xp.z);
+
+    auto wz = linearToRawDepth(xp.z, 1, 100);
+    fmt::print("world z: {}\n", wz);
+
+    fmt::print("vertex: {}", sizeof(Vertex));
 }

@@ -7,13 +7,16 @@
 
 class Sky {
 public:
-    explicit Sky(FileManager* fileManager = {},
-        VulkanDevice* device = {},
-        VulkanDescriptorPool* descriptorPool = {},
-        VulkanRenderPass* renderPass = {},
-        glm::uvec2 screenDimension = {},
-        Camera* camera = {},
-        Scene* m_scene = {} );
+    Sky() = default;
+
+    explicit Sky(FileManager* fileManager,
+        VulkanDevice* device,
+        VulkanDescriptorPool* descriptorPool,
+        VulkanRenderPass* renderPass,
+        glm::uvec2 screenDimension,
+        Camera* camera,
+        Scene* m_scene,
+        BindlessDescriptor* bindlessDescriptor);
 
     void init();
 

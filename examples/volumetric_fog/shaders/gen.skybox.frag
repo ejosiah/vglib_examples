@@ -1,7 +1,12 @@
 #version 460
 
+layout(set = 1, binding = 10) uniform sampler2D gTextures[];
+layout(set = 1, binding = 10) uniform sampler3D gTextures3d[];
+
+#define BIND_LESS_ENABLED
 #define RADIANCE_API_ENABLED
 #include "atmosphere_api.glsl"
+
 
 #define SCENE_SET 2
 #include "scene.glsl"

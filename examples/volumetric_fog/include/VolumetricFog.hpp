@@ -2,6 +2,7 @@
 #include "Sky.hpp"
 #include "ShadowMap.hpp"
 #include "VulkanBaseApp.h"
+#include "AsyncModelLoader.hpp"
 #include "Fog.hpp"
 
 class VolumetricFog : public VulkanBaseApp{
@@ -10,6 +11,8 @@ public:
 
 protected:
     void initApp() override;
+
+    void initLoader();
 
     void initSky();
 
@@ -30,6 +33,8 @@ protected:
     void createDescriptorSetLayouts();
 
     void updateDescriptorSets();
+
+    void updateMeshDescriptorSet();
 
     void updateFogDescriptorSets();
 
@@ -65,6 +70,8 @@ protected:
 
     void castShadow();
 
+    void endFrame() override;
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -88,7 +95,7 @@ protected:
 //    std::unique_ptr<OrbitingCameraController> camera;
     std::unique_ptr<FirstPersonCameraController> camera;
     Sky sky;
-    VulkanDrawable m_sponza;
+    std::shared_ptr<asyncml::Model> m_sponza;
     struct {
         glm::vec3 direction{1, 0, 0};
         float zenith{45};
@@ -98,4 +105,9 @@ protected:
     Fog m_fog;
     Scene m_scene;
     ShadowMap m_shadowMap;
+    BindlessDescriptor m_bindLessDescriptor;
+    std::unique_ptr<asyncml::Loader> m_loader;
+    VulkanDescriptorSetLayout m_meshSetLayout;
+    VkDescriptorSet m_meshDescriptorSet;
+    Texture dummyTexture;
 };
