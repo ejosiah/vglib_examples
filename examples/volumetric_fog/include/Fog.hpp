@@ -16,8 +16,17 @@ struct FogData {
 struct Fog {
     VulkanBuffer gpu;
     FogData* cpu;
-    VulkanDescriptorSetLayout descriptorSetLayout;
-    VkDescriptorSet descriptorSet;
+    VulkanDescriptorSetLayout uboDescriptorSetLayout;
+    VkDescriptorSet uboDescriptorSet;
+
+    VulkanDescriptorSetLayout dataInjectionSetLayout;
+    VkDescriptorSet dataInjectionSet;
+
+    VulkanDescriptorSetLayout lightContribSetLayout;
+    VkDescriptorSet lightContribSet;
+
+    VulkanDescriptorSetLayout lightScatteringSetLayout;
+    VkDescriptorSet lightScatteringSet;
 
     Texture fogData;
     Texture lightContribution;

@@ -6,14 +6,19 @@
 #define SCENE_SET 1
 #define ATMOSPHERE_PARAMS_SET 2
 #define ATMOSPHERE_LUT_SET 3
+#define LIGHT_SCATTERING_IMAGE_ID 2
+#define LIGHT_CONTRIB_TEXTURE_ID 6
+
+#define LIGHT_CONTRIB_TEXTURE globalTextures3d[LIGHT_CONTRIB_TEXTURE_ID]
+#define LIGHT_SCATTERING_IMAGE globalImages3d[LIGHT_SCATTERING_IMAGE_ID]
 
 #include "atmosphere_api.glsl"
 #include "scene.glsl"
 #include "fog.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-layout(set = FOG_SET, binding = 6, rgba32f) uniform image3D iIntegratedScattering;
+layout(set = 4, binding = 10)  uniform sampler3D globalTextures3d[];
+layout(set = 4, binding = 11, rgba32f) writeonly uniform image3D globalImages3d[];
 
 ivec3 froxelCoord = ivec3(gl_GlobalInvocationID);
 
@@ -26,11 +31,12 @@ void main() {
     const int zDim = fog.froxelDim.z;
     for(int z = 0; z < zDim; ++z){
         fCoord.z = z;
-        float zNext = sliceToExponentialDepth(scene.znear, scene.zfar, z + 1, zDim);
+        float jitter = generateFroxelNoise(fCoord.xy, scene.frame, 0.25);
+        float zNext = sliceToExponentialDepthJittered(scene.znear, scene.zfar, jitter, z + 1, zDim);
         float zStep = abs(zNext - zCurrent);
         zCurrent = zNext;
 
-        const vec4 seSample = texelFetch(lightContribution, fCoord, 0);
+        const vec4 seSample = texelFetch(LIGHT_CONTRIB_TEXTURE, fCoord, 0);
         const vec3 sampledScattering = seSample.rgb;
         const float sampledExtinction = seSample.a;
         const float clampedExtinction = max(sampledExtinction, 0.00001);
@@ -40,6 +46,6 @@ void main() {
         scattering += S * transmittance;
         transmittance *= T;
 
-        imageStore(iIntegratedScattering, fCoord, vec4(scattering, transmittance));
+        imageStore(LIGHT_SCATTERING_IMAGE, fCoord, vec4(scattering, transmittance));
     }
 }

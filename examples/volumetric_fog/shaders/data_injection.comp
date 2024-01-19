@@ -3,6 +3,8 @@
 
 #define FOG_SET 0
 #define SCENE_SET 1
+#define FOG_DATA_ID 0
+#define FOG_DATA globalImages3d[FOG_DATA_ID]
 
 #include "fog.glsl"
 #include "scene.glsl"
@@ -13,14 +15,14 @@ vec4 boxFog(vec3 pos);
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = FOG_SET, binding = 4, rgba32f) uniform image3D ifogData;
+layout(set = 2, binding = 11, rgba32f) writeonly uniform image3D globalImages3d[];
 
 ivec3 froxelCoord = ivec3(gl_GlobalInvocationID);
 
 void main() {
     vec3 pos = worldFromFroxel(froxelCoord);
     vec4 scatteringExtinction = constantFog() + heightFog(pos) + boxFog(pos);
-    imageStore(ifogData, froxelCoord, scatteringExtinction);
+    imageStore(FOG_DATA, froxelCoord, scatteringExtinction);
 }
 
 vec4 constantFog() {

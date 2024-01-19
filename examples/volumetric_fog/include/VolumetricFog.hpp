@@ -12,6 +12,8 @@ public:
 protected:
     void initApp() override;
 
+    void loadBlueNoise();
+
     void initLoader();
 
     void initSky();
@@ -70,6 +72,8 @@ protected:
 
     void castShadow();
 
+    void computeFog();
+
     void endFrame() override;
 
 protected:
@@ -86,7 +90,18 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
-    } compute;
+    } dataInjection;
+
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } lightIntegration;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } lightContrib;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -102,6 +117,7 @@ protected:
         float azimuth{0};
     } sun;
 
+    bool raymarch = false;
     Fog m_fog;
     Scene m_scene;
     ShadowMap m_shadowMap;
@@ -110,4 +126,5 @@ protected:
     VulkanDescriptorSetLayout m_meshSetLayout;
     VkDescriptorSet m_meshDescriptorSet;
     Texture dummyTexture;
+    Texture blueNoise;
 };

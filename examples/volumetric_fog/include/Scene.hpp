@@ -23,13 +23,13 @@ struct SceneData {
     float zfar;
 
     glm::vec3 camera;
-    PADDING_4_BYTES(0)
+    float screenWidth;
 
     glm::vec3 cameraDirection;
-    PADDING_4_BYTES(1)
+    float screenHeight;
 
     glm::vec3 whitePoint;
-
+    int frame{0};
 };
 
 struct Scene {

@@ -20,9 +20,13 @@ layout(set = SCENE_SET, binding = 0) buffer SCENE_INFO {
     float zfar;
 
     vec3 camera;
+    float screenWidth;
 
     vec3 cameraDirection;
+    float screenHeight;
+
     vec3 whitePoint;
+    int frame;
 } scene;
 
 #endif // SCENE_GLSL

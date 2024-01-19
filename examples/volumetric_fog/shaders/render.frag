@@ -13,6 +13,8 @@
 #define MASK_TEXTURE_ID MATERIAL.textures1.y
 #define NORMAL_TEXTURE_ID 0
 #define BRDF_TEXTURE_ID 1
+#define VOLUME_SCATTERING_TEXTURE_ID 7
+#define BLUE_NOISE_TEXTURE_ID 8
 
 #define DIFFUSE_TEXTURE gTextures[nonuniformEXT(DIFFUSE_TEXTURE_ID)]
 #define METALNESS_TEXTURE gTextures[nonuniformEXT(METALNESS_TEXTURE_ID)]
@@ -20,6 +22,8 @@
 #define ROUGHNESS_TEXTURE gTextures[nonuniformEXT(ROUGHNESS_TEXTURE_ID)]
 #define NORMAL_TEXTURE gTextures[nonuniformEXT(NORMAL_TEXTURE_ID)]
 #define MASK_TEXTURE gTextures[nonuniformEXT(MASK_TEXTURE_ID)]
+#define BLUE_NOISE_TEXTURE gTextures[BLUE_NOISE_TEXTURE_ID]
+#define VOLUME_SCATTERING_TEXTURE gTextures3d[VOLUME_SCATTERING_TEXTURE_ID]
 
 #define RADIANCE_API_ENABLED
 #define SCENE_SET 3
@@ -33,6 +37,8 @@ layout(set = 6, binding = 10) uniform sampler3D gTextures3d[];
 #include "scene.glsl"
 #include "shadow_map.glsl"
 #include "fog.glsl"
+layout(set = 8, binding = 2) uniform sampler3D integratedScattering;
+
 
 float RadicalInverse_VdC(uint bits){
     bits = (bits << 16u) | (bits >> 16u);
@@ -277,9 +283,19 @@ vec4 computeRadiance() {
     return vec4(Lo, 1);
 }
 
+vec4 computeScatteringTransmission() {
+    vec2 uv = gl_FragCoord.xy/vec2(scene.screenWidth, scene.screenHeight);
+    float lDepth = rawToLinearDepth(gl_FragCoord.z, scene.znear, scene.zfar);
+    float z = linearDepthToUv(lDepth, scene.znear, scene.zfar, fog.froxelDim.z);
+    vec3 pos = vec3(uv, z);
+    return texture(VOLUME_SCATTERING_TEXTURE, pos);
+}
+
 void main(){
     vec4 color = computeRadiance();
     if(color.a <= 0) discard;
 
+    vec4 scatteringTransmission = computeScatteringTransmission();
+    color.rgb = color.rgb * scatteringTransmission.a + scatteringTransmission.rgb;
     fragColor.rgb = pow(vec3(1.0) - exp(-color.rgb / scene.whitePoint * scene.exposure), vec3(1.0 / 2.2));
 }

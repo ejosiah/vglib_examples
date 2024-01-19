@@ -12,7 +12,7 @@
 
 #else
 #define SHADOW_MAP shadowMap
-layout(set = 5, binding = 0) uniform sampler2D shadowMap;
+layout(set = SHADOW_MAP_SET, binding = 0) uniform sampler2D shadowMap;
 #endif
 
 float shadowCalculation(vec4 lightSpacePos){

@@ -100,7 +100,7 @@ void Sky::createDescriptorSet() {
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
     
     skyBoxSet = m_pool->allocate({skyBoxSetLayout }).front();

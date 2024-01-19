@@ -3,7 +3,6 @@
 
 #include "scene.glsl"
 
-
 #ifndef FOG_SET
 #define FOG_SET 0
 #endif // FOG_SET
@@ -20,16 +19,39 @@ layout(set = FOG_SET, binding = 0) buffer FOG_INFO {
     float g;
 } fog;
 
-layout(set = FOG_SET, binding = 1) uniform sampler3D fogData;
-layout(set = FOG_SET, binding = 2) uniform sampler3D lightContribution;
-layout(set = FOG_SET, binding = 3) uniform sampler3D integratedScattering;
+layout(set = FOG_SET, binding = 1) uniform sampler2D blueNoise;
+
+#include "noise.glsl"
+
+
+float generateFroxelNoise(vec2 pixel, int frame, float scale) {
+    vec2 uv = pixel/fog.froxelDim.xy;
+    return generateNoise(uv, frame, scale);
+}
 
 float linearToRawDepth(float depth, float near, float far) {
     return ( near * far ) / ( depth * ( near - far ) ) - far / ( near - far );
 }
 
+float rawToLinearDepth(float depth, float near, float far) {
+    return near * far / (far + depth * (near - far));
+}
+
+float linearDepthToUv(float depth, float near, float far, int numSlices) {
+    const float one_over_log_f_over_n = 1.0f / log2( far / near );
+    const float scale = numSlices * one_over_log_f_over_n;
+    const float bias = - ( numSlices * log2(near) * one_over_log_f_over_n );
+
+    return max(log2(depth) * scale + bias, 0.0f) / float(numSlices);
+}
+
 float sliceToExponentialDepth(float near, float far, int slice, int numSlices) {
     float x = (slice + .5)/float(numSlices);
+    return near * pow(far/near, x);
+}
+
+float sliceToExponentialDepthJittered(float near, float far, float jitter, int slice, int numSlices) {
+    float x = (slice + .5 + jitter)/float(numSlices);
     return near * pow(far/near, x);
 }
 

@@ -25,6 +25,7 @@ void VolumetricFog::initApp() {
     textures::color(device, dummyTexture, glm::vec3{0.2}, glm::uvec3{64});
     initLoader();
     createDescriptorPool();
+    loadBlueNoise();
     loadModel();
     initCamera();
     initScene();
@@ -43,9 +44,14 @@ void VolumetricFog::initApp() {
 }
 
 void VolumetricFog::initLoader() {
-    m_bindLessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(5);
+    m_bindLessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(10);
     m_loader = std::make_unique<asyncml::Loader>( &device, 32);
     m_loader->start();
+}
+
+void VolumetricFog::loadBlueNoise() {
+    textures::fromFile(device, blueNoise, resource("LDR_RG01_0.png"), false, VK_FORMAT_R8G8B8A8_SRGB);
+    m_bindLessDescriptor.update({ &blueNoise, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8u});
 }
 
 void VolumetricFog::initSky() {
@@ -69,6 +75,26 @@ void VolumetricFog::createFogTextures() {
     textures::create(device, m_fog.fogData, VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, 128}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
     textures::create(device, m_fog.lightContribution, VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, 128}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
     textures::create(device, m_fog.integratedScattering, VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, 128}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+
+    device.setName<VK_OBJECT_TYPE_IMAGE>("data_inject", m_fog.fogData.image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>("data_inject_view", m_fog.fogData.imageView.handle);
+
+    device.setName<VK_OBJECT_TYPE_IMAGE>("light_contrib", m_fog.lightContribution.image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>("light_contrib_view", m_fog.lightContribution.imageView.handle);
+
+    device.setName<VK_OBJECT_TYPE_IMAGE>("light_scattering", m_fog.integratedScattering.image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>("light_scattering_view", m_fog.integratedScattering.imageView.handle);
+
+    m_fog.fogData.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    m_fog.lightContribution.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    m_bindLessDescriptor.update({ &m_fog.fogData, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0u, VK_IMAGE_LAYOUT_GENERAL});
+    m_bindLessDescriptor.update({ &m_fog.lightContribution, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1u, VK_IMAGE_LAYOUT_GENERAL});
+    m_bindLessDescriptor.update({ &m_fog.integratedScattering, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2u, VK_IMAGE_LAYOUT_GENERAL});
+
+    m_bindLessDescriptor.update({ &m_fog.fogData, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5U});
+    m_bindLessDescriptor.update({ &m_fog.lightContribution, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6U});
+    m_bindLessDescriptor.update({ &m_fog.integratedScattering, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7U});
 }
 
 void VolumetricFog::initShadowMap() {
@@ -96,14 +122,16 @@ void VolumetricFog::initScene() {
     m_scene.cpu->zfar = camera->zfar;
     m_scene.cpu->viewProjection = camera->camera.proj * camera->camera.view * camera->camera.model;
     m_scene.cpu->inverseViewProjection = glm::inverse(m_scene.cpu->viewProjection);
+    m_scene.cpu->frame = 0;
     m_scene.camera = &camera->camera;
     m_scene.zNear = camera->znear;
     m_scene.zFar = camera->zfar;
+    m_scene.cpu->screenWidth = swapChain.width();
+    m_scene.cpu->screenHeight = swapChain.height();
     m_scene.bounds =
             std::make_tuple(glm::vec3{-19.2094593048, -1.2644249201, -11.8280706406}
                             , glm::vec3{17.9990806580, 14.2943315506, 11.0542602539});
 
-    camera->camera.proj * glm::vec4(2, 3, 4, 1);
 }
 
 void VolumetricFog::initCamera() {
@@ -152,10 +180,10 @@ void VolumetricFog::createDescriptorSetLayouts() {
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
 
-    m_fog.descriptorSetLayout =
+    m_fog.uboDescriptorSetLayout =
         device.descriptorSetLayoutBuilder()
             .name("fog_set_layout")
             .binding(0)
@@ -166,26 +194,45 @@ void VolumetricFog::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+        .createLayout();
+
+    m_fog.dataInjectionSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("data_injection_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+        .createLayout();
+
+    m_fog.lightContribSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("light_contrib_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+        .createLayout();
+
+    m_fog.lightScatteringSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("light_contrib_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .binding(2)
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
-            .binding(3)
-                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
-            .binding(4)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
-            .binding(5)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
-            .binding(6)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
         .createLayout();
 
     m_meshSetLayout =
@@ -201,64 +248,85 @@ void VolumetricFog::createDescriptorSetLayouts() {
                 .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
             .createLayout();
 
-    auto sets = descriptorPool.allocate({ m_scene.sceneSetLayout, m_fog.descriptorSetLayout, m_meshSetLayout });
+    auto sets = descriptorPool.allocate({ m_scene.sceneSetLayout, m_fog.uboDescriptorSetLayout
+                                          , m_fog.dataInjectionSetLayout, m_fog.lightContribSetLayout,
+                                          m_fog.lightScatteringSetLayout, m_meshSetLayout });
 
     m_scene.sceneSet = sets[0];
-    m_fog.descriptorSet = sets[1];
-    m_meshDescriptorSet= sets[2];
+    m_fog.uboDescriptorSet = sets[1];
+    m_fog.dataInjectionSet = sets[2];
+    m_fog.lightContribSet = sets[3];
+    m_fog.lightScatteringSet = sets[4];
+    m_meshDescriptorSet= sets[5];
+
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("scene_descriptor_set", m_scene.sceneSet);
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("fog_ubo_descriptor_set", m_fog.uboDescriptorSet);
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("fog_data_injection_descriptor_set", m_fog.dataInjectionSet);
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("fog_light_contrib_descriptor_set", m_fog.lightContribSet);
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("fog_light_scattering_descriptor_set", m_fog.lightScatteringSet);
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("mesh_descriptor_set", m_meshDescriptorSet);
 
 }
 
 void VolumetricFog::updateFogDescriptorSets() {
-    auto writes = initializers::writeDescriptorSets<7>();
+    auto writes = initializers::writeDescriptorSets<8>();
     
-    writes[0].dstSet = m_fog.descriptorSet;
+    writes[0].dstSet = m_fog.uboDescriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo uboInfo{ m_fog.gpu, 0, VK_WHOLE_SIZE};
     writes[0].pBufferInfo = &uboInfo;
-    
-    
-    writes[1].dstSet = m_fog.descriptorSet;
+
+    writes[1].dstSet = m_fog.uboDescriptorSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo fogDataInfo{m_fog.fogData.sampler.handle, m_fog.fogData.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
-    writes[1].pImageInfo = &fogDataInfo;
+    VkDescriptorImageInfo blueNoiseInfo{ blueNoise.sampler.handle, blueNoise.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    writes[1].pImageInfo = &blueNoiseInfo;
     
-    writes[2].dstSet = m_fog.descriptorSet;
-    writes[2].dstBinding = 2;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].dstSet = m_fog.dataInjectionSet;
+    writes[2].dstBinding = 0;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo lightContribInfo{m_fog.lightContribution.sampler.handle, m_fog.lightContribution.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
-    writes[2].pImageInfo = &lightContribInfo;
-    
-    writes[3].dstSet = m_fog.descriptorSet;
-    writes[3].dstBinding = 3;
+    VkDescriptorImageInfo dataInjectInfo{ m_fog.fogData.sampler.handle, m_fog.fogData.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
+    writes[2].pImageInfo = &dataInjectInfo;
+
+    writes[3].dstSet = m_fog.lightContribSet;
+    writes[3].dstBinding = 0;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo scatteringInfo{m_fog.integratedScattering.sampler.handle, m_fog.integratedScattering.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
-    writes[3].pImageInfo = &scatteringInfo;
-    
-    writes[4].dstSet = m_fog.descriptorSet;
-    writes[4].dstBinding = 4;
+    writes[3].pImageInfo = &dataInjectInfo;
+
+    writes[4].dstSet = m_fog.lightContribSet;
+    writes[4].dstBinding = 1;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[4].descriptorCount = 1;
-    writes[4].pImageInfo = &fogDataInfo;
+    VkDescriptorImageInfo lightContribInfo{ m_fog.lightContribution.sampler.handle, m_fog.lightContribution.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
+    writes[4].pImageInfo = &lightContribInfo;
     
-    writes[5].dstSet = m_fog.descriptorSet;
-    writes[5].dstBinding = 5;
-    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[5].dstSet = m_fog.lightScatteringSet;
+    writes[5].dstBinding = 0;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[5].descriptorCount = 1;
     writes[5].pImageInfo = &lightContribInfo;
-    
-    writes[6].dstSet = m_fog.descriptorSet;
-    writes[6].dstBinding = 6;
+
+    writes[6].dstSet = m_fog.lightScatteringSet;
+    writes[6].dstBinding = 1;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[6].descriptorCount = 1;
-    writes[6].pImageInfo = &scatteringInfo;
-    
+    VkDescriptorImageInfo lightScatteringInfo{ m_fog.integratedScattering.sampler.handle,
+                                               m_fog.integratedScattering.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[6].pImageInfo = &lightScatteringInfo;
+
+    writes[7].dstSet = m_fog.lightScatteringSet;
+    writes[7].dstBinding = 2;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[7].descriptorCount = 1;
+    VkDescriptorImageInfo lightScatteringReadInfo{ m_fog.integratedScattering.sampler.handle,
+                                               m_fog.integratedScattering.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    writes[7].pImageInfo = &lightScatteringReadInfo;
+
     device.updateDescriptorSets(writes);
 }
 
@@ -280,18 +348,18 @@ void VolumetricFog::updateMeshDescriptorSet() {
     auto writes = initializers::writeDescriptorSets();
     writes.resize(BindLessDescriptorPlugin::MaxDescriptorResources);
 
-    VkDescriptorImageInfo dummyImageInfo{ dummyTexture.sampler.handle, dummyTexture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    for(auto i = 0; i < writes.size(); i++) {
-        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstSet = m_bindLessDescriptor.descriptorSet;
-        writes[i].dstBinding = BindLessDescriptorPlugin::TextureResourceBindingPoint;
-        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[i].dstArrayElement = i;
-        writes[i].descriptorCount = 1;
-        writes[i].pImageInfo = &dummyImageInfo;
-    }
-
-    device.updateDescriptorSets(writes);
+//    VkDescriptorImageInfo dummyImageInfo{ dummyTexture.sampler.handle, dummyTexture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+//    for(auto i = 0; i < writes.size(); i++) {
+//        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+//        writes[i].dstSet = m_bindLessDescriptor.descriptorSet;
+//        writes[i].dstBinding = BindLessDescriptorPlugin::TextureResourceBindingPoint;
+//        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+//        writes[i].dstArrayElement = i;
+//        writes[i].descriptorCount = 1;
+//        writes[i].pImageInfo = &dummyImageInfo;
+//    }
+//
+//    device.updateDescriptorSets(writes);
 
     const auto numMeshes = m_sponza->numMeshes();
     const VkDeviceSize meshDataSize = sizeof(asyncml::MeshData);
@@ -354,39 +422,70 @@ void VolumetricFog::createRenderPipeline() {
                     .addDescriptorSetLayout(m_shadowMap.lightMatrixDescriptorSetLayout)
                     .addDescriptorSetLayout(m_shadowMap.shadowMapDescriptorSetLayout)
                     .addDescriptorSetLayout(*m_bindLessDescriptor.descriptorSetLayout)
+                    .addDescriptorSetLayout(m_fog.uboDescriptorSetLayout)
+                    .addDescriptorSetLayout(m_fog.lightScatteringSetLayout)
                     .name("render")
-                    .build(render.layout);
+                .build(render.layout);
     //    @formatter:off
         rayMarch.pipeline =
             builder
                 .basePipeline(render.pipeline)
                 .shaderStage()
-                    .vertexShader(resource("render1.vert.spv"))
-                    .fragmentShader(resource("ray_march1.frag.spv"))
-                .layout()
-                    .addDescriptorSetLayout(m_fog.descriptorSetLayout)
+                    .vertexShader(resource("render.vert.spv"))
+                    .fragmentShader(resource("ray_march.frag.spv"))
                 .name("render_ray_march")
-                .build(rayMarch.layout);
+            .build(rayMarch.layout);
     //    @formatter:on
 }
 
 void VolumetricFog::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
+    dataInjection.layout = device.createPipelineLayout({
+        m_fog.uboDescriptorSetLayout,
+        m_scene.sceneSetLayout,
+        *m_bindLessDescriptor.descriptorSetLayout});
+
+    auto module = device.createShaderModule(resource("data_injection.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
-    compute.layout = device.createPipelineLayout();
-
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout.handle;
+    computeCreateInfo.layout = dataInjection.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    dataInjection.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    lightContrib.layout = device.createPipelineLayout({
+                  m_fog.uboDescriptorSetLayout,
+                  m_scene.sceneSetLayout,
+                  sky.descriptor().uboDescriptorSetLayout,
+                  sky.descriptor().lutDescriptorSetLayout,
+                  m_shadowMap.shadowMapDescriptorSetLayout,
+                  *m_bindLessDescriptor.descriptorSetLayout});
+    module = device.createShaderModule(resource("light_contrib.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = lightContrib.layout.handle;
+
+    lightContrib.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    lightIntegration.layout = device.createPipelineLayout({
+                                  m_fog.uboDescriptorSetLayout,
+                                  m_scene.sceneSetLayout,
+                                  sky.descriptor().uboDescriptorSetLayout,
+                                  sky.descriptor().lutDescriptorSetLayout,
+                                  *m_bindLessDescriptor.descriptorSetLayout});
+    module = device.createShaderModule(resource("integrate.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = lightIntegration.layout.handle;
+    lightIntegration.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("data_injection", dataInjection.pipeline.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("light_contrib", lightContrib.pipeline.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("integrate", lightIntegration.pipeline.handle);
 }
 
 
 void VolumetricFog::onSwapChainDispose() {
     dispose(render.pipeline);
-    dispose(compute.pipeline);
 }
 
 void VolumetricFog::onSwapChainRecreation() {
@@ -395,6 +494,8 @@ void VolumetricFog::onSwapChainRecreation() {
     createRenderPipeline();
     createComputePipeline();
     sky.reload(&renderPass, width, height);
+    m_scene.cpu->screenWidth = swapChain.width();
+    m_scene.cpu->screenHeight = swapChain.height();
 }
 
 VkCommandBuffer *VolumetricFog::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -419,7 +520,11 @@ VkCommandBuffer *VolumetricFog::buildCommandBuffers(uint32_t imageIndex, uint32_
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     sky.render(commandBuffer);
-    renderWithRayMarching(commandBuffer);
+    if(raymarch) {
+        renderWithRayMarching(commandBuffer);
+    }else {
+        renderWithVolumeTextures(commandBuffer);
+    }
     renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -430,26 +535,25 @@ VkCommandBuffer *VolumetricFog::buildCommandBuffers(uint32_t imageIndex, uint32_
 }
 
 void VolumetricFog::renderWithVolumeTextures(VkCommandBuffer commandBuffer) {
-//    static std::array<VkDescriptorSet, 8> sets;
-//    sets[0] = sky.descriptor().uboDescriptorSet;
-//    sets[1] = sky.descriptor().lutDescriptorSet;
-//    sets[3] = m_scene.sceneSet;
-//    sets[4] = m_shadowMap.lightMatrixDescriptorSet;
-//    sets[5] = m_shadowMap.shadowMapDescriptorSet;
-//    sets[6] = m_bindLessDescriptor.descriptorSet;
-//    sets[7] = m_meshDescriptorSet;
-//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-//    camera->push(commandBuffer, render.layout);
-//
-//    auto numPrims = m_sponza.meshes.size();
-//    VkDeviceSize offset = 0;
-//    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_sponza.vertexBuffer.buffer, &offset);
-//    vkCmdBindIndexBuffer(commandBuffer, m_sponza.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-//    for (auto i = 0; i < numPrims; i++) {
-//        sets[2] = m_sponza.meshes[i].material.descriptorSet;
-//        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-//        m_sponza.meshes[i].drawIndexed(commandBuffer);
-//    }
+    static std::array<VkDescriptorSet, 9> sets;
+    sets[0] = sky.descriptor().uboDescriptorSet;
+    sets[1] = sky.descriptor().lutDescriptorSet;
+    sets[2] = m_meshDescriptorSet;
+    sets[3] = m_scene.sceneSet;
+    sets[4] = m_shadowMap.lightMatrixDescriptorSet;
+    sets[5] = m_shadowMap.shadowMapDescriptorSet;
+    sets[6] = m_bindLessDescriptor.descriptorSet;
+    sets[7] = m_fog.uboDescriptorSet;
+    sets[8] = m_fog.lightScatteringSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    camera->push(commandBuffer, render.layout);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, m_sponza->vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, m_sponza->indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexedIndirect(commandBuffer, m_sponza->draw.gpu, 0, m_sponza->draw.count, sizeof(VkDrawIndexedIndirectCommand));
 }
 
 void VolumetricFog::renderWithRayMarching(VkCommandBuffer commandBuffer) {
@@ -461,7 +565,7 @@ void VolumetricFog::renderWithRayMarching(VkCommandBuffer commandBuffer) {
     sets[4] = m_shadowMap.lightMatrixDescriptorSet;
     sets[5] = m_shadowMap.shadowMapDescriptorSet;
     sets[6] = m_bindLessDescriptor.descriptorSet;
-    sets[7] = m_fog.descriptorSet;
+    sets[7] = m_fog.uboDescriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, rayMarch.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, rayMarch.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
@@ -488,6 +592,7 @@ void VolumetricFog::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::SliderFloat("Height Fog Density", &m_fog.cpu->heightFogDensity, 0, 10);
         ImGui::SliderFloat("Height Fog falloff", &m_fog.cpu->heightFogFalloff, 0, 10);
         ImGui::SliderFloat("Anisotropy", &m_fog.cpu->g, -0.9999, 0.9999);
+        ImGui::Checkbox("raymarch", &raymarch);
     }
 
     if(ImGui::CollapsingHeader("post processing")) {
@@ -512,6 +617,9 @@ void VolumetricFog::update(float time) {
     updateSunDirection();
     sky.update(time);
     castShadow();
+    m_scene.cpu->lightViewProjection = m_shadowMap.lightSpace.cpu->viewProj;
+    computeFog();
+
 
     auto wTitle = fmt::format("{} - camera: {:f}", title, camera->position());
     glfwSetWindowTitle(window, wTitle.c_str());
@@ -549,8 +657,91 @@ void VolumetricFog::castShadow() {
     });
 }
 
+void VolumetricFog::computeFog() {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        static std::vector<VkDescriptorSet> sets;
+        sets.resize(3);
+        sets[0] = m_fog.uboDescriptorSet;
+        sets[1] = m_scene.sceneSet;
+        sets[2] = m_bindLessDescriptor.descriptorSet;
+
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.image = m_fog.fogData.image;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dataInjection.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dataInjection.pipeline.handle);
+        vkCmdDispatch(commandBuffer, 16, 16, 128);
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        sets.resize(6);
+        sets[0] = m_fog.uboDescriptorSet;
+        sets[1] = m_scene.sceneSet;
+        sets[2] = sky.descriptor().uboDescriptorSet;
+        sets[3] = sky.descriptor().lutDescriptorSet;
+        sets[4] = m_shadowMap.shadowMapDescriptorSet;
+        sets[5] = m_bindLessDescriptor.descriptorSet;
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.image = m_fog.lightContribution.image;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lightContrib.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lightContrib.pipeline.handle);
+        vkCmdDispatch(commandBuffer, 16, 16, 128);
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+
+        sets.resize(5);
+        sets[0] = m_fog.uboDescriptorSet;
+        sets[1] = m_scene.sceneSet;
+        sets[2] = sky.descriptor().uboDescriptorSet;
+        sets[3] = sky.descriptor().lutDescriptorSet;
+        sets[4] = m_bindLessDescriptor.descriptorSet;
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.image = m_fog.integratedScattering.image;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lightIntegration.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lightIntegration.pipeline.handle);
+        vkCmdDispatch(commandBuffer, 16, 16, 1);
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.image = m_fog.integratedScattering.image;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    });
+
+}
+
 void VolumetricFog::endFrame() {
     m_sponza->updateDrawState(device, m_bindLessDescriptor);
+    m_scene.cpu->frame++;
 }
 
 
