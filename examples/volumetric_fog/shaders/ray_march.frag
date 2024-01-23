@@ -15,6 +15,7 @@
 #define BRDF_TEXTURE_ID 1
 #define VOLUME_SCATTERING_TEXTURE_ID 7
 #define BLUE_NOISE_TEXTURE_ID 8
+#define VOLUME_NOISE_TEXTURE_ID 9
 
 #define DIFFUSE_TEXTURE gTextures[nonuniformEXT(DIFFUSE_TEXTURE_ID)]
 #define METALNESS_TEXTURE gTextures[nonuniformEXT(METALNESS_TEXTURE_ID)]
@@ -24,6 +25,7 @@
 #define MASK_TEXTURE gTextures[nonuniformEXT(MASK_TEXTURE_ID)]
 #define BLUE_NOISE_TEXTURE gTextures[BLUE_NOISE_TEXTURE_ID]
 #define VOLUME_SCATTERING_TEXTURE gTextures3d[VOLUME_SCATTERING_TEXTURE_ID]
+#define VOLUME_NOISE_TEXTURE gTextures3d[VOLUME_NOISE_TEXTURE_ID]
 
 
 #define RADIANCE_API_ENABLED
@@ -185,19 +187,22 @@ float saturate(float x){
     return max(0, x);
 }
 
-vec4 constantFog() {
-    float density = fog.constantDensity;
+vec4 constantFog(float noise) {
+    float density = fog.constantDensity * noise;
     return scatteringExtinctionFromColorDensity(FOG_COLOR, density);
 }
 
-vec4 heightFog(vec3 pos) {
+vec4 heightFog(vec3 pos, float noise) {
     float h = max(0, pos.y);
-    float density = fog.heightFogDensity * exp(-fog.heightFogFalloff * h);
+    float density = fog.heightFogDensity * exp(-fog.heightFogFalloff * h) * noise;
     return scatteringExtinctionFromColorDensity(FOG_COLOR, density);
 }
 
 float compute(vec3 pos, float distance, out vec3 scattering, out float transmittance) {
-    vec4 scatteringAndExtinction = constantFog() + heightFog(pos);
+    vec3 sampleCoord = pos + fog.volumeNoisePositionScale + vec3(1, 0.1, 2) * scene.time * fog.volumeNoiseSpeedScale;
+
+    float noise = texture(VOLUME_NOISE_TEXTURE, sampleCoord).r;
+    vec4 scatteringAndExtinction = constantFog(noise) + heightFog(pos, noise);
     scattering = scatteringAndExtinction.rgb;
 
     float extinction = scatteringAndExtinction.a;

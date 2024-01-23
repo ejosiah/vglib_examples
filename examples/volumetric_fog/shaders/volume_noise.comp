@@ -1,0 +1,104 @@
+#version 460
+
+#define VOLUME_NOISE_IMAGE_ID 4
+#define VOLUME_NOISE_IMAGE globalImages3d[VOLUME_NOISE_IMAGE_ID]
+
+vec3 interpolation_c2( vec3 x ) { return x * x * x * (x * (x * 6.0 - 15.0) + 10.0); }
+
+// from: https://github.com/BrianSharpe/GPU-Noise-Lib/blob/master/gpu_noise_lib.glsl
+void perlin_hash(vec3 gridcell, float s, bool tile,
+out vec4 lowz_hash_0,
+out vec4 lowz_hash_1,
+out vec4 lowz_hash_2,
+out vec4 highz_hash_0,
+out vec4 highz_hash_1,
+out vec4 highz_hash_2)
+{
+    const vec2 OFFSET = vec2( 50.0, 161.0 );
+    const float DOMAIN = 69.0;
+    const vec3 SOMELARGEFLOATS = vec3( 635.298681, 682.357502, 668.926525 );
+    const vec3 ZINC = vec3( 48.500388, 65.294118, 63.934599 );
+
+    gridcell.xyz = gridcell.xyz - floor(gridcell.xyz * ( 1.0 / DOMAIN )) * DOMAIN;
+    float d = DOMAIN - 1.5;
+    vec3 gridcell_inc1 = step( gridcell, vec3( d,d,d ) ) * ( gridcell + 1.0 );
+
+    gridcell_inc1 = tile ? mod(gridcell_inc1, s) : gridcell_inc1;
+
+    vec4 P = vec4( gridcell.xy, gridcell_inc1.xy ) + OFFSET.xyxy;
+    P *= P;
+    P = P.xzxz * P.yyww;
+    vec3 lowz_mod = vec3( 1.0 / ( SOMELARGEFLOATS.xyz + gridcell.zzz * ZINC.xyz ) );
+    vec3 highz_mod = vec3( 1.0 / ( SOMELARGEFLOATS.xyz + gridcell_inc1.zzz * ZINC.xyz ) );
+    lowz_hash_0 = fract( P * lowz_mod.xxxx );
+    highz_hash_0 = fract( P * highz_mod.xxxx );
+    lowz_hash_1 = fract( P * lowz_mod.yyyy );
+    highz_hash_1 = fract( P * highz_mod.yyyy );
+    lowz_hash_2 = fract( P * lowz_mod.zzzz );
+    highz_hash_2 = fract( P * highz_mod.zzzz );
+}
+
+// from: https://github.com/BrianSharpe/GPU-Noise-Lib/blob/master/gpu_noise_lib.glsl
+float perlin(vec3 P, float s, bool tile) {
+    P *= s;
+
+    vec3 Pi = floor(P);
+    vec3 Pi2 = floor(P);
+    vec3 Pf = P - Pi;
+    vec3 Pf_min1 = Pf - 1.0;
+
+    vec4 hashx0, hashy0, hashz0, hashx1, hashy1, hashz1;
+    perlin_hash( Pi2, s, tile, hashx0, hashy0, hashz0, hashx1, hashy1, hashz1 );
+
+    vec4 grad_x0 = hashx0 - 0.49999;
+    vec4 grad_y0 = hashy0 - 0.49999;
+    vec4 grad_z0 = hashz0 - 0.49999;
+    vec4 grad_x1 = hashx1 - 0.49999;
+    vec4 grad_y1 = hashy1 - 0.49999;
+    vec4 grad_z1 = hashz1 - 0.49999;
+    vec4 grad_results_0 = 1.0 / sqrt( grad_x0 * grad_x0 + grad_y0 * grad_y0 + grad_z0 * grad_z0 ) * ( vec2( Pf.x, Pf_min1.x ).xyxy * grad_x0 + vec2( Pf.y, Pf_min1.y ).xxyy * grad_y0 + Pf.zzzz * grad_z0 );
+    vec4 grad_results_1 = 1.0 / sqrt( grad_x1 * grad_x1 + grad_y1 * grad_y1 + grad_z1 * grad_z1 ) * ( vec2( Pf.x, Pf_min1.x ).xyxy * grad_x1 + vec2( Pf.y, Pf_min1.y ).xxyy * grad_y1 + Pf_min1.zzzz * grad_z1 );
+
+    vec3 blend = interpolation_c2( Pf );
+    vec4 res0 = mix( grad_results_0, grad_results_1, blend.z );
+    vec4 blend2 = vec4( blend.xy, vec2( 1.0 - blend.xy ) );
+    float final = dot( res0, blend2.zxzx * blend2.wwyy );
+    final *= 1.0/sqrt(0.75);
+    return ((final * 1.5) + 1.0) * 0.5;
+}
+
+float perlin(vec3 P) {
+    return perlin(P, 1, false);
+}
+
+float get_perlin_7_octaves(vec3 p, float s) {
+    vec3 xyz = p;
+    float f = 1.0;
+    float a = 1.0;
+
+    float perlin_value = 0.0;
+    perlin_value += a * perlin(xyz, s * f, true).r; a *= 0.5; f *= 2.0;
+    perlin_value += a * perlin(xyz, s * f, true).r; a *= 0.5; f *= 2.0;
+    perlin_value += a * perlin(xyz, s * f, true).r; a *= 0.5; f *= 2.0;
+    perlin_value += a * perlin(xyz, s * f, true).r; a *= 0.5; f *= 2.0;
+    perlin_value += a * perlin(xyz, s * f, true).r; a *= 0.5; f *= 2.0;
+    perlin_value += a * perlin(xyz, s * f, true).r; a *= 0.5; f *= 2.0;
+    perlin_value += a * perlin(xyz, s * f, true).r;
+
+    return perlin_value;
+}
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 11, rgba32f) writeonly uniform image3D globalImages3d[];
+
+
+void main() {
+    ivec3 pos = ivec3(gl_GlobalInvocationID.xyz);
+
+    vec3 xyz = pos / 64.0;
+
+    float perlin_data = get_perlin_7_octaves(xyz, 8.0);
+
+    imageStore( VOLUME_NOISE_IMAGE, pos, vec4(perlin_data, 0, 0, 0) );
+}

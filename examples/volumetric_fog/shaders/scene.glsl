@@ -8,6 +8,8 @@
 layout(set = SCENE_SET, binding = 0) buffer SCENE_INFO {
     mat4 viewProjection;
     mat4 inverseViewProjection;
+    mat4 previousViewProjection;
+    mat4 previousInverseViewProjection;
     mat4 lightViewProjection;
 
     vec3 sunDirection;
@@ -27,6 +29,12 @@ layout(set = SCENE_SET, binding = 0) buffer SCENE_INFO {
 
     vec3 whitePoint;
     int frame;
+
+    float time;
+    float deltaTime;
+    int cameraLightOn;
+    float cameraLightCutOff;
+
 } scene;
 
 #endif // SCENE_GLSL

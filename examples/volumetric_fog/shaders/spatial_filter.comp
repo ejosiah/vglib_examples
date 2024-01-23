@@ -1,0 +1,56 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#define SIGMA_FILTER 4.0
+#define RADIUS 2
+
+#define FOG_SET 0
+
+#include "fog.glsl"
+
+#define FOG_DATA_IMAGE_ID 0
+#define LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  1 : 2)
+
+#define FOG_DATA_IMAGE globalImages3d[FOG_DATA_IMAGE_ID]
+#define LIGHT_CONTRIB_IMAGE globalImages3d[LIGHT_CONTRIB_IMAGE_ID]
+
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 1, binding = 11, rgba32f) uniform image3D globalImages3d[];
+
+ivec3 froxelCoord = ivec3(gl_GlobalInvocationID);
+
+float gaussian(float radius, float sigma) {
+    const float v = radius / sigma;
+    return exp(-(v*v));
+}
+
+void main() {
+    vec4 scatteringExtinction = imageLoad(LIGHT_CONTRIB_IMAGE, froxelCoord);
+
+    if(fog.applySpatialFiltering == 1) {
+
+        float totalWeight = 0;
+        vec4 totalScatteringExtinction = vec4(0);
+
+        for(int i = -RADIUS; i <= RADIUS; ++i) {
+            for(int j = -RADIUS; j <= RADIUS; ++j){
+                ivec2 coord2d = ivec2(i, j);
+                ivec3 coord = froxelCoord + ivec3(coord2d, 0);
+
+                if(all(greaterThanEqual(coord, ivec3(0))) && all(lessThanEqual(coord, fog.froxelDim))) {
+                    const float weight = gaussian(length(coord2d), SIGMA_FILTER);
+                    const vec4 sampledValue = imageLoad(LIGHT_CONTRIB_IMAGE, coord);
+
+                    totalScatteringExtinction += sampledValue * weight;
+                    totalWeight += weight;
+                }
+            }
+        }
+
+        scatteringExtinction = totalScatteringExtinction / totalWeight;
+    }
+    imageStore(FOG_DATA_IMAGE, froxelCoord, scatteringExtinction);
+
+}

@@ -12,6 +12,8 @@
 struct SceneData {
     glm::mat4 viewProjection;
     glm::mat4 inverseViewProjection;
+    glm::mat4 previousViewProjection;
+    glm::mat4 previousInverseViewProjection;
     glm::mat4 lightViewProjection;
     glm::vec3 sunDirection;
     float exposure;
@@ -30,6 +32,11 @@ struct SceneData {
 
     glm::vec3 whitePoint;
     int frame{0};
+
+    float time;
+    float deltaTime;
+    int cameraLightOn;
+    float cameraLightCut0ff;
 };
 
 struct Scene {

@@ -1,5 +1,7 @@
 #version 460
 
+#extension GL_EXT_nonuniform_qualifier : enable
+
 #define RADIANCE_API_ENABLED
 
 #define FOG_SET 0
@@ -7,11 +9,14 @@
 #define ATMOSPHERE_PARAMS_SET 2
 #define ATMOSPHERE_LUT_SET 3
 #define SHADOW_MAP_SET 4
-#define LIGHT_CONTRIB_ID 1
+#define LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  1 : 2)
 #define FOG_DATA_TEXTURE_ID 5
+#define FOG_DATA_IMAGE_ID 0
 
-#define LIGHT_CONTRIB_IMAGE globalImages3d[LIGHT_CONTRIB_ID]
+#define LIGHT_CONTRIB_IMAGE globalImages3d[LIGHT_CONTRIB_IMAGE_ID]
 #define FOG_DATA_TEXTURE globalTextures3d[FOG_DATA_TEXTURE_ID]
+#define FOG_DATA_IMAGE globalImages3d[FOG_DATA_IMAGE_ID]
+
 
 #include "atmosphere_api.glsl"
 #include "scene.glsl"
@@ -21,14 +26,14 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 5, binding = 10)  uniform sampler3D globalTextures3d[];
-layout(set = 5, binding = 11, rgba32f) writeonly uniform image3D globalImages3d[];
+layout(set = 5, binding = 11, rgba32f) uniform image3D globalImages3d[];
 
 ivec3 froxelCoord = ivec3(gl_GlobalInvocationID);
 
 void main() {
     vec3 pos = worldFromFroxel(froxelCoord);
     vec4 lightSpacePos = scene.lightViewProjection * vec4(pos, 1);
-    vec4 scatteringExtinction = texelFetch(FOG_DATA_TEXTURE, froxelCoord, 0);
+    vec4 scatteringExtinction = imageLoad(FOG_DATA_IMAGE, froxelCoord);
 
     vec3 scattering = scatteringExtinction.rgb;
     float extinction = scatteringExtinction.a;

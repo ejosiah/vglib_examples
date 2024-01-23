@@ -1,0 +1,59 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#define FOG_SET 0
+#define SCENE_SET 1
+
+#include "fog.glsl"
+#include "scene.glsl"
+
+#define STAGING_IMAGE_ID 0
+#define PREVIOUS_LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  2 : 1)
+#define CURRENT_LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  1 : 2)
+
+#define STAGING_IMAGE globalImages3d[STAGING_IMAGE_ID]
+#define CURRENT_LIGHT_CONTRIB_IMAGE globalImages3d[CURRENT_LIGHT_CONTRIB_IMAGE_ID]
+#define PREVIOUS_LIGHT_CONTRIB_IMAGE globalImages3d[PREVIOUS_LIGHT_CONTRIB_IMAGE_ID]
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 2, binding = 11, rgba32f) uniform image3D globalImages3d[];
+
+ivec3 froxelCoord = ivec3(gl_GlobalInvocationID);
+
+void main() {
+    vec4 scatteringTransimssion = imageLoad(STAGING_IMAGE, froxelCoord);
+    if(fog.applyTemporalFiltering != 1) {
+        imageStore(CURRENT_LIGHT_CONTRIB_IMAGE, froxelCoord, scatteringTransimssion);
+        return;
+    }
+
+    const float near = scene.znear;
+    const float far = scene.zfar;
+    const int numSlices = fog.froxelDim.z;
+
+    vec4 worldPos = vec4(worldFromFroxel(froxelCoord), 1);
+    vec4 ndc = scene.previousViewProjection * worldPos;
+    ndc /= ndc.w;
+
+    float depth = rawToLinearDepth(ndc.z, near, far);
+    float w = linearDepthToUv(depth, near, far, numSlices);
+
+    vec3 uvw = vec3(.5 + .5 * ndc.xy, w);
+
+    float boundsCheck = dot(uvw, vec3(1));
+    bool uvInsideViewFrustum =  boundsCheck >= 0 && boundsCheck <= 3;
+
+    if(uvInsideViewFrustum){
+        ivec3 prevFroxelCoord = ivec3(uvw * fog.froxelDim);
+
+        vec4 currScatteringTransimssion = imageLoad(STAGING_IMAGE, froxelCoord);
+        vec4 preScatteringTransmission = imageLoad(PREVIOUS_LIGHT_CONTRIB_IMAGE, prevFroxelCoord);
+
+        const float t = fog.temporalFilterBlendWeight;
+        scatteringTransimssion = mix(preScatteringTransmission, currScatteringTransimssion, t);
+    }
+
+    imageStore(CURRENT_LIGHT_CONTRIB_IMAGE, froxelCoord, scatteringTransimssion);
+}

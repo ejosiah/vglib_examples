@@ -17,6 +17,13 @@ layout(set = FOG_SET, binding = 0) buffer FOG_INFO {
     float heightFogDensity;
     float heightFogFalloff;
     float g;
+
+    float volumeNoisePositionScale;
+    float volumeNoiseSpeedScale;
+    int applySpatialFiltering;
+    int applyTemporalFiltering;
+
+    float temporalFilterBlendWeight;
 } fog;
 
 layout(set = FOG_SET, binding = 1) uniform sampler2D blueNoise;

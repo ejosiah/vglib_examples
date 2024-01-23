@@ -5,6 +5,11 @@
 #include "AsyncModelLoader.hpp"
 #include "Fog.hpp"
 
+struct Pipeline{
+    VulkanPipelineLayout layout;
+    VulkanPipeline pipeline;
+};
+
 class VolumetricFog : public VulkanBaseApp{
 public:
     explicit VolumetricFog(const Settings& settings = {});
@@ -13,6 +18,10 @@ protected:
     void initApp() override;
 
     void loadBlueNoise();
+
+    void initBindlessDescriptor();
+
+    void bakeVolumetricNoise();
 
     void initLoader();
 
@@ -77,31 +86,13 @@ protected:
     void endFrame() override;
 
 protected:
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } render;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } rayMarch;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } dataInjection;
-
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } lightIntegration;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } lightContrib;
+    Pipeline render;
+    Pipeline rayMarch;
+    Pipeline dataInjection;
+    Pipeline spatialFilter;
+    Pipeline temporalFilter;
+    Pipeline lightIntegration;
+    Pipeline lightContrib;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -127,4 +118,5 @@ protected:
     VkDescriptorSet m_meshDescriptorSet;
     Texture dummyTexture;
     Texture blueNoise;
+    Texture m_volumeNoise;
 };

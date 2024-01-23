@@ -3,6 +3,8 @@
 #include <VulkanBuffer.h>
 #include <glm/glm.hpp>
 
+#include <array>
+
 struct FogData {
     glm::ivec3 froxelDim;
     float scatteringFactor;
@@ -11,6 +13,13 @@ struct FogData {
     float heightFogDensity;
     float heightFogFalloff;
     float g;
+
+    float volumeNoisePositionScale;
+    float volumeNoiseSpeedScale;
+    int applySpatialFiltering;
+    int applyTemporalFiltering;
+
+    float temporalFilterBlendWeight;
 };
 
 struct Fog {
@@ -19,16 +28,7 @@ struct Fog {
     VulkanDescriptorSetLayout uboDescriptorSetLayout;
     VkDescriptorSet uboDescriptorSet;
 
-    VulkanDescriptorSetLayout dataInjectionSetLayout;
-    VkDescriptorSet dataInjectionSet;
-
-    VulkanDescriptorSetLayout lightContribSetLayout;
-    VkDescriptorSet lightContribSet;
-
-    VulkanDescriptorSetLayout lightScatteringSetLayout;
-    VkDescriptorSet lightScatteringSet;
-
     Texture fogData;
-    Texture lightContribution;
+    std::array<Texture, 2> lightContribution;
     Texture integratedScattering;
 };

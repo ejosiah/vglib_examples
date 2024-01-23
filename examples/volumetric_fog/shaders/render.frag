@@ -37,8 +37,6 @@ layout(set = 6, binding = 10) uniform sampler3D gTextures3d[];
 #include "scene.glsl"
 #include "shadow_map.glsl"
 #include "fog.glsl"
-layout(set = 8, binding = 2) uniform sampler3D integratedScattering;
-
 
 float RadicalInverse_VdC(uint bits){
     bits = (bits << 16u) | (bits >> 16u);
