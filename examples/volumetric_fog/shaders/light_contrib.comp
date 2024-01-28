@@ -2,6 +2,8 @@
 
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#include "fog_constants.glsl"
+
 #define RADIANCE_API_ENABLED
 
 #define FOG_SET 0
@@ -9,9 +11,8 @@
 #define ATMOSPHERE_PARAMS_SET 2
 #define ATMOSPHERE_LUT_SET 3
 #define SHADOW_MAP_SET 4
-#define LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  1 : 2)
+#define LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  LIGHT_CONTRIB_IMAGE_PING_ID : LIGHT_CONTRIB_IMAGE_PONG_ID)
 #define FOG_DATA_TEXTURE_ID 5
-#define FOG_DATA_IMAGE_ID 0
 
 #define LIGHT_CONTRIB_IMAGE globalImages3d[LIGHT_CONTRIB_IMAGE_ID]
 #define FOG_DATA_TEXTURE globalTextures3d[FOG_DATA_TEXTURE_ID]

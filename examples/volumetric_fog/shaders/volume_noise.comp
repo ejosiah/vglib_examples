@@ -1,7 +1,10 @@
 #version 460
 
-#define VOLUME_NOISE_IMAGE_ID 4
-#define VOLUME_NOISE_IMAGE globalImages3d[VOLUME_NOISE_IMAGE_ID]
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(constant_id=0) const uint VOLUME_NOISE_IMAGE_ID = 4;
+
+#define VOLUME_NOISE_IMAGE globalImages3d[nonuniformEXT(VOLUME_NOISE_IMAGE_ID)]
 
 vec3 interpolation_c2( vec3 x ) { return x * x * x * (x * (x * 6.0 - 15.0) + 10.0); }
 

@@ -2,19 +2,20 @@
 
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#include "fog_constants.glsl"
+
 #define RADIANCE_API_ENABLED
 
 #define FOG_SET 0
 #define SCENE_SET 1
 #define ATMOSPHERE_PARAMS_SET 2
 #define ATMOSPHERE_LUT_SET 3
-#define LIGHT_SCATTERING_IMAGE_ID 3
 #define LIGHT_CONTRIB_TEXTURE_ID 6
 
-#define LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  1 : 2)
+#define LIGHT_CONTRIB_IMAGE_ID nonuniformEXT(scene.frame % 2 == 0 ?  LIGHT_CONTRIB_IMAGE_PING_ID : LIGHT_CONTRIB_IMAGE_PONG_ID)
 
 #define LIGHT_CONTRIB_IMAGE globalImages3d[LIGHT_CONTRIB_IMAGE_ID]
-#define LIGHT_SCATTERING_IMAGE globalImages3d[LIGHT_SCATTERING_IMAGE_ID]
+#define LIGHT_SCATTERING_IMAGE globalImages3d[nonuniformEXT(LIGHT_SCATTERING_IMAGE_ID)]
 
 #include "atmosphere_api.glsl"
 #include "scene.glsl"
@@ -35,7 +36,8 @@ void main() {
     const int zDim = fog.froxelDim.z;
     for(int z = 0; z < zDim; ++z){
         fCoord.z = z;
-        float jitter = generateFroxelNoise(fCoord.xy, scene.frame, 0.25);
+//        float jitter = generateFroxelNoise(fCoord.xy, scene.frame, 0.25);
+        float jitter = 0;
         float zNext = sliceToExponentialDepthJittered(scene.znear, scene.zfar, jitter, z + 1, zDim);
         float zStep = abs(zNext - zCurrent);
         zCurrent = zNext;

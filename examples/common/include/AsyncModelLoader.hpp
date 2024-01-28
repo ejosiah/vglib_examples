@@ -13,9 +13,15 @@
 #include <memory>
 #include <atomic>
 #include <thread>
+#include <condition_variable>
 #include <plugins/BindLessDescriptorPlugin.hpp>
 
 namespace asyncml {
+
+    struct Bounds {
+        glm::vec3 min{0}, max{0};
+    };
+
 
     template<typename T>
     class RingBuffer {
@@ -180,6 +186,20 @@ namespace asyncml {
         int materialId;
     };
 
+    struct Frame {
+        Texture texture{};
+        int index{0};
+        int elapsedMS{};
+        int durationMS{std::numeric_limits<int>::max()};
+    };
+
+    struct Volume {
+        RingBuffer<UploadedTexture> uploadedTextures;
+        std::vector<Frame> frames;
+        Bounds bounds;
+        int bindingIndex{0};
+        float invMaxDensity{};
+    };
 
     class Loader {
     public:
@@ -217,6 +237,8 @@ namespace asyncml {
         VulkanBuffer _stagingBuffer;
         Assimp::Importer _importer;
         std::set<std::filesystem::path> _uploadedTextures;
+        std::condition_variable _loadRequest;
+        std::mutex _mutex;
     };
 
 }

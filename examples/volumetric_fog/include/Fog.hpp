@@ -20,6 +20,8 @@ struct FogData {
     int applyTemporalFiltering;
 
     float temporalFilterBlendWeight;
+    float temporalFilterJitterScale;
+    glm::vec2 jitter;
 };
 
 struct Fog {

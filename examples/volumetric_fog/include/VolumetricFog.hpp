@@ -17,6 +17,8 @@ public:
 protected:
     void initApp() override;
 
+    void createHaltonSamples();
+
     void loadBlueNoise();
 
     void initBindlessDescriptor();
@@ -83,6 +85,8 @@ protected:
 
     void computeFog();
 
+    void newFrame() override;
+
     void endFrame() override;
 
 protected:
@@ -119,4 +123,11 @@ protected:
     Texture dummyTexture;
     Texture blueNoise;
     Texture m_volumeNoise;
+    std::vector<glm::vec2> m_haltonSamples;
+    int32_t m_jitterIndex{};
+    static constexpr int32_t JitterPeriod = 8;
+    uint32_t fogDataImageId = ~0u;
+    std::array<uint32_t, 2> lightContribImageId{~0u, ~0u};
+    uint32_t lightScatteringImageId = ~0u;
+    uint32_t volumeNoiseImageId = ~0u;
 };

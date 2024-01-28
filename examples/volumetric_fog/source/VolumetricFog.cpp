@@ -23,6 +23,7 @@ VolumetricFog::VolumetricFog(const Settings& settings) : VulkanBaseApp("Volumetr
 
 void VolumetricFog::initApp() {
     textures::color(device, dummyTexture, glm::vec3{0.2}, glm::uvec3{64});
+    createHaltonSamples();
     initBindlessDescriptor();
     bakeVolumetricNoise();
     initLoader();
@@ -46,17 +47,46 @@ void VolumetricFog::initApp() {
 
 }
 
+void VolumetricFog::createHaltonSamples() {
+    static auto halton = [](int32_t i, int32_t b){
+        float f = 1.0f;
+        float r = 0.0f;
+        while(i > 0) {
+            f = f / static_cast<float>( b );
+            r = r + f * static_cast<float>( i % b );
+            i = i / b;
+        }
+        return r;
+    };
+    static auto halton2 = [&](int32_t i){ return halton(i, 2); };
+    static auto halton3 = [&](int32_t i){ return halton(i, 3); };
+
+    for(auto i = 0; i < JitterPeriod; ++i) {
+        glm::vec2 sample{ halton2(i + 1), halton3(i + 1) };
+        m_haltonSamples.push_back(sample);
+    }
+}
+
 void VolumetricFog::initBindlessDescriptor() {
     m_bindLessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(10);
+    fogDataImageId = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    lightContribImageId[0] = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    lightContribImageId[1] = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    lightScatteringImageId = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    volumeNoiseImageId = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 }
 
 void VolumetricFog::bakeVolumetricNoise() {
     textures::create(device, m_volumeNoise, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, {64, 64, 64}, VK_SAMPLER_ADDRESS_MODE_REPEAT);
     m_bindLessDescriptor.update({ &m_volumeNoise, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 9U });
-    m_bindLessDescriptor.update({ &m_volumeNoise, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4U, VK_IMAGE_LAYOUT_GENERAL });
+    m_bindLessDescriptor.update({ &m_volumeNoise, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, volumeNoiseImageId, VK_IMAGE_LAYOUT_GENERAL });
+
+    VkSpecializationMapEntry entry{0, 0, sizeof(uint32_t)};
+    VkSpecializationInfo specializationInfo{1, &entry, sizeof(uint32_t), &volumeNoiseImageId};
 
     auto shader = device.createShaderModule(resource("volume_noise.comp.spv"));
     auto stage = initializers::shaderStage({ shader, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
     auto layout = device.createPipelineLayout({ *m_bindLessDescriptor.descriptorSetLayout });
 
     auto info = initializers::computePipelineCreateInfo();
@@ -123,7 +153,9 @@ void VolumetricFog::initFog() {
     m_fog.cpu->volumeNoiseSpeedScale = 0.2;
     m_fog.cpu->applySpatialFiltering = 0;
     m_fog.cpu->applyTemporalFiltering = 0;
+    m_fog.cpu->temporalFilterJitterScale = 1.6;
     m_fog.cpu->temporalFilterBlendWeight = 0.2;
+    m_fog.cpu->jitter = glm::vec2(0);
 }
 
 void VolumetricFog::createFogTextures() {
@@ -149,10 +181,10 @@ void VolumetricFog::createFogTextures() {
     m_fog.lightContribution[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
     m_fog.lightContribution[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 
-    m_bindLessDescriptor.update({ &m_fog.fogData, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0u, VK_IMAGE_LAYOUT_GENERAL});
-    m_bindLessDescriptor.update({ &m_fog.lightContribution[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1u, VK_IMAGE_LAYOUT_GENERAL});
-    m_bindLessDescriptor.update({ &m_fog.lightContribution[1], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2u, VK_IMAGE_LAYOUT_GENERAL});
-    m_bindLessDescriptor.update({ &m_fog.integratedScattering, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3u, VK_IMAGE_LAYOUT_GENERAL});
+    m_bindLessDescriptor.update({ &m_fog.fogData, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, fogDataImageId, VK_IMAGE_LAYOUT_GENERAL});
+    m_bindLessDescriptor.update({&m_fog.lightContribution[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, lightContribImageId[0], VK_IMAGE_LAYOUT_GENERAL});
+    m_bindLessDescriptor.update({&m_fog.lightContribution[1], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, lightContribImageId[1], VK_IMAGE_LAYOUT_GENERAL});
+    m_bindLessDescriptor.update({ &m_fog.integratedScattering, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, lightScatteringImageId, VK_IMAGE_LAYOUT_GENERAL});
 
     m_bindLessDescriptor.update({ &m_fog.fogData, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5U});
     m_bindLessDescriptor.update({ &m_fog.lightContribution[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6U});
@@ -215,7 +247,8 @@ void VolumetricFog::initCamera() {
 
 //    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    auto position = glm::vec3(-0.6051893234, 6.5149531364, -0.3869051933);
+//    auto position = glm::vec3(-0.6051893234, 6.5149531364, -0.3869051933);
+    auto position = glm::vec3(2.8, 1.9, -0.6);
     spdlog::info("camera position: {}", position);
     camera->position(position);
 }
@@ -415,6 +448,16 @@ void VolumetricFog::createRenderPipeline() {
 }
 
 void VolumetricFog::createComputePipeline() {
+    std::vector<uint32_t> constantIds{ fogDataImageId, lightContribImageId[0], lightContribImageId[1], lightScatteringImageId  };
+    std::vector<VkSpecializationMapEntry> entries{
+            { 0, 0, sizeof(uint32_t)},
+            { 1, sizeof(uint32_t), sizeof(uint32_t)},
+            { 2, sizeof(uint32_t) * 2, sizeof(uint32_t)},
+            { 3, sizeof(uint32_t) * 3, sizeof(uint32_t)},
+    };
+
+    VkSpecializationInfo specializationInfo{ COUNT(entries), entries.data(), BYTE_SIZE(constantIds), constantIds.data() };
+
     dataInjection.layout = device.createPipelineLayout({
         m_fog.uboDescriptorSetLayout,
         m_scene.sceneSetLayout,
@@ -422,6 +465,7 @@ void VolumetricFog::createComputePipeline() {
 
     auto module = device.createShaderModule(resource("data_injection.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
     computeCreateInfo.layout = dataInjection.layout.handle;
@@ -594,9 +638,10 @@ void VolumetricFog::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::SameLine();
         static bool applyTemporalFiltering = bool(m_fog.cpu->applyTemporalFiltering);
         ImGui::Checkbox("Temporal filtering", &applyTemporalFiltering);
-        m_fog.cpu->applyTemporalFiltering = applySpatialFiltering;
+        m_fog.cpu->applyTemporalFiltering = int(applyTemporalFiltering);
 
         if(applyTemporalFiltering) {
+            ImGui::SliderFloat("Temporal jitter scale", &m_fog.cpu->temporalFilterJitterScale, 0, 10);
             ImGui::SliderFloat("Temporal blend weight", &m_fog.cpu->temporalFilterBlendWeight, 0, 1);
         }
     }
@@ -728,37 +773,35 @@ void VolumetricFog::computeFog() {
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
         
-        if(m_fog.cpu->applySpatialFiltering) {
-            // SPATIAL FILTERING
-            sets.resize(2);
-            sets[0] = m_fog.uboDescriptorSet;
-            sets[1] = m_bindLessDescriptor.descriptorSet;
+        // SPATIAL FILTERING
+        sets.resize(2);
+        sets[0] = m_fog.uboDescriptorSet;
+        sets[1] = m_bindLessDescriptor.descriptorSet;
 
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, spatialFilter.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, spatialFilter.pipeline.handle);
-            vkCmdDispatch(commandBuffer, 16, 16, 128);
-            
-            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            barrier.image = m_fog.fogData.image;
-            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, spatialFilter.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, spatialFilter.pipeline.handle);
+        vkCmdDispatch(commandBuffer, 16, 16, 128);
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.image = m_fog.fogData.image;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
 
-            VkImageCopy region{};
-            region.srcOffset = {0, 0, 0};
-            region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            region.srcSubresource.baseArrayLayer = 0;
-            region.srcSubresource.layerCount = 1;
-            region.srcSubresource.mipLevel = 0;
-            region.dstOffset = {0, 0, 0};
-            region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            region.dstSubresource.baseArrayLayer = 0;
-            region.dstSubresource.layerCount = 1;
-            region.dstSubresource.mipLevel = 0;
-            region.extent = {128, 128, 128};
-            vkCmdCopyImage(commandBuffer, m_fog.fogData.image, VK_IMAGE_LAYOUT_GENERAL, m_fog.lightContribution[lightScatteringIndex].image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);
+        // TEMPORAL FILTERING
+        sets.resize(3);
+        sets[0] = m_fog.uboDescriptorSet;
+        sets[1] = m_scene.sceneSet;
+        sets[2] = m_bindLessDescriptor.descriptorSet;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, temporalFilter.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, temporalFilter.pipeline.handle);
+        vkCmdDispatch(commandBuffer, 16, 16, 128);
 
-        }
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.image = m_fog.lightContribution[lightScatteringIndex].image;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
 
         // LIGHT INTEGRATION
         sets.resize(5);
@@ -789,13 +832,20 @@ void VolumetricFog::computeFog() {
 
 }
 
+void VolumetricFog::newFrame() {
+    m_fog.cpu->jitter = 2.f * m_haltonSamples[m_jitterIndex] - 1.0f;
+    ++m_jitterIndex;
+    m_jitterIndex %= JitterPeriod;
+}
+
 void VolumetricFog::endFrame() {
     m_sponza->updateDrawState(device, m_bindLessDescriptor);
     m_scene.cpu->frame++;
     m_scene.cpu->previousViewProjection = m_scene.cpu->viewProjection;
     m_scene.cpu->previousInverseViewProjection = m_scene.cpu->inverseViewProjection;
-    m_bindLessDescriptor.update({ &m_fog.lightContribution[m_scene.cpu->frame%2], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6U});
+//    m_bindLessDescriptor.update({ &m_fog.lightContribution[m_scene.cpu->frame%2], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6U});
 }
+
 
 
 int main(){

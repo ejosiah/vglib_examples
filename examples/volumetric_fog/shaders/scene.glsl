@@ -35,6 +35,8 @@ layout(set = SCENE_SET, binding = 0) buffer SCENE_INFO {
     int cameraLightOn;
     float cameraLightCutOff;
 
+    vec2 jitter;
+
 } scene;
 
 #endif // SCENE_GLSL

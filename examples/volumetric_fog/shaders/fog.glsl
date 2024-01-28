@@ -24,6 +24,8 @@ layout(set = FOG_SET, binding = 0) buffer FOG_INFO {
     int applyTemporalFiltering;
 
     float temporalFilterBlendWeight;
+    float temporalFilterJitterScale;
+    vec2 jitter;
 } fog;
 
 layout(set = FOG_SET, binding = 1) uniform sampler2D blueNoise;
@@ -75,7 +77,8 @@ vec3 worldPositionFromDepth(vec2 uv, float depth, mat4 inverseCamera) {
 }
 
 vec3 worldFromFroxel(vec3 fCoord) {
-    vec2 uv = uvFromFroxel(fCoord.xy + vec2(.5), fog.froxelDim);
+    vec2 jitter = fog.jitter * fog.temporalFilterJitterScale + .5;
+    vec2 uv = uvFromFroxel(fCoord.xy + jitter, fog.froxelDim);
     int slice = int(fCoord.z);
     int numSlices = int(fog.froxelDim.z);
 

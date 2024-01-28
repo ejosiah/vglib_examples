@@ -89,6 +89,7 @@ namespace asyncml {
         pending.model->materialBuffer = _device->createCpuVisibleBuffer(materials.data(), BYTE_SIZE(materials), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
         _pending.push(pending);
+        _loadRequest.notify_one();
 
         spdlog::info("loading model from {}, containing {} meshes with {} vertices", path.string(), numMeshes, numVertices);
 
@@ -98,9 +99,9 @@ namespace asyncml {
     void Loader::execLoop() {
         while(_running) {
             using namespace std::chrono_literals;
-            if(_pending.empty() && _pendingUploads.empty()) {
-                std::this_thread::sleep_for(100ms);
-                continue;
+            {
+                std::unique_lock<std::mutex> lk{_mutex};
+                _loadRequest.wait(lk, [&]{  return !_pending.empty() || !_pendingUploads.empty(); });
             }
             uploadMeshes();
             uploadTextures();

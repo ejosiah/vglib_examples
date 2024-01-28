@@ -1,13 +1,14 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : require
 
+#include "fog_constants.glsl"
 
 #define FOG_SET 0
 #define SCENE_SET 1
 #define VOLUME_NOISE_TEXTURE_ID 9
-#define FOG_DATA_ID 0
 
 #define VOLUME_NOISE_TEXTURE globalTextures3d[VOLUME_NOISE_TEXTURE_ID]
-#define FOG_DATA globalImages3d[FOG_DATA_ID]
+#define FOG_DATA globalImages3d[nonuniformEXT(FOG_DATA_IMAGE_ID)]
 
 #include "fog.glsl"
 #include "scene.glsl"
