@@ -148,7 +148,6 @@ void VdbAnimation::load(const std::filesystem::path &vdbPath) {
                 d -= 1.0f;
 
                 return  remap(x, b.min, b.max, glm::vec3(0), d);
-
             };
 
             glm::ivec3 iSize{frames_.front().volume.bounds.max - frames_.front().volume.bounds.min};

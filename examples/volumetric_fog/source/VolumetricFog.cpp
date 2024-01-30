@@ -23,6 +23,7 @@ VolumetricFog::VolumetricFog(const Settings& settings) : VulkanBaseApp("Volumetr
 
 void VolumetricFog::initApp() {
     textures::color(device, dummyTexture, glm::vec3{0.2}, glm::uvec3{64});
+    createBox();
     createHaltonSamples();
     initBindlessDescriptor();
     bakeVolumetricNoise();
@@ -199,6 +200,7 @@ void VolumetricFog::initShadowMap() {
 
 void VolumetricFog::loadModel() {
     m_sponza = m_loader->load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
+//    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)");
 }
 
 void VolumetricFog::initScene() {
@@ -445,6 +447,18 @@ void VolumetricFog::createRenderPipeline() {
                 .name("render_ray_march")
             .build(rayMarch.layout);
     //    @formatter:on
+
+    volumeOutline.pipeline =
+            builder
+                .shaderStage().clear()
+                    .vertexShader(resource("flat.vert.spv"))
+                    .fragmentShader(resource("flat.frag.spv"))
+                .depthStencilState()
+                    .compareOpAlways()
+                .layout().clear()
+                    .addPushConstantRange(Camera::pushConstant())
+                .name("volume_outline")
+            .build();
 }
 
 void VolumetricFog::createComputePipeline() {
@@ -846,6 +860,55 @@ void VolumetricFog::endFrame() {
 //    m_bindLessDescriptor.update({ &m_fog.lightContribution[m_scene.cpu->frame%2], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6U});
 }
 
+
+void VolumetricFog::createBox() {
+    const glm::vec4 color{1, 1, 0, 1};
+    std::vector<Vertex> vertices {
+            // FRONT
+            { .position = glm::vec4(0, 0, 0, 1), .color = color},
+            { .position = glm::vec4(0, 1, 0, 1), .color = color},
+
+            { .position = glm::vec4(0, 1, 0, 1), .color = color},
+            { .position = glm::vec4(1, 1, 0, 1), .color = color},
+
+            { .position = glm::vec4(1, 1, 0, 1), .color = color},
+            { .position = glm::vec4(1, 0, 0, 1), .color = color},
+
+            { .position = glm::vec4(1, 0, 0, 1), .color = color},
+            { .position = glm::vec4(0, 0, 0, 1), .color = color},
+
+            // BACK
+            { .position = glm::vec4(0, 0, 1, 1), .color = color},
+            { .position = glm::vec4(0, 1, 1, 1), .color = color},
+
+            { .position = glm::vec4(0, 1, 1, 1), .color = color},
+            { .position = glm::vec4(1, 1, 1, 1), .color = color},
+
+            { .position = glm::vec4(1, 1, 1, 1), .color = color},
+            { .position = glm::vec4(1, 0, 1, 1), .color = color},
+
+            { .position = glm::vec4(1, 0, 1, 1), .color = color},
+            { .position = glm::vec4(0, 0, 1, 1), .color = color},
+
+
+            // SIDES
+            { .position = glm::vec4(0, 0, 0, 1), .color = color},
+            { .position = glm::vec4(0, 0, 1, 1), .color = color},
+
+            { .position = glm::vec4(0, 1, 0, 1), .color = color},
+            { .position = glm::vec4(0, 1, 1, 1), .color = color},
+
+            { .position = glm::vec4(1, 1, 0, 1), .color = color},
+            { .position = glm::vec4(1, 1, 1, 1), .color = color},
+
+            { .position = glm::vec4(1, 0, 0, 1), .color = color},
+            { .position = glm::vec4(1, 0, 1, 1), .color = color},
+
+
+    };
+
+    boxBuffer = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+}
 
 
 int main(){

@@ -24,6 +24,11 @@ struct FogData {
     glm::vec2 jitter;
 };
 
+struct VolumeData {
+    glm::mat4 transform;
+    glm::mat4 inverseTransform;
+};
+
 struct Fog {
     VulkanBuffer gpu;
     FogData* cpu;

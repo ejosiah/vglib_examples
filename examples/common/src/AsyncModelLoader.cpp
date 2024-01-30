@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 #include <assimp/postprocess.h>
+#include <openvdb/openvdb.h>
 
 #include <functional>
 
@@ -45,11 +46,14 @@ namespace asyncml {
 
     Loader::Loader(VulkanDevice *device, size_t reserve)
     : _device{device}
-    , _pending{reserve}
+    , _pendingModels{reserve}
+    , _pendingVolumes{reserve}
     , _pendingUploads(1024)
+    , _pendingVolumeUploads(1024)
     {}
 
     void Loader::start() {
+        openvdb::initialize();
         _stagingBuffer = _device->createStagingBuffer(_64MB, { *_device->queueFamilyIndex.transfer });
         _fence = _device->createFence();
         _running = true;
@@ -58,14 +62,12 @@ namespace asyncml {
     }
 
     std::shared_ptr<Model> asyncml::Loader::load(const std::filesystem::path &path, float unit) {
-        spdlog::info("Mesh size: {}", sizeof(MeshData));
-        spdlog::info("Material size: {}", sizeof(MaterialData));
-        if(_pending.full()) {
+        if(_pendingModels.full()) {
             return {};
         }
         const auto queueFamilyIndex = *_device->queueFamilyIndex.transfer;
 
-        Pending pending{.model = std::make_shared<Model>(), .scene = _importer.ReadFile(path.string(), DEFAULT_PROCESS_FLAGS), .path = path, .unit = unit};
+        PendingModel pending{.model = std::make_shared<Model>(), .scene = _importer.ReadFile(path.string(), DEFAULT_PROCESS_FLAGS), .path = path, .unit = unit};
         const auto numMeshes = pending.scene->mNumMeshes;
         pending.model->meshes.reset(numMeshes);
         pending.model->uploadedTextures.reset(1024);
@@ -88,7 +90,7 @@ namespace asyncml {
         std::vector<MaterialData> materials(pending.scene->mNumMaterials);
         pending.model->materialBuffer = _device->createCpuVisibleBuffer(materials.data(), BYTE_SIZE(materials), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-        _pending.push(pending);
+        _pendingModels.push(pending);
         _loadRequest.notify_one();
 
         spdlog::info("loading model from {}, containing {} meshes with {} vertices", path.string(), numMeshes, numVertices);
@@ -101,10 +103,17 @@ namespace asyncml {
             using namespace std::chrono_literals;
             {
                 std::unique_lock<std::mutex> lk{_mutex};
-                _loadRequest.wait(lk, [&]{  return !_pending.empty() || !_pendingUploads.empty(); });
+                _loadRequest.wait(lk, [&]{
+                    return !_pendingModels.empty()
+                        || !_pendingVolumes.empty()
+                        || !_pendingUploads.empty()
+                        || !_pendingVolumeUploads.empty();
+                });
             }
             uploadMeshes();
             uploadTextures();
+            processVolumes();
+            uploadVolumes();
         }
         spdlog::info("async loader offline");
     }
@@ -114,8 +123,8 @@ namespace asyncml {
         const auto& commandPool = _device->createCommandPool(*_device->queueFamilyIndex.transfer, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
         auto commandBuffer = commandPool.allocate();
 
-        while(!_pending.empty()) {
-            auto pending = _pending.pop();
+        while(!_pendingModels.empty()) {
+            auto pending = _pendingModels.pop();
             const auto scene = pending.scene;
             const auto unit = pending.unit;
             auto model = pending.model;
@@ -229,6 +238,122 @@ namespace asyncml {
     }
 
 
+    void Loader::processVolumes() {
+        while(!_pendingVolumes.empty()) {
+            auto pending = _pendingVolumes.pop();
+            auto volume = pending.volume;
+
+            for(const auto& path : pending.paths) {
+                auto bounds = volumeBounds(path);
+                volume->bounds.min = glm::min(volume->bounds.min, bounds.min);
+                volume->bounds.max = glm::max(volume->bounds.max, bounds.max);
+            }
+
+            glm::uvec3 dimensions{volume->bounds.max - volume->bounds.min};
+
+            auto size = dimensions.x * dimensions.y * dimensions.z * sizeof(float);
+            if(size == 0){
+                dimensions = glm::vec3(1);
+                size = sizeof(float);
+            }
+            volume->staging =  _device->createStagingBuffer(size);
+            textures::create(*_device, volume->texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT,
+                             dimensions, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, sizeof(float));
+            volume->initialized = true;
+
+            for(const auto& path : pending.paths) {
+                VolumeUploadRequest request{ path, volume };
+                _pendingVolumeUploads.push(request);
+            }
+        }
+    }
+
+    glm::vec3 toGlm(openvdb::Vec3i v) {
+        return {v.x(), v.y(), v.z()};
+    }
+
+    glm::vec3 toUVW(const glm::vec3& x, const Bounds& b){
+        glm::vec3 d{b.max - b.min};
+        d -= 1.0f;
+        return  remap(x, b.min, b.max, glm::vec3(0), d);
+    };
+
+    void Loader::uploadVolumes() {
+        std::vector<VdbVolume> volumes{};
+
+        while(!_pendingVolumeUploads.empty()) {
+            auto pending = _pendingVolumeUploads.pop();
+            auto path = pending.path;
+
+            spdlog::debug("loading volume grid from {}", fs::path(path).filename().string());
+            openvdb::io::File file(path.string());
+
+            file.open();
+
+            auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
+            openvdb::Vec3i boxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
+            openvdb::Vec3i boxMax = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_max")->value();
+            int64_t numVoxels = grid->getMetadata<openvdb::Int64Metadata>("file_voxel_count")->value();
+
+            VdbVolume volume{};
+            if(numVoxels <= 0) {
+                spdlog::info("{} contains no voxels", path.string());
+                volumes.push_back(volume);
+                file.close();
+                continue;
+            }
+
+            openvdb::Vec3i size;
+            size = size.sub(boxMax, boxMin);
+
+            openvdb::Coord xyz;
+            auto accessor = grid->getAccessor();
+
+            auto &z = xyz.z();
+            auto &y = xyz.y();
+            auto &x = xyz.x();
+
+            static int count = 0;
+            float maxDensity = MIN_FLOAT;
+            volume.voxels.reserve(size.x() * size.y() * size.z());
+            for (z = boxMin.z(); z <= boxMax.z(); z++) {
+                for (y = boxMin.y(); y <= boxMax.y(); y++) {
+                    for (x = boxMin.x(); x <= boxMax.x(); x++) {
+
+                        auto value = accessor.getValue(xyz);
+                        Voxel voxel{.position{xyz.x(), xyz.y(), xyz.z()}, .value = value};
+                        voxel.position = toUVW(voxel.position, pending.volume->bounds);
+                        maxDensity = glm::max(maxDensity, value);
+                        volume.voxels.push_back(voxel);
+                    }
+                }
+            }
+
+            volume.bounds.min = toGlm(boxMin);
+            volume.bounds.max = toGlm(boxMax);
+            volume.invMaxDensity = maxDensity != 0 ? 1 / maxDensity : 0;
+            file.close();
+
+            volumes.push_back(volume);
+        }
+
+    }
+
+    Bounds Loader::volumeBounds(const std::filesystem::path &path) {
+        spdlog::info("loading volume grid from {}", fs::path(path).filename().string());
+        openvdb::io::File file(path.string());
+        file.open();
+
+        auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
+        int64_t numVoxels = grid->getMetadata<openvdb::Int64Metadata>("file_voxel_count")->value();
+
+        openvdb::Vec3i boxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
+        openvdb::Vec3i boxMax = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_max")->value();
+
+        file.close();
+        return numVoxels == 0 ? Bounds{ glm::vec3(0), glm::vec3(0) } : Bounds{toGlm(boxMin), toGlm(boxMax) };
+    }
+
 
     std::set<std::filesystem::path> Loader::extractTextures(const aiMaterial& material, const std::shared_ptr<Model>& model, const std::filesystem::path& path) {
         const auto rootPath = path.parent_path();
@@ -290,7 +415,7 @@ namespace asyncml {
         }
     }
 
-    void Loader::createTexture(const TextureUploadRequest &request) {
+    void Loader::createTexture(TextureUploadRequest &request) {
         UploadedTexture tReady{ .path = request.path, .type = request.type };
         int texWidth, texHeight, texChannels;
         stbi_set_flip_vertically_on_load(1);
@@ -431,6 +556,28 @@ namespace asyncml {
         return material;
     }
 
+    std::shared_ptr<Volume> Loader::loadVolume(const std::filesystem::path &path) {
+        if(_pendingVolumes.full()){
+            return {};
+        }
+
+        PendingVolume pending{ .volume = std::make_shared<Volume>() };
+        auto& volume = pending.volume;
+
+        if(std::filesystem::is_directory(path)) {
+            for(const auto& entry : std::filesystem::directory_iterator{path}) {
+                volume->numFrames++;
+                pending.paths.push_back(entry);
+            }
+        }else {
+            pending.paths.push_back(path);
+        }
+        _pendingVolumes.push(pending);
+        _loadRequest.notify_one();
+
+        return volume;
+    }
+
     void Model::updateDrawState(const VulkanDevice& device, BindlessDescriptor& bindlessDescriptor) {
         if(!meshes.empty()){
 //            spdlog::info("{} meshes ready", meshes.size());
@@ -493,5 +640,27 @@ namespace asyncml {
 
         meshBuffer.unmap();
         materialBuffer.unmap();
+    }
+
+    void Volume::checkLoadState() {
+        if(frames.size() == numFrames) return;
+
+        static auto getId = [](const auto& path) {
+            auto str = path.string();
+            auto start = str.find_last_of('_') + 1;
+            auto id = atoi(str.substr(start, 4).c_str());
+            return id;
+        };
+
+        while(!UploadedVolumes.empty()) {
+            auto uploaded = UploadedVolumes.pop();
+            Frame frame{ .volume = std::move(uploaded.volume), .index = getId(uploaded.path) };
+            frames.push_back(std::move(frame));
+        }
+
+        std::sort(frames.begin(), frames.end(), [](const auto& a, const auto& b) {
+            return a.index < b.index;
+        });
+        currentFrame = 0;
     }
 }

@@ -89,6 +89,8 @@ protected:
 
     void endFrame() override;
 
+    void createBox();
+
 protected:
     Pipeline render;
     Pipeline rayMarch;
@@ -97,6 +99,7 @@ protected:
     Pipeline temporalFilter;
     Pipeline lightIntegration;
     Pipeline lightContrib;
+    Pipeline volumeOutline;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -130,4 +133,6 @@ protected:
     std::array<uint32_t, 2> lightContribImageId{~0u, ~0u};
     uint32_t lightScatteringImageId = ~0u;
     uint32_t volumeNoiseImageId = ~0u;
+    std::shared_ptr<asyncml::Volume> m_smoke;
+    VulkanBuffer boxBuffer;
 };
