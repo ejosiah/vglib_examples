@@ -216,14 +216,14 @@ void WhittedRayTracer::updateDescriptorSets() {
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &imageInfo;
 
     writes[3].dstSet = raytrace.descriptorSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo skyboxInfo{ skybox.sampler, skybox.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo skyboxInfo{ skybox.sampler.handle, skybox.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[3].pImageInfo = &skyboxInfo;
 
 
@@ -255,33 +255,33 @@ void WhittedRayTracer::createInverseCam() {
 }
 
 void WhittedRayTracer::createRayTracingPipeline() {
-    auto rayGenShaderModule = VulkanShaderModule{ resource("raygen.rgen.spv"), device };
-    auto missShaderModule = VulkanShaderModule{ resource("miss.rmiss.spv"), device };
-    auto shadowMissModule = VulkanShaderModule{ resource("shadow.rmiss.spv"), device };
-    auto diffuseHitShaderModule = VulkanShaderModule{ resource("cook_torrance.rchit.spv"), device };
-    auto mirrorHitShaderModule = VulkanShaderModule{ resource("mirror.rchit.spv"), device };
-    auto glassHitShaderModule = VulkanShaderModule{ resource("glass.rchit.spv"), device };
-    auto implicitsIntersectShaderModule = VulkanShaderModule{resource("implicits.rint.spv"), device};
-    auto occlusionHitShaderModule = VulkanShaderModule{resource("occlusion.rchit.spv"), device};
-    auto occlusionAnyHitShaderModule = VulkanShaderModule{resource("occlusion.rahit.spv"), device};
-    auto glassOcclusionHitShaderModule = VulkanShaderModule{resource("glass_occlusion.rchit.spv"), device};
-    auto occlusionMissShaderModule = VulkanShaderModule{resource("occlusion.rmiss.spv"), device};
-    auto checkerboardShaderModule = VulkanShaderModule{resource("checkerboard.rcall.spv"), device};
-    auto fresnelShaderModule = VulkanShaderModule{resource("fresnel.rcall.spv"), device};
+    auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
+    auto missShaderModule = device.createShaderModule( resource("miss.rmiss.spv"));
+    auto shadowMissModule = device.createShaderModule( resource("shadow.rmiss.spv"));
+    auto diffuseHitShaderModule = device.createShaderModule( resource("cook_torrance.rchit.spv"));
+    auto mirrorHitShaderModule = device.createShaderModule( resource("mirror.rchit.spv"));
+    auto glassHitShaderModule = device.createShaderModule( resource("glass.rchit.spv"));
+    auto implicitsIntersectShaderModule = device.createShaderModule(resource("implicits.rint.spv"));
+    auto occlusionHitShaderModule = device.createShaderModule(resource("occlusion.rchit.spv"));
+    auto occlusionAnyHitShaderModule = device.createShaderModule(resource("occlusion.rahit.spv"));
+    auto glassOcclusionHitShaderModule = device.createShaderModule(resource("glass_occlusion.rchit.spv"));
+    auto occlusionMissShaderModule = device.createShaderModule(resource("occlusion.rmiss.spv"));
+    auto checkerboardShaderModule = device.createShaderModule(resource("checkerboard.rcall.spv"));
+    auto fresnelShaderModule = device.createShaderModule(resource("fresnel.rcall.spv"));
 
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("ray_gen", rayGenShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("miss", missShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("shadow_miss", shadowMissModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("ct_hit", diffuseHitShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("mirror_hit", mirrorHitShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("glass_hit", glassHitShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("implicit_intersect", implicitsIntersectShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("occlusion_hit", occlusionHitShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("glass_occlusion", glassOcclusionHitShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("occlusion_anyhit", occlusionAnyHitShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("occlusion_miss", occlusionMissShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("checker_board_callable", checkerboardShaderModule);
-    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("fresnel_callable", fresnelShaderModule);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("ray_gen", rayGenShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("miss", missShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("shadow_miss", shadowMissModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("ct_hit", diffuseHitShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("mirror_hit", mirrorHitShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("glass_hit", glassHitShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("implicit_intersect", implicitsIntersectShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("occlusion_hit", occlusionHitShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("glass_occlusion", glassOcclusionHitShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("occlusion_anyhit", occlusionAnyHitShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("occlusion_miss", occlusionMissShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("checker_board_callable", checkerboardShaderModule.handle);
+    device.setName<VK_OBJECT_TYPE_SHADER_MODULE>("fresnel_callable", fresnelShaderModule.handle);
 
     std::vector<ShaderInfo> shaders(eShaderGroupCount);
     shaders[eRayGen] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
@@ -355,7 +355,7 @@ void WhittedRayTracer::createRayTracingPipeline() {
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
     createInfo.maxPipelineRayRecursionDepth = 5;
-    createInfo.layout = raytrace.layout;
+    createInfo.layout = raytrace.layout.handle;
 
     raytrace.pipeline = device.createRayTracingPipeline(createInfo);
     bindingTables = shaderTablesDesc.compile(device, raytrace.pipeline);
@@ -366,8 +366,8 @@ void WhittedRayTracer::rayTrace(VkCommandBuffer commandBuffer) {
 
     std::vector<VkDescriptorSet> sets{ raytrace.descriptorSet };
     assert(raytrace.pipeline);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
 
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);
