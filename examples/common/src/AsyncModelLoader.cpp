@@ -251,6 +251,8 @@ namespace asyncml {
 
             glm::uvec3 dimensions{volume->bounds.max - volume->bounds.min};
 
+            volume->updateTransform();
+
             auto size = dimensions.x * dimensions.y * dimensions.z * sizeof(float);
             if(size == 0){
                 dimensions = glm::vec3(1);
@@ -260,7 +262,7 @@ namespace asyncml {
             textures::create(*_device, volume->texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT,
                              dimensions, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, sizeof(float));
             volume->initialized = true;
-
+            spdlog::info("volume bounds determined: [{}, {}]", volume->bounds.min, volume->bounds.max);
             for(const auto& path : pending.paths) {
                 VolumeUploadRequest request{ path, volume };
                 _pendingVolumeUploads.push(request);
@@ -279,8 +281,6 @@ namespace asyncml {
     };
 
     void Loader::uploadVolumes() {
-        std::vector<VdbVolume> volumes{};
-
         while(!_pendingVolumeUploads.empty()) {
             auto pending = _pendingVolumeUploads.pop();
             auto path = pending.path;
@@ -298,7 +298,7 @@ namespace asyncml {
             VdbVolume volume{};
             if(numVoxels <= 0) {
                 spdlog::info("{} contains no voxels", path.string());
-                volumes.push_back(volume);
+                pending.volume->UploadedVolumes.push({path, volume});
                 file.close();
                 continue;
             }
@@ -334,13 +334,13 @@ namespace asyncml {
             volume.invMaxDensity = maxDensity != 0 ? 1 / maxDensity : 0;
             file.close();
 
-            volumes.push_back(volume);
+            pending.volume->UploadedVolumes.push({path, volume});
         }
 
     }
 
     Bounds Loader::volumeBounds(const std::filesystem::path &path) {
-        spdlog::info("loading volume grid from {}", fs::path(path).filename().string());
+        spdlog::debug("loading volume grid from {}", fs::path(path).filename().string());
         openvdb::io::File file(path.string());
         file.open();
 
@@ -563,6 +563,7 @@ namespace asyncml {
 
         PendingVolume pending{ .volume = std::make_shared<Volume>() };
         auto& volume = pending.volume;
+        volume->UploadedVolumes.reset(2048);
 
         if(std::filesystem::is_directory(path)) {
             for(const auto& entry : std::filesystem::directory_iterator{path}) {
@@ -570,6 +571,7 @@ namespace asyncml {
                 pending.paths.push_back(entry);
             }
         }else {
+            volume->numFrames = 1;
             pending.paths.push_back(path);
         }
         _pendingVolumes.push(pending);
@@ -642,8 +644,14 @@ namespace asyncml {
         materialBuffer.unmap();
     }
 
-    void Volume::checkLoadState() {
-        if(frames.size() == numFrames) return;
+    void Volume::checkLoadState(BindlessDescriptor& bindlessDescriptor) {
+        if(ready) return;
+
+        static bool once = false; // FIXME use std::thread once flag
+        if(initialized && !once) {
+            once = true;
+            bindlessDescriptor.update({ &texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureBindingIndex});
+        }
 
         static auto getId = [](const auto& path) {
             auto str = path.string();
@@ -652,15 +660,96 @@ namespace asyncml {
             return id;
         };
 
+        if(!UploadedVolumes.empty()){
+            currentFrame = 0;
+            spdlog::info("{} new frames available", UploadedVolumes.size());
+        }
         while(!UploadedVolumes.empty()) {
             auto uploaded = UploadedVolumes.pop();
-            Frame frame{ .volume = std::move(uploaded.volume), .index = getId(uploaded.path) };
+            Frame frame{ .volume = std::move(uploaded.volume), .index = getId(uploaded.path), .durationMS = framePeriod };
             frames.push_back(std::move(frame));
         }
 
         std::sort(frames.begin(), frames.end(), [](const auto& a, const auto& b) {
             return a.index < b.index;
         });
-        currentFrame = 0;
+        for(auto& frame : frames){
+            frame.elapsedMS = 0;
+        }
+        if(frames.size() == 1){
+            nextFrame = true;
+        }
+        ready = numFrames != 0 && frames.size() == numFrames;
+    }
+
+    void Volume::update(float dt) {
+        if(frames.empty() || frames.size() == 1) return;
+        auto& frame = frames[currentFrame];
+
+        static constexpr int ms = 1000;
+        frame.elapsedMS += dt * ms;
+
+        if(frame.elapsedMS >= frame.durationMS){
+            frame.elapsedMS = 0;
+            currentFrame++;
+            currentFrame %= frames.size();
+            nextFrame = true;
+        }
+    }
+
+    void Volume::updateTransform() {
+        Bounds sBounds {bounds.min * scale, bounds.max * scale};
+
+        transform = glm::translate(glm::mat4{1}, offset);
+        transform = glm::translate(transform, sBounds.min);
+        transform = glm::scale(transform, sBounds.max - sBounds.min);
+    }
+
+    void Volume::advanceFrame(VulkanDevice& device) {
+        if(!nextFrame) return;
+        auto stagingArea = reinterpret_cast<float*>(staging.map());
+        std::memset(stagingArea, 0, staging.size);
+
+        const auto& frame = frames[currentFrame];
+
+        const auto iSize = glm::ivec3(bounds.max - bounds.min);
+        for(const auto& voxel : frame.volume.voxels) {
+            auto vid = glm::ivec3(voxel.position);
+            int loc = (vid.z * iSize.y + vid.y) * iSize.x + vid.x;
+            stagingArea[loc] = voxel.value;
+        }
+
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+            VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.image = texture.image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+            VkBufferImageCopy region{ 0, 0, 0};
+            region.imageOffset = {0, 0, 0};
+            region.imageExtent = texture.spec.extent;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = 0;
+            region.imageSubresource.baseArrayLayer = 0;
+            region.imageSubresource.layerCount = 1;
+            vkCmdCopyBufferToImage(commandBuffer, staging.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        });
+
+        nextFrame = false;
     }
 }

@@ -10,6 +10,11 @@
 #define FOG_COLOR vec3(.9)
 
 layout(set = FOG_SET, binding = 0) buffer FOG_INFO {
+    mat4 inverseVolumeTransform;
+
+    vec3 boxMin;
+    vec3 boxMax;
+
     ivec3 froxelDim;
     float scatteringFactor;
 
@@ -101,6 +106,11 @@ float phaseHG(float cos0, float g){
 
 float HG_p(float g, vec3 V, vec3 L){
     return phaseHG(dot(V, L), g);
+}
+
+vec3 remap(vec3 x, vec3 a, vec3 b, vec3 c, vec3 d) {
+    vec3 t = clamp((x - a)/(b - a), vec3(0), vec3(1));
+    return mix(c, d, t);
 }
 
 #endif // FOG_GLSL

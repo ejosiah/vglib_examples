@@ -69,7 +69,7 @@ void VolumetricFog::createHaltonSamples() {
 }
 
 void VolumetricFog::initBindlessDescriptor() {
-    m_bindLessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(10);
+    m_bindLessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(11);
     fogDataImageId = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
     lightContribImageId[0] = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
     lightContribImageId[1] = m_bindLessDescriptor.nextIndex(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
@@ -144,7 +144,8 @@ void VolumetricFog::initFog() {
     m_fog.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(FogData), "fog_ubo");
     m_fog.cpu = reinterpret_cast<FogData*>(m_fog.gpu.map());
 
-    m_fog.cpu->froxelDim = glm::ivec3(128);
+    m_fog.cpu->inverseVolumeTransform = glm::mat4{1};
+    m_fog.cpu->froxelDim = glm::ivec3(128, 128, zSamples);
     m_fog.cpu->scatteringFactor = 0.1;
     m_fog.cpu->constantDensity = 0.1;
     m_fog.cpu->heightFogDensity = 0;
@@ -160,10 +161,10 @@ void VolumetricFog::initFog() {
 }
 
 void VolumetricFog::createFogTextures() {
-    textures::create(device, m_fog.fogData, VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, 128}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-    textures::create(device, m_fog.lightContribution[0], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, 128}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-    textures::create(device, m_fog.lightContribution[1], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, 128}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-    textures::create(device, m_fog.integratedScattering, VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, 128}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+    textures::create(device, m_fog.fogData, VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, zSamples}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+    textures::create(device, m_fog.lightContribution[0], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, zSamples}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+    textures::create(device, m_fog.lightContribution[1], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, zSamples}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+    textures::create(device, m_fog.integratedScattering, VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, {128, 128, zSamples}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
 
     device.setName<VK_OBJECT_TYPE_IMAGE>("data_inject", m_fog.fogData.image.image);
     device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>("data_inject_view", m_fog.fogData.imageView.handle);
@@ -200,7 +201,8 @@ void VolumetricFog::initShadowMap() {
 
 void VolumetricFog::loadModel() {
     m_sponza = m_loader->load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
-//    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)");
+//    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res\smoke_044_0.10_0106.vdb)");
+    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\VDB-Clouds-Pack-Pixel-Lab\VDB Cloud Files\cloud_v001_0.02.vdb)");
 }
 
 void VolumetricFog::initScene() {
@@ -449,16 +451,14 @@ void VolumetricFog::createRenderPipeline() {
     //    @formatter:on
 
     volumeOutline.pipeline =
-            builder
-                .shaderStage().clear()
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
                     .vertexShader(resource("flat.vert.spv"))
                     .fragmentShader(resource("flat.frag.spv"))
-                .depthStencilState()
-                    .compareOpAlways()
-                .layout().clear()
-                    .addPushConstantRange(Camera::pushConstant())
+                .inputAssemblyState()
+                    .lines()
                 .name("volume_outline")
-            .build();
+            .build(volumeOutline.layout);
 }
 
 void VolumetricFog::createComputePipeline() {
@@ -575,6 +575,7 @@ VkCommandBuffer *VolumetricFog::buildCommandBuffers(uint32_t imageIndex, uint32_
     }else {
         renderWithVolumeTextures(commandBuffer);
     }
+    renderVolumeOutline(commandBuffer);
     renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -626,6 +627,15 @@ void VolumetricFog::renderWithRayMarching(VkCommandBuffer commandBuffer) {
     vkCmdDrawIndexedIndirect(commandBuffer, m_sponza->draw.gpu, 0, m_sponza->draw.count, sizeof(VkDrawIndexedIndirectCommand));
 }
 
+void VolumetricFog::renderVolumeOutline(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, volumeOutline.pipeline.handle);
+    camera->push(commandBuffer, volumeOutline.layout, m_smoke->transform);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, boxBuffer, &offset);
+    vkCmdDraw(commandBuffer, 24, 1, 0, 0);
+    camera->setModel(glm::mat4{1});
+}
+
 void VolumetricFog::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Begin("Scene");
     ImGui::SetWindowSize({500, 400});
@@ -658,6 +668,18 @@ void VolumetricFog::renderUI(VkCommandBuffer commandBuffer) {
             ImGui::SliderFloat("Temporal jitter scale", &m_fog.cpu->temporalFilterJitterScale, 0, 10);
             ImGui::SliderFloat("Temporal blend weight", &m_fog.cpu->temporalFilterBlendWeight, 0, 1);
         }
+
+        if(ImGui::CollapsingHeader("volume")){
+            static bool dirty = false;
+            dirty |= ImGui::SliderFloat("scale", &m_smoke->scale, 0.01, 1.0);
+            dirty |= ImGui::SliderFloat("x", &m_smoke->offset.x, -50, 50);
+            dirty |= ImGui::SliderFloat("y", &m_smoke->offset.y, -50, 50);
+            dirty |= ImGui::SliderFloat("z", &m_smoke->offset.z, -50, 50);
+            if(dirty) {
+                m_smoke->updateTransform();
+                dirty = false;
+            }
+        }
     }
 
     if(ImGui::CollapsingHeader("Camera")){
@@ -687,14 +709,16 @@ void VolumetricFog::update(float time) {
         m_scene.cpu->camera = camera->position();
         m_scene.cpu->cameraDirection = camera->viewDir;
     }
+
     m_scene.cpu->time += time;
     m_scene.cpu->deltaTime = time;
     updateSunDirection();
     sky.update(time);
     castShadow();
     m_scene.cpu->lightViewProjection = m_shadowMap.lightSpace.cpu->viewProj;
-    computeFog();
+    m_smoke->update(time);
 
+    computeFog();
 
     auto wTitle = fmt::format("{} - camera: {:f}", title, camera->position());
     glfwSetWindowTitle(window, wTitle.c_str());
@@ -731,6 +755,23 @@ void VolumetricFog::castShadow() {
 }
 
 void VolumetricFog::computeFog() {
+    m_fog.cpu->inverseVolumeTransform = glm::inverse(m_smoke->transform);
+    m_fog.cpu->boxMin = m_smoke->bounds.min * m_smoke->scale;
+    m_fog.cpu->boxMax = m_smoke->bounds.max * m_smoke->scale;
+
+    static bool once = false;
+    if(!once && m_smoke->initialized) {
+        once = true;
+        auto bounds = m_smoke->scaledBounds();
+        auto wBounds = m_smoke->scaledBounds();
+        auto center = (wBounds.max + wBounds.min) * .5f;
+        bounds.min = (m_fog.cpu->inverseVolumeTransform * glm::vec4(bounds.min, 1));
+        bounds.max = (m_fog.cpu->inverseVolumeTransform * glm::vec4(bounds.max, 1));
+        auto lcenter = (m_fog.cpu->inverseVolumeTransform * glm::vec4(center, 1));
+        spdlog::error("worldSpace bounds: [{}, {}], localSpace bounds: [{}, {}]", wBounds.min, wBounds.max, bounds.min, bounds.max);
+        spdlog::error("worldSpace center: {}, localSpace center: {}", center, lcenter);
+    }
+
     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
@@ -757,7 +798,7 @@ void VolumetricFog::computeFog() {
 
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dataInjection.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dataInjection.pipeline.handle);
-        vkCmdDispatch(commandBuffer, 16, 16, 128);
+        vkCmdDispatch(commandBuffer, 16, 16, zSamples);
 
         barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -781,7 +822,7 @@ void VolumetricFog::computeFog() {
 
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lightContrib.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lightContrib.pipeline.handle);
-        vkCmdDispatch(commandBuffer, 16, 16, 128);
+        vkCmdDispatch(commandBuffer, 16, 16, zSamples);
 
         barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -794,7 +835,7 @@ void VolumetricFog::computeFog() {
 
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, spatialFilter.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, spatialFilter.pipeline.handle);
-        vkCmdDispatch(commandBuffer, 16, 16, 128);
+        vkCmdDispatch(commandBuffer, 16, 16, zSamples);
 
         barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -809,7 +850,7 @@ void VolumetricFog::computeFog() {
         sets[2] = m_bindLessDescriptor.descriptorSet;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, temporalFilter.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, temporalFilter.pipeline.handle);
-        vkCmdDispatch(commandBuffer, 16, 16, 128);
+        vkCmdDispatch(commandBuffer, 16, 16, zSamples);
 
         barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -857,7 +898,9 @@ void VolumetricFog::endFrame() {
     m_scene.cpu->frame++;
     m_scene.cpu->previousViewProjection = m_scene.cpu->viewProjection;
     m_scene.cpu->previousInverseViewProjection = m_scene.cpu->inverseViewProjection;
-//    m_bindLessDescriptor.update({ &m_fog.lightContribution[m_scene.cpu->frame%2], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6U});
+
+    m_smoke->checkLoadState(m_bindLessDescriptor);
+    m_smoke->advanceFrame(device);
 }
 
 
@@ -915,6 +958,8 @@ int main(){
     try{
 
         Settings settings;
+        settings.width = 1920;
+        settings.height = 1080;
         settings.depthTest = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;

@@ -195,17 +195,36 @@ namespace asyncml {
     struct Volume {
         RingBuffer<UploadedVolume> UploadedVolumes;
         std::vector<Frame> frames;
+        int framePeriod = 100;
         VulkanBuffer staging;
         int currentFrame{0};
         int numFrames{0};
         Bounds bounds{};
-        glm::mat4 transform;
+        glm::mat4 transform{1};
+        glm::vec3 offset{0};
+        float scale{0.01};
         std::atomic_bool initialized{false};
-        int textureBindingIndex{0};
+        bool ready{false};
+        uint32_t textureBindingIndex{10};
         float invMaxDensity{};
         Texture texture{};
+        std::atomic_bool nextFrame{false};
 
-        void checkLoadState();
+        void checkLoadState(BindlessDescriptor& bindlessDescriptor);
+
+        void update(float dt);
+
+        void updateTransform();
+
+        Bounds scaledBounds() const {
+            auto scaled = bounds;
+            scaled.min *= scale;
+            scaled.max *= scale;
+            return scaled;
+        }
+
+        void advanceFrame(VulkanDevice& device);
+
     };
 
     struct PendingModel {

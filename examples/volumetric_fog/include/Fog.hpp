@@ -6,6 +6,14 @@
 #include <array>
 
 struct FogData {
+    glm::mat4 inverseVolumeTransform;
+
+    glm::vec3 boxMin;
+    int padding0;
+
+    glm::vec3 boxMax;
+    int padding1;
+
     glm::ivec3 froxelDim;
     float scatteringFactor;
 

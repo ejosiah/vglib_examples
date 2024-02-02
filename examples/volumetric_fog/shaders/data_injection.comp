@@ -6,8 +6,10 @@
 #define FOG_SET 0
 #define SCENE_SET 1
 #define VOLUME_NOISE_TEXTURE_ID 9
+#define VOLUME_TEXTURE_ID 10
 
 #define VOLUME_NOISE_TEXTURE globalTextures3d[VOLUME_NOISE_TEXTURE_ID]
+#define VOLUME_TEXTURE globalTextures3d[VOLUME_TEXTURE_ID]
 #define FOG_DATA globalImages3d[nonuniformEXT(FOG_DATA_IMAGE_ID)]
 
 #include "fog.glsl"
@@ -46,5 +48,18 @@ vec4 heightFog(vec3 pos, float noise) {
 }
 
 vec4 boxFog(vec3 pos, float noise) {
+    vec3 localPos = (fog.inverseVolumeTransform * vec4(pos, 1)).xyz;
+    bool insideVolume = all(greaterThanEqual(localPos, vec3(0))) && all(lessThanEqual(localPos, vec3(1)));
+    if(insideVolume){
+        float density = texture(VOLUME_TEXTURE, localPos).r;
+        return scatteringExtinctionFromColorDensity(FOG_COLOR, density);
+    }
+
+//    bool insideVolume = all(greaterThanEqual(pos, fog.boxMin)) && all(lessThanEqual(pos, fog.boxMax));
+//    if(insideVolume){
+//        vec3 sampleCoord = remap(pos, fog.boxMin, fog.boxMax, vec3(0), vec3(1));
+//        float density = texture(VOLUME_TEXTURE, sampleCoord).r;
+//        return scatteringExtinctionFromColorDensity(FOG_COLOR, density);
+//    }
     return vec4(0);
 }

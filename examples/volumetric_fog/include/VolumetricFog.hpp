@@ -71,6 +71,8 @@ protected:
 
     void renderWithRayMarching(VkCommandBuffer commandBuffer);
 
+    void renderVolumeOutline(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -118,6 +120,7 @@ protected:
     bool raymarch = false;
     Fog m_fog;
     Scene m_scene;
+    uint32_t zSamples = 128;
     ShadowMap m_shadowMap;
     BindlessDescriptor m_bindLessDescriptor;
     std::unique_ptr<asyncml::Loader> m_loader;

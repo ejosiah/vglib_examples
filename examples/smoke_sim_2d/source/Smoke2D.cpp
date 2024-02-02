@@ -211,16 +211,16 @@ void Smoke2D::createRenderPipeline() {
 }
 
 void Smoke2D::createComputePipeline() {
-    auto module = VulkanShaderModule{ resource("temp_image_buffer.comp.spv"), device};
+    auto module = device.createShaderModule(resource("temp_image_buffer.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout({fluidSolver.textureSetLayout, ambientTempSet});
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -270,9 +270,9 @@ VkCommandBuffer *Smoke2D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 void Smoke2D::renderTemperature(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.pipeline);
-    vkCmdPushConstants(commandBuffer, temperatureRender.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(temperatureRender.constants), &temperatureRender.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.layout
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, temperatureRender.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(temperatureRender.constants), &temperatureRender.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.layout.handle
             , 0, 1, &temperatureAndDensity.field.descriptorSet[in], 0
             , VK_NULL_HANDLE);
 
@@ -282,9 +282,9 @@ void Smoke2D::renderTemperature(VkCommandBuffer commandBuffer) {
 void Smoke2D::renderSmoke(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeRender.pipeline);
-    vkCmdPushConstants(commandBuffer, smokeRender.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(smokeRender.constants), &smokeRender.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeRender.layout
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeRender.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, smokeRender.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(smokeRender.constants), &smokeRender.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeRender.layout.handle
             , 0, 1, &temperatureAndDensity.field.descriptorSet[in], 0
             , VK_NULL_HANDLE);
 
@@ -294,9 +294,9 @@ void Smoke2D::renderSmoke(VkCommandBuffer commandBuffer) {
 void Smoke2D::renderSource(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.pipeline);
-    vkCmdPushConstants(commandBuffer, temperatureRender.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(temperatureRender.constants), &temperatureRender.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.layout
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, temperatureRender.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(temperatureRender.constants), &temperatureRender.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, temperatureRender.layout.handle
             , 0, 1, &temperatureAndDensity.source.descriptorSet[in], 0
             , VK_NULL_HANDLE);
 
@@ -385,9 +385,9 @@ void Smoke2D::emitSmoke(VkCommandBuffer commandBuffer, Field &field) {
     emitter.constants.dt = fluidSolver.dt();
     emitter.constants.time = fluidSolver.elapsedTime();
     fluidSolver.withRenderPass(commandBuffer, field.framebuffer[out], [&](auto commandBuffer){
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, emitter.pipeline);
-        vkCmdPushConstants(commandBuffer, emitter.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(emitter.constants), &emitter.constants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, emitter.layout, 0, 1, &temperatureAndDensity.field.descriptorSet[in], 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, emitter.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, emitter.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(emitter.constants), &emitter.constants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, emitter.layout.handle, 0, 1, &temperatureAndDensity.field.descriptorSet[in], 0, VK_NULL_HANDLE);
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
     });
     field.swap();
@@ -395,9 +395,9 @@ void Smoke2D::emitSmoke(VkCommandBuffer commandBuffer, Field &field) {
 
 bool Smoke2D::decaySmoke(VkCommandBuffer commandBuffer, Field &field) {
     smokeDecay.constants.dt = fluidSolver.dt();
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeDecay.pipeline);
-    vkCmdPushConstants(commandBuffer, smokeDecay.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(smokeDecay.constants), &smokeDecay.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeDecay.layout, 0, 1, &field.descriptorSet[in], 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeDecay.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, smokeDecay.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(smokeDecay.constants), &smokeDecay.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, smokeDecay.layout.handle, 0, 1, &field.descriptorSet[in], 0, VK_NULL_HANDLE);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
     return true;
 }
@@ -409,9 +409,9 @@ ExternalForce Smoke2D::buoyancyForce() {
         sets[0] = descriptorSet;
         sets[1] = temperatureAndDensity.field.descriptorSet[in];
         sets[2] = ambientTempDescriptorSet;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, buoyancyForceGen.pipeline);
-        vkCmdPushConstants(commandBuffer, buoyancyForceGen.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(buoyancyForceGen.constants), &buoyancyForceGen.constants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, buoyancyForceGen.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, buoyancyForceGen.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, buoyancyForceGen.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(buoyancyForceGen.constants), &buoyancyForceGen.constants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, buoyancyForceGen.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
     };
 }
@@ -421,8 +421,8 @@ void Smoke2D::copy(VkCommandBuffer commandBuffer, Texture &source, const VulkanB
     sets[0] = temperatureAndDensity.field.descriptorSet[in];
     sets[1] = ambientTempDescriptorSet;
     addImageMemoryBarriers(commandBuffer, { source.image });
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout,
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout.handle,
                             0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
 
     uint32_t groupCountX = glm::min(1, width/32);
