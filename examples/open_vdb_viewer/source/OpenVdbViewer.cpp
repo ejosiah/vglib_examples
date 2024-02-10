@@ -215,8 +215,8 @@ void OpenVdbViewer::createBuffers() {
     volumeUbo->height = height;
     volumeUbo->invMaxDensity = 0;
     volumeUbo->lightPosition = glm::vec3(0);
-    volumeUbo->scatteringCoefficient = 9;
-    volumeUbo->absorptionCoefficient = 1;
+    volumeUbo->scatteringCoefficient = 60;
+    volumeUbo->absorptionCoefficient = 40;
     volumeUbo->extinctionCoefficient = volumeUbo->scatteringCoefficient + volumeUbo->absorptionCoefficient;
     updateCamera();
 

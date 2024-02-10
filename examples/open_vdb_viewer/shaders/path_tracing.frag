@@ -170,7 +170,7 @@ vec3 sampleLight(Ray ray, Bounds bounds, float g, inout RngStateType rngState){
     vec3 wi = normalize(p - vd.lightPosition);
     float scatteringPdf = HG_p(g, -ray.direction, wi);
     vec3 F = vec3(scatteringPdf);
-    return vd.lightIntensity * F * calcTransmittance(ray, bounds, rngState);
+    return vd.lightIntensity * F; // calcTransmittance(ray, bounds, rngState);
 }
 
 Ray nextRay(Ray ray, float g, inout RngStateType rngState){

@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <assimp/postprocess.h>
 #include <openvdb/openvdb.h>
+#include <openvdb/io/Stream.h>
 
 #include <functional>
 
@@ -341,16 +342,15 @@ namespace asyncml {
 
     Bounds Loader::volumeBounds(const std::filesystem::path &path) {
         spdlog::debug("loading volume grid from {}", fs::path(path).filename().string());
-        openvdb::io::File file(path.string());
-        file.open();
+        std::ifstream fin{path.string(), std::ios::binary};
+        openvdb::io::Stream gStream{fin};
 
-        auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
+        auto grid = *gStream.getGrids()->begin();
         int64_t numVoxels = grid->getMetadata<openvdb::Int64Metadata>("file_voxel_count")->value();
 
         openvdb::Vec3i boxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
         openvdb::Vec3i boxMax = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_max")->value();
 
-        file.close();
         return numVoxels == 0 ? Bounds{ glm::vec3(0), glm::vec3(0) } : Bounds{toGlm(boxMin), toGlm(boxMax) };
     }
 

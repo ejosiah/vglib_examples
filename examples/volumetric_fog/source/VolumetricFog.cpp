@@ -202,7 +202,7 @@ void VolumetricFog::initShadowMap() {
 void VolumetricFog::loadModel() {
     m_sponza = m_loader->load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
 //    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res\smoke_044_0.10_0106.vdb)");
-    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\VDB-Clouds-Pack-Pixel-Lab\VDB Cloud Files\cloud_v001_0.02.vdb)");
+    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)");
 }
 
 void VolumetricFog::initScene() {

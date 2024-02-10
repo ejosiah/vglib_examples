@@ -142,28 +142,12 @@ void VdbAnimation::load(const std::filesystem::path &vdbPath) {
             }
         });
 
-        auto remapCoordinates = subflow.emplace([&]() {
-            static auto to_uvw = [=](const glm::vec3& x, const Bounds& b){
-                glm::vec3 d{b.max - b.min};
-                d -= 1.0f;
-
-                return  remap(x, b.min, b.max, glm::vec3(0), d);
-            };
-
-            glm::ivec3 iSize{frames_.front().volume.bounds.max - frames_.front().volume.bounds.min};
-            for(auto& frame : frames_) {
-                for(auto& voxel : frame.volume.voxels){
-                    voxel.position = to_uvw(voxel.position, frame.volume.bounds);
-                }
-            }
-        });
 
 
         for(const auto& task : tasks) {
             sortTask.succeed(task);
         }
         resizeVolumesTask.succeed(sortTask);
-        remapCoordinates.succeed(resizeVolumesTask);
 
     });
 
@@ -212,55 +196,17 @@ Frame VdbAnimation::loadFrame(fs::path path) {
 
         Volume volume{};
         volume.id = getId(path.string());
+        auto grids = file.getGrids();
+        volume.grids.insert(volume.grids.end(), grids->begin(), grids->end());
 
         if(numVoxels <= 0) {
             spdlog::info("{} contains no voxels", path.string());
             return {.volume = volume};
         }
 
-        openvdb::Vec3i size;
-        size = size.sub(boxMax, boxMin);
-
-        openvdb::Coord xyz;
-        auto accessor = grid->getAccessor();
-
-        auto &z = xyz.z();
-        auto &y = xyz.y();
-        auto &x = xyz.x();
-
-        auto to_uvw = [=](openvdb::Coord &xyz) {
-            glm::vec3 x{xyz.x(), xyz.y(), xyz.z()};
-            glm::vec3 a = to_glm_vec3(boxMin);
-            glm::vec3 b = to_glm_vec3(boxMax);
-            glm::vec3 c{0};
-            glm::vec3 d{size.x(), size.y(), size.z()};
-            d -= 1.0f;
-
-            auto uvw = remap(x, a, b, c, d);
-            return glm::ivec3(uvw);
-        };
-
-        static int count = 0;
-        float maxDensity = MIN_FLOAT;
-        volume.voxels.reserve(size.x() * size.y() * size.z());
-        for (z = boxMin.z(); z <= boxMax.z(); z++) {
-            for (y = boxMin.y(); y <= boxMax.y(); y++) {
-                for (x = boxMin.x(); x <= boxMax.x(); x++) {
-                    auto value = accessor.getValue(xyz);
-                    if (value != 0 && count < 10) {
-                        count++;
-                        spdlog::info("value: {}", value);
-                    }
-                    Voxel voxel{.position{xyz.x(), xyz.y(), xyz.z()}, .value = value};
-                    maxDensity = glm::max(maxDensity, value);
-                    volume.voxels.push_back(voxel);
-                }
-            }
-        }
 
         volume.bounds.min = to_glm_vec3(boxMin);
         volume.bounds.max = to_glm_vec3(boxMax);
-        volume.invMaxDensity = maxDensity != 0 ? 1 / maxDensity : 0;
         file.close();
         spdlog::info("loading volume grid {} successfully loaded", grid->getName());
 
@@ -287,18 +233,7 @@ const Frame& VdbAnimation::currentFrame() const {
 bool VdbAnimation::advanceFrame(VkDescriptorSet dstSet, uint32_t dstBinding) const {
     if(frames_.empty() || !shouldAdvanceFrame_) return false;
 
-    auto stagingArea = reinterpret_cast<float*>(staging_.map());
-
-    std::memset(stagingArea, 0, staging_.size);
-
-    const auto& frame = currentFrame();
-
-    const auto iSize = glm::ivec3(bounds_.max - bounds_.min);
-    for(const auto& voxel : frame.volume.voxels) {
-        auto vid = glm::ivec3(voxel.position);
-        int loc = (vid.z * iSize.y + vid.y) * iSize.x + vid.x;
-        stagingArea[loc] = voxel.value;
-    }
+    prepareFrame(frameIndex_);
 
     device_->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
@@ -343,6 +278,50 @@ bool VdbAnimation::advanceFrame(VkDescriptorSet dstSet, uint32_t dstBinding) con
     shouldAdvanceFrame_ = false;
 
     return true;
+}
+
+void VdbAnimation::prepareFrame(uint32_t index) const {
+    static auto to_uvw = [](const openvdb::Coord coord, const Bounds& b){
+        glm::vec3 d{b.max - b.min};
+        d -= 1.0f;
+
+        glm::vec3 x{coord.x(), coord.y(), coord.z()};
+        return  glm::ivec3(remap(x, b.min, b.max, glm::vec3(0), d));
+    };
+
+    auto stagingArea = reinterpret_cast<float*>(staging_.map());
+
+    std::memset(stagingArea, 0, staging_.size);
+
+    const auto& frame = frames_[index];
+
+    const auto iSize = glm::ivec3(bounds_.max - bounds_.min);
+
+    auto grid = openvdb::gridConstPtrCast<openvdb::FloatGrid>(frame.volume.grids.front());
+    int64_t numVoxels = grid->getMetadata<openvdb::Int64Metadata>("file_voxel_count")->value();
+
+    if(numVoxels != 0){
+        openvdb::Vec3i boxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
+        openvdb::Vec3i boxMax = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_max")->value();
+
+
+        openvdb::Coord xyz;
+        auto accessor = grid->getAccessor();
+
+        auto &z = xyz.z();
+        auto &y = xyz.y();
+        auto &x = xyz.x();
+
+        for (z = boxMin.z(); z <= boxMax.z(); z++) {
+            for (y = boxMin.y(); y <= boxMax.y(); y++) {
+                for (x = boxMin.x(); x <= boxMax.x(); x++) {
+                    auto vid = to_uvw(xyz, frame.volume.bounds);
+                    int loc = (vid.z * iSize.y + vid.y) * iSize.x + vid.x;
+                    stagingArea[loc] = accessor.getValue(xyz);
+                }
+            }
+        }
+    }
 }
 
 void VdbAnimation::update(float timeSeconds) {

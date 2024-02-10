@@ -46,17 +46,17 @@ void ShaderBindingTableDemo::loadModels() {
 
     rt::MeshObjectInstance bunnyInstance{};
     bunnyInstance.object = rt::TriangleMesh{ &drawables["bunny"]};
-    bunnyInstance.hitGroupId = 0;
+    bunnyInstance.hitGroupId = 3;
     bunnyInstance.xform = glm::rotate(glm::mat4(1), -glm::half_pi<float>(), {1, 0, 0});
     bunnyInstance.xform = glm::translate(bunnyInstance.xform, -drawables["bunny"].bounds.min - glm::vec3(1, 0, 0));
     bunnyInstance.xformIT = glm::inverseTranspose(bunnyInstance.xform);
     instances.push_back(bunnyInstance);
 
-    bunnyInstance.hitGroupId = 1;
+    bunnyInstance.hitGroupId = 4;
     bunnyInstance.xform = glm::translate(bunnyInstance.xform, glm::vec3(1, 0, 0));
     instances.push_back(bunnyInstance);
 
-    bunnyInstance.hitGroupId = 2;
+    bunnyInstance.hitGroupId = 5;
     bunnyInstance.xform = glm::translate(bunnyInstance.xform, glm::vec3(1, 0, 0));
     instances.push_back(bunnyInstance);
     createAccelerationStructure(instances);
@@ -202,7 +202,7 @@ void ShaderBindingTableDemo::updateDescriptorSets() {
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &imageInfo;
 
     std::array<VkDescriptorBufferInfo, 1> materialBufferInfo{};
@@ -350,10 +350,10 @@ void ShaderBindingTableDemo::createRenderPipeline() {
 }
 
 void ShaderBindingTableDemo::createRayTracingPipeline() {
-    auto rayGenShaderModule = VulkanShaderModule{ resource("raygen.rgen.spv"), device };
-    auto hitGroup0ShaderModule = VulkanShaderModule{ resource("hitgroup0.rchit.spv"), device };
-    auto missGroup0ShaderModule = VulkanShaderModule{ resource("miss0.rmiss.spv"), device };
-    auto callable0ShaderModule = VulkanShaderModule{ resource("callable0.rcall.spv"), device };
+    auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
+    auto hitGroup0ShaderModule = device.createShaderModule( resource("hitgroup0.rchit.spv"));
+    auto missGroup0ShaderModule = device.createShaderModule( resource("miss0.rmiss.spv"));
+    auto callable0ShaderModule = device.createShaderModule( resource("callable0.rcall.spv"));
 
     auto stages = initializers::rayTraceShaderStages({
         { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
@@ -393,7 +393,7 @@ void ShaderBindingTableDemo::createRayTracingPipeline() {
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
     createInfo.maxPipelineRayRecursionDepth = 0;
-    createInfo.layout = raytrace.layout;
+    createInfo.layout = raytrace.layout.handle;
 
     raytrace.pipeline = device.createRayTracingPipeline(createInfo);
     bindingTables = shaderTablesDesc.compile(device, raytrace.pipeline);
@@ -447,8 +447,8 @@ void ShaderBindingTableDemo::rayTrace(VkCommandBuffer commandBuffer) {
 
     std::vector<VkDescriptorSet> sets{ raytrace.descriptorSet, raytrace.instanceDescriptorSet, raytrace.vertexDescriptorSet };
     assert(raytrace.pipeline);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
 
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);

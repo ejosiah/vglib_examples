@@ -106,21 +106,21 @@ void SamplingDemo::updateDescriptorSets(){
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo distImageInfo{ envMap.sampler, envMap.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo distImageInfo{ envMap.sampler.handle, envMap.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[0].pImageInfo = &distImageInfo;
 
     writes[1].dstSet = distDescriptorSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo distInfo{ envMapDistribution.sampler, envMapDistribution.pConditionalVFunc.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo distInfo{ envMapDistribution.sampler.handle, envMapDistribution.pConditionalVFunc.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[1].pImageInfo = &distInfo;
 
     writes[2].dstSet = distDescriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo pMarginalInfo{ envMapDistribution.sampler, envMapDistribution.pMarginal.func.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo pMarginalInfo{ envMapDistribution.sampler.handle, envMapDistribution.pMarginal.func.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &pMarginalInfo;
 
     
@@ -222,9 +222,9 @@ VkCommandBuffer *SamplingDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
     constants[0] = width;
     constants[1] = height;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline);
-    vkCmdPushConstants(commandBuffer, render.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, BYTE_SIZE(constants), constants.data());
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout, 0, 1, &distDescriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, BYTE_SIZE(constants), constants.data());
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, 1, &distDescriptorSet, 0, VK_NULL_HANDLE);
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenBuffer, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);

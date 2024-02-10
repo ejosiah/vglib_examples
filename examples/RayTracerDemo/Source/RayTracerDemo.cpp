@@ -64,7 +64,7 @@ VkCommandBuffer *RayTracerDemo::buildCommandBuffers(uint32_t imageIndex, uint32_
 
     if(!useRayTracing) {
         assert(graphics.pipeline);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics.pipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics.pipeline.handle);
         camera->push(commandBuffer, graphics.layout);
         static VkDeviceSize offset = 0;
 //        vkCmdBindVertexBuffers(commandBuffer, 0, 1, triangle.vertices, &offset);
@@ -242,7 +242,7 @@ void RayTracerDemo::createDescriptorSets() {
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
     VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageView = canvas.imageView;
+    imageInfo.imageView = canvas.imageView.handle;
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     writes[1].dstSet = raytrace.descriptorSet;
@@ -401,8 +401,8 @@ void RayTracerDemo::createGraphicsPipeline() {
 //    auto vertexShaderModule = VulkanShaderModule{"../../data/shaders/barycenter.vert.spv", device};
 //    auto fragmentShaderModule = VulkanShaderModule{"../../data/shaders/barycenter.frag.spv", device};
 
-    VulkanShaderModule vertexShaderModule = VulkanShaderModule{"../../data/shaders/demo/spaceship.vert.spv", device};
-    VulkanShaderModule fragmentShaderModule = VulkanShaderModule{"../../data/shaders/demo/spaceship.frag.spv", device};
+    VulkanShaderModule vertexShaderModule = device.createShaderModule("../../data/shaders/demo/spaceship.vert.spv");
+    VulkanShaderModule fragmentShaderModule = device.createShaderModule("../../data/shaders/demo/spaceship.frag.spv");
 
     auto stages = initializers::vertexShaderStages({
         { vertexShaderModule, VK_SHADER_STAGE_VERTEX_BIT},
@@ -461,7 +461,7 @@ void RayTracerDemo::createGraphicsPipeline() {
     createInfo.pColorBlendState = &colorBlendState;
     createInfo.pDepthStencilState = &depthStencilState;
     createInfo.pRasterizationState = &rasterState;
-    createInfo.layout = graphics.layout;
+    createInfo.layout = graphics.layout.handle;
     createInfo.renderPass = renderPass;
     createInfo.subpass = 0;
 
@@ -496,10 +496,10 @@ void RayTracerDemo::createShaderBindingTables() {
 }
 
 void RayTracerDemo::createRayTracePipeline() {
-    auto rayGenShaderModule = VulkanShaderModule{"../../data/shaders/raytrace_basic/raygen.rgen.spv", device };
-    auto missShaderModule = VulkanShaderModule{"../../data/shaders/raytrace_basic/miss.rmiss.spv", device };
-    auto shadowMissShaderModule = VulkanShaderModule{"../../data/shaders/raytrace_basic/shadow.rmiss.spv", device };
-    auto closestHitModule = VulkanShaderModule{"../../data/shaders/raytrace_basic/closesthit.rchit.spv", device };
+    auto rayGenShaderModule = device.createShaderModule("../../data/shaders/raytrace_basic/raygen.rgen.spv");
+    auto missShaderModule = device.createShaderModule("../../data/shaders/raytrace_basic/miss.rmiss.spv");
+    auto shadowMissShaderModule = device.createShaderModule("../../data/shaders/raytrace_basic/shadow.rmiss.spv");
+    auto closestHitModule = device.createShaderModule("../../data/shaders/raytrace_basic/closesthit.rchit.spv");
 
     auto stages = initializers::vertexShaderStages({
         {rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
@@ -523,7 +523,7 @@ void RayTracerDemo::createRayTracePipeline() {
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
     createInfo.maxPipelineRayRecursionDepth = 2;
-    createInfo.layout = raytrace.layout;
+    createInfo.layout = raytrace.layout.handle;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     ext.vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr, &pipeline);
@@ -538,8 +538,8 @@ void RayTracerDemo::rayTrace(VkCommandBuffer commandBuffer) {
 
     std::vector<VkDescriptorSet> sets{ raytrace.descriptorSet, raytrace.instanceDescriptorSet, raytrace.vertexDescriptorSet };
     assert(raytrace.pipeline);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
 
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       &callableShaderSbtEntry, swapChain.extent.width, swapChain.extent.height, 1);

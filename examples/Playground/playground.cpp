@@ -21,6 +21,9 @@
 #include "add_ts_vectors.h"
 #include "shader_reflect.hpp"
 #include "xforms.h"
+#include <openvdb/openvdb.h>
+#include <openvdb/io/Stream.h>
+#include "spectrum/spectrum.hpp"
 
 glm::vec2 randomPointOnSphericalAnnulus(glm::vec2 x, float r, auto rng) {
     float angle = rng() * glm::two_pi<float>();
@@ -120,119 +123,102 @@ std::istream& operator>>(std::istream& in, glm::vec3& v) {
     return in >> v.x >> v.y >> v.z;
 }
 
+
 int main(int argc, char** argv){
-//    auto samples = poissonDiskSampling({8, 8}, glm::sqrt(2.f) * .1f);
-//    fmt::print("generated {} points\n", samples.size());
-//    std::ofstream fout{R"(D:\Program Files\SHADERed\poisson.dat)", std::ios::binary};
-//    if(!fout.good()){
-//        fmt::print("unable to open file for writing\n");
-//    }
-//    long long size = samples.size() * sizeof(glm::vec2);
-//    auto data = reinterpret_cast<char*>(samples.data());
-//    fout.write(data, size);
-//    fmt::print("samples written to disk");
-////    for(const auto& sample : samples){
-////        fmt::print("[{}, {}]\n", sample.x, sample.y);
-////    }
-//    auto cone = primitives::cone(50, 50, 1, 1, glm::vec4(1, 0, 0, 1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//    fmt::print("num triangles {}\n", cone.indices.size()/3);
-//
-//    std::vector<glm::vec3> positions{};
-//    std::vector<glm::vec4> normals{};
-//    std::vector<glm::vec3> combined{};
-//
-//    for(int i = 0; i < cone.indices.size(); i+= 3){
-//        auto v0 = cone.indices[i];
-//        auto v1 = cone.indices[i+1];
-//        auto v2 = cone.indices[i+2];
-//
-//        positions.push_back(cone.vertices[v0].position.xyz());
-//        positions.push_back(cone.vertices[v1].position.xyz());
-//        positions.push_back(cone.vertices[v2].position.xyz());
-//
-//
-//
-//        normals.push_back(glm::vec4(cone.vertices[v0].normal, 0));
-//        normals.push_back(glm::vec4(cone.vertices[v1].normal, 0));
-//        normals.push_back(glm::vec4(cone.vertices[v2].normal, 0));
-//
-//        combined.push_back(cone.vertices[v0].position.xyz());
-//        combined.push_back(cone.vertices[v0].normal);
-//
-//        combined.push_back(cone.vertices[v1].position.xyz());
-//        combined.push_back(cone.vertices[v1].normal);
-//
-//        combined.push_back(cone.vertices[v2].position.xyz());
-//        combined.push_back(cone.vertices[v2].normal);
-//    }
-//
-//    fmt::print("num vertices {}\n", positions.size());
-//
-//    std::ofstream fout{R"(D:\Program Files\SHADERed\cone_position.dat)", std::ios::binary};
-//    if(!fout.good()){
-//        fmt::print("unable to open file for writing\n");
-//    }
-//    long long size = positions.size() * sizeof(glm::vec3);
-//    auto data = reinterpret_cast<char*>(positions.data());
-//    fout.write(data, size);
-//    fout.close();
-//    fmt::print("positions written to disk\n");
-//
-//    fout = std::ofstream{R"(D:\Program Files\SHADERed\cone_normal.dat)", std::ios::binary};
-//    if(!fout.good()){
-//        fmt::print("unable to open file for writing\n");
-//    }
-//     size = normals.size() * sizeof(glm::vec4);
-//    data = reinterpret_cast<char*>(normals.data());
-//    fout.write(data, size);
-//    fout.close();
-//    fmt::print("normals written to disk\n");
-//
-//    fout = std::ofstream{R"(D:\Program Files\SHADERed\cone_interlaced.dat)", std::ios::binary};
-//    if(!fout.good()){
-//        fmt::print("unable to open file for writing\n");
-//    }
-//     size = combined.size() * sizeof(glm::vec3);
-//    data = reinterpret_cast<char*>(combined.data());
-//    fout.write(data, size);
-//    fout.close();
-//    fmt::print("cone data written to disk\n");
+    auto cornellBox = primitives::cornellBox();
 
-  //  add_tangent_space_vectors(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\bs_ears.obj)", R"(D:\Program Files\SHADERed\olga.dat)");
+    std::stringstream ss;
+
+    auto light = spectrum::blackbodySpectrum({5000, 1000}).front()/100.f;
+    ss << fmt::format("newmtl Light\n");
+    ss << "\tKa 0 0 0\n";
+    ss << std::format("\tKd {} {} {}\n", light.x, light.y, light.z);
+    ss << "\tKs 0 0 0\n";
+    ss << "\tTf 1 1 1\n";
+    ss << fmt::format("\tillum {}\n", 10);
+    ss << "\tNs 0\n";
+    ss << "\tNi 1\n";
+
+    ss << fmt::format("\nnewmtl White\n");
+    ss << fmt::format("\tKa {} {} {}\n", cornellBox[1].vertices[0].color.r, cornellBox[1].vertices[0].color.g, cornellBox[1].vertices[0].color.b);
+    ss << fmt::format("\tKd {} {} {}\n", cornellBox[1].vertices[0].color.r, cornellBox[1].vertices[0].color.g, cornellBox[1].vertices[0].color.b);
+    ss << "\tKs 1 1 1\n";
+    ss << "\tTf 1 1 1\n";
+    ss << "\tillum 0\n";
+    ss << "\tNs 50\n";
+    ss << "\tNi 1\n";
+
+    ss << fmt::format("\nnewmtl Red\n");
+    ss << fmt::format("\tKa {} {} {}\n", cornellBox[2].vertices[0].color.r, cornellBox[2].vertices[0].color.g, cornellBox[2].vertices[0].color.b);
+    ss << fmt::format("\tKd {} {} {}\n", cornellBox[2].vertices[0].color.r, cornellBox[2].vertices[0].color.g, cornellBox[2].vertices[0].color.b);
+    ss << "\tKs 1 1 1\n";
+    ss << "\tTf 1 1 1\n";
+    ss << "\tillum 0\n";
+    ss << "\tNs 50\n";
+    ss << "\tNi 1\n";
 
 
-//    Assimp::Exporter exporter{};
-//    auto count = exporter.GetExportFormatCount();
-//    fmt::print("3d export formats supported: {}\n", count);
-//
-//    for(auto i = 0; i < count; i++){
-//        auto desc = exporter.GetExportFormatDescription(i);
-//        fmt::print("\t[id: {}, description: {}, extension: {}]\n", desc->id, desc->description, desc->fileExtension);
-//    }
-//    shader_reflect(argc, argv);
+    ss << fmt::format("\nnewmtl Green\n");
+    ss << fmt::format("\tKa {} {} {}\n", cornellBox[4].vertices[0].color.r, cornellBox[4].vertices[0].color.g, cornellBox[4].vertices[0].color.b);
+    ss << fmt::format("\tKd {} {} {}\n", cornellBox[4].vertices[0].color.r, cornellBox[4].vertices[0].color.g, cornellBox[4].vertices[0].color.b);
+    ss << "\tKs 1 1 1\n";
+    ss << "\tTf 1 1 1\n";
+    ss << "\tillum 0\n";
+    ss << "\tNs 50\n";
+    ss << "\tNi 1\n";
 
-    auto projection = vkn::perspectiveVFov(glm::half_pi<float>(), 1, 1, 100);
-//    auto projection = glm::perspective(glm::half_pi<float>(), 1.f, 1.f, 100.f);
+    std::ofstream materialOut{"../../data/models/cornell_box.mtl"};
+    materialOut << ss.str();
 
-    auto linearToRawDepth = [](float depth, float near, float far) {
-        return ( near * far ) / ( depth * ( near - far ) ) - far / ( near - far );
+    ss.str("");
+    ss.clear();
+
+    ss << fmt::format("# cornell_box.obj\n\n");
+
+    ss << "mtllib cornell_box.mtl\n\n";
+
+    struct Meta{
+        std::string name;
+        std::string material;
     };
 
-    glm::vec4 x{0, 0, -1, 1};
+    std::map<int, Meta> objMetadata{};
+    objMetadata[0] = { "Light", "Light" };
+    objMetadata[1] = { "Ceiling", "White" };
+    objMetadata[2] = { "RightWall", "Red" };
+    objMetadata[3] = { "Floor", "White" };
+    objMetadata[4] = { "LeftWall", "Green" };
+    objMetadata[5] = { "TallBox", "White" };
+    objMetadata[6] = { "ShortBox", "White" };
+    objMetadata[7] = { "BackWall", "White" };
 
-    auto xp = projection * x;
-    fmt::print("xp: {}\n", xp);
-    xp /= xp.w;
-    fmt::print("xp/w: {}\n", xp.z);
+    for(auto [index, metadata] : objMetadata) {
+        ss << std::format("o {}\n", metadata.name);
+        ss << std::format("usemtl {}\n", metadata.material);
+        const auto& obj = cornellBox[index];
 
-    x.z = -100;
-    xp = projection * x;
-    fmt::print("xp: {}\n", xp);
-    xp /= xp.w;
-    fmt::print("xp/x: {}\n", xp.z);
+        for(auto vertices : obj.vertices) {
+            ss << std::format("v {} {} {}\n", vertices.position.x, vertices.position.y, vertices.position.z);
+        }
 
-    auto wz = linearToRawDepth(xp.z, 1, 100);
-    fmt::print("world z: {}\n", wz);
+        ss << "\n";
+        for(auto vertices : obj.vertices) {
+            ss << std::format("vn {:f} {:f} {:f}\n", vertices.normal.x, vertices.normal.y, vertices.normal.z);
+        }
 
-    fmt::print("vertex: {}", sizeof(Vertex));
+        ss << "\n";
+        for(auto vertices : obj.vertices) {
+            ss << std::format("vt {} {}\n", vertices.uv.s, vertices.uv.t);
+        }
+
+        ss << "\n";
+        const auto& indices = obj.indices;
+        for(int i = 0; i < indices.size(); i+= 3){
+            ss << std::format("f {} {} {}\n", indices[i] + 1, indices[i+1] + 1, indices[i+2] + 1);
+        }
+        ss << "\n";
+    }
+
+    std::ofstream objOut{"../../data/models/cornell_box.obj"};
+    objOut << ss.str();
 }

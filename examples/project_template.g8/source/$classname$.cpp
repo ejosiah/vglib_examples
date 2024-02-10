@@ -121,7 +121,7 @@ void $classname$::updateDescriptorSets(){
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &imageInfo;
 
     device.updateDescriptorSets(writes);
@@ -154,7 +154,7 @@ void $classname$::createInverseCam() {
 }
 
 void $classname$::createRayTracingPipeline() {
-    auto rayGenShaderModule = VulkanShaderModule{ resource("raygen.rgen.spv"), device };
+    auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
 
     auto stages = initializers::rayTraceShaderStages({
                                                              { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR}
@@ -171,7 +171,7 @@ void $classname$::createRayTracingPipeline() {
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
     createInfo.maxPipelineRayRecursionDepth = 0;
-    createInfo.layout = raytrace.layout;
+    createInfo.layout = raytrace.layout.handle;
 
     raytrace.pipeline = device.createRayTracingPipeline(createInfo);
     bindingTables = shaderTablesDesc.compile(device, raytrace.pipeline);
@@ -182,8 +182,8 @@ void $classname$::rayTrace(VkCommandBuffer commandBuffer) {
 
     std::vector<VkDescriptorSet> sets{ raytrace.descriptorSet };
     assert(raytrace.pipeline);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
 
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);

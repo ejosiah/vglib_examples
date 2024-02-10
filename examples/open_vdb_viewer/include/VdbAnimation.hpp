@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <atomic>
 #include <functional>
+#include <openvdb/openvdb.h>
 
 struct Voxel {
     glm::vec3 position;
@@ -21,8 +22,8 @@ struct Bounds {
 struct Volume {
     int id{-1};
     float invMaxDensity{0};
-    std::vector<Voxel> voxels;
     Bounds bounds;
+    openvdb::GridCPtrVec grids;
 };
 
 
@@ -59,6 +60,8 @@ public:
     void setFrameRate(int value);
 
     bool advanceFrame(VkDescriptorSet dstSet, uint32_t dstBinding) const;
+
+    void prepareFrame(uint32_t index) const;
 
     const Frame& frame(uint32_t index) const;
 

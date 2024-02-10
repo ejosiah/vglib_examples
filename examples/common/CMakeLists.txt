@@ -26,4 +26,4 @@ file(GLOB_RECURSE SOURCE_FILES ${CMAKE_CURRENT_LIST_DIR}/*.cpp)
 
 
 add_library(common ${HEADER_FILES} ${SOURCE_FILES})
-target_link_libraries(common PRIVATE VulkanBase ${OPEN_VDB_LIBS})
+target_link_libraries(common PUBLIC VulkanBase ${OPEN_VDB_LIBS})

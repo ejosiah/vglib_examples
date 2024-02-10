@@ -143,9 +143,9 @@ void RayTracingImplicits::rayTrace(VkCommandBuffer commandBuffer) {
     std::memcpy(cameraInverse.data(), &viewInverse, sizeof(glm::mat4));
     std::memcpy(cameraInverse.data() + sizeof(glm::mat4), &projInverse, sizeof(glm::mat4));
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
-    vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(glm::mat4) * 2, cameraInverse.data());
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline.handle);
+    vkCmdPushConstants(commandBuffer, layout.handle, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(glm::mat4) * 2, cameraInverse.data());
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
 
     VkStridedDeviceAddressRegionKHR addressRegion{};
 
@@ -280,9 +280,9 @@ void RayTracingImplicits::createDescriptorSet() {
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
     VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageView = canvas.imageView;
+    imageInfo.imageView = canvas.imageView.handle;
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    imageInfo.sampler = canvas.sampler;
+    imageInfo.sampler = canvas.sampler.handle;
 
     writes[1].dstSet = descriptorSet;
     writes[1].dstBinding = 1;
@@ -324,27 +324,26 @@ void RayTracingImplicits::createPipeline() {
     std::vector<VkPipelineShaderStageCreateInfo> stages;
 
     // Ray generation group
-    auto rayGenShader = VulkanShaderModule{"../../data/shaders/raytracing_implicits/implicits.rgen.spv", device};
+    auto rayGenShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rgen.spv");
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
     stages.push_back(initializers::shaderStage({ rayGenShader, VK_SHADER_STAGE_RAYGEN_BIT_KHR}));
 
     // miss group 0;
-    auto missShader = VulkanShaderModule{"../../data/shaders/raytracing_implicits/implicits.rmiss.spv", device};
-    shaderGroups.push_back(shaderTablesDesc.addMissGroup());
+    auto missShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rmiss.spv");
+    shaderGroups.push_back(shaderTablesDesc.addMissGroup(1));
     stages.push_back(initializers::shaderStage({ missShader, VK_SHADER_STAGE_MISS_BIT_KHR}));
 
     // miss group 1
-    auto shadowShader = VulkanShaderModule{"../../data/shaders/raytracing_implicits/shadow.rmiss.spv", device};
-    shaderGroups.push_back(shaderTablesDesc.addMissGroup());
+    auto shadowShader = device.createShaderModule("../../data/shaders/raytracing_implicits/shadow.rmiss.spv");
+    shaderGroups.push_back(shaderTablesDesc.addMissGroup(2));
     stages.push_back(initializers::shaderStage({ shadowShader, VK_SHADER_STAGE_MISS_BIT_KHR}));
 
     // hit group 0;
-    auto hitShader = VulkanShaderModule{"../../data/shaders/raytracing_implicits/implicits.rchit.spv", device};
-    auto intersectShader = VulkanShaderModule{"../../data/shaders/raytracing_implicits/implicits.rint.spv", device};
+    auto hitShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rchit.spv");
+    auto intersectShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rint.spv");
     stages.push_back(initializers::shaderStage({ hitShader, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR}));
     stages.push_back(initializers::shaderStage({ intersectShader, VK_SHADER_STAGE_INTERSECTION_BIT_KHR}));
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR, true,
-                                                        false, true));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(3, 4, VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
 
     dispose(layout);
     layout = device.createPipelineLayout( { descriptorSetLayout, objectsDescriptorSetLayout },
@@ -356,7 +355,7 @@ void RayTracingImplicits::createPipeline() {
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
     createInfo.maxPipelineRayRecursionDepth = 1;
-    createInfo.layout = layout;
+    createInfo.layout = layout.handle;
 
     pipeline = device.createRayTracingPipeline(createInfo);
 }
