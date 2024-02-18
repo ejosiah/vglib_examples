@@ -3,6 +3,7 @@
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
 #include "kdtree.hpp"
+#include "PoissonDiskSampling.hpp"
 
 SpacePartitioning::SpacePartitioning(const Settings& settings)
 : VulkanBaseApp("Space partitioning", settings)
@@ -37,15 +38,25 @@ void SpacePartitioning::createPoints() {
 }
 
 void SpacePartitioning::generatePoints() {
-    std::vector<Point> samples(numPoints);
+    auto blueNoise = PoissonDiskSampling::generate({ glm::vec2{-1}, glm::vec2{1} }, 0.02);
+    spdlog::error("{} blue noise samples generated", blueNoise.size());
+    std::vector<Point> samples;
 
-    std::generate(samples.begin(), samples.end(), [&]{
-        Point point{ .position = randomVec3(glm::vec3(-1), glm::vec3(1), glm::uvec3(1 << 20, 1 << 10, 1 << 15)).xy() };
-//        spdlog::info("{}", point.position);
-        return point;
-    });
+    for(auto p : blueNoise) {
+        samples.push_back({ .position = p});
+    }
+    numPoints = samples.size();
 
-    kdtree::balance(samples.data(), samples.data() + numPoints, points, 0, Bounds{glm::vec2(-1), glm::vec2(1) });
+//    std::vector<Point> samples(numPoints);
+//    std::generate(samples.begin(), samples.end(), [&]{
+//        Point point{ .position = randomVec3(glm::vec3(-1), glm::vec3(1), glm::uvec3(1 << 20, 1 << 10, 1 << 15)).xy() };
+////        spdlog::info("{}", point.position);
+//        return point;
+//    });
+
+    int count = 0;
+    kdtree::balance(samples.data(), samples.data() + numPoints, points, 0, Bounds{glm::vec2(-1), glm::vec2(1) }, count);
+    spdlog::info("{} kd-tree entries", count);
 
 //    spdlog::info("\n");
 //    for(int i = 0; i < numPoints; i++){
@@ -276,6 +287,7 @@ void SpacePartitioning::checkAppInputs() {
 
     if(initialPress && mouse.left.released) {
         initialPress = false;
+        spdlog::info("search radius: {}", searchArea.radius);
         searchResults = kdtree::search_loop({points, static_cast<size_t>(numPoints)}, searchArea, 200);
         spdlog::info("num points found {}", searchResults.size());
         for (auto p: searchResults) {

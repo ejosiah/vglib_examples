@@ -13,12 +13,18 @@
 namespace kdtree {
     constexpr auto ALL_POINT = std::numeric_limits<uint32_t>::max();
 
-    void balance(Point* start, Point* end, Point* tree, int depth, Bounds domain) {
+
+    void balance(Point* start, Point* end, Point* tree, int depth, Bounds domain, int& count) {
         auto distance = std::distance(start, end);
-        if(distance <= 1) {
-            tree[depth] = *start;
+        if(distance <= 0) {
             return;
         };
+        if(distance == 1){
+            tree[depth] = *start;
+            count++;
+            return;
+        }
+
 
         glm::vec2 bMin{std::numeric_limits<float>::max()};
         glm::vec2 bMax{std::numeric_limits<float>::min()};
@@ -46,9 +52,10 @@ namespace kdtree {
         middle->end[1 - axis] = domain.max[1 - axis];
 
         tree[depth] = *middle;
+        count++;
 
-        balance(start, middle, tree, depth * 2 + 1, { domain.min, middle->end });
-        balance(middle + 1, end, tree, depth * 2 + 2, {middle->start, domain.max});
+        balance(start, middle, tree, depth * 2 + 1, { domain.min, middle->end }, count);
+        balance(middle + 1, end, tree, depth * 2 + 2, {middle->start, domain.max}, count);
     }
 
     int leftChild(int depth){ return 2 * depth + 1; }
@@ -131,7 +138,9 @@ namespace kdtree {
         stack.push(0);
 
         int depth = 0;
+        size_t maxStackSize = 0;
         do{
+            maxStackSize = std::max(maxStackSize, stack.size());
             if(visited.contains(depth)){
                 depth = stack.top();
                 stack.pop();
@@ -192,6 +201,7 @@ namespace kdtree {
             visited.insert(depth);
         }while(!stack.empty());
 
+        spdlog::info("visited : {}, max stack size: {}", visited.size(), maxStackSize);
 
         return result;
     }
