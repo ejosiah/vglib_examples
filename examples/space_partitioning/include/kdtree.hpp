@@ -90,8 +90,15 @@ namespace kdtree {
         return treeIndex;;
     }
 
-    int leftChild(int depth){ return 2 * depth + 1; }
-    int rightChild(int depth){ return 2 * depth + 2; }
+    inline int leftChild(int node){ return 2 * node + 1; }
+    inline int rightChild(int node){ return 2 * node + 2; }
+
+    bool isLeaf(const std::span<int> tree, int node){
+        auto size = tree.size();
+        auto left = leftChild(node);
+        auto right = rightChild(node);
+        return (left >= size && right >= size) || (tree[left] == -1 && tree[right] == -1);
+    }
 
     std::vector<Point*> search(const std::vector<int>& tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT) {
         std::vector<Point*> result;
@@ -157,7 +164,7 @@ namespace kdtree {
         return result;
     }
 
-    std::vector<Point*> search_loop(const std::vector<int>& tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT){
+    std::vector<Point*> search_loop(const std::span<int> tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT){
         std::vector<Point*> result;
         auto x = area.position;
         auto d2 = area.radius * area.radius;
@@ -174,23 +181,24 @@ namespace kdtree {
         int node = 0;
         size_t maxStackSize = 0;
         do{
-//            maxStackSize = std::max(maxStackSize, stack.size());
-            if(tree[node] == -1 || visited.contains(node)){
+            if(visited.contains(node)){
                 node = stack.top();
                 stack.pop();
                 continue;
             }
-//            auto pIndex = tree[node];
-//            if(pIndex == -1) {
-//                visited.insert(node);
-//                continue;
-//            }
+
+            if(tree[node] == -1) {
+                visited.insert(node);
+                continue;
+            }
+
             auto& point = points[tree[node]];
             auto axis = point.axis;
 
             // traverse kd tree
-            if(rightChild(node) < tree.size()){
+            if(&point != &NullPoint && rightChild(node) < tree.size()){
                 stack.push(node);
+                assert(axis == 0 || axis == 1);
                 const auto delta = x[axis] - point.position[axis];
                 const auto delta2 = delta * delta;
 
@@ -202,6 +210,7 @@ namespace kdtree {
                     }else {
                         visited.erase(right);
                     }
+
                     if(!visited.contains(left)) {
                         node = left;
                         continue;

@@ -39,20 +39,20 @@ void SpacePartitioning::createPoints() {
 }
 
 void SpacePartitioning::generatePoints() {
-//    auto blueNoise = PoissonDiskSampling::generate({ glm::vec2{-1}, glm::vec2{1} }, 0.01);
-//    spdlog::error("{} blue noise samples generated", blueNoise.size());
-//    std::vector<Point> samples;
+    auto blueNoise = PoissonDiskSampling::generate({ glm::vec2{-1}, glm::vec2{1} }, 0.02);
+    spdlog::error("{} blue noise samples generated", blueNoise.size());
+    std::vector<Point> samples;
 
-//    for(auto p : blueNoise) {
-//        samples.push_back({ .position = p});
-//    }
-//    numPoints = samples.size();
+    for(auto p : blueNoise) {
+        samples.push_back({ .position = p});
+    }
+    numPoints = samples.size();
 
-    std::vector<Point> samples(numPoints);
-    std::generate(samples.begin(), samples.end(), [&]{
-        Point point{ .position = randomVec3(glm::vec3(-1), glm::vec3(1), glm::uvec3(1 << 20, 1 << 10, 1 << 15)).xy() };
-        return point;
-    });
+//    std::vector<Point> samples(numPoints);
+//    std::generate(samples.begin(), samples.end(), [&]{
+//        Point point{ .position = randomVec3(glm::vec3(-1), glm::vec3(1), glm::uvec3(1 << 20, 1 << 10, 1 << 15)).xy() };
+//        return point;
+//    });
 
     int count = 0;
     tree = kdtree::balance(samples, Bounds{glm::vec2(-1), glm::vec2(1) }, count);
