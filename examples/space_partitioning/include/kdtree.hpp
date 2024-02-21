@@ -48,9 +48,15 @@ namespace kdtree {
             return a.position[axis] < b.position[axis];
         });
 
+//        std::string pStr{};
+//        for(auto& point : points) {
+//            pStr += fmt::format("[{:.2f}, {:.2f}], ", point.position.x ,point.position.y);
+//        }
+//        spdlog::info("axis: {}, points: {}", axis, pStr);
+
         auto middleIndex = points.size()/2;
         Point& middle = points[middleIndex];
-        middle.axis = axis;
+        middle.axis = middleIndex > 0 ? axis : -1;
 
         middle.start = middle.position;
         middle.start[1 - axis]  = domain.min[1 - axis];
@@ -168,17 +174,17 @@ namespace kdtree {
         int node = 0;
         size_t maxStackSize = 0;
         do{
-            maxStackSize = std::max(maxStackSize, stack.size());
-            if(visited.contains(node)){
+//            maxStackSize = std::max(maxStackSize, stack.size());
+            if(tree[node] == -1 || visited.contains(node)){
                 node = stack.top();
                 stack.pop();
                 continue;
             }
-            auto pIndex = tree[node];
-            if(pIndex == -1) {
-                visited.insert(node);
-                continue;
-            }
+//            auto pIndex = tree[node];
+//            if(pIndex == -1) {
+//                visited.insert(node);
+//                continue;
+//            }
             auto& point = points[tree[node]];
             auto axis = point.axis;
 
@@ -240,6 +246,8 @@ namespace kdtree {
                 std::make_heap(result.begin(), result.end(), comp);
             }
             visited.insert(node);
+            maxStackSize = std::max(maxStackSize, stack.size());
+
         }while(!stack.empty());
 
         spdlog::info("visited : {}, max stack size: {}", visited.size(), maxStackSize);

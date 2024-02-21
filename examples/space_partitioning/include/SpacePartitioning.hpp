@@ -36,6 +36,8 @@ protected:
 
     void renderSpitAxis(VkCommandBuffer commandBuffer);
 
+    void renderKdTree(VkCommandBuffer commandBuffer);
+
     void renderSearchArea(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
@@ -60,6 +62,11 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
+    } treeVisual;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
         bool on{};
     } search;
 
@@ -69,6 +76,7 @@ protected:
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
     VulkanBuffer pointBuffer;
+    VulkanBuffer treeBuffer;
     VulkanDescriptorSetLayout descriptorSetLayout;
     VkDescriptorSet descriptorSet;
     Point* points;
@@ -77,10 +85,12 @@ protected:
     Action* addSplit;
     Action* removeSplit;
     Action* clearSplits;
+    Action* treeToggle;
     SearchArea searchArea;
     Point searchPoint;
     std::vector<Point*> searchResults;
     std::vector<Point*> missedPoints;
     std::vector<int> tree;
     bool debugSearch{};
+    bool visualizeTree{};
 };

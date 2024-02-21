@@ -10,13 +10,22 @@ layout(set = 0, binding = 0) buffer Points {
     Point points[];
 };
 
+layout(set = 0, binding = 1) buffer TreeIndex {
+    int tree[];
+};
+
+
 layout(location = 0) in flat int iInstanceId[];
 layout(location = 1) in vec3 iColor[];
 
 layout(location = 1) out vec3 color;
 
 void main() {
-   Point p = points[iInstanceId[0]];
+    int index = tree[iInstanceId[0]];
+
+    if(index == -1) return;
+
+    Point p = points[index];
 
     if(p.axis >= 0){
 

@@ -18,6 +18,7 @@ SpacePartitioning::SpacePartitioning(const Settings& settings)
     addSplit = &mapToKey(Key::D, "add split", Action::detectInitialPressOnly());
     removeSplit = &mapToKey(Key::A, "add split", Action::detectInitialPressOnly());
     clearSplits = &mapToKey(Key::C, "clear split", Action::detectInitialPressOnly());
+    treeToggle = &mapToKey(Key::T, "Show/hide kd-tree", Action::detectInitialPressOnly());
 }
 
 void SpacePartitioning::initApp() {
@@ -38,20 +39,20 @@ void SpacePartitioning::createPoints() {
 }
 
 void SpacePartitioning::generatePoints() {
-    auto blueNoise = PoissonDiskSampling::generate({ glm::vec2{-1}, glm::vec2{1} }, 0.01);
-    spdlog::error("{} blue noise samples generated", blueNoise.size());
-    std::vector<Point> samples;
+//    auto blueNoise = PoissonDiskSampling::generate({ glm::vec2{-1}, glm::vec2{1} }, 0.01);
+//    spdlog::error("{} blue noise samples generated", blueNoise.size());
+//    std::vector<Point> samples;
 
-    for(auto p : blueNoise) {
-        samples.push_back({ .position = p});
-    }
-    numPoints = samples.size();
+//    for(auto p : blueNoise) {
+//        samples.push_back({ .position = p});
+//    }
+//    numPoints = samples.size();
 
-//    std::vector<Point> samples(numPoints);
-//    std::generate(samples.begin(), samples.end(), [&]{
-//        Point point{ .position = randomVec3(glm::vec3(-1), glm::vec3(1), glm::uvec3(1 << 20, 1 << 10, 1 << 15)).xy() };
-//        return point;
-//    });
+    std::vector<Point> samples(numPoints);
+    std::generate(samples.begin(), samples.end(), [&]{
+        Point point{ .position = randomVec3(glm::vec3(-1), glm::vec3(1), glm::uvec3(1 << 20, 1 << 10, 1 << 15)).xy() };
+        return point;
+    });
 
     int count = 0;
     tree = kdtree::balance(samples, Bounds{glm::vec2(-1), glm::vec2(1) }, count);
@@ -62,11 +63,13 @@ void SpacePartitioning::generatePoints() {
 //    for(auto sample : samples) {
 //        spdlog::info("{}", sample.position);
 //    }
-
+//
 //    spdlog::info("\n");
-//    for(auto i : tree){
-//        spdlog::info("{}", i);
+//    for(auto i = 0; i < tree.size(); i++){
+//        spdlog::info("node index: {} point index: {}", i, tree[i]);
 //    }
+
+    treeBuffer = device.createDeviceLocalBuffer(tree.data(), BYTE_SIZE(tree), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     std::memcpy(points, samples.data(), sizeof(Point) * samples.size());
 
@@ -116,13 +119,17 @@ void SpacePartitioning::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT)
         .createLayout();
 }
 
 void SpacePartitioning::updateDescriptorSets(){
     descriptorSet = descriptorPool.allocate({ descriptorSetLayout }).front();
     
-    auto writes = initializers::writeDescriptorSets();
+    auto writes = initializers::writeDescriptorSets<2>();
     
     writes[0].dstSet = descriptorSet;
     writes[0].dstBinding = 0;
@@ -130,6 +137,13 @@ void SpacePartitioning::updateDescriptorSets(){
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo pointInfo{ pointBuffer, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &pointInfo;
+
+    writes[1].dstSet = descriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo treeInfo{ treeBuffer, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &treeInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -170,6 +184,13 @@ void SpacePartitioning::createRenderPipeline() {
                     .lineWidth(2)
                 .name("split_axis")
                 .build(splitAxis.layout);
+
+        treeVisual.pipeline =
+            builder
+                .shaderStage()
+                    .geometryShader(resource("tree.geom.spv"))
+                .name("kd_tree")
+                .build(treeVisual.layout);
 
         search.pipeline =
             builder
@@ -218,6 +239,11 @@ VkCommandBuffer *SpacePartitioning::buildCommandBuffers(uint32_t imageIndex, uin
 
     renderPoints(commandBuffer);
     renderSpitAxis(commandBuffer);
+
+    if(visualizeTree){
+        renderKdTree(commandBuffer);
+    }
+
     renderSearchArea(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -237,6 +263,13 @@ void SpacePartitioning::renderSpitAxis(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, splitAxis.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, splitAxis.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
     vkCmdDraw(commandBuffer, 1, numSplits, 0, 0);
+}
+
+
+void SpacePartitioning::renderKdTree(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, treeVisual.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, treeVisual.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+    vkCmdDraw(commandBuffer, 1, numPoints, 0, 0);
 }
 
 void SpacePartitioning::renderSearchArea(VkCommandBuffer commandBuffer) {
@@ -266,6 +299,10 @@ void SpacePartitioning::checkAppInputs() {
         numSplits = 0;
     }
     numSplits = glm::clamp(numSplits, 0, numPoints);
+
+    if(treeToggle->isPressed()){
+        visualizeTree = !visualizeTree;
+    }
 
     auto clearQueryPoints = [&]{
         for(auto p : searchResults) {
