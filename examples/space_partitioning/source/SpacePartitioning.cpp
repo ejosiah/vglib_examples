@@ -38,7 +38,7 @@ void SpacePartitioning::createPoints() {
 }
 
 void SpacePartitioning::generatePoints() {
-    auto blueNoise = PoissonDiskSampling::generate({ glm::vec2{-1}, glm::vec2{1} }, 0.02);
+    auto blueNoise = PoissonDiskSampling::generate({ glm::vec2{-1}, glm::vec2{1} }, 0.01);
     spdlog::error("{} blue noise samples generated", blueNoise.size());
     std::vector<Point> samples;
 
@@ -50,18 +50,25 @@ void SpacePartitioning::generatePoints() {
 //    std::vector<Point> samples(numPoints);
 //    std::generate(samples.begin(), samples.end(), [&]{
 //        Point point{ .position = randomVec3(glm::vec3(-1), glm::vec3(1), glm::uvec3(1 << 20, 1 << 10, 1 << 15)).xy() };
-////        spdlog::info("{}", point.position);
 //        return point;
 //    });
 
     int count = 0;
-    kdtree::balance(samples.data(), samples.data() + numPoints, points, 0, Bounds{glm::vec2(-1), glm::vec2(1) }, count);
+    tree = kdtree::balance(samples, Bounds{glm::vec2(-1), glm::vec2(1) }, count);
     spdlog::info("{} kd-tree entries", count);
 
+
 //    spdlog::info("\n");
-//    for(int i = 0; i < numPoints; i++){
-//        spdlog::info("{}", points[i].position);
+//    for(auto sample : samples) {
+//        spdlog::info("{}", sample.position);
 //    }
+
+//    spdlog::info("\n");
+//    for(auto i : tree){
+//        spdlog::info("{}", i);
+//    }
+
+    std::memcpy(points, samples.data(), sizeof(Point) * samples.size());
 
 }
 
@@ -288,8 +295,13 @@ void SpacePartitioning::checkAppInputs() {
     if(initialPress && mouse.left.released) {
         initialPress = false;
         spdlog::info("search radius: {}", searchArea.radius);
-        searchResults = kdtree::search_loop({points, static_cast<size_t>(numPoints)}, searchArea, 200);
-        spdlog::info("num points found {}", searchResults.size());
+        auto start = std::chrono::high_resolution_clock::now();
+
+        searchResults = kdtree::search_loop(tree, {points, static_cast<size_t>(numPoints)}, searchArea);
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        spdlog::info("num points found {} in {} ms", searchResults.size(), duration);
         for (auto p: searchResults) {
             p->color = glm::vec4(0, 1, 0, 1);
         }

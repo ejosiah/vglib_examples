@@ -81,5 +81,6 @@ protected:
     Point searchPoint;
     std::vector<Point*> searchResults;
     std::vector<Point*> missedPoints;
+    std::vector<int> tree;
     bool debugSearch{};
 };

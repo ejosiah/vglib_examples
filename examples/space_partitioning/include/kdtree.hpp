@@ -12,16 +12,23 @@
 
 namespace kdtree {
     constexpr auto ALL_POINT = std::numeric_limits<uint32_t>::max();
+    constexpr auto LEFT_SIDE = 0;
+    constexpr auto RIGHT_SIDE = 1;
 
+    const Point NullPoint{
+        .color = glm::vec4(0),
+        .position = glm::vec4(std::numeric_limits<float>::quiet_NaN()),
+        .start = glm::vec2(std::numeric_limits<float>::quiet_NaN()),
+        .end = glm::vec2(std::numeric_limits<float>::quiet_NaN())
+    };
 
-    void balance(Point* start, Point* end, Point* tree, int depth, Bounds domain, int& count) {
-        auto distance = std::distance(start, end);
-        if(distance <= 0) {
-            return;
-        };
-        if(distance == 1){
-            tree[depth] = *start;
-            count++;
+    enum Side { Left, Right};
+
+    void balanceSubTree(std::vector<Point*>& tree, std::span<Point> points, Bounds domain, int parent, Side side, int numPoints, int& count) {
+        auto index = (side == Side::Left) ? (2  * parent + 1) : (2 * parent + 2);
+        if(points.empty()){
+//            spdlog::info("index: {}", index);
+            tree[index] = nullptr;
             return;
         }
 
@@ -29,7 +36,7 @@ namespace kdtree {
         glm::vec2 bMin{std::numeric_limits<float>::max()};
         glm::vec2 bMax{std::numeric_limits<float>::min()};
 
-        std::for_each(start, end, [&](const Point& point){
+        std::for_each(points.begin(), points.end(), [&](const Point& point){
             bMin = glm::min(point.position, bMin);
             bMax = glm::max(point.position, bMax);
         });
@@ -37,31 +44,50 @@ namespace kdtree {
         auto dim = bMax - bMin;
         int axis = dim.x > dim.y ? 0 : 1;
 
-        std::sort(start, end, [axis](const Point& a, const Point& b){
+        std::sort(points.begin(), points.end(), [axis](const Point& a, const Point& b){
             return a.position[axis] < b.position[axis];
         });
 
-        distance = std::distance(start, end);
-        Point* middle = start + distance/2;
-        middle->axis = axis;
+        auto middleIndex = points.size()/2;
+        Point& middle = points[middleIndex];
+        middle.axis = axis;
 
-        middle->start = middle->position;
-        middle->start[1 - axis]  = domain.min[1 - axis];
+        middle.start = middle.position;
+        middle.start[1 - axis]  = domain.min[1 - axis];
 
-        middle->end = middle->position;
-        middle->end[1 - axis] = domain.max[1 - axis];
+        middle.end = middle.position;
+        middle.end[1 - axis] = domain.max[1 - axis];
 
-        tree[depth] = *middle;
+        tree[index] = &middle;
         count++;
 
-        balance(start, middle, tree, depth * 2 + 1, { domain.min, middle->end }, count);
-        balance(middle + 1, end, tree, depth * 2 + 2, {middle->start, domain.max}, count);
+
+        if(2 * index + 2 < numPoints){
+            balanceSubTree(tree, {points.data(), middleIndex }, { domain.min, middle.end }, index, Side::Left, numPoints, count);
+            auto offset = middleIndex + 1;
+            balanceSubTree(tree, {points.data() + offset, points.size() - offset }, {middle.start, domain.max}, index, Side::Right, numPoints, count);
+        }
+    }
+
+    std::vector<int> balance(std::vector<Point>& points, Bounds domain, int& count) {
+        auto n = std::ceil(std::log2(points.size()));
+        auto size = size_t(std::pow(2, n));
+        std::vector<Point*> tree(size);
+        balanceSubTree(tree, points, domain, -1, Side::Right, size, count);
+
+        std::vector<int> treeIndex(size);
+
+        for(int i = 0; i < size; i++){
+            auto itr = std::find_if(points.begin(), points.end(), [&](auto& point){ return  tree[i] == &point; });
+            treeIndex[i] = itr != points.end() ? std::distance(points.begin(), itr) : -1;
+        }
+        return treeIndex;;
     }
 
     int leftChild(int depth){ return 2 * depth + 1; }
     int rightChild(int depth){ return 2 * depth + 2; }
 
-    std::vector<Point*> search(std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT) {
+    std::vector<Point*> search(const std::vector<int>& tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT) {
         std::vector<Point*> result;
         auto x = area.position;
         auto d2 = area.radius * area.radius;
@@ -72,23 +98,25 @@ namespace kdtree {
             return a->delta2 < b->delta2;
         };
 
-        std::function<void(int)> traverse = [&](int depth){
-            auto& point = points[depth];
+        std::function<void(int)> traverse = [&](int node){
+            auto pIdx = tree[node];
+            if(pIdx == -1 ) return;
+            auto& point = points[pIdx];
             auto axis = point.axis;
 
-            if(rightChild(depth) < points.size()){
+            if(rightChild(node) < tree.size()){
                 const auto delta = x[axis] - point.position[axis];
                 const auto delta2 = delta * delta;
 
                 if(delta < 0){
-                    traverse(leftChild(depth));
+                    traverse(leftChild(node));
                     if(delta2 < d2){
-                        traverse(rightChild(depth));
+                        traverse(rightChild(node));
                     }
                 }else {
-                    traverse(rightChild(depth));
+                    traverse(rightChild(node));
                     if(delta2 < d2){
-                        traverse(leftChild(depth));
+                        traverse(leftChild(node));
                     }
                 }
             }
@@ -113,7 +141,7 @@ namespace kdtree {
             if(result.size() == numPoints){
                 std::make_heap(result.begin(), result.end(), comp);
             }
-            order.push_back(depth + 1);
+            order.push_back(node + 1);
         };
 
         traverse(0);
@@ -123,7 +151,7 @@ namespace kdtree {
         return result;
     }
 
-    std::vector<Point*> search_loop(std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT){
+    std::vector<Point*> search_loop(const std::vector<int>& tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT){
         std::vector<Point*> result;
         auto x = area.position;
         auto d2 = area.radius * area.radius;
@@ -137,43 +165,56 @@ namespace kdtree {
         std::set<int> visited;
         stack.push(0);
 
-        int depth = 0;
+        int node = 0;
         size_t maxStackSize = 0;
         do{
             maxStackSize = std::max(maxStackSize, stack.size());
-            if(visited.contains(depth)){
-                depth = stack.top();
+            if(visited.contains(node)){
+                node = stack.top();
                 stack.pop();
                 continue;
             }
-            auto& point = points[depth];
+            auto pIndex = tree[node];
+            if(pIndex == -1) {
+                visited.insert(node);
+                continue;
+            }
+            auto& point = points[tree[node]];
             auto axis = point.axis;
 
             // traverse kd tree
-            if(rightChild(depth) < points.size()){
-                stack.push(depth);
+            if(rightChild(node) < tree.size()){
+                stack.push(node);
                 const auto delta = x[axis] - point.position[axis];
                 const auto delta2 = delta * delta;
 
                 if(delta < 0) {
-                    auto right = rightChild(depth);
-                    auto left = leftChild(depth);
+                    auto right = rightChild(node);
+                    auto left = leftChild(node);
                     if(!visited.contains(right) && delta2 < d2){
                         stack.push(right);
+                    }else {
+                        visited.erase(right);
                     }
                     if(!visited.contains(left)) {
-                        depth = left;
+                        node = left;
                         continue;
+                    }else{
+                        visited.erase(left);
                     }
                 }else {
-                    auto right = rightChild(depth);
-                    auto left = leftChild(depth);
+                    auto right = rightChild(node);
+                    auto left = leftChild(node);
                     if(!visited.contains(left) && delta2 < d2){
                         stack.push(left);
+                    }else {
+                        visited.erase(left);
                     }
                     if(!visited.contains(right)) {
-                        depth = right;
+                        node = right;
                         continue;
+                    }else {
+                        visited.erase(right);
                     }
                 }
             }
@@ -198,7 +239,7 @@ namespace kdtree {
             if(result.size() == numPoints){
                 std::make_heap(result.begin(), result.end(), comp);
             }
-            visited.insert(depth);
+            visited.insert(node);
         }while(!stack.empty());
 
         spdlog::info("visited : {}, max stack size: {}", visited.size(), maxStackSize);
