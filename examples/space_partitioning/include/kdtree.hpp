@@ -15,6 +15,70 @@ namespace kdtree {
     constexpr auto LEFT_SIDE = 0;
     constexpr auto RIGHT_SIDE = 1;
 
+    auto pointComp(Point* a, Point* b){
+        return a->delta2 < b->delta2;
+    };
+
+    class Queue {
+    public:
+        Queue(size_t capacity)
+        : mCapacity{capacity}
+        , mPoints(capacity)
+        {}
+
+        void insert(Point* point) {
+            if(mMode == Mode::Normal) {
+                mPoints[mSize++] = point;
+                if(mSize == mCapacity) {
+                    spdlog::info("point queue full switching to heap mode");
+                    std::make_heap(mPoints.begin(), mPoints.end(), pointComp);
+                    mMode = Mode::Heap;
+                }
+            }else  {
+                assert(mSize == mCapacity);
+                std::pop_heap(mPoints.begin(), mPoints.end(), pointComp);
+                mPoints[mSize - 1] = point;
+                std::push_heap(mPoints.begin(), mPoints.end(), pointComp);
+            }
+        }
+
+        [[nodiscard]]
+        auto size() const {
+            return mSize;
+        }
+
+        [[nodiscard]]
+        auto points() const {
+            if(full()) {
+                return mPoints;
+            }else {
+                return std::vector<Point*>{mPoints.begin(), std::next(mPoints.begin(), mSize)};
+            }
+        }
+
+        [[nodiscard]]
+        auto front() const {
+            assert(mSize > 0);
+            return mPoints[0];
+        }
+
+//        Point& operator[](int& idx) {
+//            assert(idx < mSize);
+//            return *mPoints[idx];
+//        }
+
+        bool full() const {
+            return mSize == mCapacity;
+        }
+
+    private:
+        enum class Mode{ Normal, Heap };
+        const size_t mCapacity;
+        std::vector<Point*> mPoints;
+        size_t mSize{};
+        Mode mMode{ Mode::Normal};
+    };
+
     const Point NullPoint{
         .color = glm::vec4(0),
         .position = glm::vec4(std::numeric_limits<float>::quiet_NaN()),
@@ -143,8 +207,7 @@ namespace kdtree {
                     if(delta2 < result.front()->delta2) {
                         d2 = result.front()->delta2;
                         std::pop_heap(result.begin(), result.end(), comp);
-                        result.pop_back();
-                        result.push_back(&point);
+                        result[result.size() - 1] = &point;
                         std::push_heap(result.begin(), result.end(), comp);
                     }
                 }else {
@@ -165,14 +228,9 @@ namespace kdtree {
     }
 
     std::vector<Point*> search_loop(const std::span<int> tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT){
-        std::vector<Point*> result;
+        Queue result{ numPoints };
         auto x = area.position;
         auto d2 = area.radius * area.radius;
-
-        auto comp = [&](Point* a, Point* b){
-            return a->delta2 < b->delta2;
-        };
-
 
         std::stack<int> stack;
         std::set<int> visited;
@@ -242,18 +300,13 @@ namespace kdtree {
                 if(result.size() == numPoints){
                     if(delta2 < result.front()->delta2) {
                         d2 = result.front()->delta2;
-                        std::pop_heap(result.begin(), result.end(), comp);
-                        result.pop_back();
-                        result.push_back(&point);
-                        std::push_heap(result.begin(), result.end(), comp);
+                        result.insert(&point);
                     }
                 }else {
-                    result.push_back(&point);
+                    result.insert(&point);
                 }
             }
-            if(result.size() == numPoints){
-                std::make_heap(result.begin(), result.end(), comp);
-            }
+
             visited.insert(node);
             maxStackSize = std::max(maxStackSize, stack.size());
 
@@ -261,6 +314,6 @@ namespace kdtree {
 
         spdlog::info("visited : {}, max stack size: {}", visited.size(), maxStackSize);
 
-        return result;
+        return result.points();
     }
 }

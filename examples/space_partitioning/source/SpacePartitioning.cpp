@@ -329,12 +329,12 @@ void SpacePartitioning::checkAppInputs() {
         searchArea.radius = glm::distance(searchArea.position, position);
     }
 
-    if(initialPress && mouse.left.released) {
+    if(initialPress && mouse.left.released && searchArea.radius != 0) {
         initialPress = false;
         spdlog::info("search radius: {}", searchArea.radius);
         auto start = std::chrono::high_resolution_clock::now();
 
-        searchResults = kdtree::search_loop(tree, {points, static_cast<size_t>(numPoints)}, searchArea);
+        searchResults = kdtree::search_loop(tree, {points, static_cast<size_t>(numPoints)}, searchArea, 200);
 
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
