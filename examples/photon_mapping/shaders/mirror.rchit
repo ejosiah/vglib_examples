@@ -17,12 +17,8 @@ layout(set = 0, binding = 1) uniform Uniforms {
 };
 
 layout(set = 3, binding = 0) buffer LIGHT {
-    vec3 position;
-    vec3 normal;
-    vec3 intensity;
-    vec3 lowerCorner;
-    vec3 upperCorner;
-} light;
+    Light light;
+};
 
 
 layout(location = 0) rayPayloadIn RtParams rtParams;

@@ -86,4 +86,16 @@ float rand(inout RngStateType rngState) {
 
 #endif
 
+vec2 randomVec2(inout RngStateType rngState) {
+    return vec2(rand(rngState), rand(rngState));
+}
+
+vec3 randomVec3(inout RngStateType rngState) {
+    return vec3(rand(rngState), rand(rngState), rand(rngState));
+}
+
+vec4 randomVec4(inout RngStateType rngState) {
+    return vec4(rand(rngState), rand(rngState), rand(rngState), rand(rngState));
+}
+
 #endif // RANDOM_GLSL

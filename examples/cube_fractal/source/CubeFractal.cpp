@@ -235,7 +235,7 @@ VkCommandBuffer *CubeFractal::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     VkDeviceSize offset{};
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, 1, &descriptorSet, 0, 0);
-    camera->push(commandBuffer, render.layout.handle);
+    camera->push(commandBuffer, render.layout);
 
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, cube.indices, 0, VK_INDEX_TYPE_UINT32);

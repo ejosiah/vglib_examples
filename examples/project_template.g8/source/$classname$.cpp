@@ -1,6 +1,7 @@
 #include "$classname$.hpp"
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
+#include "ImGuiPlugin.hpp"
 
 $if(raytracing.truthy)$
 $classname$::$classname$(const Settings& settings) : VulkanRayTraceBaseApp("$title$", settings) {
@@ -372,8 +373,11 @@ int main(){
 
         Settings settings;
         settings.depthTest = true;
+        settings.enableBindlessDescriptors = false;
+        std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 
         auto app = $classname${ settings };
+        app.addPlugin(imGui);
         app.run();
     }catch(std::runtime_error& err){
         spdlog::error(err.what());

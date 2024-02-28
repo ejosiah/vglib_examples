@@ -23,10 +23,15 @@ namespace kdtree {
     public:
         Queue(size_t capacity)
         : mCapacity{capacity}
-        , mPoints(capacity)
+        , mPoints(capacity == std::numeric_limits<int>::max() ? 0 : capacity)
         {}
 
         void insert(Point* point) {
+            if(mCapacity == std::numeric_limits<int>::max()){
+                mPoints.push_back(point);
+                return;
+            }
+
             if(mMode == Mode::Normal) {
                 mPoints[mSize++] = point;
                 if(mSize == mCapacity) {
@@ -44,11 +49,17 @@ namespace kdtree {
 
         [[nodiscard]]
         auto size() const {
+            if(mCapacity == std::numeric_limits<int>::max()){
+                return mPoints.size();
+            }
             return mSize;
         }
 
         [[nodiscard]]
         auto points() const {
+            if(mCapacity == std::numeric_limits<int>::max()){
+                return mPoints;
+            }
             if(full()) {
                 return mPoints;
             }else {
@@ -58,7 +69,7 @@ namespace kdtree {
 
         [[nodiscard]]
         auto front() const {
-            assert(mSize > 0);
+            assert(mSize > 0 || !mPoints.empty());
             return mPoints[0];
         }
 
@@ -68,6 +79,9 @@ namespace kdtree {
 //        }
 
         bool full() const {
+            if(mCapacity == std::numeric_limits<int>::max()){
+                return false;
+            }
             return mSize == mCapacity;
         }
 
@@ -92,7 +106,9 @@ namespace kdtree {
         auto index = (side == Side::Left) ? (2  * parent + 1) : (2 * parent + 2);
         if(points.empty()){
 //            spdlog::info("index: {}", index);
-            tree[index] = nullptr;
+            if(index < numPoints) {
+                tree[index] = nullptr;
+            }
             return;
         }
 
@@ -132,16 +148,15 @@ namespace kdtree {
         count++;
 
 
-        if(2 * index + 2 < numPoints){
-            balanceSubTree(tree, {points.data(), middleIndex }, { domain.min, middle.end }, index, Side::Left, numPoints, count);
-            auto offset = middleIndex + 1;
-            balanceSubTree(tree, {points.data() + offset, points.size() - offset }, {middle.start, domain.max}, index, Side::Right, numPoints, count);
-        }
+        balanceSubTree(tree, {points.data(), middleIndex }, { domain.min, middle.end }, index, Side::Left, numPoints, count);
+        auto offset = middleIndex + 1;
+        balanceSubTree(tree, {points.data() + offset, points.size() - offset }, {middle.start, domain.max}, index, Side::Right, numPoints, count);
     }
 
     std::vector<int> balance(std::vector<Point>& points, Bounds domain, int& count) {
         auto n = std::ceil(std::log2(points.size()));
         auto size = size_t(std::pow(2, n));
+        size = points.size() < size ? size - 1 : size;
         std::vector<Point*> tree(size);
         balanceSubTree(tree, points, domain, -1, Side::Right, size, count);
 
@@ -151,7 +166,7 @@ namespace kdtree {
             auto itr = std::find_if(points.begin(), points.end(), [&](auto& point){ return  tree[i] == &point; });
             treeIndex[i] = itr != points.end() ? std::distance(points.begin(), itr) : -1;
         }
-        return treeIndex;;
+        return treeIndex;
     }
 
     inline int leftChild(int node){ return 2 * node + 1; }
@@ -238,7 +253,9 @@ namespace kdtree {
 
         int node = 0;
         size_t maxStackSize = 0;
+        size_t maxVisited = 0;
         do{
+            maxVisited = std::max(maxVisited, visited.size());
             if(visited.contains(node)){
                 node = stack.top();
                 stack.pop();
@@ -254,7 +271,7 @@ namespace kdtree {
             auto axis = point.axis;
 
             // traverse kd tree
-            if(&point != &NullPoint && rightChild(node) < tree.size()){
+            if(rightChild(node) < tree.size()){
                 stack.push(node);
                 assert(axis == 0 || axis == 1);
                 const auto delta = x[axis] - point.position[axis];
@@ -297,7 +314,7 @@ namespace kdtree {
             point.delta2 = delta2;
 
             if(delta2 < d2) {
-                if(result.size() == numPoints){
+                if(result.full()){
                     if(delta2 < result.front()->delta2) {
                         d2 = result.front()->delta2;
                         result.insert(&point);
@@ -312,7 +329,7 @@ namespace kdtree {
 
         }while(!stack.empty());
 
-        spdlog::info("visited : {}, max stack size: {}", visited.size(), maxStackSize);
+        spdlog::info("visited : {}, max stack size: {}", maxVisited, maxStackSize);
 
         return result.points();
     }

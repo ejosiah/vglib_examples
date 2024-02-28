@@ -8,6 +8,8 @@ public:
 protected:
     void initApp() override;
 
+    void initQuery();
+
     void createPoints();
 
     void generatePoints();
@@ -26,6 +28,8 @@ protected:
 
     void createRenderPipeline();
 
+    void createComputePipeline();
+
     void onSwapChainDispose() override;
 
     void onSwapChainRecreation() override;
@@ -40,6 +44,12 @@ protected:
 
     void renderSearchArea(VkCommandBuffer commandBuffer);
 
+    void renderUI(VkCommandBuffer commandBuffer);
+
+    void runGpuSearch();
+
+    void runCpuSearch();
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -47,6 +57,10 @@ protected:
     void cleanup() override;
 
     void onPause() override;
+
+    void endFrame() override;
+
+    void clearQueryPoints();
 
 protected:
     struct {
@@ -60,9 +74,31 @@ protected:
     } splitAxis;
 
     struct {
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } node;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } edge;
+    } treeVisual;
+
+    struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
-    } treeVisual;
+        struct {
+            glm::vec2 position;
+            float radius;
+            int numPoints;
+            int treeSize;
+        } constants{};
+
+        struct {
+            uint64_t start;
+            uint64_t end;
+        } runtime;
+    } searchCompute;
 
     struct {
         VulkanPipelineLayout layout;
@@ -77,6 +113,7 @@ protected:
     std::unique_ptr<OrbitingCameraController> camera;
     VulkanBuffer pointBuffer;
     VulkanBuffer treeBuffer;
+    VulkanBuffer searchResultBuffer;
     VulkanDescriptorSetLayout descriptorSetLayout;
     VkDescriptorSet descriptorSet;
     Point* points;
@@ -91,6 +128,10 @@ protected:
     std::vector<Point*> searchResults;
     std::vector<Point*> missedPoints;
     std::vector<int> tree;
+    VkQueryPool queryPool;
+    int numSearchPoints = 200;
+    bool useGPU{};
     bool debugSearch{};
     bool visualizeTree{};
+    bool executeSearch{};
 };

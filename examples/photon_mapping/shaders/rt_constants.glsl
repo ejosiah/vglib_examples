@@ -3,7 +3,7 @@
 
 // object types
 const uint OBJECT_TYPE_NONE = 0;
-const uint OBJECT_TYPE_MATTE = 1;
+const uint OBJECT_TYPE_DIFFUSE = 1;
 const uint OBJECT_TYPE_GLASS = 2;
 const uint OBJECT_TYPE_MIRROR = 3;
 
@@ -17,7 +17,13 @@ const uint OBJ_MASK_ALL = 0xFF;
 const uint OBJ_MASK_NO_LIGHTS = OBJ_MASK_ALL & ~OBJ_MASK_LIGHTS;
 
 // Miss shaders
-const int MAIN_MISS = 0;
-const int SHADOW_MISS = 1;
+const uint MAIN_MISS = 0;
+const uint SHADOW_MISS = 1;
+const uint PHOTON_MISS = 2;
+const uint DEBUG_MISS = 3;
+
+// SBT hit record offsets
+const uint PHOTON_HIT_GROUP = 3;
+const uint DEBUG_HIT_GROUP = 6;
 
 #endif // RT_CONSTANTS_GLSL

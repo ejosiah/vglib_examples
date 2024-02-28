@@ -46,17 +46,17 @@ void ShaderBindingTableDemo::loadModels() {
 
     rt::MeshObjectInstance bunnyInstance{};
     bunnyInstance.object = rt::TriangleMesh{ &drawables["bunny"]};
-    bunnyInstance.hitGroupId = 3;
+    bunnyInstance.hitGroupId = 0;
     bunnyInstance.xform = glm::rotate(glm::mat4(1), -glm::half_pi<float>(), {1, 0, 0});
     bunnyInstance.xform = glm::translate(bunnyInstance.xform, -drawables["bunny"].bounds.min - glm::vec3(1, 0, 0));
     bunnyInstance.xformIT = glm::inverseTranspose(bunnyInstance.xform);
     instances.push_back(bunnyInstance);
 
-    bunnyInstance.hitGroupId = 4;
+    bunnyInstance.hitGroupId = 1;
     bunnyInstance.xform = glm::translate(bunnyInstance.xform, glm::vec3(1, 0, 0));
     instances.push_back(bunnyInstance);
 
-    bunnyInstance.hitGroupId = 5;
+    bunnyInstance.hitGroupId = 2;
     bunnyInstance.xform = glm::translate(bunnyInstance.xform, glm::vec3(1, 0, 0));
     instances.push_back(bunnyInstance);
     createAccelerationStructure(instances);
@@ -351,6 +351,7 @@ void ShaderBindingTableDemo::createRenderPipeline() {
 
 void ShaderBindingTableDemo::createRayTracingPipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
+    auto rayGen1ShaderModule = device.createShaderModule( resource("raygen1.rgen.spv"));
     auto hitGroup0ShaderModule = device.createShaderModule( resource("hitgroup0.rchit.spv"));
     auto missGroup0ShaderModule = device.createShaderModule( resource("miss0.rmiss.spv"));
     auto callable0ShaderModule = device.createShaderModule( resource("callable0.rcall.spv"));
@@ -360,9 +361,12 @@ void ShaderBindingTableDemo::createRayTracingPipeline() {
         { missGroup0ShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR},
         { hitGroup0ShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR},
         { callable0ShaderModule, VK_SHADER_STAGE_CALLABLE_BIT_KHR},
+        { rayGen1ShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
     });
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
+    shaderGroups.push_back(shaderTablesDesc.rayGenGroup("rayGen1", 4));
+
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(1));
 
     shaderGroups.push_back(shaderTablesDesc.addHitGroup(2));
@@ -541,6 +545,7 @@ int main(){
     try{
 
         Settings settings;
+        settings.enableBindlessDescriptors = false;
         settings.depthTest = true;
 
         auto app = ShaderBindingTableDemo{ settings };

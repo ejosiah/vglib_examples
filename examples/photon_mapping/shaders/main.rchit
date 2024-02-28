@@ -20,12 +20,8 @@ layout(set = 0, binding = 1) uniform Uniforms {
 };
 
 layout(set = 3, binding = 0) buffer LIGHT {
-    vec3 position;
-    vec3 normal;
-    vec3 intensity;
-    vec3 lowerCorner;
-    vec3 upperCorner;
-} light;
+    Light light;
+};
 
 layout(location = 0) rayPayloadIn RtParams rtParams;
 
@@ -46,8 +42,9 @@ vec3 computeRadiance(HitData hit, vec3 lightPos) {
     vec3 H = normalize(E + L);
     vec3 R = reflect(-L, N);
 
-    float dist = length(lightDir);
-    vec3 radiance = max(0, dot(light.normal, -L)) * light.intensity /(dist * dist);
+    const float pi = 3.1415;
+    const float dist = length(lightDir);
+    vec3 radiance = max(0, dot(light.normal, -L)) * light.power /(dist * dist * pi);
     radiance;
 
     return hit.material.emission + radiance * max(0, dot(L, N)) * hit.material.diffuse;
@@ -61,11 +58,12 @@ float computeVisiblity(HitData hit) {
 
     float visibility = 0;
     uint N = numShadowSamples;
+    mat3 TBN = mat3(light.tangent, light.bitangent, light.normal);
     for(uint i = 0; i < N; i++) {
         isVisible = false;
         vec2 point = hammersley(i, N);
 //        vec2 point = vec2(rand(rtParams.rngState), rand(rtParams.rngState));
-        vec3 lightPos = light.lowerCorner + dim * vec3(point.x, 0, point.y);
+        vec3 lightPos = light.lowerCorner + dim * (TBN * vec3(point, 0));
 
         vec3 direction = lightPos - origin;
         const float tMax = length(direction);
@@ -95,5 +93,5 @@ void main() {
     color /= (color + 1);
     rtParams.color = color;
 
-    rtParams.objectType = OBJECT_TYPE_MATTE;
+    rtParams.objectType = OBJECT_TYPE_DIFFUSE;
 }

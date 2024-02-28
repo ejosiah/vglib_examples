@@ -24,6 +24,10 @@ std::vector<glm::vec2> PoissonDiskSampling::generate(const Domain& domain, float
         return glm::vec2( x(engine), y(engine));
     };
 
+    const auto outOfBounds = [&](const glm::vec2 p) {
+        return p.x < domain.lower.x || p.y < domain.lower.y || p.x >= domain.upper.x || p.y >= domain.upper.y;
+    };
+
     const auto randomPointOnSphericalAnnulus = [&](const glm::vec2& x) {
         static std::uniform_real_distribution<float> dist{0, glm::two_pi<float>()};
         static std::uniform_real_distribution<float> rDist{r, 2 * r};
@@ -71,6 +75,7 @@ std::vector<glm::vec2> PoissonDiskSampling::generate(const Domain& domain, float
 
     std::vector<glm::vec2> kPoints(k);
 
+    static int loopCount = 0;
     while(!activeList.empty()){
         auto alIndex = randomIndex(activeList.size());
         x = samples[activeList[alIndex]];
@@ -100,6 +105,7 @@ std::vector<glm::vec2> PoissonDiskSampling::generate(const Domain& domain, float
                 }
             }
             if(farEnough) {
+                spdlog::info("loop: {}, sample: {}", loopCount, p);
                 newSamples.push_back(p);
                 break;
             }

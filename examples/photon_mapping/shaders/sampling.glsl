@@ -14,4 +14,17 @@ vec2 hammersley(uint i, uint N){
     return vec2(float(i)/float(N), RadicalInverse_VdC(i));
 }
 
+vec3 cosineSampleHemisphere(vec2 xi){
+    const float PI = 3.1415;
+    // Uniformly sample disk.
+    const float r   = sqrt(xi.x);
+    const float phi = 2.0f * PI * xi.y;
+
+    vec2 p;
+    p.x = r * cos(phi);
+    p.y = r * sin(phi);
+
+    return vec3(p, sqrt(max(0.0f, 1.0f - dot(p, p))));
+}
+
 #endif // SAMPLING_GLSL

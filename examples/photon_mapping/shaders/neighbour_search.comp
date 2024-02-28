@@ -1,0 +1,146 @@
+#version 460
+
+#define NUM_NEIGHBOURS 1000
+
+#define EXTERNAL_QUEUE_MEMORY
+#include "photon.glsl"
+
+shared PhotonComp queueData[NUM_NEIGHBOURS];
+
+#include "queue.glsl"
+#include "data_structure.glsl"
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer DebugData {
+    mat4 transform;
+
+    vec3 hitPosition;
+    float radius;
+
+    vec3 target;
+    int mode;
+
+    vec3 cameraPosition;
+    int meshId;
+
+    vec3 pointColor;
+    int numNeighboursFound;
+
+    float pointSize;
+    int searchMode;
+    int numNeighbours;
+};
+
+layout(set = 0, binding = 1) buffer SearchResults {
+    int searchResults[];
+};
+
+layout(set = 1, binding = 1, std430) buffer GENERATED_PHOTONS {
+    Photon photons[];
+};
+
+layout(set = 1, binding = 2) buffer PHOTON_STATS {
+    int photonCount;
+    int treeSize;
+};
+
+layout(set = 1, binding = 3) buffer TreeIndex {
+    int tree[];
+};
+
+
+int leftChild(int node){ return 2 * node + 1; }
+int rightChild(int node){ return 2 * node + 2; }
+
+
+void main() {
+    Queue result = createQueue(numNeighbours);
+    vec3 x = hitPosition;
+    float d2 = radius * radius;
+
+    Stack stack = createStack();
+    Set visited = createSet();
+
+    int node = 0;
+    push(stack, node);
+    do {
+        if (contains(visited, node)){
+            node = pop(stack);
+            continue;
+        }
+
+        int pIndex = tree[node];
+        if (pIndex == -1) {
+            insert(visited, node);
+            continue;
+        }
+
+        PhotonComp photon = convert(photons[pIndex], pIndex);
+        int axis = photon.axis;
+        bool isLeafNode = axis == -1;
+
+        // traverse kd tree
+        if (rightChild(node) < treeSize && !isLeafNode){
+            push(stack, node);
+
+            const float delta = x[axis] - photon.position[axis];
+            const float delta2 = delta * delta;
+
+            if (delta < 0) {
+                int right = rightChild(node);
+                int left = leftChild(node);
+                if (!contains(visited, right) && delta2 < d2){
+                    push(stack, right);
+                } else {
+                    remove(visited, right);
+                }
+
+                if (!contains(visited, left)) {
+                    node = left;
+                    continue;
+                } else {
+                    remove(visited, left);
+                }
+            } else {
+                int right = rightChild(node);
+                int left = leftChild(node);
+                if (!contains(visited, left) && delta2 < d2){
+                    push(stack, left);
+                } else {
+                    remove(visited, left);
+                }
+                if (!contains(visited, right)) {
+                    node = right;
+                    continue;
+                } else {
+                    remove(visited, right);
+                }
+            }
+        }
+
+        vec3 d = x - photon.position.xyz;
+        const float delta2 = dot(d, d);
+        photon.delta2 = delta2;
+
+        if (delta2 < d2) {
+            if (isFull(result)){
+                if (delta2 < front(result).delta2) {
+                    d2 = front(result).delta2;
+                    push(result, photon);
+                }
+            } else {
+                push(result, photon);
+            }
+        }
+
+        insert(visited, node);
+    } while (!empty(stack));
+
+    for(int i = 0; i < result.size; ++i){
+        searchResults[i] = get(result, i).index;
+    }
+
+    numNeighboursFound = result.size;
+    searchResults[result.size] = -1;
+}

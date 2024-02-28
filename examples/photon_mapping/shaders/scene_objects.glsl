@@ -68,6 +68,8 @@ struct HitData {
     Material material;
     vec3 position;
     vec3 normal; // shading normal
+    vec3 tangent;
+    vec3 bitangent;
 };
 
 /*
@@ -100,6 +102,9 @@ HitData getHitData(vec2 attribs) {
 
     HitData hitData;
     hitData.normal = v0.normal * u + v1.normal * v + v2.normal * w;
+    hitData.tangent = v0.tangent * u + v1.tangent * v + v2.tangent * w;
+    hitData.bitangent = v0.bitangent * u + v1.bitangent * v + v2.bitangent * w;
+
     int matId = matIds[objId].i[gl_PrimitiveID + offset.material];
     hitData.material = materials[objId].m[matId];
 

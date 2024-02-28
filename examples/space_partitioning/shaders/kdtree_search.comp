@@ -1,0 +1,126 @@
+#version 460
+
+#define EXTERNAL_QUEUE_MEMORY
+
+
+#include "domain.glsl"
+
+shared PointComp queueData[1000];
+
+#include "queue.glsl"
+#include "data_structure.glsl"
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer Points {
+    Point points[];
+};
+
+layout(set = 0, binding = 1) buffer TreeIndex {
+    int tree[];
+};
+
+layout(set = 0, binding = 2) buffer SearchResults {
+    int searchResults[];
+};
+
+layout(push_constant) uniform Constants {
+    vec2 position;
+    float radius;
+    int numPoints;
+    int treeSize;
+};
+
+int leftChild(int node){ return 2 * node + 1; }
+int rightChild(int node){ return 2 * node + 2; }
+
+void main() {
+    Queue result = createQueue(numPoints);
+    vec2 x = position;
+    float d2 = radius * radius;
+
+    Stack stack = createStack();
+    Set visited = createSet();
+
+    int node = 0;
+    push(stack, node);
+    int count = 0;
+    do {
+//        if(count == 100) break;
+        if (contains(visited, node)){
+            node = pop(stack);
+            continue;
+        }
+
+        int pIndex = tree[node];
+        if (pIndex == -1) {
+            insert(visited, node);
+            continue;
+        }
+
+        PointComp point = pointCompFrom(points[pIndex], pIndex);
+        int axis = point.axis;
+        bool isLeafNode = axis == -1;
+        // traverse kd tree
+        if (rightChild(node) < treeSize && !isLeafNode){
+            push(stack, node);
+
+            const float delta = x[axis] - point.position[axis];
+            const float delta2 = delta * delta;
+
+            if (delta < 0) {
+                int right = rightChild(node);
+                int left = leftChild(node);
+                if (!contains(visited, right) && delta2 < d2){
+                    push(stack, right);
+                } else {
+                    remove(visited, right);
+                }
+
+                if (!contains(visited, left)) {
+                    node = left;
+                    continue;
+                } else {
+                    remove(visited, left);
+                }
+            } else {
+                int right = rightChild(node);
+                int left = leftChild(node);
+                if (!contains(visited, left) && delta2 < d2){
+                    push(stack, left);
+                } else {
+                    remove(visited, left);
+                }
+                if (!contains(visited, right)) {
+                    node = right;
+                    continue;
+                } else {
+                    remove(visited, right);
+                }
+            }
+        }
+
+        vec2 d = x - point.position;
+        const float delta2 = dot(d, d);
+        point.delta2 = delta2;
+
+        if (delta2 < d2) {
+            if (isFull(result)){
+                if (delta2 < front(result).delta2) {
+                    d2 = front(result).delta2;
+                    push(result, point);
+                }
+            } else {
+                push(result, point);
+            }
+        }
+
+        insert(visited, node);
+        count++;
+    } while (!empty(stack));
+
+    for(int i = 0; i < result.size; ++i){
+        searchResults[i] = get(result, i).index;
+    }
+    searchResults[result.size] = -1;
+}

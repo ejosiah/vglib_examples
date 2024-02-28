@@ -2,6 +2,7 @@
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
+#include "neighbour_search.h"
 
 PhotonMapping::PhotonMapping(const Settings& settings) : VulkanRayTraceBaseApp("Photon mapping", settings) {
     fileManager.addSearchPathFront(".");
@@ -16,12 +17,15 @@ PhotonMapping::PhotonMapping(const Settings& settings) : VulkanRayTraceBaseApp("
 
 void PhotonMapping::initApp() {
     createDescriptorPool();
+    initKdTree();
+    initDebugData();
+    initRayTraceInfo();
+    initPhotonMapData();
     loadLTC();
-    loadModel();
     initLight();
+    loadModel();
     initCamera();
     initCanvas();
-    initRayTraceInfo();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     updateRtDescriptorSets();
@@ -30,6 +34,118 @@ void PhotonMapping::initApp() {
     createRenderPipeline();
     createComputePipeline();
     createRayTracingPipeline();
+    generatePhotons();
+}
+void PhotonMapping::initKdTree() {
+
+}
+
+void PhotonMapping::balanceKdTree() {
+    using BalanceFunc = std::function<void(std::vector<Photon*>&, std::span<Photon>, int, int)>;
+
+    BalanceFunc balance = [&](std::vector<Photon*>& tree, std::span<Photon> photons, int index, int numPhotons){
+        if(photons.empty()){
+            if(index < numPhotons) {
+                tree[index] = nullptr;
+            }
+            return;
+        }
+
+
+        glm::vec3 bMin{std::numeric_limits<float>::max()};
+        glm::vec3 bMax{std::numeric_limits<float>::min()};
+
+        std::for_each(photons.begin(), photons.end(), [&](const Photon& photon){
+            bMin = glm::min(photon.position.xyz(), bMin);
+            bMax = glm::max(photon.position.xyz(), bMax);
+        });
+
+        auto dim = bMax - bMin;
+        int axis = dim.z > dim.y ? 2 : (dim.y > dim.x ? 1 : 0);
+
+        std::sort(photons.begin(), photons.end(), [axis](const Photon& a, const Photon& b){
+            return a.position[axis] < b.position[axis];
+        });
+
+        auto middleIndex = photons.size()/2;
+        Photon& middle = photons[middleIndex];
+        middle.axis = middleIndex > 0 ? axis : -1;
+
+        tree[index] = &middle;
+
+
+        balance(tree, {photons.data(), middleIndex },  2 * index + 1, numPhotons);
+        const auto offset = middleIndex + 1;
+        balance(tree, {photons.data() + offset, photons.size() - offset }, 2 * index + 2, numPhotons);
+    };
+
+    auto n = std::ceil(std::log2(stats.photonCount));
+    auto size = size_t(std::pow(2, n));
+    size = stats.photonCount < size ? size - 1 : size;
+    std::vector<Photon*> tree(size);
+
+    spdlog::info("balancing generated photons");
+    std::span<Photon> photons{ reinterpret_cast<Photon*>(mStagingBuffer.map()), static_cast<size_t>(stats.photonCount) };
+    balance(tree, photons, 0, size );
+
+    static std::vector<int> treeIndex;
+    treeIndex.resize(kdTree.gpu.sizeAs<int>());
+    std::generate(treeIndex.begin(), treeIndex.end(), []{ return -1; });
+    for(int i = 0; i < size; i++){
+        auto itr = std::find_if(photons.begin(), photons.end(), [&](auto& point){ return  tree[i] == &point; });
+        treeIndex[i] = itr != photons.end() ? std::distance(photons.begin(), itr) : -1;
+    }
+
+
+
+    stats.treeSize = size;
+    mStagingBuffer.unmap();
+    spdlog::info("balancing complete");
+
+
+    onIdle([&]{
+        kdTree.gpu.copy(treeIndex);
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT};
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+            VkBufferCopy region{0, 0, mStagingBuffer.size};
+            vkCmdCopyBuffer(commandBuffer, mStagingBuffer, generatedPhotons, 1, &region);
+
+            vkCmdUpdateBuffer(commandBuffer, photonStats, 0, sizeof(stats), &stats);
+        });
+        spdlog::info("balanced photon map transferred to gpu");
+
+        auto tree = reinterpret_cast<int*>(kdTree.gpu.map());
+        for(int i = stats.treeSize; i < stats.treeSize+10; i++){
+            spdlog::info(":{} => {}", i, tree[i]);
+        }
+        kdTree.gpu.unmap();
+    });
+}
+
+void PhotonMapping::initDebugData() {
+    debugInfo.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(DebugData), "debug_info");
+    debugInfo.cpu = reinterpret_cast<DebugData*>(debugInfo.gpu.map());
+    *debugInfo.cpu = DebugData{ .numNeighbours = numNeighbours};
+    scratchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, (5 << 20) );
+}
+
+void PhotonMapping::initPhotonMapData() {
+    photonMapInfo = PhotonMapInfo{rayTraceInfo.cpu->mask, 5, MaxPhotons/4, 60, 0.1};
+    photonMapRequest = photonMapInfo;
+
+    std::vector<char> allocation(sizeof(Photon) * MaxPhotons);
+    generatedPhotons = device.createCpuVisibleBuffer(allocation.data(), allocation.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
+    allocation.resize(MaxPhotons * sizeof(int));
+    kdTree.gpu = device.createCpuVisibleBuffer(allocation.data(), allocation.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+    PhotonStats ps{};
+    photonStats = device.createDeviceLocalBuffer(&ps, sizeof(ps), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+
+    allocation.resize(MaxPhotons * sizeof(int));
+    nearestNeighbourBuffer = device.createCpuVisibleBuffer(allocation.data(), allocation.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    *(reinterpret_cast<int*>(nearestNeighbourBuffer.map())) = -1;
 }
 
 void PhotonMapping::loadModel() {
@@ -41,8 +157,10 @@ void PhotonMapping::loadModel() {
         }
     }
 
+    auto dim = light.cpu->upperCorner - light.cpu->lowerCorner;
+    auto area = length(dim);
 
-    std::vector<mesh::Mesh> meshes(10);
+    meshes = std::vector<mesh::Mesh>(10);
     meshes[0].name = "Light";
     meshes[0].vertices = cornellBox[0].vertices;
     meshes[0].indices = cornellBox[0].indices;
@@ -50,7 +168,7 @@ void PhotonMapping::loadModel() {
     meshes[0].material.ambient = glm::vec3(0);
     meshes[0].material.diffuse = glm::vec3(0);
     meshes[0].material.specular = glm::vec3(0);
-    meshes[0].material.emission = radiance;
+    meshes[0].material.emission = light.cpu->power/(area * glm::pi<float>());
     meshes[0].material.shininess = 1;
 
 
@@ -143,6 +261,7 @@ void PhotonMapping::loadModel() {
     auto floorPos = min;
     radius = 1;
     center = glm::vec3(boxPos.x, floorPos.y + radius, boxPos.z);
+    spdlog::info("front sphere position: {}", center);
     xform = glm::translate(glm::mat4{1}, center);
     sphere = primitives::sphere(1000, 1000, radius, xform, color::white, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     meshes[8].name = "FrontSphere";
@@ -188,12 +307,13 @@ void PhotonMapping::loadModel() {
     instance.object = rt::TriangleMesh{ &model };
     std::for_each(instance.object.metaData.begin(), instance.object.metaData.end(), [](auto& md){ md.mask = ObjectMask::Primitives; });
     instance.object.metaData[0].mask = ObjectMask::Lights;
+    instance.object.metaData[2].mask = ObjectMask::Ceiling;
 
     instance.object.metaData[6].mask = ObjectMask::Box;
-    instance.object.metaData[6].hitGroupId = HitGroups::Glass;
+//    instance.object.metaData[6].hitGroupId = HitGroups::Glass;
 
     instance.object.metaData[7].mask = ObjectMask::Box;
-    instance.object.metaData[7].hitGroupId = HitGroups::Mirror;
+//    instance.object.metaData[7].hitGroupId = HitGroups::Mirror;
 
     instance.object.metaData[8].mask = ObjectMask::Sphere;
     instance.object.metaData[8].hitGroupId = HitGroups::Glass;
@@ -214,13 +334,14 @@ void PhotonMapping::initLight() {
         upperCorner = glm::max(upperCorner, corner.position * 0.1f);
     }
 
-    glm::vec3 intensity = radiance;
     LightData ld{};
     ld.position = (lowerCorner + upperCorner) * 0.5f;
     ld.normal = glm::vec4(mesh.vertices.front().normal, 0);
+    ld.tangent = glm::vec4(mesh.vertices.front().tangent, 0);
+    ld.bitangent = glm::vec4(mesh.vertices.front().bitangent, 0);
     ld.lowerCorner = lowerCorner;
     ld.upperCorner = upperCorner;
-    ld.intensity = glm::vec4(intensity, 0);
+    ld.power = glm::vec4(power, 0);
 
     light.gpu = device.createCpuVisibleBuffer(&ld, sizeof(LightData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     light.cpu = reinterpret_cast<LightData*>(light.gpu.map());
@@ -343,22 +464,49 @@ void PhotonMapping::createDescriptorSetLayouts() {
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR)
             .binding(1)
-                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(2)
-                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
+
+
+    debugDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("debug_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages( VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages( VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages( VK_SHADER_STAGE_ALL)
+            .createLayout();
+
+
 }
 
 void PhotonMapping::updateDescriptorSets(){
-    lightDescriptorSet = descriptorPool.allocate( { lightDescriptorSetLayout }).front();
+    auto sets = descriptorPool.allocate( { lightDescriptorSetLayout, debugDescriptorSetLayout });
+    lightDescriptorSet = sets[0];
+    debugDescriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<3>();
+
+    auto writes = initializers::writeDescriptorSets<7>();
 
 
     writes[0].dstSet = lightDescriptorSet;
@@ -370,17 +518,45 @@ void PhotonMapping::updateDescriptorSets(){
 
     writes[1].dstSet = lightDescriptorSet;
     writes[1].dstBinding = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo ltcMagInfo{ltc.mat.sampler.handle, ltc.mat.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    writes[1].pImageInfo = &ltcMagInfo;
+    VkDescriptorBufferInfo photonInfo{generatedPhotons, 0, VK_WHOLE_SIZE};
+    writes[1].pBufferInfo = &photonInfo;
 
     writes[2].dstSet = lightDescriptorSet;
     writes[2].dstBinding = 2;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo ltcAmpInfo{ltc.amp.sampler.handle, ltc.amp.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    writes[2].pImageInfo = &ltcAmpInfo;
+    VkDescriptorBufferInfo photonStatsInfo{photonStats, 0, VK_WHOLE_SIZE};
+    writes[2].pBufferInfo = &photonStatsInfo;
+
+    writes[3].dstSet = lightDescriptorSet;
+    writes[3].dstBinding = 3;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[3].descriptorCount = 1;
+    VkDescriptorBufferInfo treeInfo{ kdTree.gpu, 0, VK_WHOLE_SIZE};
+    writes[3].pBufferInfo = &treeInfo;
+
+    writes[4].dstSet = debugDescriptorSet;
+    writes[4].dstBinding = 0;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
+    VkDescriptorBufferInfo debugBufferInfo{debugInfo.gpu, 0, VK_WHOLE_SIZE};
+    writes[4].pBufferInfo = &debugBufferInfo;
+
+    writes[5].dstSet = debugDescriptorSet;
+    writes[5].dstBinding = 1;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[5].descriptorCount = 1;
+    VkDescriptorBufferInfo nnInfo{nearestNeighbourBuffer, 0, VK_WHOLE_SIZE};
+    writes[5].pBufferInfo = &nnInfo;
+
+    writes[6].dstSet = debugDescriptorSet;
+    writes[6].dstBinding = 2;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[6].descriptorCount = 1;
+    VkDescriptorBufferInfo scratchInfo{scratchBuffer, 0, VK_WHOLE_SIZE};
+    writes[6].pBufferInfo = &scratchInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -510,34 +686,73 @@ void PhotonMapping::initCanvas() {
 void PhotonMapping::initRayTraceInfo() {
     rayTraceInfo.gpu = device.createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(RayTraceData));
     rayTraceInfo.cpu = reinterpret_cast<RayTraceData*>(rayTraceInfo.gpu.map());
-    rayTraceInfo.cpu->mask = ObjectMask::All & ~ObjectMask::Box;
+    rayTraceInfo.cpu->mask = ObjectMask::All & ~ObjectMask::Sphere;
 }
 
 void PhotonMapping::createRayTracingPipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
+    auto photonRayGenShaderModule = device.createShaderModule( resource("photons.rgen.spv"));
+    auto debugRayGenShaderModule = device.createShaderModule( resource("debug.rgen.spv"));
+
     auto mainClosestHitShaderModule = device.createShaderModule(resource("main.rchit.spv"));
     auto mirrorClosestHitShaderModule = device.createShaderModule(resource("mirror.rchit.spv"));
     auto glassClosestHitShaderModule = device.createShaderModule(resource("glass.rchit.spv"));
+
+    auto photonDiffuseHitShaderModule = device.createShaderModule(resource("photon_diffuse.rchit.spv"));
+    auto photonMirrorHitShaderModule = device.createShaderModule(resource("photon_mirror.rchit.spv"));
+    auto photonGlassHitShaderModule = device.createShaderModule(resource("photon_glass.rchit.spv"));
+
+    auto debugClosetHitShaderModule = device.createShaderModule(resource("debug.rchit.spv"));
+
     auto mainMissShaderModule = device.createShaderModule(resource("main.rmiss.spv"));
     auto shadowMissShaderModule = device.createShaderModule(resource("shadow.rmiss.spv"));
+    auto photonMissShaderModule = device.createShaderModule(resource("photon_miss.rmiss.spv"));
+    auto debugMissShaderModule = device.createShaderModule(resource("debug.rmiss.spv"));
 
     std::vector<ShaderInfo> shaders(ShaderCount);
 
     shaders[RayGen] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
+    shaders[PhotonRayGen] = { photonRayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
+    shaders[DebugRayGen] = { debugRayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
+
     shaders[MainMiss] = { mainMissShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
     shaders[LightMiss] = { shadowMissShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
+    shaders[PhotonMiss] = { photonMissShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
+    shaders[DebugMiss] = { debugMissShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
+
     shaders[MainClosestHit] = { mainClosestHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[MirrorClosestHit] = { mirrorClosestHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[GlassClosestHit] = { glassClosestHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
 
+    shaders[PhotonDiffuseHit] = { photonDiffuseHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[PhotonMirrorHit] = { photonMirrorHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[PhotonGlassHit] = { photonGlassHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+
+    shaders[DebugClosestHit] = { debugClosetHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup(RayGen));
+    shaderGroups.push_back(shaderTablesDesc.rayGenGroup("photon_gen", PhotonRayGen));
+    shaderGroups.push_back(shaderTablesDesc.rayGenGroup("debug_rgen", DebugRayGen));
+
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(MainMiss));
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(LightMiss));
+    shaderGroups.push_back(shaderTablesDesc.addMissGroup(PhotonMiss));
+    shaderGroups.push_back(shaderTablesDesc.addMissGroup(DebugMiss));
 
     shaderGroups.push_back(shaderTablesDesc.addHitGroup(MainClosestHit));
     shaderGroups.push_back(shaderTablesDesc.addHitGroup(MirrorClosestHit));
     shaderGroups.push_back(shaderTablesDesc.addHitGroup(GlassClosestHit));
+
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(PhotonDiffuseHit));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(PhotonMirrorHit));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(PhotonGlassHit));
+
+
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(DebugClosestHit));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(DebugClosestHit));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(DebugClosestHit));
+
 
     dispose(raytrace.layout);
 
@@ -545,8 +760,10 @@ void PhotonMapping::createRayTracingPipeline() {
         raytrace.descriptorSetLayout,
         raytrace.instanceDescriptorSetLayout,
         raytrace.vertexDescriptorSetLayout,
-        lightDescriptorSetLayout
-    });
+        lightDescriptorSetLayout,
+        debugDescriptorSetLayout
+    },
+     { {VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(PhotonMapInfo)} });
 
     auto stages = initializers::rayTraceShaderStages(shaders);
     VkRayTracingPipelineCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
@@ -561,6 +778,49 @@ void PhotonMapping::createRayTracingPipeline() {
     bindingTables = shaderTablesDesc.compile(device, raytrace.pipeline);
 }
 
+void PhotonMapping::generatePhotons() {
+    
+    VulkanBuffer cpuBuffer = device.createStagingBuffer(sizeof(PhotonStats));
+    mStagingBuffer = device.createStagingBuffer(generatedPhotons.size);
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        photonMapInfo.mask = rayTraceInfo.cpu->mask & ~ObjectMask::Lights;
+
+        std::vector<VkDescriptorSet> sets{
+                raytrace.descriptorSet,
+                raytrace.instanceDescriptorSet,
+                raytrace.vertexDescriptorSet,
+                lightDescriptorSet,
+                debugDescriptorSet
+        };
+        assert(raytrace.pipeline);
+        vkCmdFillBuffer(commandBuffer, generatedPhotons, 0, generatedPhotons.size, 0u);
+        vkCmdFillBuffer(commandBuffer, photonStats, 0, photonStats.size, 0u);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+
+        vkCmdPushConstants(commandBuffer, raytrace.layout.handle, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(PhotonMapInfo), &photonMapInfo);
+
+        vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGens["photon_gen"], bindingTables.miss, bindingTables.closestHit,
+                          bindingTables.callable, photonMapInfo.numPhotons, 1, 1);
+
+        VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_HOST_BIT
+                             , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+        VkBufferCopy region{0, 0, photonStats.size};
+        vkCmdCopyBuffer(commandBuffer, photonStats, cpuBuffer, 1, &region);
+
+        region.size = generatedPhotons.size;
+        vkCmdCopyBuffer(commandBuffer, generatedPhotons, mStagingBuffer, 1, &region);
+    });
+
+    stats = *reinterpret_cast<PhotonStats*>(cpuBuffer.map());
+    spdlog::info("Generated {} photons", stats.photonCount);
+
+    runInBackground([&]{ balanceKdTree(); });
+
+}
+
 void PhotonMapping::rayTrace(VkCommandBuffer commandBuffer) {
     CanvasToRayTraceBarrier(commandBuffer);
 
@@ -568,11 +828,14 @@ void PhotonMapping::rayTrace(VkCommandBuffer commandBuffer) {
         raytrace.descriptorSet,
         raytrace.instanceDescriptorSet,
         raytrace.vertexDescriptorSet,
-        lightDescriptorSet
+        lightDescriptorSet,
+        debugDescriptorSet
     };
     assert(raytrace.pipeline);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+
+    vkCmdPushConstants(commandBuffer, raytrace.layout.handle, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(PhotonMapInfo), &photonMapInfo);
 
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);
@@ -580,11 +843,25 @@ void PhotonMapping::rayTrace(VkCommandBuffer commandBuffer) {
     rayTraceToCanvasBarrier(commandBuffer);
 }
 
-void PhotonMapping::rasterize(VkCommandBuffer commandBuffer) {
+void PhotonMapping::renderPhotons(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    std::array<VkDescriptorSet, 2> sets{};
+    sets[0] = lightDescriptorSet;
+    sets[1] = debugDescriptorSet;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     camera->push(commandBuffer, render.layout);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 1, 1, &lightDescriptorSet, 0, nullptr);
-    model.draw(commandBuffer, render.layout);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+    vkCmdDraw(commandBuffer, 1, stats.photonCount, 0, 0);
+}
+
+void PhotonMapping::renderDebug(VkCommandBuffer commandBuffer) {
+    if(!debug.enabled) return;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.pipeline.handle);
+    camera->push(commandBuffer, debug.layout, VK_SHADER_STAGE_GEOMETRY_BIT);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.layout.handle, 0, 1, &debugDescriptorSet, 0, nullptr);
+    vkCmdDraw(commandBuffer, 1, 1, 0, 0);
+    debugInfo.cpu->searchMode = 1;
+    renderPhotons(commandBuffer);
 }
 
 void PhotonMapping::rayTraceToCanvasBarrier(VkCommandBuffer commandBuffer) const {
@@ -648,6 +925,9 @@ void PhotonMapping::createRenderPipeline() {
         auto builder = prototypes->cloneGraphicsPipeline();
         render.pipeline =
             builder
+                .vertexInputState().clear()
+                .inputAssemblyState()
+                    .points()
                 .shaderStage()
                     .vertexShader(resource("render.vert.spv"))
                     .fragmentShader(resource("render.frag.spv"))
@@ -655,30 +935,48 @@ void PhotonMapping::createRenderPipeline() {
                     .cullNone()
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant())
-                    .addDescriptorSetLayout(model.descriptorSetLayout)
                     .addDescriptorSetLayout(lightDescriptorSetLayout)
+                    .addDescriptorSetLayout(debugDescriptorSetLayout)
                 .name("render")
                 .build(render.layout);
+
+        debug.pipeline =
+            builder
+                .shaderStage()
+                    .vertexShader(resource("debug.vert.spv"))
+                    .geometryShader(resource("debug.geom.spv"))
+                    .fragmentShader(resource("debug.frag.spv"))
+                .rasterizationState()
+                    .lineWidth(1.5)
+                .depthStencilState()
+                    .compareOpAlways()
+                .layout().clear()
+                    .addPushConstantRange(Camera::pushConstant(VK_SHADER_STAGE_GEOMETRY_BIT))
+                    .addDescriptorSetLayout(debugDescriptorSetLayout)
+                .name("debug")
+            .build(debug.layout);
     //    @formatter:on
 }
 
 void PhotonMapping::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
+    auto module = device.createShaderModule(resource("neighbour_search.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    compute.layout = device.createPipelineLayout();
+    searchCompute.layout = device.createPipelineLayout( { debugDescriptorSetLayout, lightDescriptorSetLayout });
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout.handle;
+    computeCreateInfo.layout = searchCompute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    searchCompute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_nearest_neighbour", searchCompute.pipeline.handle);
 }
 
 
 void PhotonMapping::onSwapChainDispose() {
     dispose(render.pipeline);
-    dispose(compute.pipeline);
+    dispose(searchCompute.pipeline);
     dispose(raytrace.pipeline);
 }
 
@@ -710,8 +1008,19 @@ VkCommandBuffer *PhotonMapping::buildCommandBuffers(uint32_t imageIndex, uint32_
     rPassInfo.renderPass = renderPass;
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-//    rasterize(commandBuffer);
-    canvas.draw(commandBuffer);
+    if(showPhotons && !inspect){
+        debugInfo.cpu->searchMode = 0;
+        renderPhotons(commandBuffer);
+    }else {
+        canvas.draw(commandBuffer);
+    }
+
+    if(inspect && !showPhotons) {
+        renderDebug(commandBuffer);
+    }
+
+
+    renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -722,8 +1031,75 @@ VkCommandBuffer *PhotonMapping::buildCommandBuffers(uint32_t imageIndex, uint32_
     return &commandBuffer;
 }
 
+void PhotonMapping::renderUI(VkCommandBuffer commandBuffer) {
+    ImGui::Begin("Photon mapping");
+    ImGui::SetWindowSize({0, 0});
+
+    ImGui::Text("Photons");
+    ImGui::Indent(16);
+    static int numPhotons = photonMapRequest.numPhotons;
+    ImGui::SliderInt("Num photons", &numPhotons, 100, MaxPhotons);
+
+    static int maxBounce = photonMapRequest.maxBounces;
+    ImGui::SliderInt("Num bounces", &maxBounce, 1, MaxBounces);
+
+    ImGui::SliderFloat("search radius", &photonMapInfo.searchDistance, 0.1, 1);
+
+    ImGui::Indent(-16);
+
+    ImGui::Separator();
+
+    ImGui::Text("Debug");
+    ImGui::Indent(16);
+
+    if(ImGui::SliderInt("num neighbours", &numNeighbours, 10, 1000)){
+        computeNearestNeighbour = true;
+    }
+
+    ImGui::SliderFloat("photon size", &debugInfo.cpu->pointSize, 1, 5);
+
+
+    ImGui::Checkbox("Show photons", &showPhotons);
+    ImGui::SameLine();
+    ImGui::Checkbox("inspect", &inspect);
+
+    ImGui::Indent(-16);
+    ImGui::Separator();
+
+    ImGui::Text("Status:");
+    ImGui::Indent(16);
+    ImGui::Text("fps: %d", framePerSecond);
+    if(inspect) {
+        if(selectMode == SelectMode::Off) {
+            if(debugInfo.cpu->radius == 0){
+                ImGui::Text("right click on surface to inspect");
+            }else {
+                ImGui::Text("search: \n\tmesh: %s\n\tposition [%.2f, %.2f, %.2f]\n\tradius: %.2f"
+                        , meshes[debugInfo.cpu->meshId].name.c_str()
+                        , debugInfo.cpu->hitPosition.x
+                        , debugInfo.cpu->hitPosition.y
+                        , debugInfo.cpu->hitPosition.z, debugInfo.cpu->radius);
+            }
+        }
+        if(selectMode == SelectMode::Area) {
+            ImGui::Text("drag mouse to expand search area");
+        }
+    }
+    ImGui::Indent(-16);
+
+
+    ImGui::End();
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+
+    photonMapRequest.numPhotons = numPhotons;
+    photonMapRequest.maxBounces = maxBounce;
+}
+
 void PhotonMapping::update(float time) {
-    camera->update(time);
+    if(!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
     auto cam = camera->cam();
     rayTraceInfo.cpu->viewInverse = glm::inverse(cam.view);
     rayTraceInfo.cpu->projectionInverse = glm::inverse(cam.proj);
@@ -731,7 +1107,27 @@ void PhotonMapping::update(float time) {
 }
 
 void PhotonMapping::checkAppInputs() {
-    camera->processInput();
+    if(!ImGui::IsAnyItemActive()) {
+        camera->processInput();
+    }
+
+    static bool initialPress = true;
+
+    if(inspect && mouse.right.held && initialPress) {
+        initialPress = false;
+        selectMode = SelectMode::Position;
+        debugInfo.cpu->radius = 0;
+        debugInfo.cpu->hitPosition = glm::vec3(0);
+    }
+
+    if(inspect && mouse.right.released) {
+        if(selectMode == SelectMode::Area) {
+            computeNearestNeighbour = true;
+            selectMode = SelectMode::Off;
+        }
+        initialPress = true;
+    }
+
 }
 
 void PhotonMapping::cleanup() {
@@ -742,6 +1138,112 @@ void PhotonMapping::onPause() {
     VulkanBaseApp::onPause();
 }
 
+void PhotonMapping::endFrame() {
+    if(inspect && selectMode != SelectMode::Off) {
+        debug.enabled = true;
+
+        debugInfo.cpu->cameraPosition = camera->position();
+        debugInfo.cpu->target = mousePositionToWorldSpace(camera->cam());
+        debugInfo.cpu->mode = static_cast<int>(selectMode);
+
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+            photonMapInfo.mask = rayTraceInfo.cpu->mask;
+
+            std::vector<VkDescriptorSet> sets{
+                    raytrace.descriptorSet,
+                    raytrace.instanceDescriptorSet,
+                    raytrace.vertexDescriptorSet,
+                    lightDescriptorSet,
+                    debugDescriptorSet
+            };
+            assert(raytrace.pipeline);
+
+            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT};
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+
+            vkCmdPushConstants(commandBuffer, raytrace.layout.handle, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(PhotonMapInfo), &photonMapInfo);
+
+            vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGens["debug_rgen"], bindingTables.miss, bindingTables.closestHit,
+                              bindingTables.callable, 1, 1, 1);
+
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_HOST_BIT
+                    , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+        });
+
+        selectMode = static_cast<SelectMode>(debugInfo.cpu->mode);
+    }
+
+    if(!ImGui::IsAnyItemActive() && computeNearestNeighbour && debugInfo.cpu->radius > 0) {
+        computeNearestNeighbour = false;
+        debugInfo.cpu->numNeighboursFound = 0;
+        debugInfo.cpu->numNeighbours = numNeighbours;
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+            std::array<VkDescriptorSet, 2> sets{};
+            sets[0] = debugDescriptorSet;
+            sets[1] = lightDescriptorSet;
+
+            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT};
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, searchCompute.pipeline.handle);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, searchCompute.layout.handle
+                                    , 0, sets.size(), sets.data(), 0, nullptr);
+            vkCmdDispatch(commandBuffer, 1, 1, 1);
+
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_HOST_BIT
+                    , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+        });
+        spdlog::info("{} neighbours found around {}", debugInfo.cpu->numNeighboursFound, debugInfo.cpu->hitPosition);
+
+        assert(debugInfo.cpu->numNeighboursFound <= numNeighbours);
+        if(debugInfo.cpu->numNeighboursFound == 0) {
+            std::vector<Photon*> bruteforceResults;
+            std::span<Photon> photons = {reinterpret_cast<Photon*>(generatedPhotons.map()), static_cast<size_t>(stats.photonCount) };
+            std::span<int> tree = { reinterpret_cast<int*>(kdTree.gpu.map()), static_cast<size_t>(stats.treeSize)};
+
+            for (int i = 0; i < photons.size(); i++) {
+                auto p = photons[i].position.xyz();
+                auto x = debugInfo.cpu->hitPosition;
+                auto d = x - p;
+                auto d2 = debugInfo.cpu->radius * debugInfo.cpu->radius;
+                auto delta2 = dot(d, d);
+                if (delta2 < d2) {
+                    bruteforceResults.push_back(&photons[i]);
+                }
+            }
+            spdlog::info("expected {} neighbours but found none", bruteforceResults.size());
+//            for(auto& ptrPhoton : bruteforceResults) {
+//                auto pItr = std::find_if(photons.begin(), photons.end(), [&](auto& photon){ return &photon == ptrPhoton; });
+//                auto tItr = std::find_if(tree.begin(), tree.end(), [&](auto idx){
+//                    if(idx == -1) return false;
+//                    return &photons[idx] == ptrPhoton;
+//                });
+//                spdlog::info("{} => {}", *tItr, pItr->position.xyz());
+//            }
+
+
+            std::vector<int> searchResults(1000);
+            int neighboursFound = 0;
+
+            nearestNeighbourSearch(tree, photons, debugInfo.cpu->hitPosition, debugInfo.cpu->radius, searchResults, neighboursFound);
+
+            spdlog::info("{} found using gpu code", neighboursFound);
+
+            generatedPhotons.unmap();
+            kdTree.gpu.unmap();
+        }
+    }
+}
+
 
 int main(){
     try{
@@ -749,6 +1251,8 @@ int main(){
         Settings settings;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
+        settings.enabledFeatures.geometryShader = VK_TRUE;
+        settings.enabledFeatures.wideLines = VK_TRUE;
         settings.deviceExtensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();

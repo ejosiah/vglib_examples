@@ -162,7 +162,7 @@ VkCommandBuffer* VulkanCube::buildCommandBuffers(uint32_t imageIndex, uint32_t& 
 
     vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, layout.handle, 0, COUNT(descriptorSets), descriptorSets.data(), 0, nullptr);
     vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle );
-    cameraController->push(commandBuffers[i], layout.handle);
+    cameraController->push(commandBuffers[i], layout);
     VkDeviceSize offset = 0;
     vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &vertexBuffer.buffer, &offset);
@@ -303,7 +303,6 @@ int main() {
         settings.relativeMouseMode = false;
         settings.width = 1080;
         settings.height = 720;
-        settings.instanceExtensions.push_back(XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME);
         VulkanCube app{settings};
         app.run();
     }catch(const std::runtime_error& err){

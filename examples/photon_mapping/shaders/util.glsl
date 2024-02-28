@@ -14,6 +14,26 @@ DEFINE_SWAP(vec2)
 DEFINE_SWAP(vec3)
 DEFINE_SWAP(vec4)
 
+bool isBlack(vec3 v) {
+    return all(equal(vec3(0), v));
+}
+
+float luminance(vec3 rgb){
+    return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f));
+}
+
+void othonormalBasis(out vec3 tangent, out vec3 binormal, inout vec3 normal){
+    normal = normalize(normal);
+    vec3 a;
+    if(abs(normal.x) > 0.9){
+        a = vec3(0, 1, 0);
+    }else {
+        a = vec3(1, 0, 0);
+    }
+    binormal = normalize(cross(normal, a));
+    tangent = cross(normal, binormal);
+}
+
 vec3 offsetRay(in vec3 p, in vec3 n){
 
     const float intScale   = 256.0f;

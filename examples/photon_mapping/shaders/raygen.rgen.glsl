@@ -28,7 +28,7 @@ void main(){
     vec2 d = inUV * 2.0 - 1.0;
 
     vec4 origin = viewInverse * vec4(0,0,0,1);
-    vec4 target = projInverse * vec4(d.x, d.y, 1, 1) ;
+    vec4 target = projInverse * vec4(d.x, d.y, 1, 1);
     vec4 direction = viewInverse*vec4(normalize(target.xyz), 0) ;
 
 

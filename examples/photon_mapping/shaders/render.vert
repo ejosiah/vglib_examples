@@ -1,27 +1,68 @@
 #version 460 core
 
+#include "photon.glsl"
+
+layout(set = 0, binding = 1, std430) buffer GENERATED_PHOTONS {
+    Photon photons[];
+};
+
+layout(set = 0, binding = 3) buffer TreeIndex {
+    int tree[];
+};
+
+
+layout(set = 1, binding = 0) buffer DebugData {
+    mat4 transform;
+
+    vec3 hitPosition;
+    float radius;
+
+    vec3 target;
+    int mode;
+
+    vec3 cameraPosition;
+    int meshId;
+
+    vec3 pointColor;
+    int numNeighboursFound;
+
+    float pointSize;
+    int searchMode;
+    int numNeighbours;
+};
+
+layout(set = 1, binding = 1) buffer SearchResults {
+    int searchResults[];
+};
+
 layout(push_constant) uniform MVP {
     mat4 model;
     mat4 view;
     mat4 projection;
 };
 
-layout(location = 0) in vec4 position;
-layout(location = 1) in vec3 normal;
-layout(location = 2) in vec3 tanget;
-layout(location = 3) in vec3 bitangent;
-layout(location = 4) in vec4 color;
-layout(location = 5) in vec2 uv;
+layout(location = 0) out vec3 vColor;
 
-layout(location = 0) out vec3 vPos;
-layout(location = 1) out vec3 vNormal;
-layout(location = 2) out vec3 eyes;
+bool showPhoton() {
+    for(int i = 0; i < numNeighbours; i++){
+        if(searchResults[i] == gl_InstanceIndex){
+            return true;
+        }
+    }
+    return false;
+}
 
 void main(){
-    vec4 worldPos = model * position;
-    vPos = worldPos.xyz;
-    vNormal = mat3(model) * normal;
-    eyes = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
-
-    gl_Position = projection * view * worldPos;
+     if(searchMode == 1 && showPhoton()) {
+        Photon photon = photons[gl_InstanceIndex];
+        gl_PointSize = pointSize;
+        vColor = pointColor;
+        gl_Position = projection * view * photon.position;
+    }
+     else {
+         Photon photon = photons[gl_InstanceIndex];
+         gl_PointSize = pointSize;
+         vColor = photon.power.rgb;
+         gl_Position = projection * view * photon.position;
+     }
 }

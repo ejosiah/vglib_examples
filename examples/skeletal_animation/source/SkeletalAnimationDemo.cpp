@@ -184,13 +184,13 @@ VkCommandBuffer *SkeletalAnimationDemo::buildCommandBuffers(uint32_t imageIndex,
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, outline.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, outline.layout.handle, 0, 1, sets.data(), 0, VK_NULL_HANDLE);
-    cameraController->push(commandBuffer, outline.layout.handle);
+    cameraController->push(commandBuffer, outline.layout);
     model->render(commandBuffer);
 
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-    cameraController->push(commandBuffer, render.layout.handle);
+    cameraController->push(commandBuffer, render.layout);
     model->render(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
