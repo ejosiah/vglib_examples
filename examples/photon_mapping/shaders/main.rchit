@@ -19,6 +19,8 @@ layout(set = 0, binding = 1) uniform Uniforms {
     uint mask;
 };
 
+layout(set = 5, binding = 3, rgba32f) uniform image2D indirectRadiance;
+
 layout(set = 3, binding = 0) buffer LIGHT {
     Light light;
 };
@@ -89,9 +91,12 @@ void main() {
     color /= float(numSamples);
 
     color *= computeVisiblity(hit);
+    color += imageLoad(indirectRadiance, rtParams.pixelId).rgb;
 
     color /= (color + 1);
     rtParams.color = color;
-
+    rtParams.position = hit.position;
+    rtParams.normal = hit.normal;
+    rtParams.material =  vec4(hit.material.diffuse, 1);
     rtParams.objectType = OBJECT_TYPE_DIFFUSE;
 }

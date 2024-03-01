@@ -180,15 +180,12 @@ namespace kdtree {
     }
 
     std::vector<Point*> search(const std::vector<int>& tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT) {
-        std::vector<Point*> result;
+        Queue result{ numPoints };
         auto x = area.position;
         auto d2 = area.radius * area.radius;
 
         std::vector<int> order;
 
-        auto comp = [&](Point* a, Point* b){
-            return a->delta2 < b->delta2;
-        };
 
         std::function<void(int)> traverse = [&](int node){
             auto pIdx = tree[node];
@@ -196,7 +193,9 @@ namespace kdtree {
             auto& point = points[pIdx];
             auto axis = point.axis;
 
-            if(rightChild(node) < tree.size()){
+            bool isLeafNode = axis == -1;
+
+            if(!isLeafNode && rightChild(node) < tree.size()){
                 const auto delta = x[axis] - point.position[axis];
                 const auto delta2 = delta * delta;
 
@@ -218,19 +217,14 @@ namespace kdtree {
             point.delta2 = delta2;
 
             if(delta2 < d2) {
-                if(result.size() == numPoints){
+                if(result.full()){
                     if(delta2 < result.front()->delta2) {
                         d2 = result.front()->delta2;
-                        std::pop_heap(result.begin(), result.end(), comp);
-                        result[result.size() - 1] = &point;
-                        std::push_heap(result.begin(), result.end(), comp);
+                        result.insert(&point);
                     }
                 }else {
-                    result.push_back(&point);
+                    result.insert(&point);
                 }
-            }
-            if(result.size() == numPoints){
-                std::make_heap(result.begin(), result.end(), comp);
             }
             order.push_back(node + 1);
         };
@@ -239,7 +233,7 @@ namespace kdtree {
 
 //        spdlog::info("traversal order: {}", order);
 
-        return result;
+        return result.points();
     }
 
     std::vector<Point*> search_loop(const std::span<int> tree, std::span<Point> points, const SearchArea& area, uint32_t numPoints = ALL_POINT){

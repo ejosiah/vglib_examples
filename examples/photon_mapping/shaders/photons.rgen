@@ -61,8 +61,6 @@ void main(){
     for(int bounce = 0; bounce < maxBounces; bounce++){
         traceRay(topLevelAS, gl_RayFlagsNoOpaque, mask, PHOTON_HIT_GROUP, 0, PHOTON_MISS, ray.origin, ray.tMin, ray.direction, ray.tMax, 0);
 
-        throughput *= pgParams.reflectivity;
-
         if(isBlack(throughput)) {
             break;
         }
@@ -70,11 +68,12 @@ void main(){
         if(pgParams.diffuse) {
             Photon photon;
             photon.position = vec4(pgParams.position, 1);
-            photon.direction.xyz = -ray.direction;
+            photon.direction.xyz = ray.direction;
             photon.power.xyz = throughput;
             localPhotons[size] = photon;
             size++;
         }
+        throughput *= pgParams.reflectivity;
 
         ray = pgParams.bounceRay;
     }

@@ -3,6 +3,7 @@
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
 #include "neighbour_search.h"
+#include "kdtree.hpp"
 
 PhotonMapping::PhotonMapping(const Settings& settings) : VulkanRayTraceBaseApp("Photon mapping", settings) {
     fileManager.addSearchPathFront(".");
@@ -26,9 +27,11 @@ void PhotonMapping::initApp() {
     loadModel();
     initCamera();
     initCanvas();
+    initGBuffer();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     updateRtDescriptorSets();
+    updateGBufferDescriptorSet();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
@@ -79,6 +82,7 @@ void PhotonMapping::balanceKdTree() {
         balance(tree, {photons.data() + offset, photons.size() - offset }, 2 * index + 2, numPhotons);
     };
 
+    photonsReady = false;
     auto n = std::ceil(std::log2(stats.photonCount));
     auto size = size_t(std::pow(2, n));
     size = stats.photonCount < size ? size - 1 : size;
@@ -120,6 +124,9 @@ void PhotonMapping::balanceKdTree() {
             spdlog::info(":{} => {}", i, tree[i]);
         }
         kdTree.gpu.unmap();
+        photonsReady = true;
+//        computeIR.run = true;
+//        computeIndirectRadianceCPU();
     });
 }
 
@@ -127,11 +134,11 @@ void PhotonMapping::initDebugData() {
     debugInfo.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(DebugData), "debug_info");
     debugInfo.cpu = reinterpret_cast<DebugData*>(debugInfo.gpu.map());
     *debugInfo.cpu = DebugData{ .numNeighbours = numNeighbours};
-    scratchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, (5 << 20) );
+    scratchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, (50 << 20) );
 }
 
 void PhotonMapping::initPhotonMapData() {
-    photonMapInfo = PhotonMapInfo{rayTraceInfo.cpu->mask, 5, MaxPhotons/4, 60, 0.1};
+    photonMapInfo = PhotonMapInfo{rayTraceInfo.cpu->mask, 5, 200000, 100, 0.25};
     photonMapRequest = photonMapInfo;
 
     std::vector<char> allocation(sizeof(Photon) * MaxPhotons);
@@ -310,10 +317,10 @@ void PhotonMapping::loadModel() {
     instance.object.metaData[2].mask = ObjectMask::Ceiling;
 
     instance.object.metaData[6].mask = ObjectMask::Box;
-//    instance.object.metaData[6].hitGroupId = HitGroups::Glass;
+    instance.object.metaData[6].hitGroupId = HitGroups::Glass;
 
     instance.object.metaData[7].mask = ObjectMask::Box;
-//    instance.object.metaData[7].hitGroupId = HitGroups::Mirror;
+    instance.object.metaData[7].hitGroupId = HitGroups::Mirror;
 
     instance.object.metaData[8].mask = ObjectMask::Sphere;
     instance.object.metaData[8].hitGroupId = HitGroups::Glass;
@@ -498,6 +505,28 @@ void PhotonMapping::createDescriptorSetLayouts() {
             .createLayout();
 
 
+    gBuffer.setLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("g_buffer_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages( VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages( VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages( VK_SHADER_STAGE_ALL)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages( VK_SHADER_STAGE_ALL)
+            .createLayout();
+
+
 }
 
 void PhotonMapping::updateDescriptorSets(){
@@ -507,7 +536,6 @@ void PhotonMapping::updateDescriptorSets(){
 
 
     auto writes = initializers::writeDescriptorSets<7>();
-
 
     writes[0].dstSet = lightDescriptorSet;
     writes[0].dstBinding = 0;
@@ -663,6 +691,43 @@ void PhotonMapping::updateRtDescriptorSets() {
 
 }
 
+void PhotonMapping::updateGBufferDescriptorSet() {
+    gBuffer.descriptorSet = descriptorPool.allocate( { gBuffer.setLayout }).front();
+
+    auto writes = initializers::writeDescriptorSets<4>();
+
+    writes[0].dstSet = gBuffer.descriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[0].descriptorCount = 1;
+    VkDescriptorImageInfo colorInfo{VK_NULL_HANDLE, gBuffer.color.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[0].pImageInfo = &colorInfo;
+
+    writes[1].dstSet = gBuffer.descriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[1].descriptorCount = 1;
+    VkDescriptorImageInfo positionInfo{VK_NULL_HANDLE, gBuffer.position.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[1].pImageInfo = &positionInfo;
+
+    writes[2].dstSet = gBuffer.descriptorSet;
+    writes[2].dstBinding = 2;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[2].descriptorCount = 1;
+    VkDescriptorImageInfo normalInfo{VK_NULL_HANDLE, gBuffer.normal.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[2].pImageInfo = &normalInfo;
+
+    writes[3].dstSet = gBuffer.descriptorSet;
+    writes[3].dstBinding = 3;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[3].descriptorCount = 1;
+    VkDescriptorImageInfo ILInfo{VK_NULL_HANDLE, gBuffer.indirectLight.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[3].pImageInfo = &ILInfo;
+
+    device.updateDescriptorSets(writes);
+
+}
+
 void PhotonMapping::createCommandPool() {
     commandPool = device.createCommandPool(*device.queueFamilyIndex.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     commandBuffers = commandPool.allocateCommandBuffers(swapChainImageCount);
@@ -683,10 +748,22 @@ void PhotonMapping::initCanvas() {
     });
 }
 
+void PhotonMapping::initGBuffer() {
+    textures::create(device, gBuffer.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
+    textures::create(device, gBuffer.position, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
+    textures::create(device, gBuffer.normal, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
+    textures::create(device, gBuffer.indirectLight, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
+
+    gBuffer.color.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    gBuffer.position.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    gBuffer.normal.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    gBuffer.indirectLight.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+}
+
 void PhotonMapping::initRayTraceInfo() {
     rayTraceInfo.gpu = device.createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(RayTraceData));
     rayTraceInfo.cpu = reinterpret_cast<RayTraceData*>(rayTraceInfo.gpu.map());
-    rayTraceInfo.cpu->mask = ObjectMask::All & ~ObjectMask::Sphere;
+    rayTraceInfo.cpu->mask = ObjectMask::All & ~ObjectMask::Box;
 }
 
 void PhotonMapping::createRayTracingPipeline() {
@@ -761,7 +838,8 @@ void PhotonMapping::createRayTracingPipeline() {
         raytrace.instanceDescriptorSetLayout,
         raytrace.vertexDescriptorSetLayout,
         lightDescriptorSetLayout,
-        debugDescriptorSetLayout
+        debugDescriptorSetLayout,
+        gBuffer.setLayout
     },
      { {VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(PhotonMapInfo)} });
 
@@ -790,7 +868,8 @@ void PhotonMapping::generatePhotons() {
                 raytrace.instanceDescriptorSet,
                 raytrace.vertexDescriptorSet,
                 lightDescriptorSet,
-                debugDescriptorSet
+                debugDescriptorSet,
+                gBuffer.descriptorSet
         };
         assert(raytrace.pipeline);
         vkCmdFillBuffer(commandBuffer, generatedPhotons, 0, generatedPhotons.size, 0u);
@@ -829,7 +908,8 @@ void PhotonMapping::rayTrace(VkCommandBuffer commandBuffer) {
         raytrace.instanceDescriptorSet,
         raytrace.vertexDescriptorSet,
         lightDescriptorSet,
-        debugDescriptorSet
+        debugDescriptorSet,
+        gBuffer.descriptorSet
     };
     assert(raytrace.pipeline);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
@@ -947,7 +1027,7 @@ void PhotonMapping::createRenderPipeline() {
                     .geometryShader(resource("debug.geom.spv"))
                     .fragmentShader(resource("debug.frag.spv"))
                 .rasterizationState()
-                    .lineWidth(1.5)
+                    .lineWidth(2.5)
                 .depthStencilState()
                     .compareOpAlways()
                 .layout().clear()
@@ -962,7 +1042,7 @@ void PhotonMapping::createComputePipeline() {
     auto module = device.createShaderModule(resource("neighbour_search.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    searchCompute.layout = device.createPipelineLayout( { debugDescriptorSetLayout, lightDescriptorSetLayout });
+    searchCompute.layout = device.createPipelineLayout( { lightDescriptorSetLayout, debugDescriptorSetLayout });
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
@@ -971,6 +1051,22 @@ void PhotonMapping::createComputePipeline() {
     searchCompute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 
     device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_nearest_neighbour", searchCompute.pipeline.handle);
+
+
+    // Compute indirect radiance shader
+    module = device.createShaderModule(resource("compute_indirect_radiance.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeIR.layout = device.createPipelineLayout(
+            { gBuffer.setLayout, lightDescriptorSetLayout },
+            { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(computeIR.constants)} }
+    );
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = computeIR.layout.handle;
+
+    computeIR.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_indirect_radiance", computeIR.pipeline.handle);
 }
 
 
@@ -1045,6 +1141,17 @@ void PhotonMapping::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::SliderFloat("search radius", &photonMapInfo.searchDistance, 0.1, 1);
 
+    int neighbourCount = static_cast<int>(photonMapInfo.neighbourCount);
+    ImGui::SliderInt("num photons", &neighbourCount, 0, 100);
+    photonMapInfo.neighbourCount = neighbourCount;
+    if(photonsReady){
+        auto clicked = ImGui::Button("compute IR");
+        if(clicked && !computeIR.run) {
+            computeIR.run = true;
+            computeIndirectRadianceCPU();
+        }
+    }
+
     ImGui::Indent(-16);
 
     ImGui::Separator();
@@ -1074,16 +1181,22 @@ void PhotonMapping::renderUI(VkCommandBuffer commandBuffer) {
             if(debugInfo.cpu->radius == 0){
                 ImGui::Text("right click on surface to inspect");
             }else {
-                ImGui::Text("search: \n\tmesh: %s\n\tposition [%.2f, %.2f, %.2f]\n\tradius: %.2f"
+                ImGui::Text("search: \n\tmesh: %s\n\tposition [%.2f, %.2f, %.2f]\n\tradius: %.2f\n\tneighbours %d"
                         , meshes[debugInfo.cpu->meshId].name.c_str()
                         , debugInfo.cpu->hitPosition.x
                         , debugInfo.cpu->hitPosition.y
-                        , debugInfo.cpu->hitPosition.z, debugInfo.cpu->radius);
+                        , debugInfo.cpu->hitPosition.z, debugInfo.cpu->radius
+                        , debugInfo.cpu->numNeighboursFound);
             }
         }
         if(selectMode == SelectMode::Area) {
             ImGui::Text("drag mouse to expand search area");
         }
+    }
+    if(computeIR.run){
+//        ImGui::Text("indirect radiance compute in progress  %.2f %%",
+//                    (computeIR.constants.iteration * 100.f)/ computeIR.numIterations);
+        ImGui::Text("IR:  %.2f %%", progress.load());
     }
     ImGui::Indent(-16);
 
@@ -1104,6 +1217,9 @@ void PhotonMapping::update(float time) {
     rayTraceInfo.cpu->viewInverse = glm::inverse(cam.view);
     rayTraceInfo.cpu->projectionInverse = glm::inverse(cam.proj);
 
+    if(camera->moved()) {
+        lastCameraUpdate = std::chrono::steady_clock::now();
+    }
 }
 
 void PhotonMapping::checkAppInputs() {
@@ -1127,7 +1243,6 @@ void PhotonMapping::checkAppInputs() {
         }
         initialPress = true;
     }
-
 }
 
 void PhotonMapping::cleanup() {
@@ -1154,7 +1269,8 @@ void PhotonMapping::endFrame() {
                     raytrace.instanceDescriptorSet,
                     raytrace.vertexDescriptorSet,
                     lightDescriptorSet,
-                    debugDescriptorSet
+                    debugDescriptorSet,
+                    gBuffer.descriptorSet
             };
             assert(raytrace.pipeline);
 
@@ -1183,65 +1299,180 @@ void PhotonMapping::endFrame() {
         computeNearestNeighbour = false;
         debugInfo.cpu->numNeighboursFound = 0;
         debugInfo.cpu->numNeighbours = numNeighbours;
-        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-            std::array<VkDescriptorSet, 2> sets{};
-            sets[0] = debugDescriptorSet;
-            sets[1] = lightDescriptorSet;
+//        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+//            std::array<VkDescriptorSet, 2> sets{};
+//            sets[0] = lightDescriptorSet;
+//            sets[1] = debugDescriptorSet;
+//
+//            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT};
+//            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+//
+//
+//            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, searchCompute.pipeline.handle);
+//            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, searchCompute.layout.handle
+//                                    , 0, sets.size(), sets.data(), 0, nullptr);
+//            vkCmdDispatch(commandBuffer, 1, 1, 1);
+//
+//            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+//            barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+//            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_HOST_BIT
+//                    , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+//        });
 
-            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT};
-            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+        std::span<int> tree = {reinterpret_cast<int*>(kdTree.gpu.map()), static_cast<size_t>(stats.treeSize)};
+        std::span<Photon> photons = { reinterpret_cast<Photon*>(generatedPhotons.map()), static_cast<size_t>(stats.treeSize) };
+        auto neighbours = kdtree::search(tree, photons, debugInfo.cpu->hitPosition, debugInfo.cpu->radius); //, debugInfo.cpu->numNeighbours);
 
+        debugInfo.cpu->numNeighboursFound = neighbours.size();
+        debugInfo.cpu->numNeighbours = std::max(debugInfo.cpu->numNeighboursFound, numNeighbours);
 
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, searchCompute.pipeline.handle);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, searchCompute.layout.handle
-                                    , 0, sets.size(), sets.data(), 0, nullptr);
-            vkCmdDispatch(commandBuffer, 1, 1, 1);
+        nearestNeighbourBuffer.copy(neighbours);
 
-            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_HOST_BIT
-                    , 0, 1, &barrier, 0, nullptr, 0, nullptr);
-        });
-        spdlog::info("{} neighbours found around {}", debugInfo.cpu->numNeighboursFound, debugInfo.cpu->hitPosition);
+        generatedPhotons.unmap();
+        kdTree.gpu.unmap();
 
-        assert(debugInfo.cpu->numNeighboursFound <= numNeighbours);
-        if(debugInfo.cpu->numNeighboursFound == 0) {
-            std::vector<Photon*> bruteforceResults;
-            std::span<Photon> photons = {reinterpret_cast<Photon*>(generatedPhotons.map()), static_cast<size_t>(stats.photonCount) };
-            std::span<int> tree = { reinterpret_cast<int*>(kdTree.gpu.map()), static_cast<size_t>(stats.treeSize)};
+//        assert(debugInfo.cpu->numNeighboursFound <= numNeighbours);
 
-            for (int i = 0; i < photons.size(); i++) {
-                auto p = photons[i].position.xyz();
-                auto x = debugInfo.cpu->hitPosition;
-                auto d = x - p;
-                auto d2 = debugInfo.cpu->radius * debugInfo.cpu->radius;
-                auto delta2 = dot(d, d);
-                if (delta2 < d2) {
-                    bruteforceResults.push_back(&photons[i]);
-                }
-            }
-            spdlog::info("expected {} neighbours but found none", bruteforceResults.size());
-//            for(auto& ptrPhoton : bruteforceResults) {
-//                auto pItr = std::find_if(photons.begin(), photons.end(), [&](auto& photon){ return &photon == ptrPhoton; });
-//                auto tItr = std::find_if(tree.begin(), tree.end(), [&](auto idx){
-//                    if(idx == -1) return false;
-//                    return &photons[idx] == ptrPhoton;
-//                });
-//                spdlog::info("{} => {}", *tItr, pItr->position.xyz());
-//            }
-
-
-            std::vector<int> searchResults(1000);
-            int neighboursFound = 0;
-
-            nearestNeighbourSearch(tree, photons, debugInfo.cpu->hitPosition, debugInfo.cpu->radius, searchResults, neighboursFound);
-
-            spdlog::info("{} found using gpu code", neighboursFound);
-
-            generatedPhotons.unmap();
-            kdTree.gpu.unmap();
-        }
     }
+
+//    if(frameCount % 10 == 0) {
+//        computeIndirectRadiance();
+//    }
+}
+
+bool PhotonMapping::cameraActive() {
+    using namespace std::chrono_literals;
+    auto duration = chrono::steady_clock::now() - lastCameraUpdate;
+    return duration < 100ms;
+}
+
+void PhotonMapping::computeIndirectRadiance() {
+    if(!computeIR.run) return;
+
+    uint32_t blockSize = computeIR.constants.blockSize;
+    computeIR.numIterations = (width * height)/(blockSize * blockSize);
+    computeIR.constants.width = width;
+    computeIR.constants.height = height;
+    computeIR.constants.radius = photonMapInfo.searchDistance;
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        static std::array<VkDescriptorSet, 2> sets;
+        sets[0] = gBuffer.descriptorSet;
+        sets[1] = lightDescriptorSet;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computeIR.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computeIR.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdPushConstants(commandBuffer, computeIR.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(computeIR.constants), &computeIR.constants);
+        vkCmdDispatch(commandBuffer, blockSize, blockSize, 1);
+    });
+
+    computeIR.constants.iteration++;
+
+    progress = float(computeIR.constants.iteration)/float(computeIR.numIterations) * 100;
+
+    if(computeIR.constants.iteration > computeIR.numIterations) {
+        computeIR.run = false;
+        computeIR.constants.iteration = 0;
+    }
+}
+
+void PhotonMapping::computeIndirectRadianceCPU() {
+    computeIR.run = true;
+    VkDeviceSize offset = 0;
+    VkDeviceSize imageSize = width * height * sizeof(float) * 4;
+    uvec2 screen{ width, height};
+    
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        VkImageSubresourceLayers subResource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        VkBufferImageCopy region{0, 0, 0, subResource, {0, 0, 0}, { screen.x, screen.y, 1}};
+        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_GENERAL, scratchBuffer, 1, &region);
+
+        offset += imageSize;
+        region.bufferOffset = offset;
+        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.position.image, VK_IMAGE_LAYOUT_GENERAL, scratchBuffer, 1, &region);
+
+        offset += imageSize;
+        region.bufferOffset = offset;
+        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.normal.image, VK_IMAGE_LAYOUT_GENERAL, scratchBuffer, 1, &region);
+
+        offset += imageSize;
+//        region.bufferOffset = offset;
+//        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.indirectLight.image, VK_IMAGE_LAYOUT_GENERAL, scratchBuffer, 1, &region);
+        vkCmdFillBuffer(commandBuffer, scratchBuffer, offset, imageSize, 0);
+
+        VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT
+                                , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+    });
+
+    runInBackground([&]{
+        size_t screenSize = width * height;
+        auto memory = reinterpret_cast<glm::vec4*>(scratchBuffer.map());
+        std::span<glm::vec4> colorBuffer = { memory, screenSize };
+        std::span<glm::vec4> positionBuffer = { memory + screenSize, screenSize };
+        std::span<glm::vec4> normalBuffer = { memory + screenSize * 2, screenSize };
+        std::span<glm::vec4> indirectRadianceBuffer = { memory + screenSize * 3, screenSize };
+        auto radius = photonMapInfo.searchDistance;
+
+        std::vector<int> tree(stats.treeSize);
+        std::vector<Photon> photons(stats.photonCount);
+        std::memcpy(tree.data(), kdTree.gpu.map(), stats.treeSize * sizeof(int));
+        std::memcpy(photons.data(), reinterpret_cast<Photon*>(generatedPhotons.map()), stats.photonCount * sizeof(Photon));
+        generatedPhotons.unmap();
+        kdTree.gpu.unmap();
+
+        auto start = std::chrono::high_resolution_clock::now();
+        float count = 0;
+        for(int y = 0; y < height; y++){
+            for(int x = 0; x < width; x++){
+                glm::ivec2 idx{x, y};
+                auto index = y * width + x;
+                auto color = colorBuffer[index];
+
+                if(color.a == 0) continue;
+
+                auto position = positionBuffer[index].xyz();
+                auto result = kdtree::search(tree, photons, position, radius, photonMapInfo.numPhotons);
+
+                if(!result.empty()) {
+                    auto normal = normalBuffer[index].xyz();
+                    auto N = glm::normalize(normal);
+
+                    glm::vec3 radiance{0};
+                    for(auto& photon : result) {
+                        auto L = glm::normalize(-photon->direction);
+                        radiance += color.rgb * glm::max(0.f, glm::dot(N, L)) * photon->power.rgb;
+                    }
+                    radiance /= glm::pi<float>() * radius * radius;
+
+                    indirectRadianceBuffer[index] = glm::vec4{ radiance, 1};
+                }
+                count++;
+                progress = (count * 100)/(width * height);
+            }
+        }
+        auto duration = std::chrono::high_resolution_clock::now() - start;
+        spdlog::info("indirect radiance calculated in {} seconds", std::chrono::duration_cast<std::chrono::seconds>(duration).count());
+
+        scratchBuffer.unmap();
+
+        onIdle([&]{
+            device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+                VkDeviceSize bufferOffset = width * height * sizeof(float) * 4 * 3;
+                VkImageSubresourceLayers subResource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                VkBufferImageCopy region{bufferOffset, 0, 0, subResource, {0, 0, 0}, { static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1}};
+
+                VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT};
+                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT
+                        , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+                vkCmdCopyBufferToImage(commandBuffer, scratchBuffer, gBuffer.indirectLight.image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);
+            });
+           computeIR.run = false;
+        });
+    });
+}
+
+void PhotonMapping::newFrame() {
+    camera->newFrame();
 }
 
 
@@ -1249,6 +1480,8 @@ int main(){
     try{
 
         Settings settings;
+        settings.width = 256;
+        settings.height = 256;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.geometryShader = VK_TRUE;

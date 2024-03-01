@@ -81,8 +81,8 @@ enum Side : uint32_t {
 };
 
 struct PhotonStats {
-    int photonCount;
-    int treeSize;
+    int photonCount{};
+    int treeSize{};
 };
 
 struct PhotonMapInfo {
@@ -147,6 +147,8 @@ protected:
 
     void loadLTC();
 
+    void initGBuffer();
+
     void initPhotonMapData();
 
     void createDescriptorPool();
@@ -156,6 +158,8 @@ protected:
     void updateDescriptorSets();
 
     void updateRtDescriptorSets();
+
+    void updateGBufferDescriptorSet();
 
     void createCommandPool();
 
@@ -201,6 +205,14 @@ protected:
 
     void endFrame() override;
 
+    void newFrame() override;
+
+    bool cameraActive();
+
+    void computeIndirectRadiance();
+
+    void computeIndirectRadianceCPU();
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -210,7 +222,21 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
-    } searchCompute;
+    } searchCompute{};
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+        struct {
+            int iteration{};
+            int width{};
+            int height{};
+            int blockSize{128};
+            float radius{};
+        } constants{};
+        int numIterations{};
+        bool run{};
+    } computeIR{};
 
     struct {
         VulkanPipeline pipeline;
@@ -272,6 +298,19 @@ protected:
     int numNeighbours{200};
     bool computeNearestNeighbour{};
     bool showPhotons{};
+    bool photonsReady{};
+    std::atomic<float> progress;
     std::vector<mesh::Mesh> meshes;
     SelectMode selectMode{SelectMode::Off};
+    chrono::steady_clock::time_point lastCameraUpdate = chrono::steady_clock::now();
+
+    struct {
+        Texture color;
+        Texture position;
+        Texture normal;
+        Texture indirectLight;
+        VulkanDescriptorSetLayout setLayout;
+        VkDescriptorSet descriptorSet;
+    } gBuffer;
+
 };

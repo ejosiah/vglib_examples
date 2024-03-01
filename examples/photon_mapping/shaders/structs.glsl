@@ -23,7 +23,11 @@ struct Ray{
 
 struct RtParams {
     Ray ray;
+    vec4 material;
+    vec3 normal;
+    vec3 position;
     vec3 color;
+    ivec2 pixelId;
     uint rngState;
     uint objectType;
 };
