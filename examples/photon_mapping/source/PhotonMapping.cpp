@@ -37,7 +37,7 @@ void PhotonMapping::initApp() {
     createRenderPipeline();
     createComputePipeline();
     createRayTracingPipeline();
-    generatePhotons();
+//    generatePhotons();
 }
 void PhotonMapping::initKdTree() {
 
@@ -134,12 +134,11 @@ void PhotonMapping::initDebugData() {
     debugInfo.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(DebugData), "debug_info");
     debugInfo.cpu = reinterpret_cast<DebugData*>(debugInfo.gpu.map());
     *debugInfo.cpu = DebugData{ .numNeighbours = numNeighbours};
-    scratchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, (50 << 20) );
+    scratchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, (100 << 20) );
 }
 
 void PhotonMapping::initPhotonMapData() {
-    photonMapInfo = PhotonMapInfo{rayTraceInfo.cpu->mask, 5, 200000, 100, 0.25};
-    photonMapRequest = photonMapInfo;
+    photonMapInfo = PhotonMapInfo{rayTraceInfo.cpu->mask, 5, 20000, 60, 0.25};
 
     std::vector<char> allocation(sizeof(Photon) * MaxPhotons);
     generatedPhotons = device.createCpuVisibleBuffer(allocation.data(), allocation.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
@@ -317,10 +316,10 @@ void PhotonMapping::loadModel() {
     instance.object.metaData[2].mask = ObjectMask::Ceiling;
 
     instance.object.metaData[6].mask = ObjectMask::Box;
-    instance.object.metaData[6].hitGroupId = HitGroups::Glass;
+//    instance.object.metaData[6].hitGroupId = HitGroups::Glass;
 
     instance.object.metaData[7].mask = ObjectMask::Box;
-    instance.object.metaData[7].hitGroupId = HitGroups::Mirror;
+//    instance.object.metaData[7].hitGroupId = HitGroups::Mirror;
 
     instance.object.metaData[8].mask = ObjectMask::Sphere;
     instance.object.metaData[8].hitGroupId = HitGroups::Glass;
@@ -896,8 +895,6 @@ void PhotonMapping::generatePhotons() {
     stats = *reinterpret_cast<PhotonStats*>(cpuBuffer.map());
     spdlog::info("Generated {} photons", stats.photonCount);
 
-    runInBackground([&]{ balanceKdTree(); });
-
 }
 
 void PhotonMapping::rayTrace(VkCommandBuffer commandBuffer) {
@@ -1133,22 +1130,29 @@ void PhotonMapping::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::Text("Photons");
     ImGui::Indent(16);
-    static int numPhotons = photonMapRequest.numPhotons;
-    ImGui::SliderInt("Num photons", &numPhotons, 100, MaxPhotons);
+    static int numPhotons = photonMapInfo.numPhotons;
+    ImGui::SliderInt("Num photons", &numPhotons, 1000, MaxPhotons);
 
-    static int maxBounce = photonMapRequest.maxBounces;
+    static int maxBounce = photonMapInfo.maxBounces;
     ImGui::SliderInt("Num bounces", &maxBounce, 1, MaxBounces);
 
     ImGui::SliderFloat("search radius", &photonMapInfo.searchDistance, 0.1, 1);
 
     int neighbourCount = static_cast<int>(photonMapInfo.neighbourCount);
-    ImGui::SliderInt("num photons", &neighbourCount, 0, 100);
+    ImGui::SliderInt("num photons", &neighbourCount, 0, 1000);
     photonMapInfo.neighbourCount = neighbourCount;
+
+    if(ImGui::Button("generate photons")){
+        photonsReady = false;
+        generatePhotons();
+        runInBackground([&]{ balanceKdTree(); });
+    }
     if(photonsReady){
+        ImGui::SameLine();
         auto clicked = ImGui::Button("compute IR");
         if(clicked && !computeIR.run) {
             computeIR.run = true;
-            computeIndirectRadianceCPU();
+            computeIndirectRadianceCPU2();
         }
     }
 
@@ -1205,8 +1209,8 @@ void PhotonMapping::renderUI(VkCommandBuffer commandBuffer) {
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 
-    photonMapRequest.numPhotons = numPhotons;
-    photonMapRequest.maxBounces = maxBounce;
+    photonMapInfo.numPhotons = numPhotons;
+    photonMapInfo.maxBounces = maxBounce;
 }
 
 void PhotonMapping::update(float time) {
@@ -1335,9 +1339,17 @@ void PhotonMapping::endFrame() {
 
     }
 
-//    if(frameCount % 10 == 0) {
+    if(frameCount % 10 == 0) {
 //        computeIndirectRadiance();
-//    }
+    }
+
+    if(cameraActive()) {
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+            VkClearColorValue clearColor{ {0.f, 0.f, 0.f, 0.f}};
+            VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            vkCmdClearColorImage(commandBuffer, gBuffer.indirectLight.image, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &range);
+        });
+    }
 }
 
 bool PhotonMapping::cameraActive() {
@@ -1407,16 +1419,32 @@ void PhotonMapping::computeIndirectRadianceCPU() {
     runInBackground([&]{
         size_t screenSize = width * height;
         auto memory = reinterpret_cast<glm::vec4*>(scratchBuffer.map());
-        std::span<glm::vec4> colorBuffer = { memory, screenSize };
-        std::span<glm::vec4> positionBuffer = { memory + screenSize, screenSize };
-        std::span<glm::vec4> normalBuffer = { memory + screenSize * 2, screenSize };
-        std::span<glm::vec4> indirectRadianceBuffer = { memory + screenSize * 3, screenSize };
+        auto begin = memory;
+        auto end = memory + screenSize;
+        std::vector<glm::vec4> colorBuffer{ begin, end};
+
+        begin += screenSize;
+        end += screenSize;
+
+        std::vector<glm::vec4> positionBuffer{ begin, end };
+
+        begin += screenSize;
+        end += screenSize;
+
+        std::vector<glm::vec4> normalBuffer { begin, end };
+
+        begin += screenSize;
+        end += screenSize;
+
+        std::vector<glm::vec4> indirectRadianceBuffer(screenSize);
         auto radius = photonMapInfo.searchDistance;
 
         std::vector<int> tree(stats.treeSize);
         std::vector<Photon> photons(stats.photonCount);
         std::memcpy(tree.data(), kdTree.gpu.map(), stats.treeSize * sizeof(int));
         std::memcpy(photons.data(), reinterpret_cast<Photon*>(generatedPhotons.map()), stats.photonCount * sizeof(Photon));
+
+        scratchBuffer.unmap();
         generatedPhotons.unmap();
         kdTree.gpu.unmap();
 
@@ -1424,6 +1452,10 @@ void PhotonMapping::computeIndirectRadianceCPU() {
         float count = 0;
         for(int y = 0; y < height; y++){
             for(int x = 0; x < width; x++){
+
+                count++;
+                progress = (count * 100)/(width * height);
+
                 glm::ivec2 idx{x, y};
                 auto index = y * width + x;
                 auto color = colorBuffer[index];
@@ -1431,7 +1463,7 @@ void PhotonMapping::computeIndirectRadianceCPU() {
                 if(color.a == 0) continue;
 
                 auto position = positionBuffer[index].xyz();
-                auto result = kdtree::search(tree, photons, position, radius, photonMapInfo.numPhotons);
+                auto result = kdtree::search(tree, photons, position, radius, photonMapInfo.neighbourCount);
 
                 if(!result.empty()) {
                     auto normal = normalBuffer[index].xyz();
@@ -1446,14 +1478,14 @@ void PhotonMapping::computeIndirectRadianceCPU() {
 
                     indirectRadianceBuffer[index] = glm::vec4{ radiance, 1};
                 }
-                count++;
-                progress = (count * 100)/(width * height);
             }
         }
         auto duration = std::chrono::high_resolution_clock::now() - start;
         spdlog::info("indirect radiance calculated in {} seconds", std::chrono::duration_cast<std::chrono::seconds>(duration).count());
 
-        scratchBuffer.unmap();
+        VkDeviceSize imageSize = width * height * sizeof(float) * 4;
+        VkDeviceSize bufferOffset = imageSize * 3;
+        scratchBuffer.copy(indirectRadianceBuffer.data(), imageSize, bufferOffset);
 
         onIdle([&]{
             device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
@@ -1471,6 +1503,150 @@ void PhotonMapping::computeIndirectRadianceCPU() {
     });
 }
 
+void PhotonMapping::computeIndirectRadianceCPU2(){
+    computeIR.run = true;
+    VkDeviceSize offset = 0;
+    VkDeviceSize imageSize = width * height * sizeof(float) * 4;
+    uvec2 screen{ width, height};
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        VkImageSubresourceLayers subResource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        VkBufferImageCopy region{0, 0, 0, subResource, {0, 0, 0}, { screen.x, screen.y, 1}};
+        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_GENERAL, scratchBuffer, 1, &region);
+
+        offset += imageSize;
+        region.bufferOffset = offset;
+        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.position.image, VK_IMAGE_LAYOUT_GENERAL, scratchBuffer, 1, &region);
+
+        offset += imageSize;
+        region.bufferOffset = offset;
+        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.normal.image, VK_IMAGE_LAYOUT_GENERAL, scratchBuffer, 1, &region);
+
+        offset += imageSize;
+        vkCmdFillBuffer(commandBuffer, scratchBuffer, offset, imageSize, 0);
+
+        VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT
+                , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+    });
+
+    auto blockSize = computeIR.constants.blockSize;
+    auto screenSize = width * height;
+    auto numTasks = screenSize/(blockSize * blockSize);
+    auto memory = reinterpret_cast<glm::vec4*>(scratchBuffer.map());
+    auto begin = memory;
+    auto end = memory + screenSize;
+    std::vector<glm::vec4> colorBuffer{ begin, end};
+
+    begin += screenSize;
+    end += screenSize;
+
+    std::vector<glm::vec4> positionBuffer{ begin, end };
+
+    begin += screenSize;
+    end += screenSize;
+
+    std::vector<glm::vec4> normalBuffer { begin, end };
+
+
+    std::vector<int> tree(stats.treeSize);
+    std::vector<Photon> photons(stats.photonCount);
+    std::memcpy(tree.data(), kdTree.gpu.map(), stats.treeSize * sizeof(int));
+    std::memcpy(photons.data(), reinterpret_cast<Photon*>(generatedPhotons.map()), stats.photonCount * sizeof(Photon));
+
+    scratchBuffer.unmap();
+    generatedPhotons.unmap();
+    kdTree.gpu.unmap();
+    static std::atomic_int taskFinishedCount;
+    static std::atomic<float> pixelsProcessed ;
+    taskFinishedCount = 0;
+    pixelsProcessed = 0;
+    totalDuration = 0;
+    progress = 0;
+
+    for(int taskId = 0; taskId < numTasks; ++taskId){
+        runInBackground([&, taskId, numTasks, tree, photons, blockSize, colorBuffer, positionBuffer, normalBuffer
+                         , screen, numPhotons = photonMapInfo.neighbourCount, radius = photonMapInfo.searchDistance]() mutable {
+            auto width = screen.x;
+            auto height = screen.y;
+
+            auto row = (taskId * blockSize)/width;
+            auto col = taskId % (width/blockSize);
+
+            ivec2 offset{col * blockSize, row * blockSize };
+            uvec2 extent{static_cast<unsigned int>(blockSize)};
+
+            spdlog::info("task{}: offset: [{}, {}], extent: [{}, {}]"
+                         , taskId, offset.x, offset.y, extent.x, extent.y);
+
+            auto start = std::chrono::high_resolution_clock::now();
+            std::vector<glm::vec4> indirectRadianceBuffer(blockSize * blockSize);
+            float count = 0;
+            for(int i = 0; i < blockSize; ++i){
+                for(int j = 0; j < blockSize; ++j){
+
+//                    atomic_fetch_add(&pixelsProcessed, 1);
+//                    progress = (pixelsProcessed.load() * 100)/(width * height);
+//                    count++;
+//                    progress = (count * 100)/(width * height);
+
+                    auto x = j + offset.x;
+                    auto y = i + offset.y;
+                    glm::ivec2 idx{x, y};
+                    auto index = y * width + x;
+                    auto color = colorBuffer[index];
+
+                    if(color.a == 0) continue;
+
+                    auto position = positionBuffer[index].xyz();
+                    auto result = kdtree::search(tree, photons, position, radius, numPhotons);
+
+                    if(!result.empty()) {
+                        auto normal = normalBuffer[index].xyz();
+                        auto N = glm::normalize(normal);
+
+                        glm::vec3 radiance{0};
+                        for(auto& photon : result) {
+                            auto L = glm::normalize(-photon->direction);
+                            radiance += color.rgb * glm::max(0.f, glm::dot(N, L)) * photon->power.rgb;
+                        }
+                        radiance /= glm::pi<float>() * radius * radius;
+
+                        index = i * blockSize + j;
+                        indirectRadianceBuffer[index] = glm::vec4{ radiance, 1};
+                    }
+                }
+            }
+            auto duration = std::chrono::high_resolution_clock::now() - start;
+            spdlog::info("task{}: indirect radiance calculated in {} seconds"
+                         , taskId, std::chrono::duration_cast<std::chrono::seconds>(duration).count());
+            atomic_fetch_add(&totalDuration, int(std::chrono::duration_cast<std::chrono::seconds>(duration).count()));
+            taskFinishedCount++;
+
+            VkDeviceSize imageSize = indirectRadianceBuffer.size() * sizeof(glm::vec4);
+            onIdle([&, taskId, offset, extent, width, height, indirectRadianceBuffer, numTasks, stagingBuffer = device.createStagingBuffer(imageSize)]{
+                device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+
+                    stagingBuffer.copy(indirectRadianceBuffer);
+
+                    VkImageSubresourceLayers subResource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                    VkBufferImageCopy region{0, 0, 0, subResource, {offset.x, offset.y, 0}, {extent.x, extent.y, 1}};
+
+                    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT};
+                    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT
+                            , 0, 1, &barrier, 0, nullptr, 0, nullptr);
+                    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, gBuffer.indirectLight.image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);
+                });
+                progress += (computeIR.constants.blockSize * computeIR.constants.blockSize * 100)/(width * height);
+                if(taskFinishedCount == numTasks){
+                    computeIR.run = false;
+                    spdlog::info("total IR runtime: {} seconds", totalDuration.load()/numTasks);
+                }
+            });
+        });
+    }
+}
+
 void PhotonMapping::newFrame() {
     camera->newFrame();
 }
@@ -1480,8 +1656,8 @@ int main(){
     try{
 
         Settings settings;
-        settings.width = 256;
-        settings.height = 256;
+        settings.width = 1024;
+        settings.height = 1024;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.geometryShader = VK_TRUE;

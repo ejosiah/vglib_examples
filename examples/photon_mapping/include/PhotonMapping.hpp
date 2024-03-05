@@ -213,6 +213,8 @@ protected:
 
     void computeIndirectRadianceCPU();
 
+    void computeIndirectRadianceCPU2();
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -231,7 +233,7 @@ protected:
             int iteration{};
             int width{};
             int height{};
-            int blockSize{128};
+            int blockSize{512};
             float radius{};
         } constants{};
         int numIterations{};
@@ -290,7 +292,6 @@ protected:
     VulkanBuffer scratchBuffer;
     KdTree kdTree;
     PhotonMapInfo photonMapInfo;
-    PhotonMapInfo photonMapRequest;
     PhotonStats stats;
     DebugInfo debugInfo;
     bool inspect{};
@@ -312,5 +313,6 @@ protected:
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
     } gBuffer;
+    std::atomic_int totalDuration{0};
 
 };
