@@ -1,0 +1,51 @@
+#version 460
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer Points {
+    vec2 generators[];
+};
+
+layout(set = 0, binding = 2) buffer Sums {
+    vec4 regions[];
+};
+
+layout(set = 0, binding = 3) buffer Density {
+    int offsets[];
+};
+
+layout(set = 0, binding = 4) buffer Centers {
+    vec2 centroids[];
+};
+
+layout(push_constant) uniform Constants {
+    int renderCentroid;
+    float threshold;
+    float convergenceRate;
+    int screenWidth;
+    int screenHeight;
+};
+
+void main() {
+    int idx = int(gl_GlobalInvocationID.x);
+    int start = offsets[idx];
+    int endIdx = idx + 1;
+    int end = endIdx < gl_NumWorkGroups.x ? offsets[endIdx] : (screenWidth * screenHeight);
+    float N = float(end - start);
+
+    vec2 sum = vec2(0);
+    for(int i = start; i < end; i++){
+        sum += regions[i].xy;
+    }
+
+    vec2 center = sum/N;
+    vec2 gPoint = generators[idx];
+
+    vec2 d = center - gPoint;
+
+    if(dot(d, d) > threshold) {
+        vec2 newGPoint = mix(gPoint, center, convergenceRate);
+        generators[idx] = newGPoint;
+    }
+    centroids[idx] = center;
+}

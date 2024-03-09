@@ -4,7 +4,6 @@ layout(set = 0, binding = 0) uniform sampler2D colorTex;
 layout(set = 0, binding = 1) uniform sampler2D depthTex;
 
 layout(push_constant) uniform Constants {
-    int blockSize;
     int renderCentroid;
     float threshold;
     float convergenceRate;

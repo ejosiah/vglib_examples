@@ -13,7 +13,6 @@ layout(set = 0, binding = 4) buffer Centers {
 };
 
 layout(push_constant) uniform Constants {
-    int blockSize;
     int renderCentroid;
     float threshold;
     float convergenceRate;

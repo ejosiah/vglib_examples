@@ -1,4 +1,5 @@
 #include "VulkanBaseApp.h"
+#include <PrefixSum.hpp>
 
 class Voronoi : public VulkanBaseApp{
 public:
@@ -10,6 +11,8 @@ protected:
     void initCamera();
 
     void createDescriptorPool();
+
+    void initPrefixSum();
 
     void createGBuffer();
 
@@ -44,6 +47,12 @@ protected:
     void convergeToCentroid(VkCommandBuffer commandBuffer);
 
     void computeRegionAreas(VkCommandBuffer commandBuffer);
+
+    void computeHistogram(VkCommandBuffer commandBuffer);
+
+    void computePartialSum(VkCommandBuffer commandBuffer);
+
+    void reorderRegions(VkCommandBuffer commandBuffer);
 
     void generateVoronoiRegions(VkCommandBuffer commandBuffer);
 
@@ -80,7 +89,17 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
-    } compute;
+    } compute_centroid;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } histogram;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } reorder;
 
     struct {
         VulkanPipelineLayout layout;
@@ -94,10 +113,9 @@ protected:
     VulkanBuffer colors;
 
     struct {
-        int blockSize{0};
         int renderCentroid{0};
         float threshold{0};
-        float convergenceRate{0.05};
+        float convergenceRate{1};
         int screenWidth{0};
         int screenHeight{0};
     } constants;
@@ -113,6 +131,7 @@ protected:
 
     VulkanBuffer generators;
     VulkanBuffer regions;
+    VulkanBuffer regionReordered;
     VulkanBuffer centroids;
     VulkanBuffer counts;
     int numGenerators{200};
@@ -122,11 +141,11 @@ protected:
 
     VulkanDescriptorSetLayout descriptorSetLayout;
     VkDescriptorSet descriptorSet;
-    float convergenceRate{0.1};
 
     VulkanBuffer clipVertices;
 
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
+    PrefixSum prefixSum;
 };

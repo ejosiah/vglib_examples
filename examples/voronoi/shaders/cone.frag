@@ -17,7 +17,6 @@ layout(set = 0, binding = 3) buffer Density {
 };
 
 layout(push_constant) uniform Constants {
-    int blockSize;
     int renderCentroid;
     float threshold;
     float convergenceRate;

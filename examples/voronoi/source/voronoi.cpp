@@ -20,6 +20,7 @@ void Voronoi::initApp() {
     initCamera();
     initClipSpaceBuffer();
     initGenerators();
+    initPrefixSum();
     createGBuffer();
     createDescriptorPool();
     createDescriptorSetLayouts();
@@ -89,9 +90,9 @@ void Voronoi::initClipSpaceBuffer() {
 }
 
 void Voronoi::initGenerators() {
-    constants.blockSize = (width * height * 4)/numGenerators;
     constants.screenWidth = width;
     constants.screenHeight = height;
+    auto imageSize = width * height;
 
     std::vector<glm::vec2> points;
 
@@ -106,11 +107,16 @@ void Voronoi::initGenerators() {
     centroids = device.createDeviceLocalBuffer(centers.data(), BYTE_SIZE(centers), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 
-    regions = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                    , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::vec2) * constants.blockSize * numGenerators, "region_gen_map");
+    regions = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                                    , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::vec4)  * imageSize, "region_gen_map");
+    regionReordered = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                                    , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::vec4)  * imageSize, "region_reorder_buffer");
 
     std::vector<int> count(numGenerators);
-    counts = device.createDeviceLocalBuffer(count.data(), BYTE_SIZE(count), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    counts = device.createDeviceLocalBuffer(count.data(), BYTE_SIZE(count)
+                                            , VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                                            | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                            | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     std::vector<glm::vec4> cols;
     std::map<int, std::vector<glm::vec4>>  colorHash;
@@ -143,6 +149,12 @@ void Voronoi::createDescriptorPool() {
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
 }
 
+void Voronoi::initPrefixSum() {
+    prefixSum = PrefixSum{ &device };
+    prefixSum.init();
+    prefixSum.updateDataDescriptorSets(counts);
+}
+
 void Voronoi::createDescriptorSetLayouts() {
     descriptorSetLayout =
         device.descriptorSetLayoutBuilder()
@@ -163,6 +175,10 @@ void Voronoi::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(4)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(5)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
@@ -188,7 +204,7 @@ void Voronoi::updateDescriptorSets(){
     descriptorSet = sets[0];
     voronoiDescriptorSet = sets[1];
     
-    auto writes = initializers::writeDescriptorSets<7>();
+    auto writes = initializers::writeDescriptorSets<8>();
     
     writes[0].dstSet = descriptorSet;
     writes[0].dstBinding = 0;
@@ -225,19 +241,26 @@ void Voronoi::updateDescriptorSets(){
     VkDescriptorBufferInfo centroidsInfo{ centroids, 0, VK_WHOLE_SIZE };
     writes[4].pBufferInfo = &centroidsInfo;
 
-    writes[5].dstSet = voronoiDescriptorSet;
-    writes[5].dstBinding = 0;
-    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[5].dstSet = descriptorSet;
+    writes[5].dstBinding = 5;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[5].descriptorCount = 1;
-    VkDescriptorImageInfo colorImageInfo{gBuffer.color.sampler.handle, gBuffer.color.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    writes[5].pImageInfo = &colorImageInfo;
+    VkDescriptorBufferInfo regionReorderInfo{ regionReordered, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &regionReorderInfo;
 
     writes[6].dstSet = voronoiDescriptorSet;
-    writes[6].dstBinding = 1;
+    writes[6].dstBinding = 0;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[6].descriptorCount = 1;
+    VkDescriptorImageInfo colorImageInfo{gBuffer.color.sampler.handle, gBuffer.color.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    writes[6].pImageInfo = &colorImageInfo;
+
+    writes[7].dstSet = voronoiDescriptorSet;
+    writes[7].dstBinding = 1;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[7].descriptorCount = 1;
     VkDescriptorImageInfo depthImageInfo{gBuffer.depth.sampler.handle, gBuffer.depth.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    writes[6].pImageInfo = &depthImageInfo;
+    writes[7].pImageInfo = &depthImageInfo;
     
     device.updateDescriptorSets(writes);
 }
@@ -309,26 +332,43 @@ void Voronoi::createRenderPipeline() {
 }
 
 void Voronoi::createComputePipeline() {
-    auto module = device.createShaderModule( resource("compute_centroid.comp.spv"));
+    auto module = device.createShaderModule( resource("compute_centroid1.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    compute.layout = device.createPipelineLayout( { descriptorSetLayout },  { { VK_SHADER_STAGE_ALL, 0, sizeof(constants) }});
-
+    // Compute Centroid
+    compute_centroid.layout = device.createPipelineLayout( { descriptorSetLayout },  { { VK_SHADER_STAGE_ALL, 0, sizeof(constants) }});
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout.handle;
+    computeCreateInfo.layout = compute_centroid.layout.handle;
+    compute_centroid.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_centroid", compute_centroid.pipeline.handle);
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-
-    module = device.createShaderModule( resource("accumulate.comp.spv"));
+    // Accumulate
+    module = device.createShaderModule( resource("accumulate1.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
     computeArea.layout = device.createPipelineLayout( { voronoiRegionsSetLayout, descriptorSetLayout },  { { VK_SHADER_STAGE_ALL, 0, sizeof(constants) }});
-
     computeCreateInfo.stage = stage;
     computeCreateInfo.layout = computeArea.layout.handle;
-
     computeArea.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("sum_area", computeArea.pipeline.handle);
+
+    // Histogram
+    module = device.createShaderModule( resource("histogram.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    histogram.layout = device.createPipelineLayout( { descriptorSetLayout }, { { VK_SHADER_STAGE_ALL, 0, sizeof(constants) }});
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = histogram.layout.handle;
+    histogram.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_histogram", histogram.pipeline.handle);
+
+    // Reorder
+    module = device.createShaderModule( resource("reorder.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    reorder.layout = device.createPipelineLayout( { descriptorSetLayout }, { { VK_SHADER_STAGE_ALL, 0, sizeof(constants) }});
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = reorder.layout.handle;
+    reorder.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("reorder_regions", reorder.pipeline.handle);
 }
 
 void Voronoi::onSwapChainDispose() {
@@ -369,6 +409,9 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 
     generateVoronoiRegions(commandBuffer);
     computeRegionAreas(commandBuffer);
+    computeHistogram(commandBuffer);
+    computePartialSum(commandBuffer);
+    reorderRegions(commandBuffer);
     convergeToCentroid(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -404,9 +447,9 @@ void Voronoi::renderCentroids(VkCommandBuffer commandBuffer) {
 
 void Voronoi::convergeToCentroid(VkCommandBuffer commandBuffer) {
     addCentroidWriteBarrier(commandBuffer);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
-    vkCmdPushConstants(commandBuffer, compute.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_centroid.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_centroid.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, compute_centroid.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
     vkCmdDispatch(commandBuffer, numGenerators, 1, 1);
     addCentroidReadBarrier(commandBuffer);
 }
@@ -421,7 +464,31 @@ void Voronoi::computeRegionAreas(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computeArea.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computeArea.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
     vkCmdPushConstants(commandBuffer, computeArea.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
-    vkCmdDispatch(commandBuffer, 32, 32, 1);
+    vkCmdDispatch(commandBuffer, width, height, 1);
+    prefixSum.addBufferMemoryBarriers(commandBuffer, {&regions, &counts});
+}
+
+void Voronoi::computeHistogram(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, histogram.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, histogram.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, histogram.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
+    vkCmdDispatch(commandBuffer, width, height, 1);
+    prefixSum.addBufferMemoryBarriers(commandBuffer, {&counts});
+}
+
+void Voronoi::reorderRegions(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, reorder.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, reorder.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, reorder.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
+    vkCmdDispatch(commandBuffer, width, height, 1);
+
+    VkBufferCopy copyRegion{0, 0, regionReordered.size};
+    vkCmdCopyBuffer(commandBuffer, regionReordered, regions, 1, &copyRegion);
+
+}
+
+void Voronoi::computePartialSum(VkCommandBuffer commandBuffer) {
+    prefixSum.inclusive(commandBuffer, counts, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 
 void Voronoi::addCentroidWriteBarrier(VkCommandBuffer commandBuffer) {
