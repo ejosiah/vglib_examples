@@ -4,16 +4,11 @@
 
 layout(local_size_x = 1, local_size_y = 1) in;
 
-layout(set = 1, binding = 2, rgba32f) uniform image2D voronoiImage;
+layout(set = 0, binding = 7, rgba32f) uniform image2D voronoiImage;
 
-layout(set = 0, binding = 0) buffer Points {
-    vec2 points[];
+layout(set = 0, binding = 1) buffer Points {
+    vec2 seedPoints[];
 };
-
-layout(set = 0, binding = 1) buffer Colors {
-    vec4 colors[];
-};
-
 
 layout(push_constant) uniform Constants {
     ivec2 k;
@@ -42,9 +37,9 @@ void main() {
             }
 
             if(p.w != UNDEFINED && q.w != UNDEFINED){
-                vec2 xp = 2 * vec2(id)/size - 1;
-                vec2 sp = points[int(p.w)];
-                vec2 sq = points[int(q.w)];
+                vec2 xp = vec2(id);
+                vec2 sp = seedPoints[int(p.w)];
+                vec2 sq = seedPoints[int(q.w)];
 
                 if(distance(xp, sp) > distance(xp, sq)){
                     p = q;

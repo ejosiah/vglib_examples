@@ -55,10 +55,12 @@ void WeightedVoronoiStippling::initPrefixSum() {
 
 void WeightedVoronoiStippling::initTexture(Texture &texture, uint32_t width, uint32_t height, VkFormat format
                                            , VkImageAspectFlags  aspect, VkImageUsageFlags usage) {
+    usage |= aspect != VK_IMAGE_ASPECT_DEPTH_BIT ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
+    usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     VkImageCreateInfo imageSpec = initializers::imageCreateInfo(
             VK_IMAGE_TYPE_2D,
             format,
-            usage | VK_IMAGE_USAGE_SAMPLED_BIT,
+            usage,
             width,
             height);
 
@@ -149,6 +151,10 @@ void WeightedVoronoiStippling::createDescriptorSetLayouts() {
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(6)
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(7)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
@@ -324,6 +330,24 @@ void WeightedVoronoiStippling::createComputePipeline() {
     reorder.pipeline = device.createComputePipeline(computeCreateInfo);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("reorder_regions", reorder.pipeline.handle);
 
+    // Seed image
+    module = device.createShaderModule( resource("seed_image.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stipple.seed.layout = device.createPipelineLayout( { descriptorSetLayout });
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = stipple.seed.layout.handle;
+    stipple.seed.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("seed_voronoi_image", stipple.seed.pipeline.handle);
+
+    // jump flood
+    module = device.createShaderModule( resource("jump_flood.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stipple.jumpFlood.layout = device.createPipelineLayout( { descriptorSetLayout }, { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(glm::ivec2) }});
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = stipple.jumpFlood.layout.handle;
+    stipple.jumpFlood.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("jump_flood_algorithm", stipple.jumpFlood.pipeline.handle);
+
 }
 
 
@@ -359,7 +383,7 @@ VkCommandBuffer *WeightedVoronoiStippling::buildCommandBuffers(uint32_t imageInd
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    if(stipple.pointsId) {
+    if(stipple.voronoiRegionsId) {
         static std::array<VkDescriptorSet, 2> sets;
         sets[0] = source.descriptorSet;
         sets[1] = descriptorSet;
@@ -413,6 +437,79 @@ void WeightedVoronoiStippling::generateVoronoiRegions(VkCommandBuffer commandBuf
 
     vkCmdEndRendering(commandBuffer);
 }
+
+void WeightedVoronoiStippling::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
+
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    VkClearColorValue clearColor{ -1.f, -1.f, -1.f, -1.f};
+
+    addVoronoiImageReadToWriteBarrier(commandBuffer);
+
+    vkCmdClearColorImage(commandBuffer, stipple.voronoiRegions.image, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &range);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.seed.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.seed.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+    vkCmdDispatch(commandBuffer, globals.cpu->numPoints, 1, 1);
+
+    addVoronoiImageWriteBarrier(commandBuffer);
+    auto w = stipple.voronoiRegions.width;
+    auto h = stipple.voronoiRegions.height;
+    auto size = glm::max(w, h);
+    int numPasses = int(glm::log2(float(size)));
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.jumpFlood.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.jumpFlood.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+    for(int i = 1; i <= numPasses; i++) {
+        auto x = float(i);
+        glm::ivec2 k{ w * glm::pow(2, -x), h * glm::pow(2, -x) };
+        k = glm::max(glm::ivec2{1}, k);
+        vkCmdPushConstants(commandBuffer, stipple.jumpFlood.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(k), &k);
+        vkCmdDispatch(commandBuffer, w, h, 1);
+
+        if(i != numPasses) {
+            addVoronoiImageWriteBarrier(commandBuffer);
+        }
+    }
+    addVoronoiImageWriteToReadBarrier(commandBuffer);
+}
+
+void WeightedVoronoiStippling::addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) const {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.image = stipple.voronoiRegions.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+}
+
+void WeightedVoronoiStippling::addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) const {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.image = stipple.voronoiRegions.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+
+void WeightedVoronoiStippling::addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.image = stipple.voronoiRegions.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+}
+
 
 void WeightedVoronoiStippling::computeRegionAreas(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 2> sets;
@@ -607,11 +704,9 @@ void WeightedVoronoiStippling::endFrame() {
         stipple.run = false;
     }
 
-    static bool once = true;
-    if(stipple.pointsId && once){
-//        once = false;
+    if(stipple.pointsId){
         device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-            generateVoronoiRegions(commandBuffer);
+            generateVoronoiRegions2(commandBuffer);
             computeRegionAreas(commandBuffer);
             computeHistogram(commandBuffer);
             computePartialSum(commandBuffer);
@@ -660,7 +755,7 @@ void WeightedVoronoiStippling::initScratchData() {
     counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(int) * numPoints);
     centroids = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(glm::vec2) * numPoints);
 
-    auto writes = initializers::writeDescriptorSets<5>();
+    auto writes = initializers::writeDescriptorSets<6>();
     
     writes[0].dstSet = descriptorSet;
     writes[0].dstBinding = 2;
@@ -690,13 +785,19 @@ void WeightedVoronoiStippling::initScratchData() {
     VkDescriptorBufferInfo regionROInfo{ regionReordered, 0, VK_WHOLE_SIZE };
     writes[3].pBufferInfo = &regionROInfo;
 
-
     writes[4].dstSet = descriptorSet;
     writes[4].dstBinding = 6;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
     VkDescriptorImageInfo voronoiInfo{ stipple.voronoiRegions.sampler.handle, stipple.voronoiRegions.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[4].pImageInfo = &voronoiInfo;
+
+    writes[5].dstSet = descriptorSet;
+    writes[5].dstBinding = 7;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[5].descriptorCount = 1;
+    VkDescriptorImageInfo voronoiImageInfo{ VK_NULL_HANDLE, stipple.voronoiRegions.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
+    writes[5].pImageInfo = &voronoiImageInfo;
 
     device.updateDescriptorSets(writes);
 

@@ -64,11 +64,11 @@ protected:
 
     void addCentroidWriteBarrier(VkCommandBuffer commandBuffer);
 
-    void addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer);
+    void addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) const;
 
-    void addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer);
+    void addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) const;
 
-    void addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer);
+    void addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const;
 
     void update(float time) override;
 
@@ -136,7 +136,7 @@ protected:
     struct {
         int renderCentroid{0};
         float threshold{0};
-        float convergenceRate{0.01};
+        float convergenceRate{1};
         int screenWidth{0};
         int screenHeight{0};
     } constants;

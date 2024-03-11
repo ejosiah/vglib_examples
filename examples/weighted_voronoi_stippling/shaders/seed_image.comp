@@ -1,0 +1,26 @@
+#version 460
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 7, rgba32f) uniform image2D voronoiImage;
+
+layout(set = 0, binding = 1) buffer Points {
+    vec2 points[];
+};
+
+vec3 hash31(float p){
+    vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
+    p3 += dot(p3, p3.yzx+33.33);
+    return fract((p3.xxy+p3.yzz)*p3.zyx);
+}
+
+
+void main() {
+    int gid = int(gl_GlobalInvocationID.x);
+    vec2 size = vec2(imageSize(voronoiImage));
+    vec2 site = points[gid];
+    vec4 seed = vec4(hash31(gid + 1), gid);
+
+    ivec2 id = ivec2(floor(site));
+    imageStore(voronoiImage, id, seed);
+}

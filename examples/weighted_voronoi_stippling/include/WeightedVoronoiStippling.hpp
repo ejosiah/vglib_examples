@@ -57,6 +57,14 @@ protected:
 
     void generateVoronoiRegions(VkCommandBuffer commandBuffer);
 
+    void generateVoronoiRegions2(VkCommandBuffer commandBuffer);
+
+    void addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) const;
+
+    void addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) const;
+
+    void addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const;
+
     void computeRegionAreas(VkCommandBuffer commandBuffer);
 
     void convergeToCentroid(VkCommandBuffer commandBuffer);
@@ -118,6 +126,17 @@ protected:
             VulkanPipeline pipeline;
             Texture depthBuffer;
         } voronoi;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } seed;
+        struct{
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+            int pass{0};
+            int numPasses{0};
+        } jumpFlood;
+
         bool run{};
         Texture voronoiRegions;
         ImTextureID voronoiRegionsId{};

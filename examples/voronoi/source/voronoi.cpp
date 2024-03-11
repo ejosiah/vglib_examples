@@ -496,7 +496,7 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 
     vkCmdEndRenderPass(commandBuffer);
 
-    generateVoronoiRegions(commandBuffer);
+    generateVoronoiRegions2(commandBuffer);
     computeRegionAreas(commandBuffer);
     computeHistogram(commandBuffer);
     computePartialSum(commandBuffer);
@@ -625,7 +625,7 @@ void Voronoi::addCentroidReadBarrier(VkCommandBuffer commandBuffer) {
 
 }
 
-void Voronoi::addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) {
+void Voronoi::addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) const {
     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -638,7 +638,7 @@ void Voronoi::addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) {
 
 }
 
-void Voronoi::addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) {
+void Voronoi::addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) const {
     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -650,7 +650,7 @@ void Voronoi::addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) {
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void Voronoi::addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) {
+void Voronoi::addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const {
     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -780,6 +780,7 @@ void Voronoi::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
     for(int i = 1; i <= numPasses; i++) {
         auto x = float(i);
         glm::ivec2 k{ w * glm::pow(2, -x), h * glm::pow(2, -x) };
+        k = glm::max(glm::ivec2{1}, k);
         vkCmdPushConstants(commandBuffer, jumpFlood.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(k), &k);
         vkCmdDispatch(commandBuffer, w, h, 1);
 
@@ -795,8 +796,8 @@ int main(){
     try{
 
         Settings settings;
-        settings.height = 128;
-        settings.width = 128;
+        settings.width = 1024;
+        settings.height = 800;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.geometryShader = VK_TRUE;
