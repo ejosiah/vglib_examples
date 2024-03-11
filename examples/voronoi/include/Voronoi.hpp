@@ -1,5 +1,6 @@
 #include "VulkanBaseApp.h"
 #include <PrefixSum.hpp>
+#include <CDT.h>
 
 class Voronoi : public VulkanBaseApp{
 public:
@@ -42,6 +43,8 @@ protected:
 
     void renderCones(VkCommandBuffer commandBuffer);
 
+    void renderDelaunayTriangles(VkCommandBuffer commandBuffer);
+
     void renderGenerators(VkCommandBuffer commandBuffer);
 
     void renderCentroids(VkCommandBuffer commandBuffer);
@@ -69,6 +72,12 @@ protected:
     void addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) const;
 
     void addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const;
+
+    void copyGeneratorPointsToCpu(VkCommandBuffer commandBuffer);
+
+    void updateTriangles();
+
+    void triangulate(std::span<CDT::V2d<float>> points);
 
     void update(float time) override;
 
@@ -131,6 +140,12 @@ protected:
         VulkanBuffer vertices;
         VulkanBuffer indices;
     } cone;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } triangle;
+
     VulkanBuffer colors;
 
     struct {
@@ -146,11 +161,22 @@ protected:
         Texture depth;
     } gBuffer;
 
+    struct DelaunayTriangles {
+        VulkanBuffer vertices;
+        VulkanBuffer triangles;
+        uint32_t numTriangles;
+        struct  {
+            std::vector<CDT::V2d<float>> vertices;
+            std::vector<uint32_t> indices;
+        } cdt;
+    } delaunayTriangles;
+
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
 
     VulkanBuffer generators;
+    VulkanBuffer stagingBuffer;
     VulkanBuffer regions;
     VulkanBuffer regionReordered;
     VulkanBuffer centroids;

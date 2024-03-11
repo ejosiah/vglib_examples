@@ -25,7 +25,7 @@ void Voronoi::initApp() {
     createDescriptorPool();
     createDescriptorSetLayouts();
     updateDescriptorSets();
-    runGeneratePoints();
+//    runGeneratePoints();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
@@ -146,7 +146,7 @@ void Voronoi::initGenerators() {
     constants.screenHeight = height;
     auto imageSize = width * height;
 
-    std::vector<glm::vec2> points(numGenerators);
+    std::vector<glm::vec2> points;
 
     auto hash31 = [](float p){
         using namespace glm;
@@ -155,12 +155,14 @@ void Voronoi::initGenerators() {
         return fract((p3.xxy+p3.yzz)*p3.zyx);
     };
 
-//    auto rngNum = rng(-1, 1, 1 << 20);
-//    for(int i = 0; i < numGenerators; i++){
-//        points.emplace_back(rngNum(), rngNum());
-//    }
+    auto rngNum = rng(-1, 1, 1 << 20);
+    for(int i = 0; i < numGenerators; i++){
+        points.emplace_back(rngNum(), rngNum());
+    }
 
-    generators = device.createDeviceLocalBuffer(points.data(), BYTE_SIZE(points), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    triangulate( { reinterpret_cast<CDT::V2d<float>*>(points.data()), points.size() });
+
+    generators = device.createDeviceLocalBuffer(points.data(), BYTE_SIZE(points), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     std::vector<glm::vec2> centers(numGenerators);
     centroids = device.createDeviceLocalBuffer(centers.data(), BYTE_SIZE(centers), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -192,6 +194,7 @@ void Voronoi::initGenerators() {
     auto aCone = primitives::cone(100, 100, 1.0, 1.0, glm::vec4(1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     cone.vertices = device.createDeviceLocalBuffer(aCone.vertices.data(), BYTE_SIZE(aCone.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     cone.indices = device.createDeviceLocalBuffer(aCone.indices.data(), BYTE_SIZE(aCone.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    stagingBuffer = device.createStagingBuffer(generators.size);
 }
 
 
@@ -399,6 +402,23 @@ void Voronoi::createRenderPipeline() {
                 .depthAttachment(VK_FORMAT_D16_UNORM)
             .name("voronoi_regions")
         .build(voronoiCalc.layout);
+
+    auto builder3 = prototypes->cloneGraphicsPipeline();
+    triangle.pipeline =
+            builder3
+                .vertexInputState().clear()
+                    .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
+                    .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
+                .shaderStage()
+                    .vertexShader(resource("triangle.vert.spv"))
+                    .fragmentShader(resource("render.frag.spv"))
+                .rasterizationState()
+                    .cullNone()
+                    .polygonModeLine()
+                .depthStencilState()
+                    .compareOpAlways()
+            .name("delaunay_triangles")
+        .build(triangle.layout);
     //    @formatter:on
 }
 
@@ -492,16 +512,10 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 
     renderCones(commandBuffer);
 //    renderCentroids(commandBuffer);
+    renderDelaunayTriangles(commandBuffer);
     renderGenerators(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
-
-    generateVoronoiRegions2(commandBuffer);
-    computeRegionAreas(commandBuffer);
-    computeHistogram(commandBuffer);
-    computePartialSum(commandBuffer);
-    reorderRegions(commandBuffer);
-    convergeToCentroid(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -516,6 +530,14 @@ void Voronoi::renderCones(VkCommandBuffer commandBuffer) {
 
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, clipVertices, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+}
+
+void Voronoi::renderDelaunayTriangles(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, triangle.pipeline.handle);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, delaunayTriangles.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, delaunayTriangles.triangles, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, delaunayTriangles.triangles.sizeAs<uint32_t>(), 1, 0, 0, 0);
 }
 
 void Voronoi::renderGenerators(VkCommandBuffer commandBuffer) {
@@ -663,9 +685,55 @@ void Voronoi::addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) c
 
 }
 
+void Voronoi::copyGeneratorPointsToCpu(VkCommandBuffer commandBuffer) {
+    VkBufferCopy region{0, 0, generators.size};
+    vkCmdCopyBuffer(commandBuffer, generators, stagingBuffer, 1, &region);
+    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT,
+                            VK_ACCESS_HOST_READ_BIT};
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1,
+                         &barrier, 0, nullptr, 0, nullptr);
+}
+
+void Voronoi::updateTriangles() {
+    std::vector<CDT::V2d<float>> points(stagingBuffer.sizeAs<CDT::V2d<float>>());
+    std::memcpy(points.data(), stagingBuffer.map(), stagingBuffer.size);
+    stagingBuffer.unmap();
+    triangulate(points);
+}
+
+void Voronoi::triangulate(std::span<CDT::V2d<float>> points) {
+    std::vector<CDT::V2d<float>> gPoints{ points.begin(), points.end() };
+    CDT::Triangulation<float> cdt;
+    cdt.insertVertices(gPoints);
+    cdt.eraseSuperTriangle();
+
+    spdlog::info("vertices: {}, triangles: {}", cdt.vertices.size(), cdt.triangles.size());
+
+    const auto vertexSize = BYTE_SIZE(cdt.vertices);
+    const auto indexSize = cdt.triangles.size() * sizeof(uint32_t) * 3;
+
+    if(delaunayTriangles.vertices.size < vertexSize) {
+        delaunayTriangles.vertices = device.createDeviceLocalBuffer(cdt.vertices.data(), vertexSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    }
+
+    if(delaunayTriangles.triangles.size < indexSize) {
+        std::vector<uint32_t> indices(cdt.triangles.size() * 3);
+        auto next = indices.data();
+        auto offset = 3;
+        auto size = sizeof(uint32_t) * 3;
+        for(const auto& triangle : cdt.triangles) {
+            std::memcpy(next, triangle.vertices.data(), size);
+            next += offset;
+        }
+        delaunayTriangles.triangles = device.createDeviceLocalBuffer(indices.data(), indexSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    }
+
+}
+
 void Voronoi::update(float time) {
     camera->update(time);
     auto cam = camera->cam();
+    glfwSetWindowTitle(window, fmt::format("{} - fps {}", title, framePerSecond).c_str());
 }
 
 void Voronoi::checkAppInputs() {
@@ -681,37 +749,18 @@ void Voronoi::onPause() {
 }
 
 void Voronoi::endFrame() {
-    static bool once = false;
 
-    if(once) {
-        VulkanBuffer stagingBuffer = device.createStagingBuffer(width * height * sizeof(glm::vec4));
-        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        generateVoronoiRegions(commandBuffer);
+        computeRegionAreas(commandBuffer);
+        computeHistogram(commandBuffer);
+        computePartialSum(commandBuffer);
+        reorderRegions(commandBuffer);
+        convergeToCentroid(commandBuffer);
+        copyGeneratorPointsToCpu(commandBuffer);
+    });
+    updateTriangles();
 
-            VkImageSubresourceLayers subResource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            VkBufferImageCopy region{0, 0, 0, subResource, {0, 0, 0}, { static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1}};
-            vkCmdCopyImageToBuffer(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_GENERAL, stagingBuffer, 1, &region);
-
-            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT,
-                                    VK_ACCESS_HOST_READ_BIT};
-            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1,
-                                 &barrier, 0, nullptr, 0, nullptr);
-        });
-
-        std::span<glm::vec4> colors = { reinterpret_cast<glm::vec4*>(stagingBuffer.map()), static_cast<size_t>(width * height) };
-
-        std::set<int> idSet;
-
-        for(const auto& color : colors) {
-            idSet.insert(int(color.a));
-        }
-
-        for(auto i = 0; i < numGenerators; i++) {
-            assert(idSet.contains(i));
-        }
-
-        stagingBuffer.unmap();
-        once = false;
-    }
 }
 
 
@@ -797,10 +846,11 @@ int main(){
 
         Settings settings;
         settings.width = 1024;
-        settings.height = 800;
+        settings.height = 1024;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.geometryShader = VK_TRUE;
+        settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 

@@ -29,7 +29,7 @@ void main() {
     vec2 center =  renderCentroid == 1 ? centroids[idx] : points[idx];
     int numSectors = 1;
     float angleDelta = (2 * PI)/numSectors;
-    float radius = renderCentroid == 1 ? 0.0025 : 0.0050;
+    float radius = renderCentroid == 1 ? 0.0025 : 0.0100;
 
     const int N = 12;
     float delta = (2 * PI)/(N - 1);
