@@ -1,0 +1,25 @@
+#version 460
+
+layout(local_size_x = 1) in;
+
+layout(set = 1, binding = 2, rgba32f) uniform image2D voronoiImage;
+
+layout(set = 0, binding = 0) buffer Points {
+    vec2 points[];
+};
+
+layout(set = 0, binding = 1) buffer Colors {
+    vec4 colors[];
+};
+
+
+void main() {
+    int gid = int(gl_GlobalInvocationID.x);
+    vec2 size = vec2(imageSize(voronoiImage));
+    vec2 site = points[gid];
+    vec4 seed = colors[gid];
+
+    vec2 uv =  site *.5 + .5;
+    ivec2 id = ivec2(floor(size * uv));
+    imageStore(voronoiImage, id, seed);
+}

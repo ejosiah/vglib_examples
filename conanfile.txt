@@ -16,6 +16,7 @@ meshoptimizer/0.17
 openexr/2.5.5
 taskflow/3.4.0
 zlib/1.2.13
+cli11/2.4.1
 
 [generators]
 cmake

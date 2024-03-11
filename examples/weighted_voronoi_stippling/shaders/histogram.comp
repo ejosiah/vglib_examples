@@ -1,0 +1,17 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 0, binding = 2) buffer Sums {
+    vec4 regions[];
+};
+
+layout(set = 0, binding = 3) buffer Density {
+    int counts[];
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.y * gl_NumWorkGroups.x + gl_GlobalInvocationID.x;
+    int generatorId = int(regions[index].z);
+    atomicAdd(counts[generatorId], 1);
+}

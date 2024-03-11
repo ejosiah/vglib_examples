@@ -108,16 +108,16 @@ void StereographicProjection::createRenderPipeline() {
 }
 
 void StereographicProjection::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule("../../data/shaders/pass_through.comp.spv");
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -153,7 +153,7 @@ VkCommandBuffer *StereographicProjection::buildCommandBuffers(uint32_t imageInde
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     cameraController->push(commandBuffer, render.layout);
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.vertices, &offset);

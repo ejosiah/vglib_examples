@@ -1,0 +1,57 @@
+#version 460
+
+#define UNDEFINED -1
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 1, binding = 2, rgba32f) uniform image2D voronoiImage;
+
+layout(set = 0, binding = 0) buffer Points {
+    vec2 points[];
+};
+
+layout(set = 0, binding = 1) buffer Colors {
+    vec4 colors[];
+};
+
+
+layout(push_constant) uniform Constants {
+    ivec2 k;
+};
+
+void main() {
+    vec2 size = vec2(imageSize(voronoiImage));
+
+    if(k.x == 0 && k.y == 0) return;
+
+    ivec2 id = ivec2(gl_GlobalInvocationID);
+    vec4 p = imageLoad(voronoiImage, id);
+
+    for(int j = -k.y; j <= k.y; ++j){
+        for(int i = -k.x; i <= k.x; ++i){
+            if(i == 0 && j == 0) continue;
+
+            ivec2 nid = ivec2(i, j) + id;
+            if(nid.x < 0 || nid.y < 0 || nid.x >= size.x || nid.y >= size.y) {
+                continue;
+            }
+            vec4 q = imageLoad(voronoiImage, nid);
+
+            if(p.w == UNDEFINED && q.w != UNDEFINED) {
+                p = q;
+            }
+
+            if(p.w != UNDEFINED && q.w != UNDEFINED){
+                vec2 xp = 2 * vec2(id)/size - 1;
+                vec2 sp = points[int(p.w)];
+                vec2 sq = points[int(q.w)];
+
+                if(distance(xp, sp) > distance(xp, sq)){
+                    p = q;
+                }
+            }
+        }
+    }
+
+    imageStore(voronoiImage, id, p);
+}

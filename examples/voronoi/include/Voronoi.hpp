@@ -18,6 +18,8 @@ protected:
 
     void initClipSpaceBuffer();
 
+    void runGeneratePoints();
+
     void initGenerators();
 
     void createDescriptorSetLayouts();
@@ -56,9 +58,17 @@ protected:
 
     void generateVoronoiRegions(VkCommandBuffer commandBuffer);
 
+    void generateVoronoiRegions2(VkCommandBuffer commandBuffer);
+
     void addCentroidReadBarrier(VkCommandBuffer commandBuffer);
 
     void addCentroidWriteBarrier(VkCommandBuffer commandBuffer);
+
+    void addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer);
+
+    void addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer);
+
+    void addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -107,6 +117,17 @@ protected:
     } computeArea;
 
     struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } seedVoronoiImage;
+    struct{
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+        int pass{0};
+        int numPasses{0};
+    } jumpFlood;
+
+    struct {
         VulkanBuffer vertices;
         VulkanBuffer indices;
     } cone;
@@ -115,7 +136,7 @@ protected:
     struct {
         int renderCentroid{0};
         float threshold{0};
-        float convergenceRate{1};
+        float convergenceRate{0.01};
         int screenWidth{0};
         int screenHeight{0};
     } constants;

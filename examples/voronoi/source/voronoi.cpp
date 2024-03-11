@@ -25,6 +25,7 @@ void Voronoi::initApp() {
     createDescriptorPool();
     createDescriptorSetLayouts();
     updateDescriptorSets();
+    runGeneratePoints();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
@@ -70,13 +71,15 @@ void Voronoi::createGBuffer() {
 
     gBuffer.depth.sampler = device.createSampler(samplerInfo);
 
-    imageSpec.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageSpec.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     imageSpec.format = VK_FORMAT_R32G32B32A32_SFLOAT;
     subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     gBuffer.color.image = device.createImage(imageSpec);
     gBuffer.color.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
     gBuffer.color.imageView = gBuffer.color.image.createView(imageSpec.format, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
     gBuffer.color.sampler = device.createSampler(samplerInfo);
+    gBuffer.color.width = width;
+    gBuffer.color.height = height;
 }
 
 void Voronoi::initClipSpaceBuffer() {
@@ -89,17 +92,73 @@ void Voronoi::initClipSpaceBuffer() {
     clipVertices = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
+void Voronoi::runGeneratePoints() {
+    Texture texture;
+    textures::fromFile(device, texture, R"(C:\Users\Josiah Ebhomenye\Downloads\1453849.jpg)");
+    VulkanDescriptorSetLayout setLayout =
+        device.descriptorSetLayoutBuilder()
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .createLayout();
+    
+    auto texDescriptorSet = descriptorPool.allocate({ setLayout }).front();
+    auto writes = initializers::writeDescriptorSets();
+    writes[0].dstSet = texDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].descriptorCount = 1;
+    VkDescriptorImageInfo info{ texture.sampler.handle, texture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    writes[0].pImageInfo = &info;
+
+    device.updateDescriptorSets(writes);
+
+    auto module = device.createShaderModule(resource("generate_points.comp.spv"));
+    auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+
+    // Generator points
+    VulkanPipelineLayout layout = device.createPipelineLayout( { setLayout, descriptorSetLayout });
+
+    auto computeCreateInfo = initializers::computePipelineCreateInfo();
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = layout.handle;
+
+    VulkanPipeline pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        static std::array<VkDescriptorSet, 2> sets;
+        sets[0] = texDescriptorSet;
+        sets[1] = descriptorSet;
+
+        vkCmdBindPipeline(commandBuffer , VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdDispatch(commandBuffer, numGenerators, 1, 1);
+
+        VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+    });
+
+}
+
 void Voronoi::initGenerators() {
     constants.screenWidth = width;
     constants.screenHeight = height;
     auto imageSize = width * height;
 
-    std::vector<glm::vec2> points;
+    std::vector<glm::vec2> points(numGenerators);
 
-    auto rngNum = rng(-1, 1, 1 << 20);
-    for(int i = 0; i < numGenerators; i++){
-        points.emplace_back(rngNum(), rngNum());
-    }
+    auto hash31 = [](float p){
+        using namespace glm;
+        vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
+        p3 += dot(p3, p3.yzx()+33.33f);
+        return fract((p3.xxy+p3.yzz)*p3.zyx);
+    };
+
+//    auto rngNum = rng(-1, 1, 1 << 20);
+//    for(int i = 0; i < numGenerators; i++){
+//        points.emplace_back(rngNum(), rngNum());
+//    }
 
     generators = device.createDeviceLocalBuffer(points.data(), BYTE_SIZE(points), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
@@ -123,13 +182,14 @@ void Voronoi::initGenerators() {
 
     auto rngColor = rng(0, 1, 1 << 20);
     for(int i = 0; i < numGenerators; i++){
-        glm::vec3 color{ rngColor(), rngColor(), rngColor()};
+//        glm::vec3 color{ rngColor(), rngColor(), rngColor()};
+        glm::vec3 color = hash31(float(i+1));
         cols.emplace_back(color, i);
     }
 
     colors = device.createDeviceLocalBuffer(cols.data(), BYTE_SIZE(cols), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-    auto aCone = primitives::cone(100, 100, 0.5, 1.0, glm::vec4(1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    auto aCone = primitives::cone(100, 100, 1.0, 1.0, glm::vec4(1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     cone.vertices = device.createDeviceLocalBuffer(aCone.vertices.data(), BYTE_SIZE(aCone.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     cone.indices = device.createDeviceLocalBuffer(aCone.indices.data(), BYTE_SIZE(aCone.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
@@ -195,6 +255,10 @@ void Voronoi::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
             
 }
@@ -204,7 +268,7 @@ void Voronoi::updateDescriptorSets(){
     descriptorSet = sets[0];
     voronoiDescriptorSet = sets[1];
     
-    auto writes = initializers::writeDescriptorSets<8>();
+    auto writes = initializers::writeDescriptorSets<9>();
     
     writes[0].dstSet = descriptorSet;
     writes[0].dstBinding = 0;
@@ -261,6 +325,13 @@ void Voronoi::updateDescriptorSets(){
     writes[7].descriptorCount = 1;
     VkDescriptorImageInfo depthImageInfo{gBuffer.depth.sampler.handle, gBuffer.depth.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[7].pImageInfo = &depthImageInfo;
+
+    writes[8].dstSet = voronoiDescriptorSet;
+    writes[8].dstBinding = 2;
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[8].descriptorCount = 1;
+    VkDescriptorImageInfo colorImageInfo1{VK_NULL_HANDLE, gBuffer.color.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[8].pImageInfo = &colorImageInfo1;
     
     device.updateDescriptorSets(writes);
 }
@@ -369,6 +440,24 @@ void Voronoi::createComputePipeline() {
     computeCreateInfo.layout = reorder.layout.handle;
     reorder.pipeline = device.createComputePipeline(computeCreateInfo);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("reorder_regions", reorder.pipeline.handle);
+
+    // Seed image
+    module = device.createShaderModule( resource("seed_image.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    seedVoronoiImage.layout = device.createPipelineLayout( { descriptorSetLayout, voronoiRegionsSetLayout });
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = seedVoronoiImage.layout.handle;
+    seedVoronoiImage.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("seed_voronoi_image", seedVoronoiImage.pipeline.handle);
+
+    // jump flood
+    module = device.createShaderModule( resource("jump_flood.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    jumpFlood.layout = device.createPipelineLayout( { descriptorSetLayout, voronoiRegionsSetLayout }, { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(glm::ivec2) }});
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = jumpFlood.layout.handle;
+    jumpFlood.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("jump_flood_algorithm", jumpFlood.pipeline.handle);
 }
 
 void Voronoi::onSwapChainDispose() {
@@ -402,7 +491,7 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     renderCones(commandBuffer);
-    renderCentroids(commandBuffer);
+//    renderCentroids(commandBuffer);
     renderGenerators(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -536,6 +625,44 @@ void Voronoi::addCentroidReadBarrier(VkCommandBuffer commandBuffer) {
 
 }
 
+void Voronoi::addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.image = gBuffer.color.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+}
+
+void Voronoi::addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.image = gBuffer.color.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+
+void Voronoi::addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.image = gBuffer.color.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+}
+
 void Voronoi::update(float time) {
     camera->update(time);
     auto cam = camera->cam();
@@ -627,12 +754,49 @@ void Voronoi::generateVoronoiRegions(VkCommandBuffer commandBuffer) {
     vkCmdEndRendering(commandBuffer);
 }
 
+void Voronoi::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = descriptorSet;
+    sets[1] = voronoiDescriptorSet;
+
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    VkClearColorValue clearColor{ -1.f, -1.f, -1.f, -1.f};
+
+    addVoronoiImageReadToWriteBarrier(commandBuffer);
+
+    vkCmdClearColorImage(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &range);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, seedVoronoiImage.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, seedVoronoiImage.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+    vkCmdDispatch(commandBuffer, numGenerators, 1, 1);
+
+    addVoronoiImageWriteBarrier(commandBuffer);
+    auto w = gBuffer.color.width;
+    auto h = gBuffer.color.height;
+    auto size = glm::max(w, h);
+    int numPasses = int(glm::log2(float(size)));
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, jumpFlood.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, jumpFlood.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+    for(int i = 1; i <= numPasses; i++) {
+        auto x = float(i);
+        glm::ivec2 k{ w * glm::pow(2, -x), h * glm::pow(2, -x) };
+        vkCmdPushConstants(commandBuffer, jumpFlood.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(k), &k);
+        vkCmdDispatch(commandBuffer, w, h, 1);
+
+        if(i != numPasses) {
+            addVoronoiImageWriteBarrier(commandBuffer);
+        }
+    }
+    addVoronoiImageWriteToReadBarrier(commandBuffer);
+
+}
+
 int main(){
     try{
 
         Settings settings;
-        settings.height = 1024;
-        settings.width = 1024;
+        settings.height = 128;
+        settings.width = 128;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.geometryShader = VK_TRUE;

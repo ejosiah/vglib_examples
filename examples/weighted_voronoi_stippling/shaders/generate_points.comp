@@ -1,0 +1,42 @@
+#version 460
+
+#include "random.glsl"
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D imageTex;
+
+layout(set = 1, binding = 0) buffer Globals {
+    mat4 projection;
+    int maxPoints;
+    int numPoints;
+    float convergenceRate;
+    int width;
+    int height;
+};
+
+layout(set = 1, binding = 1) buffer Points {
+    vec2 points[];
+};
+
+float luminance(vec3 rgb){
+    return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f));
+}
+
+void main() {
+    vec2 imageSize = vec2(textureSize(imageTex, 0));
+    uint rngState = initRNG(vec2(gl_GlobalInvocationID + 1), imageSize, 0);
+
+    float xi = 0;
+    float brightness = 0;
+    vec2 uv = vec2(0);
+    do{
+        xi = rand(rngState);
+        uv = vec2(rand(rngState), rand(rngState));
+        vec3 pixel = texture(imageTex, uv).rgb;
+        brightness = luminance(pixel);
+    }while(xi < brightness);
+
+    int index = atomicAdd(numPoints, 1);
+    points[int(gl_GlobalInvocationID.x)] = uv * imageSize;
+}

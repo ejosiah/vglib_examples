@@ -2,7 +2,16 @@
 
 layout(local_size_x = 1) in;
 
-layout(set = 0, binding = 0) buffer Points {
+layout(set = 0, binding = 0) buffer Globals {
+    mat4 projection;
+    int maxPoints;
+    int numPoints;
+    float convergenceRate;
+    int width;
+    int height;
+};
+
+layout(set = 0, binding = 1) buffer Points {
     vec2 generators[];
 };
 
@@ -18,34 +27,33 @@ layout(set = 0, binding = 4) buffer Centers {
     vec2 centroids[];
 };
 
-layout(push_constant) uniform Constants {
-    int renderCentroid;
-    float threshold;
-    float convergenceRate;
-    int screenWidth;
-    int screenHeight;
-};
-
 void main() {
     int idx = int(gl_GlobalInvocationID.x);
     int start = offsets[idx];
     int endIdx = idx + 1;
-    int end = endIdx < gl_NumWorkGroups.x ? offsets[endIdx] : (screenWidth * screenHeight);
+    int end = endIdx < gl_NumWorkGroups.x ? offsets[endIdx] : (width * height);
     float N = float(end - start);
 
     vec2 sum = vec2(0);
+    float totalWeight = 0;
     for(int i = start; i < end; i++){
-        sum += regions[i].xy;
+        float weight = regions[i].w;
+        sum += regions[i].xy * weight;
+        totalWeight += weight;
     }
 
-    vec2 center = sum/N;
+    if(totalWeight == 0) {
+        return;
+    }
+
+    vec2 center = sum/totalWeight;
     vec2 gPoint = generators[idx];
 
     vec2 d = center - gPoint;
 
-    if(dot(d, d) > threshold) {
+    if(dot(d, d) > 0) {
         vec2 newGPoint = mix(gPoint, center, convergenceRate);
         generators[idx] = newGPoint;
     }
-    centroids[idx] = vec2(N, N);
+    centroids[idx] = center;
 }
