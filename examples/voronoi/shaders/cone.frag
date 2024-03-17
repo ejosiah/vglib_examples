@@ -22,6 +22,7 @@ layout(push_constant) uniform Constants {
     float convergenceRate;
     int screenWidth;
     int screenHeight;
+    int numGenerators;
 };
 
 layout(location = 0) flat in int instanceId;

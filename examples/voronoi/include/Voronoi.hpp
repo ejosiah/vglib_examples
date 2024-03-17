@@ -1,6 +1,24 @@
 #include "VulkanBaseApp.h"
 #include <PrefixSum.hpp>
 #include <CDT.h>
+#include "Profiler.hpp"
+
+struct Circle {
+    glm::vec2 center;
+    float radius;
+};
+
+
+namespace std {
+    template<>
+    struct hash<glm::vec3>{
+
+        std::size_t operator()(const glm::vec3& c) const {
+            glm::uvec3 id(glm::floatBitsToUint(c.x), glm::floatBitsToUint(c.y), glm::floatBitsToUint(c.z));
+            return (id.x * 541) ^ (id.y * 79) ^ (id.z * 31);
+        }
+    };
+}
 
 class Voronoi : public VulkanBaseApp{
 public:
@@ -9,7 +27,7 @@ public:
 protected:
     void initApp() override;
 
-    void initCamera();
+    void initProfiler();
 
     void createDescriptorPool();
 
@@ -41,13 +59,17 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
-    void renderCones(VkCommandBuffer commandBuffer);
+    void renderVoronoiDiagram(VkCommandBuffer commandBuffer);
 
     void renderDelaunayTriangles(VkCommandBuffer commandBuffer);
 
     void renderGenerators(VkCommandBuffer commandBuffer);
 
+    void renderCircumCircles(VkCommandBuffer commandBuffer);
+
     void renderCentroids(VkCommandBuffer commandBuffer);
+
+    void renderUI(VkCommandBuffer commandBuffer);
 
     void convergeToCentroid(VkCommandBuffer commandBuffer);
 
@@ -79,9 +101,13 @@ protected:
 
     void triangulate(std::span<CDT::V2d<float>> points);
 
+    Circle calculateCircumCircle(std::span<CDT::V2d<float>> points, const CDT::Triangle& triangle);
+
     void update(float time) override;
 
     void checkAppInputs() override;
+
+    void newFrame() override;
 
     void endFrame() override;
 
@@ -98,7 +124,7 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
-    } coneRender;
+    } rendervoronoi;
 
     struct {
         VulkanPipelineLayout layout;
@@ -146,14 +172,30 @@ protected:
         VulkanPipeline pipeline;
     } triangle;
 
+    struct {
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } outline;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } center;
+        bool showOutline{};
+        bool showCenter{};
+        Action* outlineToggle{};
+        Action* centerToggle{};
+    } circumCircle;
+
     VulkanBuffer colors;
 
     struct {
         int renderCentroid{0};
         float threshold{0};
-        float convergenceRate{1};
+        float convergenceRate{0.5};
         int screenWidth{0};
         int screenHeight{0};
+        int numGenerators{0};
     } constants;
 
     struct {
@@ -161,12 +203,18 @@ protected:
         Texture depth;
     } gBuffer;
 
+    Texture vdSwapTexture;
+    VulkanDescriptorSetLayout vdSetLayout;
+    std::array<VkDescriptorSet, 2> vdSet;
+
     struct DelaunayTriangles {
         VulkanBuffer vertices;
         VulkanBuffer triangles;
         uint32_t numTriangles;
+        std::vector<Circle> circumCircles;
         struct  {
             std::vector<CDT::V2d<float>> vertices;
+            std::vector<CDT::Triangle> triangles;
             std::vector<uint32_t> indices;
         } cdt;
     } delaunayTriangles;
@@ -181,7 +229,8 @@ protected:
     VulkanBuffer regionReordered;
     VulkanBuffer centroids;
     VulkanBuffer counts;
-    int numGenerators{200};
+    int numGenerators{500};
+    std::unordered_map<glm::vec3, int> siteMap;
 
     VulkanDescriptorSetLayout voronoiRegionsSetLayout;
     VkDescriptorSet voronoiDescriptorSet;
@@ -190,9 +239,20 @@ protected:
     VkDescriptorSet descriptorSet;
 
     VulkanBuffer clipVertices;
+    VulkanBuffer voronoiDiagramBuffer;
+
+    std::vector<std::string> queryIds{
+        "generate_voronoi_regions", "compute_region_area", "compute_histogram",
+        "partial_sum", "reorder_regions", "converge_to_centroid"
+    };
+
+    struct {
+        bool requested{};
+        glm::vec2 position;
+    } inspectRegion;
 
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
-    std::unique_ptr<OrbitingCameraController> camera;
     PrefixSum prefixSum;
+    Profiler profiler;
 };

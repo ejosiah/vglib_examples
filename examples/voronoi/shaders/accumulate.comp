@@ -1,11 +1,11 @@
 #version 460
 
-layout(local_size_x = 32, local_size_y = 32) in;
+layout(local_size_x = 1, local_size_y = 1) in;
 
 layout(set = 0, binding = 0) uniform sampler2D colorTex;
 
 layout(set = 1, binding = 2) buffer Sums {
-    vec2 regions[];
+    vec4 regions[];
 };
 
 layout(set = 1, binding = 3) buffer Density {
@@ -13,20 +13,20 @@ layout(set = 1, binding = 3) buffer Density {
 };
 
 layout(push_constant) uniform Constants {
-    int blockSize;
     int renderCentroid;
     float threshold;
     float convergenceRate;
     int screenWidth;
     int screenHeight;
+    int numGenerators;
 };
 
 void main() {
     ivec2 gId = ivec2(gl_GlobalInvocationID.xy);
     int idx = int(texelFetch(colorTex, gId, 0).a);
 
-    int offset = idx * blockSize + atomicAdd(counts[idx], 1);
     vec2 pixelCoord = 2 * (vec2(gId)/vec2(screenWidth, screenHeight)) - 1;
 
-    regions[offset] = pixelCoord;
+    uint index = gl_GlobalInvocationID.y * gl_NumWorkGroups.x + gl_GlobalInvocationID.x;
+    regions[index] = vec4(pixelCoord, idx, 0);
 }

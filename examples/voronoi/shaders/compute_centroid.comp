@@ -7,11 +7,11 @@ layout(set = 0, binding = 0) buffer Points {
 };
 
 layout(set = 0, binding = 2) buffer Sums {
-    vec2 regions[];
+    vec4 regions[];
 };
 
 layout(set = 0, binding = 3) buffer Density {
-    int counts[];
+    int offsets[];
 };
 
 layout(set = 0, binding = 4) buffer Centers {
@@ -19,27 +19,33 @@ layout(set = 0, binding = 4) buffer Centers {
 };
 
 layout(push_constant) uniform Constants {
-    int blockSize;
     int renderCentroid;
     float threshold;
     float convergenceRate;
     int screenWidth;
     int screenHeight;
+    int numGenerators;
 };
 
+shared vec4 localRegions[3072];
+
 void main() {
+    int voronoiArea = screenWidth * screenHeight;
     int idx = int(gl_GlobalInvocationID.x);
-    int N = counts[idx];
-    int start = idx * blockSize;
-    int end = start + N;
+    int start = offsets[idx];
+    int endIdx = idx + 1;
+    int end = endIdx < gl_NumWorkGroups.x ? offsets[endIdx] : voronoiArea;
+    float N = float(end - start);
 
     vec2 sum = vec2(0);
     for(int i = start; i < end; i++){
-        sum += regions[i];
+        sum += regions[i].xy;
     }
 
-    vec2 center = sum/float(N);
+
+
     vec2 gPoint = generators[idx];
+    vec2 center = N != 0 ? sum/N : gPoint;
 
     vec2 d = center - gPoint;
 

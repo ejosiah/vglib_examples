@@ -20,6 +20,7 @@ layout(push_constant) uniform Constants {
     float convergenceRate;
     int screenWidth;
     int screenHeight;
+    int numGenerators;
 };
 
 void main() {
