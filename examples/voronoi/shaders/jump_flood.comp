@@ -21,7 +21,6 @@ layout(push_constant) uniform Constants {
 
 void main() {
     vec2 size = vec2(imageSize(voronoiImage));
-    vec2 offset = 0.5/size;
 
     if(k.x == 0 && k.y == 0) return;
 
@@ -43,7 +42,7 @@ void main() {
             }
 
             if(p.w != UNDEFINED && q.w != UNDEFINED){
-                vec2 xp = (2 * vec2(id)/size - 1) + offset;
+                vec2 xp = (2 * vec2(id)/size - 1);
                 vec2 sp = points[int(p.w)];
                 vec2 sq = points[int(q.w)];
 

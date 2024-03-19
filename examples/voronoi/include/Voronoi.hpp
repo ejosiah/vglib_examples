@@ -245,7 +245,7 @@ protected:
     VulkanBuffer regionReordered;
     VulkanBuffer centroids;
     VulkanBuffer counts;
-    int numGenerators{200};
+    int numGenerators{8000};
     std::unordered_map<glm::vec3, int> siteMap;
 
     VulkanDescriptorSetLayout voronoiRegionsSetLayout;

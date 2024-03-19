@@ -767,13 +767,18 @@ void Voronoi::renderUI(VkCommandBuffer commandBuffer) {
     }else{
         ImGui::Text("compute_region_area: %.5f ms", profiler.queries["compute_region_area"].movingAverage.value * toMillis);
         ImGui::Text("compute_histogram: %.5f ms", profiler.queries["compute_histogram"].movingAverage.value * toMillis);
+        ImGui::Text("partial_sum: %.5f ms", profiler.queries["partial_sum"].movingAverage.value * toMillis);
         ImGui::Text("reorder_regions: %.5f", profiler.queries["reorder_regions"].movingAverage.value * toMillis);
 
+        computeTotal += profiler.queries["compute_region_area"].movingAverage.value * toMillis;
+        computeTotal += profiler.queries["compute_histogram"].movingAverage.value * toMillis;
+        computeTotal += profiler.queries["partial_sum"].movingAverage.value * toMillis;
         computeTotal += profiler.queries["reorder_regions"].movingAverage.value * toMillis;
     }
 
-    ImGui::Text("total region area computation time: %.5f ms", computeTotal);
+    ImGui::Text("converge_to_centroid: %.5f", profiler.queries["converge_to_centroid"].movingAverage.value * toMillis);
     ImGui::Separator();
+    ImGui::Text("total region area computation time: %.5f ms", computeTotal);
     computeTotal += profiler.queries["generate_voronoi_regions"].movingAverage.value * toMillis;
     computeTotal += profiler.queries["converge_to_centroid"].movingAverage.value * toMillis;
     ImGui::Text("total computation time: %.5f ms", computeTotal);
