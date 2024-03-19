@@ -83,17 +83,33 @@ protected:
 
     void generateVoronoiRegions(VkCommandBuffer commandBuffer);
 
+    void regionalReductionMap(VkCommandBuffer commandBuffer);
+
+    void regionalReductionReduce(VkCommandBuffer commandBuffer);
+
+    void convergeToCentroidRegionalReduction(VkCommandBuffer commandBuffer);
+
     void generateVoronoiRegions2(VkCommandBuffer commandBuffer);
 
     void addCentroidReadBarrier(VkCommandBuffer commandBuffer);
 
     void addCentroidWriteBarrier(VkCommandBuffer commandBuffer);
 
+    void addTransferSrcBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images);
+
+    void addTransferDstBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images);
+
+    void addTransferSrcToShaderReadBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images);
+
+    void addTransferDstToShaderReadBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images);
+
     void addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) const;
 
     void addVoronoiImageReadToWriteBarrier(VkCommandBuffer commandBuffer) const;
 
     void addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const;
+
+    void addRegionalReductionImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const;
 
     void copyGeneratorPointsToCpu(VkCommandBuffer commandBuffer);
 
@@ -192,7 +208,7 @@ protected:
     struct {
         int renderCentroid{0};
         float threshold{0};
-        float convergenceRate{0.5};
+        float convergenceRate{1};
         int screenWidth{0};
         int screenHeight{0};
         int numGenerators{0};
@@ -229,7 +245,7 @@ protected:
     VulkanBuffer regionReordered;
     VulkanBuffer centroids;
     VulkanBuffer counts;
-    int numGenerators{500};
+    int numGenerators{200};
     std::unordered_map<glm::vec3, int> siteMap;
 
     VulkanDescriptorSetLayout voronoiRegionsSetLayout;
@@ -250,6 +266,27 @@ protected:
         bool requested{};
         glm::vec2 position;
     } inspectRegion;
+
+    struct {
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } map;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } reduce;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } centroid;
+        VulkanDescriptorSetLayout descriptorSetLayout;
+        VkDescriptorSet descriptorSet{};
+        glm::ivec2 dimensions;
+        Texture texture;
+    } regionalReduction;
+
+    bool useRegionalReduction{true};
 
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;

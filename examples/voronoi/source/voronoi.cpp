@@ -37,12 +37,19 @@ void Voronoi::initApp() {
 void Voronoi::initProfiler() {
     profiler = Profiler{ &device };
     profiler.addQuery("generate_voronoi_regions");
-    profiler.addQuery("compute_region_area");
-    profiler.addQuery("compute_histogram");
-    profiler.addQuery("partial_sum");
-    profiler.addQuery("reorder_regions");
-    profiler.addQuery("converge_to_centroid");
     profiler.addQuery("render");
+    profiler.addQuery("converge_to_centroid");
+
+    if(useRegionalReduction){
+        profiler.addQuery("regional_reduction_map");
+        profiler.addQuery("regional_reduction_reduce");
+    }else {
+        profiler.addQuery("compute_region_area");
+        profiler.addQuery("compute_histogram");
+        profiler.addQuery("partial_sum");
+        profiler.addQuery("reorder_regions");
+    }
+    profiler.paused = false;
 }
 
 void Voronoi::createGBuffer() {
@@ -87,6 +94,8 @@ void Voronoi::createGBuffer() {
     vdSwapTexture.sampler = device.createSampler(samplerInfo);
     vdSwapTexture.width = width;
     vdSwapTexture.height = height;
+
+
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
         barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
@@ -108,6 +117,16 @@ void Voronoi::createGBuffer() {
         vkCmdClearColorImage(commandBuffer, vdSwapTexture.image, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &range);
 
     });
+
+    imageSpec.extent.width = regionalReduction.dimensions.x;
+    imageSpec.extent.height = regionalReduction.dimensions.y;
+    regionalReduction.texture.image = device.createImage(imageSpec);
+    regionalReduction.texture.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
+    regionalReduction.texture.imageView = regionalReduction.texture.image.createView(imageSpec.format, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
+    regionalReduction.texture.sampler = device.createSampler(samplerInfo);
+    regionalReduction.texture.width = regionalReduction.dimensions.x;
+    regionalReduction.texture.height = regionalReduction.dimensions.y;
+
     voronoiDiagramBuffer = device.createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, width * height * sizeof(glm::vec4));
 }
 
@@ -175,6 +194,7 @@ void Voronoi::initGenerators() {
     constants.screenWidth = width;
     constants.screenHeight = height;
     auto imageSize = width * height;
+    regionalReduction.dimensions = glm::ivec2(std::ceil(std::sqrt(numGenerators)));
 
     std::vector<glm::vec2> points;
 
@@ -229,8 +249,8 @@ void Voronoi::initGenerators() {
 
     auto rngColor = rng(0, 1, 1 << 20);
     for(int i = 0; i < numGenerators; i++){
-//        glm::vec3 color{ rngColor(), rngColor(), rngColor()};
-        glm::vec3 color = hash31(float(i+1));
+        glm::vec3 color{ rngColor(), rngColor(), rngColor()};
+//        glm::vec3 color = hash31(float(i+1));
         siteMap[color] = i;
         cols.emplace_back(color, i);
     }
@@ -317,17 +337,28 @@ void Voronoi::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
+
+    regionalReduction.descriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("rr_voronoi_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .createLayout();
             
 }
 
 void Voronoi::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate( { descriptorSetLayout, voronoiRegionsSetLayout, vdSetLayout, vdSetLayout });
+    auto sets = descriptorPool.allocate( { descriptorSetLayout, voronoiRegionsSetLayout, vdSetLayout,
+                                           vdSetLayout, regionalReduction.descriptorSetLayout });
     descriptorSet = sets[0];
     voronoiDescriptorSet = sets[1];
     vdSet[0] = sets[2];
     vdSet[1] = sets[3];
+    regionalReduction.descriptorSet = sets[4];
 
-    auto writes = initializers::writeDescriptorSets<11>();
+    auto writes = initializers::writeDescriptorSets<12>();
     
     writes[0].dstSet = descriptorSet;
     writes[0].dstBinding = 0;
@@ -405,6 +436,17 @@ void Voronoi::updateDescriptorSets(){
     writes[10].descriptorCount = 1;
     VkDescriptorImageInfo vdSwap1Info{VK_NULL_HANDLE, vdSwapTexture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[10].pImageInfo = &vdSwap1Info;
+
+    writes[11].dstSet = regionalReduction.descriptorSet;
+    writes[11].dstBinding = 0;
+    writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[11].descriptorCount = 1;
+    VkDescriptorImageInfo regReduceImageInfo{
+        regionalReduction.texture.sampler.handle,
+        regionalReduction.texture.imageView.handle,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+    writes[11].pImageInfo = &regReduceImageInfo;
     
     device.updateDescriptorSets(writes);
 }
@@ -515,6 +557,47 @@ void Voronoi::createRenderPipeline() {
                 .geometryShader(resource("circum_circle_center.geom.spv"))
             .name("circum_circle_center")
         .build(circumCircle.center.layout);
+		
+    auto builder5 = prototypes->cloneGraphicsPipeline();
+    regionalReduction.reduce.pipeline =
+            builder5
+                .shaderStage()
+                    .vertexShader(resource("regional_reduction.vert.spv"))
+                    .fragmentShader(resource("regional_reduction.frag.spv"))
+                .vertexInputState().clear()
+                .inputAssemblyState()
+                    .points()
+                .viewportState()
+                    .clear()
+                    .viewport()
+                        .origin(0, 0)
+                        .dimension(regionalReduction.dimensions.x, regionalReduction.dimensions.y)
+                        .minDepth(0)
+                        .maxDepth(1)
+                    .scissor()
+                        .offset(0, 0)
+                        .extent(regionalReduction.dimensions.x, regionalReduction.dimensions.y)
+                    .add()
+                .depthStencilState()
+                    .disableDepthTest()
+                    .disableDepthWrite()
+                .colorBlendState()
+                    .attachment().clear()
+                        .enableBlend()
+                        .colorBlendOp().add()
+                        .alphaBlendOp().add()
+                        .srcColorBlendFactor().one()
+                        .dstColorBlendFactor().one()
+                        .srcAlphaBlendFactor().zero()
+                        .dstAlphaBlendFactor().one()
+                    .add()
+                .layout().clear()
+                    .addPushConstantRange(VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2))
+                    .addDescriptorSetLayout(descriptorSetLayout)
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+            .name("regional_reduction")
+        .build(regionalReduction.reduce.layout);
     //    @formatter:on
 }
 
@@ -574,6 +657,24 @@ void Voronoi::createComputePipeline() {
     computeCreateInfo.layout = jumpFlood.layout.handle;
     jumpFlood.pipeline = device.createComputePipeline(computeCreateInfo);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("jump_flood_algorithm", jumpFlood.pipeline.handle);
+
+    // regional reduce map
+    module = device.createShaderModule( resource("regional_reduction.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    regionalReduction.map.layout = device.createPipelineLayout( { descriptorSetLayout, voronoiRegionsSetLayout }, { { VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2) } });
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = regionalReduction.map.layout.handle;
+    regionalReduction.map.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("regional_reduction_map", regionalReduction.map.pipeline.handle);
+
+    // regional reduce compute centroid
+    module = device.createShaderModule( resource("compute_centroid_regional_reduction.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    regionalReduction.centroid.layout = device.createPipelineLayout( { descriptorSetLayout, regionalReduction.descriptorSetLayout }, { { VK_SHADER_STAGE_ALL, 0, sizeof(constants) }} );
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = regionalReduction.centroid.layout.handle;
+    regionalReduction.centroid.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("regional_reduction_compute_centroid", regionalReduction.centroid.pipeline.handle);
 }
 
 void Voronoi::onSwapChainDispose() {
@@ -618,11 +719,19 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     });
 
     generateVoronoiRegions2(commandBuffer);
-    computeRegionAreas(commandBuffer);
-    computeHistogram(commandBuffer);
-    computePartialSum(commandBuffer);
-    reorderRegions(commandBuffer);
-    convergeToCentroid(commandBuffer);
+    if(useRegionalReduction){
+        regionalReductionMap(commandBuffer);
+        regionalReductionReduce(commandBuffer);
+        convergeToCentroidRegionalReduction(commandBuffer);
+    } else {
+        computeRegionAreas(commandBuffer);
+        computeHistogram(commandBuffer);
+        computePartialSum(commandBuffer);
+        reorderRegions(commandBuffer);
+        convergeToCentroid(commandBuffer);
+    }
+
+
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -647,16 +756,24 @@ void Voronoi::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Text("Compute:");
     ImGui::Indent(16);
     ImGui::Text("generate_voronoi_regions: %.5f ms", profiler.queries["generate_voronoi_regions"].movingAverage.value * toMillis);
-    ImGui::Text("compute_region_area: %.5f ms", profiler.queries["compute_region_area"].movingAverage.value * toMillis);
-    ImGui::Text("compute_histogram: %.5f ms", profiler.queries["compute_histogram"].movingAverage.value * toMillis);
-    ImGui::Text("reorder_regions: %.5f", profiler.queries["reorder_regions"].movingAverage.value * toMillis);
-    ImGui::Text("converge_to_centroid: %.5f ms", profiler.queries["converge_to_centroid"].movingAverage.value * toMillis);
+    float computeTotal = 0;
 
-    float computeTotal = profiler.queries["compute_region_area"].movingAverage.value * toMillis;
-    computeTotal += profiler.queries["compute_histogram"].movingAverage.value * toMillis;
-    computeTotal += profiler.queries["reorder_regions"].movingAverage.value * toMillis;
+    if(useRegionalReduction){
+        ImGui::Text("regional_reduction_map: %.5f ms", profiler.queries["regional_reduction_map"].movingAverage.value * toMillis);
+        ImGui::Text("regional_reduction_reduce: %.5f ms", profiler.queries["regional_reduction_reduce"].movingAverage.value * toMillis);
+
+        computeTotal = profiler.queries["regional_reduction_reduce"].movingAverage.value * toMillis;
+        computeTotal += profiler.queries["regional_reduction_reduce"].movingAverage.value * toMillis;
+    }else{
+        ImGui::Text("compute_region_area: %.5f ms", profiler.queries["compute_region_area"].movingAverage.value * toMillis);
+        ImGui::Text("compute_histogram: %.5f ms", profiler.queries["compute_histogram"].movingAverage.value * toMillis);
+        ImGui::Text("reorder_regions: %.5f", profiler.queries["reorder_regions"].movingAverage.value * toMillis);
+
+        computeTotal += profiler.queries["reorder_regions"].movingAverage.value * toMillis;
+    }
+
     ImGui::Text("total region area computation time: %.5f ms", computeTotal);
-
+    ImGui::Separator();
     computeTotal += profiler.queries["generate_voronoi_regions"].movingAverage.value * toMillis;
     computeTotal += profiler.queries["converge_to_centroid"].movingAverage.value * toMillis;
     ImGui::Text("total computation time: %.5f ms", computeTotal);
@@ -860,6 +977,87 @@ void Voronoi::addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) c
 
 }
 
+void Voronoi::addRegionalReductionImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.image = regionalReduction.texture.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+}
+
+void Voronoi::addTransferSrcBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images) {
+    int imageId = 0;
+    std::vector<VkImageMemoryBarrier> barriers(images.size(), {
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER ,
+        VK_NULL_HANDLE,
+        VK_ACCESS_SHADER_WRITE_BIT,
+        VK_ACCESS_TRANSFER_READ_BIT,
+        VK_IMAGE_LAYOUT_GENERAL,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        0, 0, images[imageId++],
+        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+    } );
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, barriers.size(), barriers.data());
+
+}
+
+void Voronoi::addTransferDstBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images) {
+    int imageId = 0;
+    std::vector<VkImageMemoryBarrier> barriers(images.size(), {
+        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER ,
+        VK_NULL_HANDLE,
+        VK_ACCESS_SHADER_READ_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_IMAGE_LAYOUT_GENERAL,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        0, 0, images[imageId++],
+        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+    } );
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, barriers.size(), barriers.data());
+
+}
+
+void Voronoi::addTransferSrcToShaderReadBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images) {
+    int imageId = 0;
+    std::vector<VkImageMemoryBarrier> barriers(images.size(), {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER ,
+            VK_NULL_HANDLE,
+            VK_ACCESS_TRANSFER_READ_BIT,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            0, 0, images[imageId++],
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+    } );
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, barriers.size(), barriers.data());
+
+}
+
+void Voronoi::addTransferDstToShaderReadBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images) {
+    int imageId = 0;
+    std::vector<VkImageMemoryBarrier> barriers(images.size(), {
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER ,
+            VK_NULL_HANDLE,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_GENERAL,
+            0, 0, images[imageId++],
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+    } );
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, barriers.size(), barriers.data());
+
+}
+
 void Voronoi::copyGeneratorPointsToCpu(VkCommandBuffer commandBuffer) {
     VkBufferCopy region{0, 0, generators.size};
     vkCmdCopyBuffer(commandBuffer, generators, stagingBuffer, 1, &region);
@@ -1053,6 +1251,66 @@ void Voronoi::generateVoronoiRegions(VkCommandBuffer commandBuffer) {
     });
 }
 
+void Voronoi::regionalReductionMap(VkCommandBuffer commandBuffer) {
+    profiler.profile("regional_reduction_map", commandBuffer, [&]{
+        std::array<VkDescriptorSet, 2> sets{};
+        sets[0] = descriptorSet;
+        sets[1] = voronoiDescriptorSet;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.map.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.map.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdPushConstants(commandBuffer, regionalReduction.map.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2), &regionalReduction.dimensions);
+        vkCmdDispatch(commandBuffer, width, height, 1);
+//        vkCmdDispatch(commandBuffer, 20, 20, 1);
+        prefixSum.addBufferMemoryBarriers(commandBuffer, { &regions });
+    });
+}
+
+void Voronoi::regionalReductionReduce(VkCommandBuffer commandBuffer) {
+    profiler.profile("regional_reduction_reduce", commandBuffer, [&]{
+        auto instanceCount = width * height;
+//        auto instanceCount = numGenerators * 2;
+        VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
+        info.flags = 0;
+        info.renderArea = {{0, 0}, {regionalReduction.texture.width,  regionalReduction.texture.height }};
+        info.layerCount = 1;
+        info.colorAttachmentCount = 1;
+
+        VkRenderingAttachmentInfo colorAttachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+        colorAttachment.imageView = regionalReduction.texture.imageView.handle;
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.resolveMode = VK_RESOLVE_MODE_NONE;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.clearValue.color = {0.f, 0.f, 0.f, 1.f};
+        info.pColorAttachments = &colorAttachment;
+
+        vkCmdBeginRendering(commandBuffer, &info);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, regionalReduction.reduce.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, regionalReduction.reduce.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+        vkCmdPushConstants(commandBuffer, regionalReduction.reduce.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2), &regionalReduction.dimensions);
+        vkCmdDraw(commandBuffer, 1, instanceCount, 0, 0);
+
+        vkCmdEndRendering(commandBuffer);
+        addRegionalReductionImageWriteToReadBarrier(commandBuffer);
+    });
+}
+
+void Voronoi::convergeToCentroidRegionalReduction(VkCommandBuffer commandBuffer) {
+    profiler.profile("converge_to_centroid", commandBuffer, [&]{
+        static std::array<VkDescriptorSet, 2> sets;
+        sets[0] = descriptorSet;
+        sets[1] = regionalReduction.descriptorSet;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.centroid.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.centroid.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdPushConstants(commandBuffer, regionalReduction.centroid.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
+        vkCmdDispatch(commandBuffer, numGenerators, 1, 1);
+        addCentroidReadBarrier(commandBuffer);
+    });
+}
+
 void Voronoi::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
     profiler.profile("generate_voronoi_regions", commandBuffer, [&]{
         static std::array<VkDescriptorSet, 3> sets;
@@ -1096,8 +1354,12 @@ void Voronoi::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
                 addVoronoiImageWriteBarrier(commandBuffer);
             }
         }
+        addTransferSrcBarrier(commandBuffer, { &gBuffer.color.image.image, 1u });
         VkBufferImageCopy region{0, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0}, {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1}};
-        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_GENERAL, voronoiDiagramBuffer, 1, &region);
+        vkCmdCopyImageToBuffer(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, voronoiDiagramBuffer, 1, &region);
+
+
+        addTransferDstBarrier(commandBuffer, { &vdSwapTexture.image.image, 1u });
 
         VkImageCopy imgRegion{};
         imgRegion.srcSubresource = region.imageSubresource;
@@ -1105,9 +1367,10 @@ void Voronoi::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
         imgRegion.dstSubresource = region.imageSubresource;
         imgRegion.dstOffset = {0, 0, 0};
         imgRegion.extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
-        vkCmdCopyImage(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_GENERAL, vdSwapTexture.image, VK_IMAGE_LAYOUT_GENERAL, 1, &imgRegion);
-        
-        addVoronoiImageWriteToReadBarrier(commandBuffer);
+        vkCmdCopyImage(commandBuffer, gBuffer.color.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vdSwapTexture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imgRegion);
+
+        addTransferSrcToShaderReadBarrier(commandBuffer, { &gBuffer.color.image.image, 1u });
+        addTransferDstToShaderReadBarrier(commandBuffer, { &vdSwapTexture.image.image, 1u });
     });
 }
 
@@ -1166,7 +1429,7 @@ void Voronoi::endFrame() {
 
 int main(){
     try{
-        spdlog::set_level(spdlog::level::err);
+//        spdlog::set_level(spdlog::level::err);
         Settings settings;
         settings.width = 1024;
         settings.height = 1024;

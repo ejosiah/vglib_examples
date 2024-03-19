@@ -2,7 +2,7 @@
 
 layout(local_size_x = 1, local_size_y = 1) in;
 
-layout(set = 0, binding = 0) uniform sampler2D colorTex;
+layout(set = 0, binding = 0) uniform sampler2D voronoiImage;
 
 layout(set = 1, binding = 2) buffer Sums {
     vec4 regions[];
@@ -23,9 +23,10 @@ layout(push_constant) uniform Constants {
 
 void main() {
     ivec2 gId = ivec2(gl_GlobalInvocationID.xy);
-    int idx = int(texelFetch(colorTex, gId, 0).a);
+    int idx = int(texelFetch(voronoiImage, gId, 0).a);
+    vec2 dimensions = textureSize(voronoiImage, 0);
 
-    vec2 pixelCoord = 2 * (vec2(gId)/vec2(screenWidth, screenHeight)) - 1;
+    vec2 pixelCoord = 2 * (vec2(gId)/dimensions) - 1;
 
     uint index = gl_GlobalInvocationID.y * gl_NumWorkGroups.x + gl_GlobalInvocationID.x;
     regions[index] = vec4(pixelCoord, idx, 0);

@@ -1,0 +1,44 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+struct Region {
+    vec2 value;
+    int site;
+    float weight;
+};
+
+layout(set = 1, binding = 0) uniform sampler2D voronoiImage;
+
+layout(set = 0, binding = 2) buffer Sums {
+    Region regions[];
+};
+
+layout(push_constant) uniform Constants {
+    int width;
+    int height;
+};
+
+void main() {
+    ivec2 gId = ivec2(gl_GlobalInvocationID.xy);
+    int siteId = int(texelFetch(voronoiImage, gId, 0).a);
+    vec2 dimensions = textureSize(voronoiImage, 0);
+    vec2 offset = 0.5/dimensions;
+
+    Region region;
+    region.site = siteId;
+    region.value = 2 * (vec2(gId)/dimensions) - 1;
+    region.value += offset;
+    region.weight = 1; // count / weight
+
+    uint index = gl_GlobalInvocationID.y * gl_NumWorkGroups.x + gl_GlobalInvocationID.x;
+    regions[index] = region;
+
+//    uint index = gl_GlobalInvocationID.y * gl_NumWorkGroups.x + gl_GlobalInvocationID.x;
+//
+//    Region region;
+//    region.site = int(index % 100);
+//    region.value = vec2(1);
+//    region.weight = 1; // count / weight
+//    regions[index] = region;
+}
