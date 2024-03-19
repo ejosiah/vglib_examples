@@ -29,8 +29,6 @@ protected:
 
     void initBuffers();
 
-    void initPrefixSum();
-
     void initTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format
                      , VkImageAspectFlags  aspect = VK_IMAGE_ASPECT_COLOR_BIT
                      , VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
@@ -46,6 +44,8 @@ protected:
     void createPipelineCache();
 
     void createRenderPipeline();
+
+    void createRegionalReducePipeline();
 
     void createComputePipeline();
 
@@ -65,10 +65,6 @@ protected:
 
     void addVoronoiImageWriteToReadBarrier(VkCommandBuffer commandBuffer) const;
 
-    void computeRegionAreas(VkCommandBuffer commandBuffer);
-
-    void convergeToCentroid(VkCommandBuffer commandBuffer);
-
     void addCentroidReadBarrier(VkCommandBuffer commandBuffer);
 
     void addCentroidWriteBarrier(VkCommandBuffer commandBuffer);
@@ -81,11 +77,15 @@ protected:
 
     void generatePoints();
 
-    void computeHistogram(VkCommandBuffer commandBuffer);
+    void regionalReductionMap(VkCommandBuffer commandBuffer);
 
-    void computePartialSum(VkCommandBuffer commandBuffer);
+    void regionalReductionReduce(VkCommandBuffer commandBuffer);
 
-    void reorderRegions(VkCommandBuffer commandBuffer);
+    void convergeToCentroidRegionalReduction(VkCommandBuffer commandBuffer);
+
+    void addRegionalReductionImageWriteToReadBarrier(VkCommandBuffer commandBuffer);
+
+    void addBufferMemoryBarriers(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
 
     void initScratchData();
 
@@ -116,14 +116,6 @@ protected:
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
-        } sum;
-        struct {
-            VulkanPipelineLayout layout;
-            VulkanPipeline pipeline;
-        } computeCentroid;
-        struct {
-            VulkanPipelineLayout layout;
-            VulkanPipeline pipeline;
             Texture depthBuffer;
         } voronoi;
         struct {
@@ -145,14 +137,23 @@ protected:
     } stipple;
 
     struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } histogram;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } reorder;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } map;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } reduce;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } centroid;
+        VulkanDescriptorSetLayout descriptorSetLayout;
+        VkDescriptorSet descriptorSet{};
+        glm::ivec2 dimensions;
+        Texture texture;
+    } regionalReduction;
 
     struct {
         std::string name;
@@ -188,6 +189,5 @@ protected:
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
     std::optional<std::filesystem::path> imagePath;
-    PrefixSum prefixSum;
-    static constexpr int MaxPoints = 100000;
+    static constexpr int MaxPoints = 20000;
 };

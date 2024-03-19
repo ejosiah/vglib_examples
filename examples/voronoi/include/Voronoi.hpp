@@ -245,7 +245,7 @@ protected:
     VulkanBuffer regionReordered;
     VulkanBuffer centroids;
     VulkanBuffer counts;
-    int numGenerators{8000};
+    int numGenerators{10000};
     std::unordered_map<glm::vec3, int> siteMap;
 
     VulkanDescriptorSetLayout voronoiRegionsSetLayout;
@@ -286,7 +286,7 @@ protected:
         Texture texture;
     } regionalReduction;
 
-    bool useRegionalReduction{true};
+    bool useRegionalReduction{false};
 
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;

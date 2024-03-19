@@ -21,7 +21,6 @@ WeightedVoronoiStippling::WeightedVoronoiStippling(const Settings& settings) : V
 void WeightedVoronoiStippling::initApp() {
     initCamera();
     initBuffers();
-    initPrefixSum();
     createDescriptorPool();
     createDescriptorSetLayouts();
     updateDescriptorSets();
@@ -46,11 +45,6 @@ void WeightedVoronoiStippling::initBuffers() {
     }
     cone.vertices = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     cone.indices = device.createDeviceLocalBuffer(aCone.indices.data(), BYTE_SIZE(aCone.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-}
-
-void WeightedVoronoiStippling::initPrefixSum() {
-    prefixSum = PrefixSum{ &device };
-    prefixSum.init();
 }
 
 void WeightedVoronoiStippling::initTexture(Texture &texture, uint32_t width, uint32_t height, VkFormat format
@@ -158,12 +152,22 @@ void WeightedVoronoiStippling::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
+
+    regionalReduction.descriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("rr_voronoi_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .createLayout();
 }
 
 void WeightedVoronoiStippling::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ source.descriptorSetLayout, descriptorSetLayout });
+    auto sets = descriptorPool.allocate({ source.descriptorSetLayout, descriptorSetLayout, regionalReduction.descriptorSetLayout });
     source.descriptorSet = sets[0];
     descriptorSet = sets[1];
+    regionalReduction.descriptorSet = sets[2];
 
     auto writes = initializers::writeDescriptorSets<2>();
 
@@ -276,6 +280,49 @@ void WeightedVoronoiStippling::createRenderPipeline() {
     //    @formatter:on
 }
 
+void WeightedVoronoiStippling::createRegionalReducePipeline() {
+    auto builder = prototypes->cloneGraphicsPipeline();
+    regionalReduction.reduce.pipeline =
+            builder
+                .shaderStage()
+                    .vertexShader(resource("regional_reduction.vert.spv"))
+                    .fragmentShader(resource("regional_reduction.frag.spv"))
+                .vertexInputState().clear()
+                .inputAssemblyState()
+                    .points()
+                .viewportState()
+                    .clear()
+                    .viewport()
+                        .origin(0, 0)
+                        .dimension(regionalReduction.dimensions.x, regionalReduction.dimensions.y)
+                        .minDepth(0)
+                        .maxDepth(1)
+                    .scissor()
+                        .offset(0, 0)
+                        .extent(regionalReduction.dimensions.x, regionalReduction.dimensions.y)
+                    .add()
+                .depthStencilState()
+                    .disableDepthTest()
+                    .disableDepthWrite()
+                .colorBlendState()
+                    .attachment().clear()
+                        .enableBlend()
+                        .colorBlendOp().add()
+                        .alphaBlendOp().add()
+                        .srcColorBlendFactor().one()
+                        .dstColorBlendFactor().one()
+                        .srcAlphaBlendFactor().zero()
+                        .dstAlphaBlendFactor().one()
+                    .add()
+                .layout().clear()
+                    .addPushConstantRange(VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2))
+                    .addDescriptorSetLayout(descriptorSetLayout)
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+            .name("regional_reduction")
+        .build(regionalReduction.reduce.layout);    
+}
+
 void WeightedVoronoiStippling::createComputePipeline() {
     auto module = device.createShaderModule(resource("generate_points.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
@@ -289,46 +336,6 @@ void WeightedVoronoiStippling::createComputePipeline() {
 
     stipple.generatePoints.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("generate_points", stipple.generatePoints.pipeline.handle);
-
-    // Accumulate
-    module = device.createShaderModule(resource("accumulate.comp.spv"));
-    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
-    stipple.sum.layout = device.createPipelineLayout( { source.descriptorSetLayout, descriptorSetLayout });
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = stipple.sum.layout.handle;
-
-    stipple.sum.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("sum_regions", stipple.sum.pipeline.handle);
-
-    // Compute centroid
-    module = device.createShaderModule(resource("compute_centroid.comp.spv"));
-    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
-    stipple.computeCentroid.layout = device.createPipelineLayout( { descriptorSetLayout });
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = stipple.computeCentroid.layout.handle;
-
-    stipple.computeCentroid.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("converge_to_centroid", stipple.computeCentroid.pipeline.handle);
-
-    // Histogram
-    module = device.createShaderModule( resource("histogram.comp.spv"));
-    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-    histogram.layout = device.createPipelineLayout( { descriptorSetLayout });
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = histogram.layout.handle;
-    histogram.pipeline = device.createComputePipeline(computeCreateInfo);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_histogram", histogram.pipeline.handle);
-
-    // Reorder
-    module = device.createShaderModule( resource("reorder.comp.spv"));
-    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-    reorder.layout = device.createPipelineLayout( { descriptorSetLayout } );
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = reorder.layout.handle;
-    reorder.pipeline = device.createComputePipeline(computeCreateInfo);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("reorder_regions", reorder.pipeline.handle);
 
     // Seed image
     module = device.createShaderModule( resource("seed_image.comp.spv"));
@@ -347,6 +354,24 @@ void WeightedVoronoiStippling::createComputePipeline() {
     computeCreateInfo.layout = stipple.jumpFlood.layout.handle;
     stipple.jumpFlood.pipeline = device.createComputePipeline(computeCreateInfo);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("jump_flood_algorithm", stipple.jumpFlood.pipeline.handle);
+
+    // regional reduce map
+    module = device.createShaderModule( resource("regional_reduction.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    regionalReduction.map.layout = device.createPipelineLayout( { source.descriptorSetLayout, descriptorSetLayout}, { { VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2) } });
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = regionalReduction.map.layout.handle;
+    regionalReduction.map.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("regional_reduction_map", regionalReduction.map.pipeline.handle);
+
+    // regional reduce compute centroid
+    module = device.createShaderModule( resource("compute_centroid_regional_reduction.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    regionalReduction.centroid.layout = device.createPipelineLayout( { descriptorSetLayout, regionalReduction.descriptorSetLayout } );
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = regionalReduction.centroid.layout.handle;
+    regionalReduction.centroid.pipeline = device.createComputePipeline(computeCreateInfo);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("regional_reduction_compute_centroid", regionalReduction.centroid.pipeline.handle);
 
 }
 
@@ -370,7 +395,7 @@ VkCommandBuffer *WeightedVoronoiStippling::buildCommandBuffers(uint32_t imageInd
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     static std::array<VkClearValue, 2> clearValues;
-    clearValues[0].color = {1.0, 1.0, 1.0, 1};
+    clearValues[0].color = {0.4, 0.4, 0.4, 1};
     clearValues[1].depthStencil = {1.0, 0u};
 
     VkRenderPassBeginInfo rPassInfo = initializers::renderPassBeginInfo();
@@ -510,26 +535,6 @@ void WeightedVoronoiStippling::addVoronoiImageWriteToReadBarrier(VkCommandBuffer
 
 }
 
-
-void WeightedVoronoiStippling::computeRegionAreas(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = source.descriptorSet;
-    sets[1] = descriptorSet;
-
-    vkCmdFillBuffer(commandBuffer, regions, 0, regions.size, 0);
-    vkCmdFillBuffer(commandBuffer, counts, 0, counts.size, 0);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.sum.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.sum.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
-    vkCmdDispatch(commandBuffer, source.texture.width, source.texture.height, 1);
-}
-
-void WeightedVoronoiStippling::convergeToCentroid(VkCommandBuffer commandBuffer) {
-    addCentroidWriteBarrier(commandBuffer);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.computeCentroid.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, stipple.computeCentroid.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
-    vkCmdDispatch(commandBuffer, globals.cpu->numPoints, 1, 1);
-    addCentroidReadBarrier(commandBuffer);
-}
 
 void WeightedVoronoiStippling::addCentroidWriteBarrier(VkCommandBuffer commandBuffer) {
     VkBufferMemoryBarrier barrier = initializers::bufferMemoryBarrier();
@@ -707,35 +712,63 @@ void WeightedVoronoiStippling::endFrame() {
     if(stipple.pointsId){
         device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
             generateVoronoiRegions2(commandBuffer);
-            computeRegionAreas(commandBuffer);
-            computeHistogram(commandBuffer);
-            computePartialSum(commandBuffer);
-            reorderRegions(commandBuffer);
-            convergeToCentroid(commandBuffer);
+            regionalReductionMap(commandBuffer);
+            regionalReductionReduce(commandBuffer);
+            convergeToCentroidRegionalReduction(commandBuffer);
             renderStipples(commandBuffer);
         });
     }
 }
 
-void WeightedVoronoiStippling::computeHistogram(VkCommandBuffer commandBuffer) {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, histogram.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, histogram.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
-    vkCmdDispatch(commandBuffer, source.texture.width, source.texture.height, 1);
-    prefixSum.addBufferMemoryBarriers(commandBuffer, {&counts});
+void WeightedVoronoiStippling::regionalReductionMap(VkCommandBuffer commandBuffer) {
+        std::array<VkDescriptorSet, 2> sets{};
+        sets[0] = source.descriptorSet;
+        sets[1] = descriptorSet;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.map.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.map.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdPushConstants(commandBuffer, regionalReduction.map.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2), &regionalReduction.dimensions);
+        vkCmdDispatch(commandBuffer, source.texture.width , source.texture.height, 1);
+       addBufferMemoryBarriers(commandBuffer, { regions });
 }
 
-void WeightedVoronoiStippling::reorderRegions(VkCommandBuffer commandBuffer) {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, reorder.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, reorder.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
-    vkCmdDispatch(commandBuffer, source.texture.width, source.texture.height, 1);
+void WeightedVoronoiStippling::regionalReductionReduce(VkCommandBuffer commandBuffer) {
+        auto instanceCount = source.texture.width * source.texture.height;
+        VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
+        info.flags = 0;
+        info.renderArea = {{0, 0}, {regionalReduction.texture.width,  regionalReduction.texture.height }};
+        info.layerCount = 1;
+        info.colorAttachmentCount = 1;
 
-    VkBufferCopy copyRegion{0, 0, regionReordered.size};
-    vkCmdCopyBuffer(commandBuffer, regionReordered, regions, 1, &copyRegion);
+        VkRenderingAttachmentInfo colorAttachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+        colorAttachment.imageView = regionalReduction.texture.imageView.handle;
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.resolveMode = VK_RESOLVE_MODE_NONE;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.clearValue.color = {0.f, 0.f, 0.f, 1.f};
+        info.pColorAttachments = &colorAttachment;
 
+        vkCmdBeginRendering(commandBuffer, &info);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, regionalReduction.reduce.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, regionalReduction.reduce.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
+        vkCmdPushConstants(commandBuffer, regionalReduction.reduce.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2), &regionalReduction.dimensions);
+        vkCmdDraw(commandBuffer, 1, instanceCount, 0, 0);
+
+        vkCmdEndRendering(commandBuffer);
+        addRegionalReductionImageWriteToReadBarrier(commandBuffer);
 }
 
-void WeightedVoronoiStippling::computePartialSum(VkCommandBuffer commandBuffer) {
-    prefixSum.inclusive(commandBuffer, counts, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+void WeightedVoronoiStippling::convergeToCentroidRegionalReduction(VkCommandBuffer commandBuffer) {
+        static std::array<VkDescriptorSet, 2> sets;
+        sets[0] = descriptorSet;
+        sets[1] = regionalReduction.descriptorSet;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.centroid.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.centroid.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdDispatch(commandBuffer, globals.cpu->numPoints, 1, 1);
+        addCentroidReadBarrier(commandBuffer);
 }
 
 void WeightedVoronoiStippling::generateStipple() {
@@ -749,13 +782,16 @@ void WeightedVoronoiStippling::generateStipple() {
 void WeightedVoronoiStippling::initScratchData() {
     int numPoints = globals.cpu->numPoints;
     auto imageSize = source.texture.width * source.texture.height;
+    regionalReduction.dimensions = glm::ivec2(std::ceil(std::sqrt(numPoints)));
+    initTexture(regionalReduction.texture, regionalReduction.dimensions.x, regionalReduction.dimensions.y, VK_FORMAT_R32G32B32A32_SFLOAT);
+    createRegionalReducePipeline();
 
     regions = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(glm::vec4) * imageSize);
     regionReordered = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(glm::vec4) * imageSize);
     counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(int) * numPoints);
     centroids = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(glm::vec2) * numPoints);
 
-    auto writes = initializers::writeDescriptorSets<6>();
+    auto writes = initializers::writeDescriptorSets<7>();
     
     writes[0].dstSet = descriptorSet;
     writes[0].dstBinding = 2;
@@ -799,9 +835,19 @@ void WeightedVoronoiStippling::initScratchData() {
     VkDescriptorImageInfo voronoiImageInfo{ VK_NULL_HANDLE, stipple.voronoiRegions.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
     writes[5].pImageInfo = &voronoiImageInfo;
 
+    writes[6].dstSet = regionalReduction.descriptorSet;
+    writes[6].dstBinding = 0;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[6].descriptorCount = 1;
+    VkDescriptorImageInfo regReduceImageInfo{
+            regionalReduction.texture.sampler.handle,
+            regionalReduction.texture.imageView.handle,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+    writes[6].pImageInfo = &regReduceImageInfo;
+
     device.updateDescriptorSets(writes);
 
-    prefixSum.updateDataDescriptorSets(counts);
 
     // TODO update descriptorSet
 }
@@ -841,6 +887,24 @@ void WeightedVoronoiStippling::loadImage(const std::filesystem::path& path) {
 
     device.updateDescriptorSets(writes);
     spdlog::info("{} successfully loaded", path.string());
+}
+
+void WeightedVoronoiStippling::addRegionalReductionImageWriteToReadBarrier(VkCommandBuffer commandBuffer) {
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.image = regionalReduction.texture.image;
+    barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+}
+
+void WeightedVoronoiStippling::addBufferMemoryBarriers(VkCommandBuffer commandBuffer,
+                                                       const std::vector<VulkanBuffer>& buffers) {
+    VulkanBaseApp::addBufferMemoryBarriers(commandBuffer, buffers, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 
 

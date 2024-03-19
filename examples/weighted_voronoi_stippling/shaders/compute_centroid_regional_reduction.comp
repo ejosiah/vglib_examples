@@ -1,0 +1,45 @@
+#version 460
+
+layout(local_size_x = 1) in;
+
+layout(set = 1, binding = 0) uniform sampler2D regionalAreas;
+
+layout(set = 0, binding = 1)  buffer Points {
+    vec2 sites[];
+};
+
+layout(set = 0, binding = 4) buffer Centers {
+    vec2 centroids[];
+};
+
+layout(set = 0, binding = 0) buffer Globals {
+    mat4 projection;
+    int maxPoints;
+    int numPoints;
+    float convergenceRate;
+    int width;
+    int height;
+};
+
+void main() {
+    int i = int(gl_GlobalInvocationID.x);
+
+    int w = int(textureSize(regionalAreas, 0).x);
+    ivec2 coord = ivec2(i / w, i % w);
+
+    vec4 data = texelFetch(regionalAreas, coord, 0);
+    vec2 sum = data.xy;
+    float totalWeight = data.z;
+
+    vec2 site = sites[i];
+
+    vec2 center = (totalWeight == 0) ? site : sum/totalWeight;
+
+    vec2 d = center - site;
+
+    if(dot(d, d) > 0) {
+        vec2 newSite = mix(site, center, convergenceRate);
+        sites[i] = newSite;
+    }
+    centroids[i] = center;
+}
