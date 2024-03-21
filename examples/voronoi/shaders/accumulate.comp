@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 1, local_size_y = 1) in;
+layout(local_size_x = 32, local_size_y = 32) in;
 
 layout(set = 0, binding = 0) uniform sampler2D voronoiImage;
 
@@ -21,13 +21,15 @@ layout(push_constant) uniform Constants {
     int numGenerators;
 };
 
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+
 void main() {
     ivec2 gId = ivec2(gl_GlobalInvocationID.xy);
-    int idx = int(texelFetch(voronoiImage, gId, 0).a);
+    int idx = int(texelFetch(voronoiImage, gId, 0).w);
     vec2 dimensions = textureSize(voronoiImage, 0);
 
     vec2 pixelCoord = 2 * (vec2(gId)/dimensions) - 1;
 
-    uint index = gl_GlobalInvocationID.y * gl_NumWorkGroups.x + gl_GlobalInvocationID.x;
+    uint index = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
     regions[index] = vec4(pixelCoord, idx, 0);
 }

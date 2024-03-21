@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 1) in;
+layout(local_size_x = 32) in;
 
 layout(set = 0, binding = 0) buffer Points {
     vec2 generators[];
@@ -27,22 +27,20 @@ layout(push_constant) uniform Constants {
     int numGenerators;
 };
 
-shared vec4 localRegions[3072];
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
 
 void main() {
     int voronoiArea = screenWidth * screenHeight;
     int idx = int(gl_GlobalInvocationID.x);
     int start = offsets[idx];
     int endIdx = idx + 1;
-    int end = endIdx < gl_NumWorkGroups.x ? offsets[endIdx] : voronoiArea;
+    int end = endIdx < gridSize.x ? offsets[endIdx] : voronoiArea;
     float N = float(end - start);
 
     vec2 sum = vec2(0);
     for(int i = start; i < end; i++){
         sum += regions[i].xy;
     }
-
-
 
     vec2 gPoint = generators[idx];
     vec2 center = N != 0 ? sum/N : gPoint;

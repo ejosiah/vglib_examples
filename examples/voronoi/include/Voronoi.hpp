@@ -1,3 +1,4 @@
+#define MAX_IN_FLIGHT_FRAMES 2
 #include "VulkanBaseApp.h"
 #include <PrefixSum.hpp>
 #include <CDT.h>
@@ -77,6 +78,12 @@ protected:
 
     void computeHistogram(VkCommandBuffer commandBuffer);
 
+    void computeHistogram();
+
+    void addGpuToCpuMemoryBarrier(VkCommandBuffer commandBuffer);
+
+    void addCpuToGpuMemoryBarrier(VkCommandBuffer commandBuffer);
+
     void computePartialSum(VkCommandBuffer commandBuffer);
 
     void reorderRegions(VkCommandBuffer commandBuffer);
@@ -101,6 +108,10 @@ protected:
 
     void addTransferSrcToShaderReadBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images);
 
+    void addShaderWriteToTransferReadBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
+
+    void addTransferWriteToShaderReadBarrierBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
+
     void addTransferDstToShaderReadBarrier(VkCommandBuffer commandBuffer, std::span<VkImage> images);
 
     void addVoronoiImageWriteBarrier(VkCommandBuffer commandBuffer) const;
@@ -120,6 +131,8 @@ protected:
     Circle calculateCircumCircle(std::span<CDT::V2d<float>> points, const CDT::Triangle& triangle);
 
     void update(float time) override;
+
+    void computeCVT();
 
     void checkAppInputs() override;
 
@@ -245,7 +258,8 @@ protected:
     VulkanBuffer regionReordered;
     VulkanBuffer centroids;
     VulkanBuffer counts;
-    int numGenerators{10000};
+    constexpr static uint32_t workGroupSize = 32;
+    int numGenerators{alignedSize(8192, workGroupSize)};
     std::unordered_map<glm::vec3, int> siteMap;
 
     VulkanDescriptorSetLayout voronoiRegionsSetLayout;

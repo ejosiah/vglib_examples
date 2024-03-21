@@ -227,10 +227,10 @@ void Voronoi::initGenerators() {
 //    delaunayTriangles.vertices = device.createDeviceLocalBuffer(cdt.vertices.data(), BYTE_SIZE(cdt.vertices) * 5, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 //    delaunayTriangles.triangles = device.createDeviceLocalBuffer(cdt.indices.data(), BYTE_SIZE(cdt.indices) * 5, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
-    generators = device.createCpuVisibleBuffer(points.data(), BYTE_SIZE(points), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    generators = device.createDeviceLocalBuffer(points.data(), BYTE_SIZE(points), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     std::vector<glm::vec2> centers(numGenerators);
-    centroids = device.createCpuVisibleBuffer(centers.data(), BYTE_SIZE(centers), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    centroids = device.createDeviceLocalBuffer(centers.data(), BYTE_SIZE(centers), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 
     regions = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
@@ -239,7 +239,7 @@ void Voronoi::initGenerators() {
                                     , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::vec4)  * imageSize, "region_reorder_buffer");
 
     std::vector<int> count(numGenerators);
-    counts = device.createCpuVisibleBuffer(count.data(), BYTE_SIZE(count)
+    counts = device.createDeviceLocalBuffer(count.data(), BYTE_SIZE(count)
                                             , VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                                             | VK_BUFFER_USAGE_TRANSFER_DST_BIT
                                             | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -709,7 +709,7 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
         vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         renderVoronoiDiagram(commandBuffer);
-//    renderCentroids(commandBuffer);
+    renderCentroids(commandBuffer);
 //    renderDelaunayTriangles(commandBuffer);
         renderGenerators(commandBuffer);
 //    renderCircumCircles(commandBuffer);
@@ -718,20 +718,20 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
         vkCmdEndRenderPass(commandBuffer);
     });
 
-    generateVoronoiRegions2(commandBuffer);
-    if(useRegionalReduction){
-        regionalReductionMap(commandBuffer);
-        regionalReductionReduce(commandBuffer);
-        convergeToCentroidRegionalReduction(commandBuffer);
-    } else {
-        computeRegionAreas(commandBuffer);
-        computeHistogram(commandBuffer);
-        computePartialSum(commandBuffer);
-        reorderRegions(commandBuffer);
-        convergeToCentroid(commandBuffer);
+    if(imageIndex % swapChainImageCount == 0) {
+        generateVoronoiRegions2(commandBuffer);
+        if (useRegionalReduction) {
+            regionalReductionMap(commandBuffer);
+            regionalReductionReduce(commandBuffer);
+            convergeToCentroidRegionalReduction(commandBuffer);
+        } else {
+            computeRegionAreas(commandBuffer);
+            computeHistogram(commandBuffer);
+            computePartialSum(commandBuffer);
+            reorderRegions(commandBuffer);
+            convergeToCentroid(commandBuffer);
+        }
     }
-
-
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -744,7 +744,7 @@ void Voronoi::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::Begin("performance");
     ImGui::SetWindowSize({0, 0});
-
+    ImGui::Text("num sites %d", numGenerators);
     ImGui::Text("render:");
     ImGui::Indent(16);
     ImGui::Text("render time: %.5f ms", profiler.queries["render"].movingAverage.value * toMillis);
@@ -846,11 +846,12 @@ void Voronoi::renderCentroids(VkCommandBuffer commandBuffer) {
 
 void Voronoi::convergeToCentroid(VkCommandBuffer commandBuffer) {
     profiler.profile("converge_to_centroid", commandBuffer, [&]{
+        const auto gx = numGenerators/workGroupSize;
         addCentroidWriteBarrier(commandBuffer);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_centroid.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_centroid.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, compute_centroid.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commandBuffer, numGenerators, 1, 1);
+        vkCmdDispatch(commandBuffer, gx, 1, 1);
         addCentroidReadBarrier(commandBuffer);
     });
 }
@@ -860,37 +861,74 @@ void Voronoi::computeRegionAreas(VkCommandBuffer commandBuffer) {
         static std::array<VkDescriptorSet, 2> sets;
         sets[0] = voronoiDescriptorSet;
         sets[1] = descriptorSet;
+        const auto gx = width/workGroupSize;
+        const auto gy = height/workGroupSize;
 
         vkCmdFillBuffer(commandBuffer, regions, 0, regions.size, 0);
         vkCmdFillBuffer(commandBuffer, counts, 0, counts.size, 0);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computeArea.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computeArea.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
         vkCmdPushConstants(commandBuffer, computeArea.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commandBuffer, width, height, 1);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
         prefixSum.addBufferMemoryBarriers(commandBuffer, {&regions, &counts});
     });
 }
 
 void Voronoi::computeHistogram(VkCommandBuffer commandBuffer) {
     profiler.profile("compute_histogram", commandBuffer, [&]{
+        const auto gx = width/workGroupSize;
+        const auto gy = height/workGroupSize;
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, histogram.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, histogram.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, histogram.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commandBuffer, width, height, 1);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
         prefixSum.addBufferMemoryBarriers(commandBuffer, {&counts});
     });
 }
 
+void Voronoi::computeHistogram() {
+    std::span<int> lCounts{reinterpret_cast<int *>(counts.map()), static_cast<size_t>(numGenerators)};
+    std::span<glm::vec4> lregions = { reinterpret_cast<glm::vec4*>(regions.map()), size_t(width * height) };
+
+    for(auto& region : lregions) {
+        lCounts[int(region.z)]++;
+    }
+}
+
+void Voronoi::addGpuToCpuMemoryBarrier(VkCommandBuffer commandBuffer) {
+    addMemoryBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+}
+
+void Voronoi::addCpuToGpuMemoryBarrier(VkCommandBuffer commandBuffer) {
+    addMemoryBarrier(commandBuffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+}
+
 void Voronoi::reorderRegions(VkCommandBuffer commandBuffer) {
     profiler.profile("reorder_regions", commandBuffer, [&]{
+        const auto gx = width/workGroupSize;
+        const auto gy = height/workGroupSize;
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, reorder.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, reorder.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, reorder.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commandBuffer, width, height, 1);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
 
+        addShaderWriteToTransferReadBarrier(commandBuffer, { regionReordered });
         VkBufferCopy copyRegion{0, 0, regionReordered.size};
         vkCmdCopyBuffer(commandBuffer, regionReordered, regions, 1, &copyRegion);
+        addTransferWriteToShaderReadBarrierBarrier(commandBuffer, { regions });
     });
+}
+
+void Voronoi::addShaderWriteToTransferReadBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers){
+    addBufferMemoryBarriers(commandBuffer, buffers,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+}
+
+void Voronoi::addTransferWriteToShaderReadBarrierBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers){
+    addBufferMemoryBarriers(commandBuffer, buffers,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 }
 
 void Voronoi::computePartialSum(VkCommandBuffer commandBuffer) {
@@ -1185,6 +1223,37 @@ Circle Voronoi::calculateCircumCircle(std::span<CDT::V2d<float>> points, const C
 
 void Voronoi::update(float time) {
     glfwSetWindowTitle(window, fmt::format("{} - fps {}", title, framePerSecond).c_str());
+//    computeCVT();
+}
+
+void Voronoi::computeCVT() {
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        generateVoronoiRegions2(commandBuffer);
+        if (useRegionalReduction) {
+            regionalReductionMap(commandBuffer);
+            regionalReductionReduce(commandBuffer);
+            convergeToCentroidRegionalReduction(commandBuffer);
+        } else {
+            computeRegionAreas(commandBuffer);
+            computeHistogram(commandBuffer);
+            computePartialSum(commandBuffer);
+            reorderRegions(commandBuffer);
+            convergeToCentroid(commandBuffer);
+        }
+    });
+
+//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+//        generateVoronoiRegions2(commandBuffer);
+//        addGpuToCpuMemoryBarrier(commandBuffer);
+//        computeRegionAreas(commandBuffer);
+//    });
+//    computeHistogram();
+//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+//        addCpuToGpuMemoryBarrier(commandBuffer);
+//        computePartialSum(commandBuffer);
+//        reorderRegions(commandBuffer);
+//        convergeToCentroid(commandBuffer);
+//    });
 }
 
 void Voronoi::checkAppInputs() {
@@ -1262,11 +1331,13 @@ void Voronoi::regionalReductionMap(VkCommandBuffer commandBuffer) {
         sets[0] = descriptorSet;
         sets[1] = voronoiDescriptorSet;
 
+        const auto gx = width/workGroupSize;
+        const auto gy = height/workGroupSize;
+
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.map.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.map.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdPushConstants(commandBuffer, regionalReduction.map.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2), &regionalReduction.dimensions);
-        vkCmdDispatch(commandBuffer, width, height, 1);
-//        vkCmdDispatch(commandBuffer, 20, 20, 1);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
         prefixSum.addBufferMemoryBarriers(commandBuffer, { &regions });
     });
 }
@@ -1307,11 +1378,12 @@ void Voronoi::convergeToCentroidRegionalReduction(VkCommandBuffer commandBuffer)
         static std::array<VkDescriptorSet, 2> sets;
         sets[0] = descriptorSet;
         sets[1] = regionalReduction.descriptorSet;
+        const auto gx = numGenerators/workGroupSize;
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.centroid.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.centroid.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
         vkCmdPushConstants(commandBuffer, regionalReduction.centroid.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commandBuffer, numGenerators, 1, 1);
+        vkCmdDispatch(commandBuffer, gx, 1, 1);
         addCentroidReadBarrier(commandBuffer);
     });
 }
@@ -1332,7 +1404,7 @@ void Voronoi::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
         
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, seedVoronoiImage.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, seedVoronoiImage.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
-        vkCmdDispatch(commandBuffer, numGenerators, 1, 1);
+        vkCmdDispatch(commandBuffer, numGenerators/workGroupSize, 1, 1);
 
         addVoronoiImageWriteBarrier(commandBuffer);
         auto w = gBuffer.color.width;
@@ -1344,16 +1416,17 @@ void Voronoi::generateVoronoiRegions2(VkCommandBuffer commandBuffer) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, jumpFlood.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
 
         glm::ivec2 k{ 1, 1};
-//        vkCmdPushConstants(commandBuffer, jumpFlood.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(k), &k);
-//        vkCmdDispatch(commandBuffer, w, h, 1);
-//        addVoronoiImageWriteBarrier(commandBuffer);
+        glm::uvec2 g{ w/workGroupSize, h/workGroupSize };
+        vkCmdPushConstants(commandBuffer, jumpFlood.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(k), &k);
+        vkCmdDispatch(commandBuffer, g.x, g.y, 1);
+        addVoronoiImageWriteBarrier(commandBuffer);
 
         for(int i = 1; i <= numPasses; i++) {
             auto x = float(i);
             k = glm::ivec2{ w * glm::pow(2, -x), h * glm::pow(2, -x) };
             k = glm::max(glm::ivec2{1}, k);
             vkCmdPushConstants(commandBuffer, jumpFlood.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(k), &k);
-            vkCmdDispatch(commandBuffer, w, h, 1);
+            vkCmdDispatch(commandBuffer, g.x, g.y, 1);
 
             if(i != numPasses) {
                 addVoronoiImageWriteBarrier(commandBuffer);
@@ -1430,6 +1503,50 @@ void Voronoi::endFrame() {
 //        }
 //        inspectRegion.requested = false;
 //    }
+
+//    static bool first = true;
+//    static std::vector<int> prevCounts(numGenerators);
+//    static std::vector<int> expectedCounts(numGenerators);
+//    static std::vector<glm::vec4> expectedRegions(width * height);
+//
+//    std::span<glm::vec2> sites{ reinterpret_cast<glm::vec2*>(generators.map()), static_cast<size_t>(numGenerators) };
+//    std::span<int> sCount{reinterpret_cast<int *>(counts.map()), static_cast<size_t>(numGenerators)};
+//    std::span<glm::vec4> voronoi = { reinterpret_cast<glm::vec4*>(voronoiDiagramBuffer.map()), size_t(width * height) };
+//    std::span<glm::vec4> lregions = { reinterpret_cast<glm::vec4*>(regions.map()), size_t(width * height) };
+//
+//    expectedRegions.clear();
+//    expectedRegions.resize(width * height);
+//
+//    for(int y = 0; y < height; ++y){
+//        for(int x = 0; x < width; ++x){
+//            auto gid = glm::ivec2(x, y);
+//
+//        }
+//    }
+//
+//    expectedCounts.clear();
+//    expectedCounts.resize(numGenerators);
+//    for(auto& region : voronoi) {
+//        expectedCounts[int(region.z)]++;
+//    }
+//
+//    if(!first) {
+//
+//        int i = 0;
+//        for(; i < sCount.size(); i++){
+//            if(sCount[i] != prevCounts[i]) {
+//                spdlog::info("frame: {} => sites {} differ [{}, {}, {}]", frameCount, i, prevCounts[i], sCount[i], expectedCounts[i]);
+//                break;
+//            }
+//        }
+//    }
+//    std::copy(sCount.begin(), sCount.end(), prevCounts.begin());
+//
+//
+//    counts.unmap();
+//    generators.unmap();
+//    voronoiDiagramBuffer.unmap();
+//    first = false;
 }
 
 int main(){
@@ -1442,6 +1559,7 @@ int main(){
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.geometryShader = VK_TRUE;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
+//        settings.vSync = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 
