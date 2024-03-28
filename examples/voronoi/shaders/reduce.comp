@@ -1,0 +1,85 @@
+#version 460
+
+#define WORK_GROUP_SIZE 256
+#define SHARED_MEMORY_SIZE (WORK_GROUP_SIZE * 2)
+
+layout(local_size_x = WORK_GROUP_SIZE) in;
+
+layout(set = 0, binding = 2) buffer Sums {
+    vec4 regions[];
+};
+
+layout(set = 0, binding = 3) buffer Density {
+    int offsets[];
+};
+
+layout(set = 0, binding = 4) buffer Centers {
+    vec2 areas[];
+};
+
+layout(push_constant) uniform Constants {
+    int renderCentroid;
+    float threshold;
+    float convergenceRate;
+    int screenWidth;
+    int screenHeight;
+    int numGenerators;
+};
+
+ivec3 wgSize = ivec3(gl_WorkGroupSize);
+ivec3 gridSize = ivec3(gl_NumWorkGroups * gl_WorkGroupSize);
+
+shared vec2 local_data[SHARED_MEMORY_SIZE];
+
+
+void main() {
+    int voronoiArea = screenWidth * screenHeight;
+    int idx = int(gl_WorkGroupID.x);
+    int start = offsets[idx];
+    int endIdx = idx + 1;
+    int end = endIdx < gridSize.x ? offsets[endIdx] : voronoiArea;
+    int N = (end - start);
+
+    int lid = int(gl_LocalInvocationIndex);
+    int gid = int(gl_GlobalInvocationID.x);
+
+    local_data[lid] = vec2(0);
+    local_data[lid + wgSize.x] = vec2(0);
+
+    vec2 temp[2];
+
+    for(int i = gid; i < N; i += wgSize.x) {
+        temp[0] += i < N ? regions[8 * i + start].xy : vec2(0);
+        temp[0] += i < N ? regions[8 * i + start + 1].xy : vec2(0);
+        temp[0] += i < N ? regions[8 * i + start + 2].xy : vec2(0);
+        temp[0] += i < N ? regions[8 * i + start + 3].xy : vec2(0);
+
+        temp[1] += i < N ? regions[8 * i + start + 4].xy : vec2(0);
+        temp[1] += i < N ? regions[8 * i + start + 5].xy : vec2(0);
+        temp[1] += i < N ? regions[8 * i + start + 6].xy : vec2(0);
+        temp[1] += i < N ? regions[8 * i + start + 7].xy : vec2(0);
+    }
+
+    local_data[2 * lid] = temp[0];
+    local_data[2 * lid + 1] = temp[1];
+
+    for(int offset = 1; offset < local_data.length() / 2; offset *= 2) {
+        int index = 2 * offset * lid;
+        if(index < local_data.length()){
+            local_data[index] += local_data[index + offset];
+        }
+        barrier();
+    }
+
+    if(lid == 0){
+        areas[idx] = local_data[0];
+    }
+
+//    vec2 sum = vec2(0);
+//    for(int i = start; i < end; i++){
+//        sum += regions[i].xy;
+//    }
+//
+//    areas[idx] = sum;
+
+}

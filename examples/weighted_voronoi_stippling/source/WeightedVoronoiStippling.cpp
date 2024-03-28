@@ -628,7 +628,7 @@ void WeightedVoronoiStippling::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::Begin("stippled image");
         ImGui::SetWindowSize({0, 0});
 
-        ImGui::Image(stipple.pointsId, {w, h});
+        ImGui::Image(stipple.pointsId, {w  * 3/2, h * 3/2});
         ImGui::End();
     }
 

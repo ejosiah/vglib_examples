@@ -193,6 +193,7 @@ void Voronoi::initGenerators() {
     stagingBuffer = device.createStagingBuffer((20 << 20));
     constants.screenWidth = width;
     constants.screenHeight = height;
+    constants.numGenerators = numGenerators;
     auto imageSize = width * height;
     regionalReduction.dimensions = glm::ivec2(std::ceil(std::sqrt(numGenerators)));
 
@@ -602,7 +603,7 @@ void Voronoi::createRenderPipeline() {
 }
 
 void Voronoi::createComputePipeline() {
-    auto module = device.createShaderModule( resource("compute_centroid.comp.spv"));
+    auto module = device.createShaderModule( resource("compute_centroid2.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     // Compute Centroid
@@ -711,26 +712,24 @@ VkCommandBuffer *Voronoi::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
         renderVoronoiDiagram(commandBuffer);
     renderCentroids(commandBuffer);
 //    renderDelaunayTriangles(commandBuffer);
-        renderGenerators(commandBuffer);
+//        renderGenerators(commandBuffer);
 //    renderCircumCircles(commandBuffer);
         renderUI(commandBuffer);
 
         vkCmdEndRenderPass(commandBuffer);
     });
 
-    if(imageIndex % swapChainImageCount == 0) {
-        generateVoronoiRegions2(commandBuffer);
-        if (useRegionalReduction) {
-            regionalReductionMap(commandBuffer);
-            regionalReductionReduce(commandBuffer);
-            convergeToCentroidRegionalReduction(commandBuffer);
-        } else {
-            computeRegionAreas(commandBuffer);
-            computeHistogram(commandBuffer);
-            computePartialSum(commandBuffer);
-            reorderRegions(commandBuffer);
-            convergeToCentroid(commandBuffer);
-        }
+    generateVoronoiRegions2(commandBuffer);
+    if (useRegionalReduction) {
+        regionalReductionMap(commandBuffer);
+        regionalReductionReduce(commandBuffer);
+        convergeToCentroidRegionalReduction(commandBuffer);
+    } else {
+        computeRegionAreas(commandBuffer);
+        computeHistogram(commandBuffer);
+        computePartialSum(commandBuffer);
+        reorderRegions(commandBuffer);
+        convergeToCentroid(commandBuffer);
     }
 
     vkEndCommandBuffer(commandBuffer);
@@ -846,7 +845,7 @@ void Voronoi::renderCentroids(VkCommandBuffer commandBuffer) {
 
 void Voronoi::convergeToCentroid(VkCommandBuffer commandBuffer) {
     profiler.profile("converge_to_centroid", commandBuffer, [&]{
-        const auto gx = numGenerators/workGroupSize;
+        const auto gx = numGenerators;
         addCentroidWriteBarrier(commandBuffer);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_centroid.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_centroid.layout.handle, 0, 1, &descriptorSet, 0, nullptr);

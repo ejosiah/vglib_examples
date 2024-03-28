@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 32) in;
+layout(local_size_x = 256) in;
 
 layout(set = 0, binding = 0) buffer Points {
     vec2 generators[];
@@ -27,6 +27,7 @@ layout(push_constant) uniform Constants {
     int numGenerators;
 };
 
+ivec3 wgSize = ivec3(gl_WorkGroupSize);
 uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
 
 void main() {
@@ -47,9 +48,9 @@ void main() {
 
     vec2 d = center - gPoint;
 
-    if(dot(d, d) > threshold) {
-        vec2 newGPoint = mix(gPoint, center, convergenceRate);
-        generators[idx] = newGPoint;
+    if(dot(d, d) > threshold){
+        vec2 newPoint = mix(gPoint, center, convergenceRate);
+        generators[idx] = newPoint;
     }
     centroids[idx] = center;
 }

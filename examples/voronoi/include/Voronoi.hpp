@@ -221,7 +221,7 @@ protected:
     struct {
         int renderCentroid{0};
         float threshold{0};
-        float convergenceRate{1};
+        float convergenceRate{0.005};
         int screenWidth{0};
         int screenHeight{0};
         int numGenerators{0};
@@ -259,7 +259,7 @@ protected:
     VulkanBuffer centroids;
     VulkanBuffer counts;
     constexpr static uint32_t workGroupSize = 32;
-    int numGenerators{alignedSize(8192, workGroupSize)};
+    int numGenerators{alignedSize(200, workGroupSize)};
     std::unordered_map<glm::vec3, int> siteMap;
 
     VulkanDescriptorSetLayout voronoiRegionsSetLayout;

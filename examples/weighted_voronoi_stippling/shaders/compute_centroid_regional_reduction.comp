@@ -33,7 +33,7 @@ void main() {
 
     vec2 site = sites[i];
 
-    vec2 center = (totalWeight == 0) ? site : sum/totalWeight;
+    vec2 center = (abs(totalWeight) < 1e-6) ? site : sum/totalWeight;
 
     vec2 d = center - site;
 

@@ -1,0 +1,109 @@
+#version 460
+
+#define WORK_GROUP_SIZE 256
+#define SHARED_MEMORY_SIZE (WORK_GROUP_SIZE * 2)
+
+layout(local_size_x = WORK_GROUP_SIZE) in;
+layout(set = 0, binding = 0) buffer Points {
+    vec2 generators[];
+};
+
+layout(set = 0, binding = 2) buffer Sums {
+    vec4 regions[];
+};
+
+layout(set = 0, binding = 3) buffer Density {
+    int offsets[];
+};
+
+layout(set = 0, binding = 4) buffer Areas {
+    vec2 areas[];
+};
+
+layout(set = 0, binding = 4) buffer Centers {
+    vec2 centroids[];
+};
+
+layout(push_constant) uniform Constants {
+    int renderCentroid;
+    float threshold;
+    float convergenceRate;
+    int screenWidth;
+    int screenHeight;
+    int numGenerators;
+};
+
+ivec3 wgSize = ivec3(gl_WorkGroupSize);
+ivec3 gridSize = ivec3(gl_NumWorkGroups * gl_WorkGroupSize);
+
+shared vec2 local_data[SHARED_MEMORY_SIZE];
+
+void main() {
+    int voronoiArea = screenWidth * screenHeight;
+    int idx = int(gl_WorkGroupID.x);
+    int lid = int(gl_LocalInvocationIndex);
+    int start = offsets[idx];
+    int endIdx = idx + 1;
+    int end = endIdx < int(gl_NumWorkGroups.x) ? offsets[endIdx] : voronoiArea;
+    int N = (end - start);
+
+
+    local_data[lid] = vec2(0);
+    local_data[lid + wgSize.x] = vec2(0);
+    barrier();
+
+    vec2 temp[2] = vec2[2](vec2(0), vec2(0));
+
+    for(int i = start; i < end; i += 8 * wgSize.x) {
+
+        int index = lid * 8 + i;
+        temp[0] += index < end ? regions[index].xy : vec2(0);
+
+        index++;
+        temp[0] += index < end ? regions[index].xy : vec2(0);
+
+        index++;
+        temp[0] += index < end ? regions[index].xy : vec2(0);
+
+        index++;
+        temp[0] += index < end ? regions[index].xy : vec2(0);
+
+        index++;
+        temp[1] += index < end ? regions[index].xy : vec2(0);
+
+        index++;
+        temp[1] += index < end ? regions[index].xy : vec2(0);
+
+        index++;
+        temp[1] += index < end ? regions[index].xy : vec2(0);
+
+        index++;
+        temp[1] += index < end ? regions[index].xy : vec2(0);
+    }
+
+    local_data[lid] = temp[0];
+    local_data[lid + wgSize.x] = temp[1];
+    barrier();
+
+    for(int offset = local_data.length() / 2; offset > 0; offset = offset / 2) {
+        if(lid < offset) {
+            local_data[lid] += local_data[lid + offset];
+        }
+        barrier();
+    }
+
+
+    if(lid == 0){
+        vec2 sum = local_data[0];
+
+        vec2 gPoint = generators[idx];
+        vec2 center = N != 0 ? sum/N : gPoint;
+        vec2 d = center - gPoint;
+
+        if(dot(d, d) > threshold){
+            vec2 newPoint = mix(gPoint, center, convergenceRate);
+            generators[idx] = newPoint;
+        }
+        centroids[idx] = center;
+    }
+}
