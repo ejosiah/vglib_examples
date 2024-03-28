@@ -1,0 +1,35 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256, local_size_y = 1) in;
+
+layout(set = 1, binding = 0) buffer ParticlePosition {
+    vec2 positions[];
+};
+
+layout(set = 2, binding = 0) buffer ParticleDensity {
+    float density[];
+};
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 gridSize = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+int i = gid.y * gridSize.x + gid.x;
+
+void main() {
+    if(i >= numParticles) return;
+    int n = 0;
+    float totalWeight = 0;
+
+
+    vec2 xi = positions[i];
+
+    for(int j = 0; j < numParticles; ++j){
+        vec2 xj = positions[j];
+        float weight = W(xi - xj);
+        totalWeight += weight;
+        n += int(abs(sign(weight)));
+    }
+
+    density[i] = max(restDensity, mass * n * totalWeight);
+}

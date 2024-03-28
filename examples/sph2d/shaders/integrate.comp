@@ -1,0 +1,35 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256, local_size_y = 1) in;
+
+layout(set = 1, binding = 0) buffer ParticlePosition {
+    vec2 position[];
+};
+
+layout(set = 1, binding = 1) buffer ParticleVelocity {
+    vec2 velocity[];
+};
+
+layout(set = 1, binding = 2) buffer ParticleForce {
+    vec2 force[];
+};
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 gridSize = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+int i = gid.y * gridSize.x + gid.x;
+
+void main() {
+    if(i >= numParticles) return;
+
+    const float dt = time;
+    const vec2 a = force[i]/mass;
+
+    vec2 v = velocity[i];
+    v += a * dt;
+
+    position[i] += v * dt;
+    velocity[i] = v;
+
+}

@@ -1,0 +1,76 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer ParticlePosition {
+    vec2 position[];
+};
+
+layout(set = 1, binding = 1) buffer ParticleVelocity {
+    vec2 velocity[];
+};
+
+layout(set = 1, binding = 2) buffer ParticleForce {
+    vec2 force[];
+};
+
+layout(set = 2, binding = 0) buffer ParticleDensity {
+    float density[];
+};
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 gridSize = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+int i = gid.y * gridSize.x + gid.x;
+vec2 xi = position[i];
+float di = density[i];
+
+vec2 computePressureForce() {
+    const float k = gasConstant;
+    const float m = mass;
+    float d0 = restDensity;
+    if (di == 0) return vec2(0);
+
+    vec2 f = vec2(0);
+    for (int j = 0; j < numParticles; ++j){
+        if (j == i) continue;
+        vec2 xj = position[j];
+        float dj = density[j];
+        vec2 r = xi - xj;
+        vec2 w = dW(r);
+        f +=  (dj == 0) ? vec2(0) : (m/dj) * k * ((di - d0) + (dj - d0)) * w * 0.5f;
+    }
+    return f * -(m/di);
+}
+
+vec2 computeViscousForce() {
+    if (viscousConstant <= 0) return vec2(0);
+
+    const float mu = viscousConstant;
+    const vec2 vi = velocity[i];
+    const float m = mass;
+
+    if (di == 0) return vec2(0);
+
+    vec2 f = vec2(0);
+    for (int j = 0; j < numParticles; ++j){
+        if (j == i) continue;
+        vec2 xj = position[j];
+        vec2 vj = velocity[j];
+        float dj =  density[j];
+
+        f += (dj == 0) ? vec2(0) : (m/dj) * (vj - vi) * ddW(xi - xj);
+    }
+    return mu * (m/di) * f;
+}
+
+void main() {
+    if(i >= numParticles) return;
+
+    vec2 accumlatedForce = gravityForce;
+    accumlatedForce += computePressureForce();
+    accumlatedForce += computeViscousForce();
+
+    force[i] = accumlatedForce;
+}

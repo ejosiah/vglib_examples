@@ -1,0 +1,62 @@
+#version 460
+
+#define GENERATOR_TYPE_GRID 0
+#define GENERATOR_TYPE_TRIANGLE 1
+
+#include "shared.glsl"
+
+float pSpacing = particleRadius * 2;
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 1, binding = 1, rg32f) uniform writeonly image2D debug;
+layout(set = 1, binding = 2) uniform sampler2D sdf;
+
+layout(set = 2, binding = 0) buffer ParticlePosition {
+    vec2 positions[];
+};
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 gridSize = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+
+vec2 remap(vec2 x, vec2 a, vec2 b, vec2 c, vec2 d) {
+    return mix(c, d, (x-a)/(b-a));
+}
+
+vec2 trianglePosition(vec2 idx) {
+    const float ySpacing = pSpacing * sqrt(3) * 0.5;
+    const float offset = int(idx.y) % 2 != 0 ? pSpacing * 0.5 : 0;
+
+    vec2 position = vec2(0);
+    position.x = idx.x * pSpacing + offset + domain.lower.x;
+    position.y = idx.y * ySpacing + domain.lower.y;
+
+    return position;
+}
+
+vec2 gridPosition(vec2 idx) {
+    float radius = pSpacing * .5;
+    return vec2(idx.x * pSpacing + domain.lower.x + radius, idx.y * pSpacing + domain.lower.y + radius);
+}
+
+void main(){
+    vec2 position = vec2(0);
+    vec2 idx = vec2(gid);
+
+    if(generator == GENERATOR_TYPE_GRID) {
+        position = gridPosition(idx);
+    }else if(generator == GENERATOR_TYPE_TRIANGLE) {
+        position = trianglePosition(idx);
+    }
+
+    vec2 uv = remap(position, domain.lower, domain.upper, vec2(0), vec2(1));
+    float d = texture(sdf, uv).x;
+    imageStore(debug, gid, vec4(d));
+
+
+    if(d <= 0) {
+        int index = atomicAdd(numParticles, 1);
+        positions[index] = position;
+    }
+
+}

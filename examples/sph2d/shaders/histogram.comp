@@ -1,0 +1,26 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer ParticlePosition {
+    vec2 position[];
+};
+
+layout(set = 1, binding = 3) buffer Counts {
+    int counts[];
+};
+
+layout(set = 1, binding = 4) buffer HashMap {
+    int hashes[];
+};
+
+void main() {
+    int i = int(gl_GlobalInvocationID.x);
+    if(i >= numParticles) return;
+
+    int hash = hashes[i];
+    atomicAdd(counts[hash], 1);
+
+}

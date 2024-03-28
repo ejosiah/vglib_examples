@@ -1,0 +1,49 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256, local_size_y = 1) in;
+
+layout(set = 1, binding = 0) buffer ParticlePosition {
+    vec2 position[];
+};
+
+layout(set = 1, binding = 1) buffer ParticleVelocity {
+    vec2 velocity[];
+};
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 gridSize = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+int i = gid.y * gridSize.x + gid.x;
+
+void main() {
+    if(i >= numParticles) return;
+    const float rest = 0.6;
+
+    Domain bounds = shrink(domain, particleRadius);
+    vec2 min = bounds.lower;
+    vec2 max = bounds.upper;
+
+    vec2 p = position[i];
+    vec2 v = velocity[i];
+
+    if(p.x < min.x){
+        p.x = min.x;
+        v.x *= -rest;
+    }
+    if(p.x > max.x){
+        p.x = max.x;
+        v.x *= -rest;
+    }
+    if(p.y < min.y){
+        p.y = min.y;
+        v.y *= -rest;
+    }
+    if(p.y > max.y){
+        p.y = max.y;
+        v.y *= -rest;
+    }
+
+    position[i] = p;
+    velocity[i] = v;
+}
