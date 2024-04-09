@@ -1,11 +1,16 @@
 #version 460
 
 #include "shared.glsl"
+#include "hash.glsl"
 
 layout(local_size_x = 256, local_size_y = 1) in;
 
 layout(set = 1, binding = 0) buffer ParticlePosition {
     vec4 positions[];
+};
+
+layout(set = 1, binding = 3) buffer Counts {
+    int counts[];
 };
 
 layout(set = 2, binding = 0) buffer ParticleDensity {
@@ -23,13 +28,32 @@ void main() {
 
 
     vec2 xi = positions[i].xy;
+    vec2 maxDist = vec2(h);
+    ivec2 d0 = intCoords(xi - maxDist);
+    ivec2 d1 = intCoords(xi + maxDist);
 
-    for(int j = 0; j < numParticles; ++j){
-        vec2 xj = positions[j].xy;
-        float weight = W(xi - xj);
-        totalWeight += weight;
-        n += int(abs(sign(weight)));
+//    for(int j = 0; j < numParticles; ++j){
+//        vec2 xj = positions[j].xy;
+//        float weight = W(xi - xj);
+//        totalWeight += weight;
+//        n += int(abs(sign(weight)));
+//    }
+
+    for(int j = d0.y; j <= d1.y; ++j) {
+        for(int i = d0.x; i <= d1.x; ++i){
+            int hh = hash(ivec2(i, j));
+            int start = counts[hh];
+            int end = counts[hh + 1];
+
+            for(int k = start; k < end; ++k){
+                vec2 xj = positions[k].xy;
+                float weight = W(xi - xj);
+                totalWeight += weight;
+            }
+            n += end - start;
+        }
     }
+
 
     density[i] = max(restDensity, mass * n * totalWeight);
 }
