@@ -19,13 +19,11 @@ layout(set = 1, binding = 3) buffer Counts {
 };
 
 
-layout(set = 1, binding = 5) buffer Staging {
+layout(set = 1, binding = 4) buffer Staging {
     vec4 positionOut[];
 };
 
-
-
-layout(set = 1, binding = 6) buffer VelocityStaging {
+layout(set = 1, binding = 5) buffer VelocityStaging {
     vec2 velocityOut[];
 };
 
@@ -38,8 +36,8 @@ void main() {
     vec4 pos = position[i];
     vec2 vel = velocity[i];
 
-//    int hash = computeHash(pos.xy);
-    int hash = int(pos.z);
+    int hash = computeHash(pos.xy);
+//    int hash = int(pos.z);
     int index = atomicAdd(counts[hash], - 1) - 1;
 //    int index = i;
     positionOut[index] = pos;

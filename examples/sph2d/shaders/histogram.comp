@@ -1,6 +1,7 @@
 #version 460
 
 #include "shared.glsl"
+#include "hash.glsl"
 
 layout(local_size_x = 256) in;
 
@@ -21,7 +22,7 @@ void main() {
     if(i >= numParticles) return;
 
 //    int hash = hashes[i];
-    int hash = int(position[i].z);
+    int hash = computeHash(position[i].xy);
     atomicAdd(counts[hash], 1);
 
 }

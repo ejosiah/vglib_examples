@@ -76,8 +76,6 @@ protected:
 
     void updateHashGrid(VkCommandBuffer commandBuffer);
 
-    void computeHashMap(VkCommandBuffer commandBuffer);
-
     void computeHistogram(VkCommandBuffer commandBuffer);
 
     void computePartialSum(VkCommandBuffer commandBuffer);
@@ -128,7 +126,6 @@ protected:
         Pipeline force;
         Pipeline collision;
         Pipeline integrate;
-        Pipeline hashMap;
         Pipeline histogram;
         Pipeline reorder;
     } compute;
@@ -149,7 +146,6 @@ protected:
 
     struct {
         VulkanBuffer counts;
-        VulkanBuffer hashes;
     } spatialHash;
 
 

@@ -36,7 +36,6 @@ void Sph2D::initializeParticles() {
     particles.density[0] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(float) * particles.maxParticles);
     particles.density[1] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(float) * particles.maxParticles);
 
-    spatialHash.hashes = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(int) * particles.maxParticles);
     spatialHash.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(int) * particles.maxParticles * 2 + 1);
 
     globals.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(GlobalData));
@@ -176,10 +175,6 @@ void Sph2D::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(6)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
 
     particles.densitySetLayout =
@@ -223,7 +218,7 @@ void Sph2D::updateDescriptorSets(){
     particles.densitySet[0] = sets[3];
     particles.densitySet[1] = sets[4];
 
-    auto writes = initializers::writeDescriptorSets<13>();
+    auto writes = initializers::writeDescriptorSets<12>();
 
     writes[0].dstSet = globalSet;
     writes[0].dstBinding = 0;
@@ -285,36 +280,29 @@ void Sph2D::updateDescriptorSets(){
     writes[8].dstBinding = 4;
     writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[8].descriptorCount = 1;
-    VkDescriptorBufferInfo hashInfo{ spatialHash.hashes, 0, VK_WHOLE_SIZE };
-    writes[8].pBufferInfo = &hashInfo;
+    VkDescriptorBufferInfo positionReorderedInfo{ particles.positionReordered, 0, VK_WHOLE_SIZE };
+    writes[8].pBufferInfo = &positionReorderedInfo;
 
     writes[9].dstSet = particles.descriptorSet;
     writes[9].dstBinding = 5;
     writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[9].descriptorCount = 1;
-    VkDescriptorBufferInfo positionReorderedInfo{ particles.positionReordered, 0, VK_WHOLE_SIZE };
-    writes[9].pBufferInfo = &positionReorderedInfo;
+    VkDescriptorBufferInfo velocityReorderedInfo{ particles.velocityReordered, 0, VK_WHOLE_SIZE };
+    writes[9].pBufferInfo = &velocityReorderedInfo;
 
-    writes[10].dstSet = particles.descriptorSet;
-    writes[10].dstBinding = 6;
+    writes[10].dstSet = particles.densitySet[0];
+    writes[10].dstBinding = 0;
     writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[10].descriptorCount = 1;
-    VkDescriptorBufferInfo velocityReorderedInfo{ particles.velocityReordered, 0, VK_WHOLE_SIZE };
-    writes[10].pBufferInfo = &velocityReorderedInfo;
+    VkDescriptorBufferInfo density0Info{ particles.density[0], 0, VK_WHOLE_SIZE };
+    writes[10].pBufferInfo = &density0Info;
 
-    writes[11].dstSet = particles.densitySet[0];
+    writes[11].dstSet = particles.densitySet[1];
     writes[11].dstBinding = 0;
     writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[11].descriptorCount = 1;
-    VkDescriptorBufferInfo density0Info{ particles.density[0], 0, VK_WHOLE_SIZE };
-    writes[11].pBufferInfo = &density0Info;
-
-    writes[12].dstSet = particles.densitySet[1];
-    writes[12].dstBinding = 0;
-    writes[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[12].descriptorCount = 1;
     VkDescriptorBufferInfo density1Info{ particles.density[1], 0, VK_WHOLE_SIZE };
-    writes[12].pBufferInfo = &density1Info;
+    writes[11].pBufferInfo = &density1Info;
     
     device.updateDescriptorSets(writes);
 }
@@ -415,15 +403,6 @@ void Sph2D::createComputePipeline() {
     compute.integrate.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("integrate", compute.integrate.layout.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("integrate", compute.integrate.pipeline.handle);
-
-    module = device.createShaderModule(resource("hash_map.comp.spv"));
-    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-    compute.hashMap.layout = device.createPipelineLayout({ globalSetLayout, particles.setLayout });
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.hashMap.layout.handle;
-    compute.hashMap.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("hash_map", compute.hashMap.layout.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("hash_map", compute.hashMap.pipeline.handle);
 
     module = device.createShaderModule(resource("histogram.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
@@ -536,7 +515,7 @@ void Sph2D::runSph(VkCommandBuffer commandBuffer) {
 }
 
 void Sph2D::updateHashGrid(VkCommandBuffer commandBuffer) {
-    computeHashMap(commandBuffer);
+//    computeHashMap(commandBuffer);
     computeHistogram(commandBuffer);
     computePartialSum(commandBuffer);
     reorder(commandBuffer);
@@ -680,19 +659,6 @@ void Sph2D::prepareForRender(VkCommandBuffer commandBuffer) {
             , VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
 }
 
-void Sph2D::computeHashMap(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = globalSet;
-    sets[1] = particles.descriptorSet;
-    const auto gx = (globals.cpu->numParticles + workGroupSize)/workGroupSize;
-
-//    vkCmdFillBuffer(commandBuffer, spatialHash.hashes, 0, VK_WHOLE_SIZE, 0);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.hashMap.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.hashMap.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, gx, 1, 1);
-    addComputeBarrier(commandBuffer, { spatialHash.hashes });
-}
-
 void Sph2D::computeHistogram(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = globalSet;
@@ -741,15 +707,15 @@ void Sph2D::endFrame() {
 //        return int(abs(hash(pid)) % globals.cpu->hashMapSize);
 //    };
 
-    auto computeHash = [&](glm::vec2 pos) {
-        glm::ivec2 pid = glm::ivec2(pos/globals.cpu->spacing);
-        return pid.y * int(20/globals.cpu->spacing) + pid.x;
-    };
-
+//    auto computeHash = [&](glm::vec2 pos) {
+//        glm::ivec2 pid = glm::ivec2(pos/globals.cpu->spacing);
+//        return pid.y * int(20/globals.cpu->spacing) + pid.x;
+//    };
+//
 //    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
 //        runSph(commandBuffer);
 //    });
-
+//
 //    if(options.start && options.accelerate) {
 //
 //        std::span<int> pHash = { reinterpret_cast<int*>(spatialHash.hashes.map()), size_t( globals.cpu->hashMapSize )  };
