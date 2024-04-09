@@ -5,7 +5,7 @@
 layout(local_size_x = 256, local_size_y = 1) in;
 
 layout(set = 1, binding = 0) buffer ParticlePosition {
-    vec2 position[];
+    vec4 position[];
 };
 
 layout(set = 1, binding = 1) buffer ParticleVelocity {
@@ -24,7 +24,7 @@ void main() {
     vec2 min = bounds.lower;
     vec2 max = bounds.upper;
 
-    vec2 p = position[i];
+    vec2 p = position[i].xy;
     vec2 v = velocity[i];
 
     if(p.x < min.x){
@@ -44,6 +44,6 @@ void main() {
         v.y *= -rest;
     }
 
-    position[i] = p;
+    position[i].xy = p;
     velocity[i] = v;
 }

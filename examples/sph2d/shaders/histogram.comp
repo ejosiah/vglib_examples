@@ -5,7 +5,7 @@
 layout(local_size_x = 256) in;
 
 layout(set = 1, binding = 0) buffer ParticlePosition {
-    vec2 position[];
+    vec4 position[];
 };
 
 layout(set = 1, binding = 3) buffer Counts {
@@ -20,7 +20,8 @@ void main() {
     int i = int(gl_GlobalInvocationID.x);
     if(i >= numParticles) return;
 
-    int hash = hashes[i];
+//    int hash = hashes[i];
+    int hash = int(position[i].z);
     atomicAdd(counts[hash], 1);
 
 }

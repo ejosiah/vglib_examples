@@ -1,30 +1,24 @@
 #version 460
 
 #include "shared.glsl"
+#include "hash.glsl"
 
 layout(local_size_x = 256) in;
 
 layout(set = 1, binding = 0) buffer ParticlePosition {
-    vec2 position[];
+    vec4 position[];
 };
 
 layout(set = 1, binding = 4) buffer HashMap {
     int hashes[];
 };
 
-
-int hash(ivec2 pid) {
-    return abs(541 * pid.x + 79 * pid.y);
-}
-
-int computeHash(vec2 pos) {
-    ivec2 pid = ivec2(pos/spacing);
-    return hash(pid) % hashMapSize;
-}
+int i = int(gl_GlobalInvocationID.x);
 
 void main() {
-    int i = int(gl_GlobalInvocationID.x);
     if(i >= numParticles) return;
-    vec2 pos = position[i];
+
+    vec2 pos = position[i].xy;
     hashes[i] = computeHash(pos);
+    position[i].z = computeHash(pos);
 }

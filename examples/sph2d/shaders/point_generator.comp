@@ -13,7 +13,7 @@ layout(set = 1, binding = 1, rg32f) uniform writeonly image2D debug;
 layout(set = 1, binding = 2) uniform sampler2D sdf;
 
 layout(set = 2, binding = 0) buffer ParticlePosition {
-    vec2 positions[];
+    vec4 positions[];
 };
 
 ivec2 gid = ivec2(gl_GlobalInvocationID);
@@ -56,7 +56,8 @@ void main(){
 
     if(d <= 0) {
         int index = atomicAdd(numParticles, 1);
-        positions[index] = position;
+        int id = int(idx.y * gridSize.x + idx.x);
+        positions[index] = vec4(position, 0, id);
     }
 
 }

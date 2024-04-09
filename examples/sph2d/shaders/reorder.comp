@@ -1,40 +1,48 @@
 #version 460
 
 #include "shared.glsl"
+#include "hash.glsl"
 
 layout(local_size_x = 256) in;
 
 layout(set = 1, binding = 0) buffer ParticlePosition {
-    vec2 position[];
+    vec4 position[];
 };
+
+layout(set = 1, binding = 1) buffer ParticleVelocity {
+    vec2 velocity[];
+};
+
 
 layout(set = 1, binding = 3) buffer Counts {
     int counts[];
 };
 
 
-layout(set = 1, binding = 0) buffer Staging {
-    vec2 positionOut[];
+layout(set = 1, binding = 5) buffer Staging {
+    vec4 positionOut[];
 };
 
 
-int hash(ivec2 pid) {
-    return abs(541 * pid.x + 79 * pid.y);
-}
 
-int computeHash(vec2 pos) {
-    ivec2 pid = ivec2(pos/spacing);
-    return hash(pid) % hashMapSize;
-}
+layout(set = 1, binding = 6) buffer VelocityStaging {
+    vec2 velocityOut[];
+};
+
+
 
 void main() {
     int i = int(gl_GlobalInvocationID.x);
     if(i >= numParticles) return;
 
-    vec2 pos = position[i];
-    int hash = computeHash(pos);
+    vec4 pos = position[i];
+    vec2 vel = velocity[i];
 
+//    int hash = computeHash(pos.xy);
+    int hash = int(pos.z);
     int index = atomicAdd(counts[hash], - 1) - 1;
+//    int index = i;
     positionOut[index] = pos;
+    velocityOut[index] = vel;
 
 }

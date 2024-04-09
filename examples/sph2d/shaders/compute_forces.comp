@@ -5,7 +5,7 @@
 layout(local_size_x = 256) in;
 
 layout(set = 1, binding = 0) buffer ParticlePosition {
-    vec2 position[];
+    vec4 position[];
 };
 
 layout(set = 1, binding = 1) buffer ParticleVelocity {
@@ -23,7 +23,7 @@ layout(set = 2, binding = 0) buffer ParticleDensity {
 ivec2 gid = ivec2(gl_GlobalInvocationID);
 ivec2 gridSize = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
 int i = gid.y * gridSize.x + gid.x;
-vec2 xi = position[i];
+vec2 xi = position[i].xy;
 float di = density[i];
 
 vec2 computePressureForce() {
@@ -35,7 +35,7 @@ vec2 computePressureForce() {
     vec2 f = vec2(0);
     for (int j = 0; j < numParticles; ++j){
         if (j == i) continue;
-        vec2 xj = position[j];
+        vec2 xj = position[j].xy;
         float dj = density[j];
         vec2 r = xi - xj;
         vec2 w = dW(r);
@@ -56,7 +56,7 @@ vec2 computeViscousForce() {
     vec2 f = vec2(0);
     for (int j = 0; j < numParticles; ++j){
         if (j == i) continue;
-        vec2 xj = position[j];
+        vec2 xj = position[j].xy;
         vec2 vj = velocity[j];
         float dj =  density[j];
 

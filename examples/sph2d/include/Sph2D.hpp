@@ -1,6 +1,7 @@
 #include "VulkanBaseApp.h"
 #include "FixedUpdate.hpp"
 #include "Canvas.hpp"
+#include <PrefixSum.hpp>
 
 struct Domain{
     glm::vec2 lower{};
@@ -30,11 +31,6 @@ struct GlobalData {
     float time;
 };
 
-struct Pipeline {
-    VulkanPipelineLayout layout;
-    VulkanPipeline pipeline;
-};
-
 class Sph2D : public VulkanBaseApp{
 public:
     explicit Sph2D(const Settings& settings = {});
@@ -43,6 +39,8 @@ protected:
     void initApp() override;
 
     void initGrid();
+
+    void initPrefixSum();
 
     void createDescriptorPool();
 
@@ -74,6 +72,18 @@ protected:
 
     void renderUI(VkCommandBuffer commandBuffer);
 
+    void runSph(VkCommandBuffer commandBuffer);
+
+    void updateHashGrid(VkCommandBuffer commandBuffer);
+
+    void computeHashMap(VkCommandBuffer commandBuffer);
+
+    void computeHistogram(VkCommandBuffer commandBuffer);
+
+    void computePartialSum(VkCommandBuffer commandBuffer);
+
+    void reorder(VkCommandBuffer commandBuffer);
+
     void renderParticles(VkCommandBuffer commandBuffer);
 
     void collisionCheck(VkCommandBuffer commandBuffer);
@@ -88,6 +98,10 @@ protected:
 
     void addComputeBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
 
+    void addShaderWriteToTransferReadBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
+
+    void addTransferWriteToShaderReadBarrierBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
+
     void prepareForRender(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
@@ -99,6 +113,8 @@ protected:
     void onPause() override;
 
     void newFrame() override;
+
+    void endFrame() override;
 
 protected:
     struct {
@@ -112,6 +128,9 @@ protected:
         Pipeline force;
         Pipeline collision;
         Pipeline integrate;
+        Pipeline hashMap;
+        Pipeline histogram;
+        Pipeline reorder;
     } compute;
 
     struct {
@@ -119,6 +138,8 @@ protected:
         VulkanBuffer position;
         VulkanBuffer velocity;
         VulkanBuffer forces;
+        VulkanBuffer positionReordered;
+        VulkanBuffer velocityReordered;
         std::array<VulkanBuffer, 2> density;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
@@ -146,6 +167,7 @@ protected:
         float k{};
         bool start{false};
         bool reset{false};
+        bool accelerate{true};
         bool fixedUpdate{true};
     } options;
 
@@ -161,7 +183,7 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
 
-    FixedUpdate fixedUpdate{120};
+    FixedUpdate fixedUpdate{240};
     static constexpr uint32_t workGroupSize = 256;
 
     struct {
@@ -172,4 +194,6 @@ protected:
         } constants;
         bool show{false};
     } grid;
+
+    PrefixSum prefixSum;
 };
