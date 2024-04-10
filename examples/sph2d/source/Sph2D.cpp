@@ -42,18 +42,18 @@ void Sph2D::initializeParticles() {
     globals.cpu = reinterpret_cast<GlobalData*>(globals.gpu.map());
     globals.cpu->domain.lower = glm::vec2(0);
     globals.cpu->domain.upper = glm::vec2(20);
-    globals.cpu->radius = 0.025;
+    globals.cpu->radius = 0.05;
     globals.cpu->spacing = 0.2;
     globals.cpu->smoothingRadius = 0.1;
     setConstants(*globals.cpu);
-    globals.cpu->viscousConstant = 0.99;
+    globals.cpu->viscousConstant = 1e6;
     globals.cpu->gravity = 0.1;
     globals.cpu->mass = 1;
     globals.cpu->gasConstant = 20;
     globals.cpu->generator = 1;
     globals.cpu->numParticles = 0;
     globals.cpu->time = fixedUpdate.period();
-    globals.cpu->restDensity = 1000;
+    globals.cpu->restDensity = 0;
 
     options.h = globals.cpu->smoothingRadius;
     options.k = globals.cpu->gasConstant/options.h;

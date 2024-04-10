@@ -36,25 +36,15 @@ float k = gasConstant;
 float m = mass;
 float mu = viscousConstant;
 
-vec2 computePressureForce() {
-    const float k = gasConstant;
-    const float m = mass;
-    if (di == 0) return vec2(0);
-
-    vec2 f = vec2(0);
-//    for (int j = 0; j < numParticles; ++j){
-//        vec2 xj = position[j].xy;
-//        float dj = density[j];
-//        vec2 r = xi - xj;
-//        vec2 w = dW(r);
-//        f +=  (dj == 0) ? vec2(0) : (m/dj) * k * ((di - restDensity) + (dj - restDensity)) * w * 0.5f;
-//    }
-
+void main() {
+    if(idx >= numParticles) return;
 
     vec2 maxDist = vec2(h);
     ivec2 d0 = intCoords(xi - maxDist);
     ivec2 d1 = intCoords(xi + maxDist);
 
+    vec2 pressureForce = vec2(0);
+    vec2 viscousForce = vec2(0);
     for(int y = d0.y; y <= d1.y; ++y) {
         for(int x = d0.x; x <= d1.x; ++x){
             int hh = hash(ivec2(x, y));
@@ -64,62 +54,17 @@ vec2 computePressureForce() {
             for(int j = start; j < end; ++j){
                 vec2 xj = position[j].xy;
                 float dj = density[j];
+                vec2 vj = velocity[j];
                 vec2 r = xi - xj;
                 vec2 w = dW(r);
-                f +=  (dj == 0) ? vec2(0) : (m/dj) * k * ((di - restDensity) + (dj - restDensity)) * w * 0.5f;
+                pressureForce +=  (dj == 0) ? vec2(0) : (m/dj) * k * ((di - restDensity) + (dj - restDensity)) * w * 0.5f;
+                viscousForce += (dj == 0) ? vec2(0) : (m/dj) * (vj - vi) * ddW(xi - xj);
             }
         }
     }
-    return f * -(m/di);
-}
+    pressureForce *= -(m/di);
+    viscousForce *= mu * (m/di);
 
-vec2 computeViscousForce() {
-    if (viscousConstant <= 0) return vec2(0);
 
-    const float mu = viscousConstant;
-    const vec2 vi = velocity[idx];
-    const float m = mass;
-
-    if (di == 0) return vec2(0);
-
-    vec2 f = vec2(0);
-//    for (int j = 0; j < numParticles; ++j){
-//        vec2 xj = position[j].xy;
-//        vec2 vj = velocity[j];
-//        float dj =  density[j];
-//
-//        f += (dj == 0) ? vec2(0) : (m/dj) * (vj - vi) * ddW(xi - xj);
-//    }
-
-    vec2 maxDist = vec2(h);
-    ivec2 d0 = intCoords(xi - maxDist);
-    ivec2 d1 = intCoords(xi + maxDist);
-
-    for(int y = d0.y; y <= d1.y; ++y) {
-        for(int x = d0.x; x <= d1.x; ++x){
-            int hh = hash(ivec2(x, y));
-            int start = counts[hh];
-            int end = counts[hh + 1];
-
-            for(int j = start; j < end; ++j){
-                vec2 xj = position[j].xy;
-                vec2 vj = velocity[j];
-                float dj =  density[j];
-
-                f += (dj == 0) ? vec2(0) : (m/dj) * (vj - vi) * ddW(xi - xj);
-            }
-        }
-    }
-
-    return mu * (m/di) * f;
-}
-
-void main() {
-    if(idx >= numParticles) return;
-
-    vec2 accumlatedForce = gravityForce;
-    accumlatedForce += computePressureForce();
-    accumlatedForce += computeViscousForce();
-
-    force[idx] = accumlatedForce;
+    force[idx] = gravityForce + pressureForce + viscousForce;
 }
