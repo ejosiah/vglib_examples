@@ -143,8 +143,8 @@ void CollisionDetection::createPipelineCache() {
 
 
 void CollisionDetection::createRenderPipeline() {
-    auto vertModule = VulkanShaderModule{ "../../data/shaders/flat.vert.spv", device};
-    auto fragModule = VulkanShaderModule{"../../data/shaders/flat.frag.spv", device};
+    auto vertModule = device.createShaderModule( "../../data/shaders/flat.vert.spv");
+    auto fragModule = device.createShaderModule("../../data/shaders/flat.frag.spv");
 
     auto shaderStages = initializers::vertexShaderStages({
              { vertModule, VK_SHADER_STAGE_VERTEX_BIT },
@@ -200,21 +200,21 @@ void CollisionDetection::createRenderPipeline() {
     createInfo.pMultisampleState = &multisampleState;
     createInfo.pDepthStencilState = &depthStencilState;
     createInfo.pColorBlendState = &colorBlendState;
-    createInfo.layout = objects.layout;
+    createInfo.layout = objects.layout.handle;
     createInfo.renderPass = renderPass;
     createInfo.subpass = 0;
 
-    objects.render.perspectivePipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    objects.render.perspectivePipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
     createInfo.flags = VK_PIPELINE_CREATE_DERIVATIVE_BIT;
     createInfo.basePipelineIndex = -1;
-    createInfo.basePipelineHandle = objects.render.perspectivePipeline;
+    createInfo.basePipelineHandle = objects.render.perspectivePipeline.handle;
 
     // top
      viewport = initializers::viewport(width, height, width, 0.0f);
      scissor = initializers::scissor(width, height, width, 0.0f);
      viewportState = initializers::viewportState(viewport, scissor);
      createInfo.pViewportState = &viewportState;
-     objects.render.topPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+     objects.render.topPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // right
      viewport = initializers::viewport(width, height, width, height);
@@ -222,14 +222,14 @@ void CollisionDetection::createRenderPipeline() {
 
      viewportState = initializers::viewportState(viewport, scissor);
      createInfo.pViewportState = &viewportState;
-     objects.render.rightPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+     objects.render.rightPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // left
      viewport = initializers::viewport(width, height, 0.0f, height);
      scissor = initializers::scissor(width, height, 0.0f, height);
      viewportState = initializers::viewportState(viewport, scissor);
      createInfo.pViewportState = &viewportState;
-     objects.render.leftPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+     objects.render.leftPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // crossHair perspective
     inputAssemblyState = initializers::inputAssemblyState(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_FALSE);
@@ -243,33 +243,33 @@ void CollisionDetection::createRenderPipeline() {
     createInfo.pInputAssemblyState = &inputAssemblyState;
     createInfo.pRasterizationState = &rasterizationState;
 
-    objects.crossHair.perspectivePipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    objects.crossHair.perspectivePipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // top
     viewport = initializers::viewport(width, height, width, 0.0f);
     scissor = initializers::scissor(width, height, width, 0.0f);
     viewportState = initializers::viewportState(viewport, scissor);
     createInfo.pViewportState = &viewportState;
-    objects.crossHair.topPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    objects.crossHair.topPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // right
     viewport = initializers::viewport(width, height, width, height);
     scissor = initializers::scissor(width, height, width, height);
     viewportState = initializers::viewportState(viewport, scissor);
     createInfo.pViewportState = &viewportState;
-    objects.crossHair.rightPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    objects.crossHair.rightPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // left
     viewport = initializers::viewport(width, height, 0.0f, height);
     scissor = initializers::scissor(width, height, 0.0f, height);
     viewportState = initializers::viewportState(viewport, scissor);
     createInfo.pViewportState = &viewportState;
-    objects.crossHair.leftPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    objects.crossHair.leftPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 }
 
 void CollisionDetection::createGridPipeline() {
-    auto vertexModule = VulkanShaderModule{"../../data/shaders/grid.vert.spv", device};
-    auto fragModule = VulkanShaderModule{"../../data/shaders/grid.frag.spv", device};
+    auto vertexModule = device.createShaderModule("../../data/shaders/grid.vert.spv");
+    auto fragModule = device.createShaderModule("../../data/shaders/grid.frag.spv");
 
     auto shaderStages = initializers::vertexShaderStages({
          { vertexModule, VK_SHADER_STAGE_VERTEX_BIT },
@@ -338,14 +338,14 @@ void CollisionDetection::createGridPipeline() {
     createInfo.pMultisampleState = &multiSampleState;
     createInfo.pDepthStencilState = &depthStencilState;
     createInfo.pColorBlendState = &colorBlendState;
-    createInfo.layout = grid.layout;
+    createInfo.layout = grid.layout.handle;
     createInfo.renderPass = renderPass;
     createInfo.subpass = 0;
 
     grid.perspectivePipeline = device.createGraphicsPipeline(createInfo);
 
     createInfo.flags = VK_PIPELINE_CREATE_DERIVATIVE_BIT;
-    createInfo.basePipelineHandle = grid.perspectivePipeline;
+    createInfo.basePipelineHandle = grid.perspectivePipeline.handle;
     createInfo.basePipelineIndex = -1;
 
     // top
@@ -353,34 +353,34 @@ void CollisionDetection::createGridPipeline() {
     scissor = initializers::scissor(width, height, width, 0.0f);
     viewportState = initializers::viewportState(viewport, scissor);
     createInfo.pViewportState = &viewportState;
-    grid.topPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    grid.topPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // right
     viewport = initializers::viewport(width, height, width, height);
     scissor = initializers::scissor(width, height, width, height);
     viewportState = initializers::viewportState(viewport, scissor);
     createInfo.pViewportState = &viewportState;
-    grid.rightPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    grid.rightPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 
     // left
     viewport = initializers::viewport(width, height, 0.0f, height);
     scissor = initializers::scissor(width, height, 0.0f, height);
     viewportState = initializers::viewportState(viewport, scissor);
     createInfo.pViewportState = &viewportState;
-    grid.leftPipeline = device.createGraphicsPipeline(createInfo, pipelineCache);
+    grid.leftPipeline = device.createGraphicsPipeline(createInfo, pipelineCache.handle);
 }
 
 void CollisionDetection::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -422,10 +422,10 @@ VkCommandBuffer *CollisionDetection::buildCommandBuffers(uint32_t imageIndex, ui
 //    // grid
 //    vkCmdBindVertexBuffers(commandBuffer, 0, 1, grid.vertexBuffer, &offset);
 //    vkCmdDraw(commandBuffer, grid.vertexCount, 1, 0, 0);
-    drawGrid(commandBuffer, grid.perspectivePipeline, grid.layout, camera->cam());
-    drawGrid(commandBuffer, grid.topPipeline, grid.layout, cameras.top);
-    drawGrid(commandBuffer, grid.rightPipeline, grid.layout, cameras.right);
-    drawGrid(commandBuffer, grid.leftPipeline, grid.layout, cameras.front);
+    drawGrid(commandBuffer, grid.perspectivePipeline.handle, grid.layout.handle, camera->cam());
+    drawGrid(commandBuffer, grid.topPipeline.handle, grid.layout.handle, cameras.top);
+    drawGrid(commandBuffer, grid.rightPipeline.handle, grid.layout.handle, cameras.right);
+    drawGrid(commandBuffer, grid.leftPipeline.handle, grid.layout.handle, cameras.front);
 
     // objects
 //    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, objects.crossHair.perspectivePipeline);
@@ -442,10 +442,10 @@ VkCommandBuffer *CollisionDetection::buildCommandBuffers(uint32_t imageIndex, ui
 //        vkCmdBindIndexBuffer(commandBuffer, object.indexBuffers, 0, VK_INDEX_TYPE_UINT32);
 //        vkCmdDrawIndexed(commandBuffer, object.indexBuffers.size/sizeof(uint32_t), 1, 0, 0, 0);
 //    }
-    drawObject(commandBuffer, objects.render.perspectivePipeline, objects.crossHair.perspectivePipeline, objects.layout, camera->cam());
-    drawObject(commandBuffer, objects.render.topPipeline, objects.crossHair.topPipeline, objects.layout, cameras.top);
-    drawObject(commandBuffer, objects.render.rightPipeline, objects.crossHair.rightPipeline, objects.layout, cameras.right);
-    drawObject(commandBuffer, objects.render.leftPipeline, objects.crossHair.leftPipeline, objects.layout, cameras.front);
+    drawObject(commandBuffer, objects.render.perspectivePipeline.handle, objects.crossHair.perspectivePipeline.handle, objects.layout.handle, camera->cam());
+    drawObject(commandBuffer, objects.render.topPipeline.handle, objects.crossHair.topPipeline.handle, objects.layout.handle, cameras.top);
+    drawObject(commandBuffer, objects.render.rightPipeline.handle, objects.crossHair.rightPipeline.handle, objects.layout.handle, cameras.right);
+    drawObject(commandBuffer, objects.render.leftPipeline.handle, objects.crossHair.leftPipeline.handle, objects.layout.handle, cameras.front);
 
     vkCmdEndRenderPass(commandBuffer);
 

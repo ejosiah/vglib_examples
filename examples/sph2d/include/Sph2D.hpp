@@ -179,7 +179,7 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
 
-    FixedUpdate fixedUpdate{240};
+    FixedUpdate fixedUpdate{60};
     static constexpr uint32_t workGroupSize = 256;
 
     struct {

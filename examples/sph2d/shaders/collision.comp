@@ -18,7 +18,7 @@ int i = gid.y * gridSize.x + gid.x;
 
 void main() {
     if(i >= numParticles) return;
-    const float rest = 0.6;
+    const float rest = 0;
 
     Domain bounds = shrink(domain, particleRadius);
     vec2 min = bounds.lower;

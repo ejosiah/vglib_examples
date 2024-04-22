@@ -65,7 +65,7 @@ float ddW(vec2 R) {
     if(r == 0 || r > h) return 0.f;
     const float r2 = r * r;
     const float r3 = r2 * r;
-    return r3/_2h3 + r2/h2 + h/(2*r) - 1;
+    return -(r3/_2h3) + r2/h2 + h/(2*r) - 1;
 }
 
 Domain shrink(const Domain domain, float factor){

@@ -1,0 +1,52 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 3) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 5) buffer Counts {
+    uint counts[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main() {
+    uint start = gid * global.segmentSize;
+    uint end = start + global.segmentSize;
+    end = min(end, global.numCells);
+
+    if(start >= global.numCells) return;
+
+    uint cell = cellID[start];
+    uint offset = start;
+
+    uint transitions = 0;
+
+    uint last = global.numCells - 1;
+
+    while(true) {
+        uint nextCell = cellID[++offset];
+        if(nextCell != cell){
+            transitions++;
+            if(transitions == 1 && gid != 0){   // skip first transition for all but first invocation
+                start = offset;
+                cell = nextCell;
+                continue;
+            }
+
+            counts[cell] = offset - start;
+
+            if(offset > end)  break;// we have gone beyond our seqment
+
+            start = offset;
+            cell = nextCell;
+        }
+    }
+
+
+}

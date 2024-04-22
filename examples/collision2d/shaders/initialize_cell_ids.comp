@@ -1,0 +1,83 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer Positions {
+    vec2 positions[];
+};
+
+layout(set = 1, binding = 2) buffer Radius {
+    float radius[];
+};
+
+layout(set = 1, binding = 3) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 4) buffer Attributes {
+    Attribute attributes[];
+};
+
+ivec3 gridSize = ivec3(gl_NumWorkGroups * gl_WorkGroupSize);
+int objectID = int(gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x);
+
+uint cells[4] = uint[4](0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+uint controlBits = 0;
+int next = 0;
+
+void main() {
+    if(objectID >= global.numObjects) return;
+
+    vec2 pos = positions[objectID];
+    float r = radius[objectID];
+    Bounds oBounds = createBounds(pos, r * SQRT2);
+
+
+    ivec2 hCell = intCoord(pos);
+    cells[next++] = hash(hCell);
+    uint cellType = (hCell.x % 2) + (hCell.y % 2) * 2;
+    addHomeCellToControlBits(hCell, controlBits);
+    addIntersectingCelltoControlBits(hCell, controlBits);
+
+    for(int y = -1; y <= 1; ++y){
+        for(int x = -1; x <= 1; ++x){
+
+            if(x == 0 && y == 0) continue;
+
+            ivec2 pCell = hCell + ivec2(x, y);
+            uvec2 dim = dimensions();
+            if(pCell.x < 0 || pCell.y < 0
+            || pCell.x >= dim.x ||  pCell.y >= dim.y) {
+                continue;
+            }
+
+            vec2 cPos = vec2(pCell) * global.spacing;
+            Bounds pBounds = Bounds(cPos, cPos  + global.spacing);
+            if(test(oBounds, pBounds)){
+                uint h = hash(pCell);
+                cells[next++] = h;
+                addIntersectingCelltoControlBits(pCell, controlBits);
+            }
+        }
+    }
+
+    int offset = objectID * 4;
+    cellID[offset + 0] = cells[0];
+    attributes[offset + 0].objectID = objectID;
+    attributes[offset + 0].controlBits = controlBits;
+
+    cellID[offset + 1] = cells[1];
+    attributes[offset + 1].objectID = objectID;
+    attributes[offset + 1].controlBits = controlBits;
+
+    cellID[offset + 2] = cells[2];
+    attributes[offset + 2].objectID = objectID;
+    attributes[offset + 2].controlBits = controlBits;
+
+    cellID[offset + 3] = cells[3];
+    attributes[offset + 3].objectID = objectID;
+    attributes[offset + 3].controlBits = controlBits;
+    atomicAdd(global.numCells, next);
+}

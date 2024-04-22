@@ -46,14 +46,14 @@ void Sph2D::initializeParticles() {
     globals.cpu->spacing = 0.2;
     globals.cpu->smoothingRadius = 0.1;
     setConstants(*globals.cpu);
-    globals.cpu->viscousConstant = 1e6;
+    globals.cpu->viscousConstant = 0.99;
     globals.cpu->gravity = 0.1;
     globals.cpu->mass = 1;
-    globals.cpu->gasConstant = 20;
+    globals.cpu->gasConstant = 250;
     globals.cpu->generator = 1;
     globals.cpu->numParticles = 0;
     globals.cpu->time = fixedUpdate.period();
-    globals.cpu->restDensity = 0;
+    globals.cpu->restDensity = 1;
 
     options.h = globals.cpu->smoothingRadius;
     options.k = globals.cpu->gasConstant/options.h;
@@ -87,9 +87,13 @@ void Sph2D::generatePoints() {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generatePoints.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generatePoints.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
+
+        vkCmdFillBuffer(commandBuffer, particles.velocity, 0, particles.velocity.size, 0);
         addMemoryBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
     });
     globals.cpu->hashMapSize = globals.cpu->numParticles * 2;
+//    auto dim = globals.cpu->domain.upper - globals.cpu->domain.lower;
+//    globals.cpu->restDensity = globals.cpu->numParticles / (dim.x * dim.y);
     spdlog::info("{} particles generated", globals.cpu->numParticles);
 }
 
@@ -574,12 +578,17 @@ void Sph2D::newFrame() {
 }
 
 void Sph2D::setConstants(GlobalData &data) {
-    const auto h = 2 * data.smoothingRadius;
+    const auto PI = glm::pi<float>();
+    const auto h = data.smoothingRadius;
+
     data.h = h;
     data.h2 = h * h;
     data._2h3 = 2 * h * h * h;
-    data.kernelMultiplier = 315.f/(64.f * glm::pi<float>() * glm::pow(h, 9.f));
-    data.gradientMultiplier = 45.f/(glm::pi<float>() * glm::pow(h, 6.f));
+
+    const auto h6 = glm::pow(h, 6.f);
+    const auto h9 = glm::pow(h, 9.f);
+    data.kernelMultiplier = 315.f/(64.f * PI * h9);
+    data.gradientMultiplier = 45.f/(PI * h6);
 }
 
 void Sph2D::collisionCheck(VkCommandBuffer commandBuffer) {
