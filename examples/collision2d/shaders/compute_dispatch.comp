@@ -1,0 +1,35 @@
+#version 460
+
+#define OBJECT_TYPE_OBJECTS 1
+#define OBJECT_TYPE_CELL_ID 2
+#define OBJECT_TYPE_CELL_INDEX 3
+#include "shared.glsl"
+
+layout(local_size_x = 1) in;
+
+layout(set = 1, binding = 8) buffer DispatchCmd {
+    uint gx;
+    uint gy;
+    uint gz;
+};
+
+layout(push_constant) uniform Constants {
+    uint workGroupSize;
+    uint objectType;
+};
+
+void main() {
+    gx = gy = gz = 1;
+    switch(objectType) {
+        case OBJECT_TYPE_OBJECTS:
+            gx = global.numObjects;
+            break;
+        case OBJECT_TYPE_CELL_ID:
+            gx = global.numCells;
+            break;
+        case OBJECT_TYPE_CELL_INDEX:
+            gx = global.numCellIndices;
+            break;
+    }
+    gx = max(1 , gx / workGroupSize);
+}

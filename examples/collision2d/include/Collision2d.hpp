@@ -4,10 +4,15 @@
 #include "Sort.hpp"
 #include "PrefixSum.hpp"
 
+enum class ObjectType : uint32_t {
+    Object = 1, CellID, CellIndex
+};
+
 struct Domain{
     glm::vec2 lower{};
     glm::vec2 upper{};
 };
+
 
 struct GlobalData {
     glm::mat4 projection;
@@ -106,11 +111,15 @@ protected:
 
     void compactCellIndexArray(VkCommandBuffer commandBuffer);
 
+    void computeDispatch(VkCommandBuffer commandBuffer, ObjectType objectType);
+
     void renderObjects(VkCommandBuffer commandBuffer);
 
     void renderGrid(VkCommandBuffer commandBuffer);
 
     void addComputeBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
+
+    void addDispatchBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
 
     void addComputeToTransferBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
 
@@ -141,6 +150,7 @@ protected:
         Pipeline generateCellIndexArray;
         Pipeline compactCellIndexArray;
         Pipeline collisionTest;
+        Pipeline computeDispatch;
     } compute;
 
     struct  {
