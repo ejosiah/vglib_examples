@@ -281,7 +281,6 @@ void Voronoi::createDescriptorPool() {
 void Voronoi::initPrefixSum() {
     prefixSum = PrefixSum{ &device };
     prefixSum.init();
-    prefixSum.updateDataDescriptorSets(counts);
 }
 
 void Voronoi::createDescriptorSetLayouts() {
@@ -869,7 +868,7 @@ void Voronoi::computeRegionAreas(VkCommandBuffer commandBuffer) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computeArea.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
         vkCmdPushConstants(commandBuffer, computeArea.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
         vkCmdDispatch(commandBuffer, gx, gy, 1);
-        prefixSum.addBufferMemoryBarriers(commandBuffer, {&regions, &counts});
+        addBufferMemoryBarriers(commandBuffer, {&regions, &counts});
     });
 }
 
@@ -881,7 +880,7 @@ void Voronoi::computeHistogram(VkCommandBuffer commandBuffer) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, histogram.layout.handle, 0, 1, &descriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, histogram.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
         vkCmdDispatch(commandBuffer, gx, gy, 1);
-        prefixSum.addBufferMemoryBarriers(commandBuffer, {&counts});
+        addBufferMemoryBarriers(commandBuffer, { counts });
     });
 }
 
@@ -1337,7 +1336,7 @@ void Voronoi::regionalReductionMap(VkCommandBuffer commandBuffer) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, regionalReduction.map.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdPushConstants(commandBuffer, regionalReduction.map.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(glm::ivec2), &regionalReduction.dimensions);
         vkCmdDispatch(commandBuffer, gx, gy, 1);
-        prefixSum.addBufferMemoryBarriers(commandBuffer, { &regions });
+        addBufferMemoryBarriers(commandBuffer, { regions });
     });
 }
 

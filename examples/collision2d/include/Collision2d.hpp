@@ -16,11 +16,14 @@ struct GlobalData {
     float spacing;
     float halfSpacing;
     float time;
-    int numObjects;
-    int numCells;
-    int screenWidth;
-    int screenHeight;
-    int segmentSize;
+    uint32_t numObjects;
+    uint32_t numCells;
+    uint32_t segmentSize;
+    uint32_t numCellIndices;
+    uint32_t numEmitters;
+    uint32_t frame;
+    uint32_t screenWidth;
+    uint32_t screenHeight;
 };
 
 struct Attribute {
@@ -28,12 +31,42 @@ struct Attribute {
     uint32_t controlBits;
 };
 
+struct CellInfo {
+    uint32_t index;
+    uint32_t numHomeCells;
+    uint32_t numPhantomCells;
+    uint32_t numCells;
+};
+
+struct ScratchPad {
+    VulkanBuffer buffer;
+    VkDeviceSize offset{0};
+};
+
+struct EmitterData {
+    glm::vec2 origin;
+    glm::vec2 direction;
+    int maxNumberOfParticlePerSecond;
+    int maxNumberOfParticles;
+    int numberOfEmittedParticles;
+    float firstFrameTimeInSeconds;
+    float currentTime;
+    float speed;
+    float spreadAngleRad;
+    float radius;
+    float offset;
+    int disabled;
+};
+
+
 class Collision2d : public VulkanBaseApp {
 public:
     explicit Collision2d(const Settings& settings = {});
 
 protected:
     void initApp() override;
+
+    void initScratchBuffer();
 
     void initObjects();
 
@@ -63,6 +96,16 @@ protected:
 
     void collisionDetection(VkCommandBuffer commandBuffer);
 
+    void initializeCellIds(VkCommandBuffer commandBuffer);
+
+    void sortCellIds(VkCommandBuffer commandBuffer);
+
+    void countCells(VkCommandBuffer commandBuffer);
+
+    void generateCellIndexArray(VkCommandBuffer commandBuffer);
+
+    void compactCellIndexArray(VkCommandBuffer commandBuffer);
+
     void renderObjects(VkCommandBuffer commandBuffer);
 
     void renderGrid(VkCommandBuffer commandBuffer);
@@ -70,6 +113,8 @@ protected:
     void addComputeBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
 
     void addComputeToTransferBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
+
+    void addComputeToTransferReadBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
 
     void addTransferToComputeBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
 
@@ -81,6 +126,8 @@ protected:
 
     void onPause() override;
 
+    BufferRegion reserve(VkDeviceSize size);
+
 protected:
     struct {
         Pipeline object;
@@ -91,6 +138,9 @@ protected:
     struct {
         Pipeline initCellIDs;
         Pipeline countCells;
+        Pipeline generateCellIndexArray;
+        Pipeline compactCellIndexArray;
+        Pipeline collisionTest;
     } compute;
 
     struct  {
@@ -98,16 +148,28 @@ protected:
         VulkanBuffer position;
         VulkanBuffer velocity;
         VulkanBuffer radius;
+        VulkanBuffer colors;
         VulkanBuffer cellIds;
         VulkanBuffer counts;
-        VulkanBuffer offsets;
         VulkanBuffer attributes;
+        VulkanBuffer cellIndexArray;
+        BufferRegion cellIndexStaging;
+        BufferRegion bitSet;
+        BufferRegion compactIndices;
+        VulkanBuffer dispatchBuffer;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
     } objects;
+    VulkanBuffer prevCellIds;
+    VulkanBuffer prevAttributes;
+
+    ScratchPad scratchPad;
 
     VulkanDescriptorSetLayout globalSetLayout;
     VkDescriptorSet globalSet;
+
+    VulkanDescriptorSetLayout stagingSetLayout;
+    VkDescriptorSet stagingDescriptorSet;
 
     struct {
         VulkanBuffer gpu;

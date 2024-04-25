@@ -7,6 +7,8 @@ layout(points) in;
 layout(triangle_strip, max_vertices = 128) out;
 
 layout(location = 0) in float iRadius[];
+layout(location = 1) in vec4 iColors[];
+
 layout(location = 0) out vec4 oColor;
 
 void main() {
@@ -17,7 +19,7 @@ void main() {
     for(int i = 0; i <= N; ++i) {
 
         if(i % 3 == 0) {
-            oColor = vec4(1);
+            oColor = iColors[0];
             gl_Position = global.projection * vec4(center, 0, 1);
             EmitVertex();
         }
@@ -25,7 +27,7 @@ void main() {
         float angle = delta * i;
         vec2 vertex = center + radius * vec2(cos(angle), sin(angle));
 
-        oColor = vec4(1);
+        oColor = iColors[0];
         gl_Position = global.projection * vec4(vertex, 0, 1);
         EmitVertex();
     }

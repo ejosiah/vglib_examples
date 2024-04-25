@@ -4,11 +4,11 @@
 
 layout(local_size_x = 256) in;
 
-layout(set = 1, binding = 3) buffer CellId {
+layout(set = 1, binding = 4) buffer CellId {
     uint cellID[];
 };
 
-layout(set = 1, binding = 5) buffer Counts {
+layout(set = 1, binding = 6) buffer Counts {
     uint counts[];
 };
 

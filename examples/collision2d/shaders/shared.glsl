@@ -21,6 +21,13 @@ struct Attribute {
     uint controlBits;
 };
 
+struct CellInfo {
+    uint index;
+    uint numHomeCells;
+    uint numPhantomCells;
+    uint numCells;
+};
+
 layout(set = 0, binding = 0) buffer Globals {
     mat4 projection;
     Domain domain;
@@ -28,11 +35,14 @@ layout(set = 0, binding = 0) buffer Globals {
     float spacing;
     float halfSpacing;
     float time;
-    int numObjects;
-    int numCells;
-    int screenWidth;
-    int screenHeight;
-    int segmentSize;
+    uint numObjects;
+    uint numCells;
+    uint segmentSize;
+    uint numCellIndices;
+    uint numEmitters;
+    uint frame;
+    uint screenWidth;
+    uint screenHeight;
 } global;
 
 uvec2 dimensions() {
@@ -92,6 +102,13 @@ void addIntersectingCelltoControlBits(ivec2 cell, inout uint controlBits) {
     uint cellType = (cell.x % 2) + (cell.y % 2) * 2;
     uint bits = 1 << cellType;
     controlBits = controlBits | (bits << D_BITS);
+}
+
+bool isHomeCell(uint cell, uint controlBits) {
+    uvec2 dim = dimensions();
+    uint cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
+    uint homeCellType = controlBits & 0x3u;
+    return cellType == homeCellType;
 }
 
 #endif // SHARED_GLSL

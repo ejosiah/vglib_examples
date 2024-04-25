@@ -7,6 +7,8 @@ layout(points) in;
 layout(triangle_strip, max_vertices = 128) out;
 
 layout(location = 0) in float iRadius[];
+layout(location = 1) in vec4 iColors[];
+
 layout(location = 0) out vec4 oColor;
 
 void main() {

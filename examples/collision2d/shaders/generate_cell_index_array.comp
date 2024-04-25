@@ -1,0 +1,49 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 3) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 5) buffer Attributes {
+    Attribute attributes[];
+};
+
+layout(set = 1, binding = 6) buffer Counts {
+    uint offsets[];
+};
+
+layout(set = 2, binding = 0) buffer ScratchPad {
+    CellInfo cellIndices[];
+};
+
+layout(set = 2, binding = 1) buffer SetBits {
+    uint setBits[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint cellId = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main() {
+
+    uint start = offsets[cellId];
+    uint end = offsets[cellId + 1];
+
+    CellInfo cellInfo = CellInfo(start, 0, 0, 0);
+
+    for(uint i = start; i < end; i++) {
+        Attribute attr = attributes[i];
+        if(isHomeCell(cellId, attr.controlBits)) {
+            cellInfo.numHomeCells++;
+        }else {
+            cellInfo.numPhantomCells++;
+        }
+        cellInfo.numCells++;
+    }
+
+    cellIndices[cellId] = cellInfo;
+    setBits[cellId] = uint(cellInfo.numHomeCells > 0);
+}

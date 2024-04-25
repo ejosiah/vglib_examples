@@ -16,6 +16,7 @@ Collision2d::Collision2d(const Settings& settings) : VulkanBaseApp("Collision De
 }
 
 void Collision2d::initApp() {
+    initScratchBuffer();
     initObjects();
     createDescriptorPool();
     createDescriptorSetLayouts();
@@ -26,78 +27,70 @@ void Collision2d::initApp() {
     createComputePipeline();
     initGrid();
     initSort();
-    globals.cpu->numCells = 0;
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-        static std::array<VkDescriptorSet, 2> sets;
-        sets[0] = globalSet;
-        sets[1] = objects.descriptorSet;
 
-        int gx = std::max(1, int((globals.cpu->numObjects)/256));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.initCellIDs.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.initCellIDs.pipeline.handle);
-        vkCmdDispatch(commandBuffer, gx, 1, 1);
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        collisionDetection(commandBuffer);
     });
 
     glm::uvec2 dim{glm::ceil((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) };
-    auto cellIds = reinterpret_cast<uint32_t*>(objects.cellIds.map());
-    auto attributes = reinterpret_cast<Attribute*>(objects.attributes.map());
+    auto cellIds = reinterpret_cast<uint32_t*>(prevCellIds.map());
+    auto attributes = reinterpret_cast<Attribute*>(prevAttributes.map());
     spdlog::info("num cells: {}", globals.cpu->numCells);
-    for(int i = 0; i < objects.cellIds.sizeAs<int>(); i+= 4){
-        spdlog::info("id: {}, cells: [{}, {}, {}, {}], controlBits : {:06b}", attributes[i].objectID, cellIds[i], cellIds[i+1], cellIds[i+2], cellIds[i+3], attributes[i].controlBits);
+
+    const auto N = globals.cpu->numObjects;
+    for(int i = 0; i < N; i++){
+        spdlog::info("id: {}, cells: [{}, {}, {}, {}], controlBits : {:06b}", attributes[i].objectID, cellIds[i], cellIds[i + N], cellIds[i+ N *2], cellIds[i+ N * 3], attributes[i].controlBits);
     }
     spdlog::info("");
+    spdlog::info("Initial Cell ID Array");
     for(int i = 0; i < 4; ++i){
         std::string row{};
         for(int j = 0; j < globals.cpu->numObjects; ++j){
-            int idx = j * 4 + i;
+            int idx = j + globals.cpu->numObjects * i;
             if(cellIds[idx] == 0xFFFFFFFF){
-                row += fmt::format("[    ]\t");
+                row += fmt::format("[     ] ");
             }else {
                 auto cell = cellIds[idx];
                 uint32_t cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
-                uint32_t homeCellType = attributes[idx].controlBits & 0x3;
+                uint32_t homeCellType = attributes[j].controlBits & 0x3;
                 if(cellType == homeCellType){
-                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{}]", cellIds[idx], attributes[idx].objectID);
+                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{:02}]", cellIds[idx], attributes[j].objectID);
                     label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{}\t", label);
+                    row += fmt::format("{} ", label);
                 }else {
-                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{}]", cellIds[idx], attributes[idx].objectID);
+                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{:02}]", cellIds[idx], attributes[j].objectID);
                     label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{}\t", label);
+                    row += fmt::format("{} ", label);
                 }
             }
         }
         spdlog::info("{}", row);
     }
-    objects.cellIds.unmap();
-    objects.attributes.unmap();
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        Records records{objects.attributes, 8};
-       sort(commandBuffer, objects.cellIds, records);
-    });
+    prevCellIds.unmap();
+    prevAttributes.unmap();
 
     cellIds = reinterpret_cast<uint32_t*>(objects.cellIds.map());
     attributes = reinterpret_cast<Attribute*>(objects.attributes.map());
     spdlog::info("");
+    spdlog::info("Sorted Cell ID Array");
     for(int i = 0; i < 4; ++i){
         std::string row{};
         for(int j = 0; j < globals.cpu->numObjects; ++j){
             int idx = j * 4 + i;
             if(cellIds[idx] == 0xFFFFFFFF){
-                row += fmt::format("[    ]\t");
+                row += fmt::format("[     ] ");
             }else {
                 auto cell = cellIds[idx];
                 uint32_t cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
                 uint32_t homeCellType = attributes[idx].controlBits & 0x3;
                 if(cellType == homeCellType){
-                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{}]", cellIds[idx], attributes[idx].objectID);
+                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{:02}]", cellIds[idx], attributes[idx].objectID);
                     label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{}\t", label);
+                    row += fmt::format("{} ", label);
                 }else {
-                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{}]", cellIds[idx], attributes[idx].objectID);
+                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{:02}]", cellIds[idx], attributes[idx].objectID);
                     label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{}\t", label);
+                    row += fmt::format("{} ", label);
                 }
             }
         }
@@ -105,56 +98,41 @@ void Collision2d::initApp() {
     }
 
     std::string row{};
+
+
+    std::span<CellInfo> cellInfos = { reinterpret_cast<CellInfo*>(objects.cellIndexArray.map()), static_cast<size_t>(globals.cpu->numCellIndices) };
+
+    row = "";
     spdlog::info("");
-    std::vector<uint32_t> cellsWithData{};
-    std::set<uint32_t> processed{};
-    for(int i = 0; i < globals.cpu->numCells; i++){
-        if(!processed.contains(cellIds[i])) {
-            cellsWithData.push_back(cellIds[i]);
-        }
-        processed.insert(cellIds[i]);
-        row += fmt::format("{} ", cellIds[i]);
+    spdlog::info("Cell Index Array");
+    for(auto cell : cellInfos) {
+//        if(cell.numHomeCells <= 0) continue;
+        std::string label = fmt::format(bg(fmt::color::cyan), "[{:02}|{}+{}]", cell.index, cell.numHomeCells, cell.numPhantomCells);
+        label = fmt::format(fg(fmt::color::black), "{}", label);
+        row += fmt::format("{} ", label);
     }
-    spdlog::info("{}", row);
-    objects.cellIds.unmap();
-    objects.attributes.unmap();
+    spdlog::info(row);
+    objects.cellIndexArray.unmap();
+
 
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
         static std::array<VkDescriptorSet, 2> sets;
         sets[0] = globalSet;
         sets[1] = objects.descriptorSet;
 
-        int gx = std::max(1, int((globals.cpu->numObjects)/256));
-
-        addComputeToTransferBarrier(commandBuffer, { objects.counts });
-        vkCmdFillBuffer(commandBuffer, objects.counts, 0, objects.counts.size, 0);
-        addTransferToComputeBarrier(commandBuffer, { objects.counts });
-
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.countCells.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.countCells.pipeline.handle);
+        int gx = std::max(1, int((globals.cpu->numCellIndices)/256));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
         vkCmdDispatch(commandBuffer, gx, 1, 1);
     });
 
-    std::span<uint32_t> counts = { reinterpret_cast<uint32_t*>(objects.counts.map()), size_t{objects.counts.sizeAs<uint32_t>() } };
-    spdlog::info("");
-    row = "";
-    for(auto i : cellsWithData) {
-        row += fmt::format("{}:{} ", i, counts[i]);
-    }
-    spdlog::info(row);
-    objects.counts.unmap();
+}
 
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-       prefixSum(commandBuffer, objects.counts);
-    });
+void Collision2d::initScratchBuffer() {
+    scratchPad.buffer = device.createBuffer(
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_GPU_TO_CPU, (20 * (1 << 20)), "scratch_buffer");
 
-    counts = { reinterpret_cast<uint32_t*>(objects.counts.map()), size_t{objects.counts.sizeAs<uint32_t>() } };
-    spdlog::info("");
-    row = "";
-    for(int i = 0; i < counts.size(); i++){
-        row += fmt::format("{}:{} ", i, counts[i]);
-    }
-    spdlog::info(row);
 }
 
 void Collision2d::initObjects() {
@@ -165,7 +143,7 @@ void Collision2d::initObjects() {
     globals.cpu->domain.upper = glm::vec2(20);
     globals.cpu->gravity = 9.8;
     globals.cpu->numObjects = 20;
-    globals.cpu->segmentSize = 100;
+    globals.cpu->segmentSize = 4;
 
     std::default_random_engine engine{1 << 22};
     std::uniform_real_distribution<float> rDist{0.5, 1.0};
@@ -178,6 +156,7 @@ void Collision2d::initObjects() {
     std::vector<glm::vec2> positions;
     std::vector<glm::vec2> velocity(globals.cpu->numObjects);
     std::vector<float> radius{};
+    std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
     float maxRadius = MIN_FLOAT;
     for(int i = 0; i < globals.cpu->numObjects; ++i){
         auto pos = nextPosition();
@@ -189,16 +168,23 @@ void Collision2d::initObjects() {
 
     globals.cpu->halfSpacing = SQRT2 * maxRadius;
     globals.cpu->spacing = globals.cpu->halfSpacing * 2;
-    glm::uvec2 dim{glm::ceil((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) };
+    glm::uvec2 dim{glm::ceil((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) }; // TODO should always be domain.max + 1
     auto numCells = dim.x * dim.y;
 
-    objects.position = device.createDeviceLocalBuffer(positions.data(), BYTE_SIZE(positions), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    objects.velocity = device.createDeviceLocalBuffer(velocity.data(), BYTE_SIZE(velocity), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    objects.radius = device.createDeviceLocalBuffer(radius.data(), BYTE_SIZE(radius), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    objects.cellIds = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * globals.cpu->numObjects * 4);
-    objects.attributes = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(Attribute) * globals.cpu->numObjects * 4);
-    objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * numCells);
-    objects.offsets = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * numCells);
+    objects.position = device.createCpuVisibleBuffer(positions.data(), BYTE_SIZE(positions), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    objects.velocity = device.createCpuVisibleBuffer(velocity.data(), BYTE_SIZE(velocity), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    objects.radius = device.createCpuVisibleBuffer(radius.data(), BYTE_SIZE(radius), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    objects.colors = device.createCpuVisibleBuffer(colors.data(), BYTE_SIZE(colors), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    objects.cellIds = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * globals.cpu->numObjects * 4);
+    prevCellIds = device.createBuffer( VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * globals.cpu->numObjects * 4);
+    objects.attributes = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(Attribute) * globals.cpu->numObjects * 4);
+    prevAttributes = device.createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(Attribute) * globals.cpu->numObjects * 4);
+    objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * (numCells + 1));
+    objects.cellIndexArray = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(CellInfo) * numCells);
+    objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(VkDispatchIndirectCommand));
+    objects.cellIndexStaging = reserve(sizeof(CellInfo) * numCells);
+    objects.bitSet = reserve(sizeof(uint32_t) * numCells);
+    objects.compactIndices = reserve(sizeof(uint32_t) * (numCells + 1));
 
     const auto& domain = globals.cpu->domain;
     globals.cpu->projection = glm::ortho(domain.lower.x, domain.upper.x, domain.lower.y, domain.upper.y);
@@ -227,7 +213,6 @@ void Collision2d::initSort() {
     sort.init();
     prefixSum = PrefixSum{ &device };
     prefixSum.init();
-    prefixSum.updateDataDescriptorSets(objects.counts);
 }
 
 void Collision2d::createDescriptorPool() {
@@ -275,6 +260,10 @@ void Collision2d::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(7)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
 
     globalSetLayout =
@@ -283,14 +272,35 @@ void Collision2d::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .createLayout();
+
+    stagingSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
 }
 void Collision2d::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({globalSetLayout, objects.setLayout});
+    auto sets = descriptorPool.allocate({globalSetLayout, objects.setLayout, stagingSetLayout});
     globalSet = sets[0];
     objects.descriptorSet = sets[1];
+    stagingDescriptorSet = sets[2];
 
-    auto writes = initializers::writeDescriptorSets<8>();
+    auto writes = initializers::writeDescriptorSets<12>();
 
     writes[0].dstSet = globalSet;
     writes[0].dstBinding = 0;
@@ -324,29 +334,58 @@ void Collision2d::updateDescriptorSets(){
     writes[4].dstBinding = 3;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 1;
-    VkDescriptorBufferInfo cellIdInfo{ objects.cellIds, 0, VK_WHOLE_SIZE };
-    writes[4].pBufferInfo = &cellIdInfo;
+    VkDescriptorBufferInfo colorInfo{ objects.colors, 0, VK_WHOLE_SIZE };
+    writes[4].pBufferInfo = &colorInfo;
 
     writes[5].dstSet = objects.descriptorSet;
     writes[5].dstBinding = 4;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[5].descriptorCount = 1;
-    VkDescriptorBufferInfo attributesInfo{ objects.attributes, 0, VK_WHOLE_SIZE };
-    writes[5].pBufferInfo = &attributesInfo;
+    VkDescriptorBufferInfo cellIdInfo{ objects.cellIds, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &cellIdInfo;
 
     writes[6].dstSet = objects.descriptorSet;
     writes[6].dstBinding = 5;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[6].descriptorCount = 1;
-    VkDescriptorBufferInfo countsInfo{ objects.counts, 0, VK_WHOLE_SIZE };
-    writes[6].pBufferInfo = &countsInfo;
+    VkDescriptorBufferInfo attributesInfo{ objects.attributes, 0, VK_WHOLE_SIZE };
+    writes[6].pBufferInfo = &attributesInfo;
 
     writes[7].dstSet = objects.descriptorSet;
     writes[7].dstBinding = 6;
     writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[7].descriptorCount = 1;
-    VkDescriptorBufferInfo offsetsInfo{ objects.counts, 0, VK_WHOLE_SIZE };
-    writes[7].pBufferInfo = &offsetsInfo;
+    VkDescriptorBufferInfo countsInfo{ objects.counts, 0, VK_WHOLE_SIZE };
+    writes[7].pBufferInfo = &countsInfo;
+
+    writes[8].dstSet = objects.descriptorSet;
+    writes[8].dstBinding = 7;
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[8].descriptorCount = 1;
+    VkDescriptorBufferInfo cellIndexInfo{ objects.cellIndexArray, 0, VK_WHOLE_SIZE };
+    writes[8].pBufferInfo = &cellIndexInfo;
+
+    writes[9].dstSet = stagingDescriptorSet;
+    writes[9].dstBinding = 0;
+    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[9].descriptorCount = 1;
+    VkDescriptorBufferInfo cellIndexStagingInfo{ *objects.cellIndexStaging.buffer, objects.cellIndexStaging.offset, objects.cellIndexStaging.end };
+    writes[9].pBufferInfo = &cellIndexStagingInfo;
+
+    writes[10].dstSet = stagingDescriptorSet;
+    writes[10].dstBinding = 1;
+    writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[10].descriptorCount = 1;
+    VkDescriptorBufferInfo SetBitsInfo{*objects.bitSet.buffer, objects.bitSet.offset, objects.bitSet.end };
+    writes[10].pBufferInfo = &SetBitsInfo;
+
+    writes[11].dstSet = stagingDescriptorSet;
+    writes[11].dstBinding = 2;
+    writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[11].descriptorCount = 1;
+    VkDescriptorBufferInfo compactInfo{ *objects.compactIndices.buffer, objects.compactIndices.offset, objects.compactIndices.end };
+    writes[11].pBufferInfo = &compactInfo;
+
 
     device.updateDescriptorSets(writes);
 }
@@ -417,6 +456,27 @@ void Collision2d::createComputePipeline() {
     computeCreateInfo.layout = compute.countCells.layout.handle;
     compute.countCells.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 
+    module = device.createShaderModule(resource("generate_cell_index_array.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeCreateInfo.stage = stage;
+    compute.generateCellIndexArray.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout, stagingSetLayout} );
+    computeCreateInfo.layout = compute.generateCellIndexArray.layout.handle;
+    compute.generateCellIndexArray.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    module = device.createShaderModule(resource("compact_cell_index_array.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeCreateInfo.stage = stage;
+    compute.compactCellIndexArray.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout, stagingSetLayout} );
+    computeCreateInfo.layout = compute.compactCellIndexArray.layout.handle;
+    compute.compactCellIndexArray.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    module = device.createShaderModule(resource("collision_test.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeCreateInfo.stage = stage;
+    compute.collisionTest.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout} );
+    computeCreateInfo.layout = compute.collisionTest.layout.handle;
+    compute.collisionTest.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
 }
 
 
@@ -464,7 +524,94 @@ VkCommandBuffer *Collision2d::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 }
 
 void Collision2d::collisionDetection(VkCommandBuffer commandBuffer) {
+    initializeCellIds(commandBuffer);
+    sortCellIds(commandBuffer);
+    countCells(commandBuffer);
+    generateCellIndexArray(commandBuffer);
+    compactCellIndexArray(commandBuffer);
+}
 
+void Collision2d::initializeCellIds(VkCommandBuffer commandBuffer) {
+    globals.cpu->numCells = 0;
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = globalSet;
+    sets[1] = objects.descriptorSet;
+
+    int gx = std::max(1, int((globals.cpu->numObjects)/256)); // TODO use dispatch indirect
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.initCellIDs.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.initCellIDs.pipeline.handle);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+
+    VkBufferCopy region{0, 0, objects.cellIds.size};
+    addComputeToTransferReadBarrier(commandBuffer,  { objects.cellIds, objects.attributes });
+    vkCmdCopyBuffer(commandBuffer, objects.cellIds, prevCellIds, 1, &region);
+    region.size = objects.attributes.size;
+    vkCmdCopyBuffer(commandBuffer, objects.attributes, prevAttributes, 1, &region);
+
+    addComputeBarrier(commandBuffer, { objects.attributes, objects.cellIds, globals.gpu });
+}
+
+void Collision2d::sortCellIds(VkCommandBuffer commandBuffer) {
+    Records records{objects.attributes, 8};
+    sort(commandBuffer, objects.cellIds, records);
+    addComputeBarrier(commandBuffer, { objects.attributes, objects.cellIds });
+}
+
+void Collision2d::countCells(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = globalSet;
+    sets[1] = objects.descriptorSet;
+
+    int gx = std::max(1, int((globals.cpu->numObjects)/256));   // TODO use dispatch indirect
+
+    addComputeToTransferBarrier(commandBuffer, { objects.counts });
+    vkCmdFillBuffer(commandBuffer, objects.counts, 0, objects.counts.size, 0);
+    addTransferToComputeBarrier(commandBuffer, { objects.counts });
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.countCells.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.countCells.pipeline.handle);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+
+    addComputeBarrier(commandBuffer, { objects.counts });
+    prefixSum(commandBuffer, objects.counts);
+    addComputeBarrier(commandBuffer, { objects.counts });
+}
+
+void Collision2d::generateCellIndexArray(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = globalSet;
+    sets[1] = objects.descriptorSet;
+    sets[2] = stagingDescriptorSet;
+
+    int gx = std::max(1, int((globals.cpu->numCells)/256)); // TODO use dispatch indirect
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.pipeline.handle);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    addComputeBarrier(commandBuffer, { *objects.cellIndexStaging.buffer, *objects.bitSet.buffer });
+
+    addComputeToTransferReadBarrier(commandBuffer, { *objects.bitSet.buffer  });
+    VkBufferCopy region{objects.bitSet.offset, objects.compactIndices.offset, objects.bitSet.size() };
+    vkCmdCopyBuffer(commandBuffer, *objects.bitSet.buffer, *objects.compactIndices.buffer, 1, &region);
+    addTransferToComputeBarrier(commandBuffer, { *objects.compactIndices.buffer });
+
+}
+
+void Collision2d::compactCellIndexArray(VkCommandBuffer commandBuffer) {
+
+    prefixSum(commandBuffer, objects.compactIndices);
+    addComputeBarrier(commandBuffer, { *objects.compactIndices.buffer });
+
+    globals.cpu->numCellIndices = 0;
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = globalSet;
+    sets[1] = objects.descriptorSet;
+    sets[2] = stagingDescriptorSet;
+
+    int gx = std::max(1, int((globals.cpu->numCells)/256)); // TODO use dispatch indirect
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.pipeline.handle);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    addComputeBarrier(commandBuffer, { globals.gpu, objects.cellIndexArray });
 }
 
 void Collision2d::renderObjects(VkCommandBuffer commandBuffer) {
@@ -508,9 +655,22 @@ void Collision2d::addComputeToTransferBarrier(VkCommandBuffer commandBuffer, con
             , VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
 }
 
+void Collision2d::addComputeToTransferReadBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer> &buffers) {
+    addBufferMemoryBarriers(commandBuffer, buffers, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            , VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+}
+
 void Collision2d::addTransferToComputeBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer> &buffers) {
     addBufferMemoryBarriers(commandBuffer, buffers, VK_PIPELINE_STAGE_TRANSFER_BIT
             , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+}
+
+BufferRegion Collision2d::reserve(VkDeviceSize size) {
+    size = alignedSize(size, device.getLimits().minStorageBufferOffsetAlignment);
+    assert(scratchPad.offset + size <= scratchPad.buffer.size);
+    auto start = scratchPad.offset;
+    scratchPad.offset += size;
+    return { &scratchPad.buffer, start, scratchPad.offset };
 }
 
 int main(){

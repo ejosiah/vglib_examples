@@ -12,11 +12,11 @@ layout(set = 1, binding = 2) buffer Radius {
     float radius[];
 };
 
-layout(set = 1, binding = 3) buffer CellId {
+layout(set = 1, binding = 4) buffer CellId {
     uint cellID[];
 };
 
-layout(set = 1, binding = 4) buffer Attributes {
+layout(set = 1, binding = 5) buffer Attributes {
     Attribute attributes[];
 };
 
@@ -63,21 +63,24 @@ void main() {
         }
     }
 
-    int offset = objectID * 4;
-    cellID[offset + 0] = cells[0];
-    attributes[offset + 0].objectID = objectID;
-    attributes[offset + 0].controlBits = controlBits;
+    uint offset = objectID;
+    cellID[offset] = cells[0];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
 
-    cellID[offset + 1] = cells[1];
-    attributes[offset + 1].objectID = objectID;
-    attributes[offset + 1].controlBits = controlBits;
+    offset += global.numObjects;
+    cellID[offset] = cells[1];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
 
-    cellID[offset + 2] = cells[2];
-    attributes[offset + 2].objectID = objectID;
-    attributes[offset + 2].controlBits = controlBits;
+    offset += global.numObjects;
+    cellID[offset] = cells[2];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
 
-    cellID[offset + 3] = cells[3];
-    attributes[offset + 3].objectID = objectID;
-    attributes[offset + 3].controlBits = controlBits;
+    offset += global.numObjects;
+    cellID[offset] = cells[3];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
     atomicAdd(global.numCells, next);
 }

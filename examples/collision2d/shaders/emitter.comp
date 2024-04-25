@@ -1,0 +1,84 @@
+#version 460
+
+#include "shared.glsl"
+
+struct Emitter {
+    vec2 origin;
+    vec2 direction;
+    int maxNumberOfParticlePerSecond;
+    int maxNumberOfParticles;
+    int numberOfEmittedParticles;
+    float firstFrameTimeInSeconds;
+    float currentTime;
+    float speed;
+    float spreadAngleRad;
+    float radius;
+    float offset;
+    int disabled;
+};
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer Positions {
+    vec2 positions[];
+};
+
+layout(set = 1, binding = 2) buffer Radius {
+    float radius[];
+};
+
+layout(set = 2, binding = 0) buffer EmitterData {
+    Emitter emitters[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint emitterID = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+float random(){
+    vec3 p3 = vec3(emitterID, global.frame, global.time);
+    p3  = fract(p3 * .1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 iPositions[100];
+float iRadius[100];
+
+void main() {
+    if(emitterID > global.numEmitters) return;
+
+    Emitter emitter = emitters[emitterID];
+
+    if(emitter.disabled == 1) return;
+
+    float elapsedTime = emitter.currentTime - emitter.firstFrameTimeInSeconds;
+    int newMaxTotalNumOfParticlesEmitted = int(ceil((elapsedTime + global.time) * emitter.maxNumberOfParticlePerSecond));
+
+    newMaxTotalNumOfParticlesEmitted = min(newMaxTotalNumOfParticlesEmitted, emitter.maxNumberOfParticles);
+
+    int maxNumberOfNewParticles = max(newMaxTotalNumOfParticlesEmitted - emitter.numberOfEmittedParticles, 100);
+
+    if(maxNumberOfNewParticles > 0) {
+        float t = emitter.radius * emitter.offset;
+        for(int i = 0; i < maxNumberOfNewParticles; i++) {
+            float angle = (random() - 0.5) * emitter.spreadAngleRad;
+            mat2 rotate = mat2( cos(angle), sin(angle), -sin(angle), cos(angle) );
+            vec2 direction = rotate * emitter.direction;
+            iPositions[i] = emitter.origin + direction * (i * t);
+            iRadius[i] = emitter.radius;
+        }
+
+
+        uint begin = atomicAdd(global.numObjects, maxNumberOfNewParticles);
+        uint end = begin + maxNumberOfNewParticles;
+        for(uint i = begin; i < end; i++){
+            positions[i] = iPositions[i];
+            radius[i] = iRadius[i];
+        }
+        emitter.numberOfEmittedParticles += maxNumberOfNewParticles;
+
+    }
+
+    emitter.currentTime += global.time;
+}
+

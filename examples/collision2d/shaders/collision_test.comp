@@ -1,0 +1,62 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer Positions {
+    vec2 positions[];
+};
+
+layout(set = 1, binding = 2) buffer Radius {
+    float radius[];
+};
+
+layout(set = 1, binding = 3) buffer Colors {
+    vec4 colors[];
+};
+
+layout(set = 1, binding = 4) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 5) buffer Attributes {
+    Attribute attributes[];
+};
+
+layout(set = 1, binding = 7) buffer CellIndexArray {
+    CellInfo cellIndices[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main() {
+    if(gid >= global.numCellIndices) return;
+
+    CellInfo info = cellIndices[gid];
+
+    uint start = info.index;
+    uint end = start + info.numCells;
+    for(uint i = start; i < end; i++){
+        for(uint j = start; j < end; j++){
+            if(i == j) continue;
+
+            uint a = attributes[i].objectID;
+            uint b = attributes[j].objectID;
+
+            vec2 posA = positions[a];
+            vec2 posB = positions[b];
+
+            float rr = radius[a] +radius[b];
+
+            vec2 d = posA - posB;
+
+            if(dot(d, d) < rr * rr){
+                colors[a] = vec4(1, 0, 0, 1);
+                colors[b] = vec4(1, 0, 0, 1);
+            }
+
+        }
+    }
+}

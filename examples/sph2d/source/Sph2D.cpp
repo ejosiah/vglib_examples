@@ -36,7 +36,7 @@ void Sph2D::initializeParticles() {
     particles.density[0] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(float) * particles.maxParticles);
     particles.density[1] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(float) * particles.maxParticles);
 
-    spatialHash.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(int) * particles.maxParticles * 2 + 1);
+    spatialHash.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(int) * (particles.maxParticles * 2 + 1));
 
     globals.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(GlobalData));
     globals.cpu = reinterpret_cast<GlobalData*>(globals.gpu.map());
@@ -114,7 +114,6 @@ void Sph2D::initGrid() {
 void Sph2D::initPrefixSum() {
     prefixSum = PrefixSum{ &device };
     prefixSum.init();
-    prefixSum.updateDataDescriptorSets(spatialHash.counts);
 }
 
 void Sph2D::initSdf() {
