@@ -21,7 +21,7 @@ void main(){
     vec2 gPos = fs_in.uv * (domain.upper - domain.lower)/spacing;
     vec2 gid = floor(gPos);
     vec2 uv = fract(gPos);
-    vec2 dd = step(0.99, uv);
+    vec2 dd = step(0.98, uv);
     float d = max(dd.x, dd.y);
     fragColor = vec4(d, d, 0, 1);
 }

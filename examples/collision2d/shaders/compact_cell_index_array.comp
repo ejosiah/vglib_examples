@@ -32,8 +32,8 @@ void main() {
 
     if(gid == 0) {
         uvec2 dim = dimensions();
-        uint size = dim.x * dim.y;
-        global.numCellIndices = compactIndices[size + 1];
+        uint numCellsIndex = dim.x * dim.y + 1;
+        global.numCellIndices = compactIndices[numCellsIndex];
     }
 }
 

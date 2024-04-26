@@ -1,16 +1,15 @@
 #version 460
 
-#define OBJECT_TYPE_OBJECTS 1
-#define OBJECT_TYPE_CELL_ID 2
-#define OBJECT_TYPE_CELL_INDEX 3
+#define OBJECT_TYPE_OBJECTS 0
+#define OBJECT_TYPE_CELL_ID 1
+#define OBJECT_TYPE_CELL_ARRAY_INDEX 2
+
 #include "shared.glsl"
 
 layout(local_size_x = 1) in;
 
 layout(set = 1, binding = 8) buffer DispatchCmd {
-    uint gx;
-    uint gy;
-    uint gz;
+    DispatchCommand dispatchCommands[];
 };
 
 layout(push_constant) uniform Constants {
@@ -19,17 +18,18 @@ layout(push_constant) uniform Constants {
 };
 
 void main() {
-    gx = gy = gz = 1;
+    DispatchCommand cmd = DispatchCommand(1, 1, 1, 0);
     switch(objectType) {
         case OBJECT_TYPE_OBJECTS:
-            gx = global.numObjects;
+            cmd.gx = global.numObjects;
             break;
         case OBJECT_TYPE_CELL_ID:
-            gx = global.numCells;
+            cmd.gx = global.numCells;
             break;
-        case OBJECT_TYPE_CELL_INDEX:
-            gx = global.numCellIndices;
+        case OBJECT_TYPE_CELL_ARRAY_INDEX:
+            cmd.gx = global.numCellIndices;
             break;
     }
-    gx = max(1 , gx / workGroupSize);
+    cmd.gx =  (cmd.gx / workGroupSize) + uint(sign(cmd.gx % workGroupSize));
+    dispatchCommands[objectType] = cmd;
 }

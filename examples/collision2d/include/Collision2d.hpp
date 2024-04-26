@@ -4,8 +4,16 @@
 #include "Sort.hpp"
 #include "PrefixSum.hpp"
 
-enum class ObjectType : uint32_t {
-    Object = 1, CellID, CellIndex
+namespace Dispatch {
+    static constexpr uint32_t Object = 0;
+    static constexpr uint32_t CellID = 1;
+    static constexpr uint32_t CellArrayIndex = 2;
+    static constexpr uint32_t Count = 3;
+
+    static constexpr uint32_t ObjectCmd = 0;
+    static constexpr uint32_t CellIDCmd = sizeof(uint32_t) * 4;
+    static constexpr uint32_t CellArrayIndexCmd = sizeof(uint32_t) * 8;
+    static constexpr VkDeviceSize Size = sizeof(uint32_t) * 4 * Count;
 };
 
 struct Domain{
@@ -97,6 +105,8 @@ protected:
 
     void onSwapChainRecreation() override;
 
+    void runDebug();
+
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
     void collisionDetection(VkCommandBuffer commandBuffer);
@@ -111,7 +121,7 @@ protected:
 
     void compactCellIndexArray(VkCommandBuffer commandBuffer);
 
-    void computeDispatch(VkCommandBuffer commandBuffer, ObjectType objectType);
+    void computeDispatch(VkCommandBuffer commandBuffer, uint32_t objectType);
 
     void renderObjects(VkCommandBuffer commandBuffer);
 
@@ -180,6 +190,7 @@ protected:
 
     VulkanDescriptorSetLayout stagingSetLayout;
     VkDescriptorSet stagingDescriptorSet;
+
 
     struct {
         VulkanBuffer gpu;

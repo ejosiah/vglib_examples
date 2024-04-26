@@ -27,6 +27,12 @@ layout(set = 1, binding = 2) buffer Radius {
     float radius[];
 };
 
+layout(set = 1, binding = 8) buffer DispatchCmd {
+    uint gx;
+    uint gy;
+    uint gz;
+} dispatch;
+
 layout(set = 2, binding = 0) buffer EmitterData {
     Emitter emitters[];
 };

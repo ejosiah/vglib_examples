@@ -27,105 +27,7 @@ void Collision2d::initApp() {
     createComputePipeline();
     initGrid();
     initSort();
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-        collisionDetection(commandBuffer);
-    });
-
-    glm::uvec2 dim{glm::ceil((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) };
-    auto cellIds = reinterpret_cast<uint32_t*>(prevCellIds.map());
-    auto attributes = reinterpret_cast<Attribute*>(prevAttributes.map());
-    spdlog::info("num cells: {}", globals.cpu->numCells);
-
-    const auto N = globals.cpu->numObjects;
-    for(int i = 0; i < N; i++){
-        spdlog::info("id: {}, cells: [{}, {}, {}, {}], controlBits : {:06b}", attributes[i].objectID, cellIds[i], cellIds[i + N], cellIds[i+ N *2], cellIds[i+ N * 3], attributes[i].controlBits);
-    }
-    spdlog::info("");
-    spdlog::info("Initial Cell ID Array");
-    for(int i = 0; i < 4; ++i){
-        std::string row{};
-        for(int j = 0; j < globals.cpu->numObjects; ++j){
-            int idx = j + globals.cpu->numObjects * i;
-            if(cellIds[idx] == 0xFFFFFFFF){
-                row += fmt::format("[     ] ");
-            }else {
-                auto cell = cellIds[idx];
-                uint32_t cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
-                uint32_t homeCellType = attributes[j].controlBits & 0x3;
-                if(cellType == homeCellType){
-                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{:02}]", cellIds[idx], attributes[j].objectID);
-                    label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{} ", label);
-                }else {
-                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{:02}]", cellIds[idx], attributes[j].objectID);
-                    label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{} ", label);
-                }
-            }
-        }
-        spdlog::info("{}", row);
-    }
-    prevCellIds.unmap();
-    prevAttributes.unmap();
-
-    cellIds = reinterpret_cast<uint32_t*>(objects.cellIds.map());
-    attributes = reinterpret_cast<Attribute*>(objects.attributes.map());
-    spdlog::info("");
-    spdlog::info("Sorted Cell ID Array");
-    for(int i = 0; i < 4; ++i){
-        std::string row{};
-        for(int j = 0; j < globals.cpu->numObjects; ++j){
-            int idx = j * 4 + i;
-            if(cellIds[idx] == 0xFFFFFFFF){
-                row += fmt::format("[     ] ");
-            }else {
-                auto cell = cellIds[idx];
-                uint32_t cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
-                uint32_t homeCellType = attributes[idx].controlBits & 0x3;
-                if(cellType == homeCellType){
-                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{:02}]", cellIds[idx], attributes[idx].objectID);
-                    label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{} ", label);
-                }else {
-                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{:02}]", cellIds[idx], attributes[idx].objectID);
-                    label = fmt::format(fg(fmt::color::black), "{}", label);
-                    row += fmt::format("{} ", label);
-                }
-            }
-        }
-        spdlog::info("{}", row);
-    }
-
-    std::string row{};
-
-
-    std::span<CellInfo> cellInfos = { reinterpret_cast<CellInfo*>(objects.cellIndexArray.map()), static_cast<size_t>(globals.cpu->numCellIndices) };
-
-    row = "";
-    spdlog::info("");
-    spdlog::info("Cell Index Array");
-    for(auto cell : cellInfos) {
-//        if(cell.numHomeCells <= 0) continue;
-        std::string label = fmt::format(bg(fmt::color::cyan), "[{:02}|{}+{}]", cell.index, cell.numHomeCells, cell.numPhantomCells);
-        label = fmt::format(fg(fmt::color::black), "{}", label);
-        row += fmt::format("{} ", label);
-    }
-    spdlog::info(row);
-    objects.cellIndexArray.unmap();
-
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-        static std::array<VkDescriptorSet, 2> sets;
-        sets[0] = globalSet;
-        sets[1] = objects.descriptorSet;
-
-        int gx = std::max(1, int((globals.cpu->numCellIndices)/256));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
-        vkCmdDispatch(commandBuffer, gx, 1, 1);
-    });
-
+    runDebug();
 }
 
 void Collision2d::initScratchBuffer() {
@@ -143,7 +45,7 @@ void Collision2d::initObjects() {
     globals.cpu->domain.upper = glm::vec2(20);
     globals.cpu->gravity = 9.8;
     globals.cpu->numObjects = 20;
-    globals.cpu->segmentSize = 4;
+    globals.cpu->segmentSize = 2;
 
     std::default_random_engine engine{1 << 22};
     std::uniform_real_distribution<float> rDist{0.5, 1.0};
@@ -185,8 +87,8 @@ void Collision2d::initObjects() {
     objects.bitSet = reserve(sizeof(uint32_t) * numCells);
     objects.compactIndices = reserve(sizeof(uint32_t) * (numCells + 1));
 
-    VkDispatchIndirectCommand dispatchCmd{1, 1, 1};
-    objects.dispatchBuffer = device.createDeviceLocalBuffer(&dispatchCmd, sizeof(dispatchCmd), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+
+    objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, Dispatch::Size, "dispatch_cmd_buffer"); ;
 
     const auto& domain = globals.cpu->domain;
     globals.cpu->projection = glm::ortho(domain.lower.x, domain.upper.x, domain.lower.y, domain.upper.y);
@@ -550,13 +452,14 @@ VkCommandBuffer *Collision2d::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 }
 
 void Collision2d::collisionDetection(VkCommandBuffer commandBuffer) {
-    computeDispatch(commandBuffer, ObjectType::Object);
+    computeDispatch(commandBuffer, Dispatch::Object);
     initializeCellIds(commandBuffer);
     sortCellIds(commandBuffer);
-    computeDispatch(commandBuffer, ObjectType::CellID);
+    computeDispatch(commandBuffer, Dispatch::CellID);
     countCells(commandBuffer);
     generateCellIndexArray(commandBuffer);
     compactCellIndexArray(commandBuffer);
+    computeDispatch(commandBuffer, Dispatch::CellArrayIndex);
 }
 
 void Collision2d::initializeCellIds(VkCommandBuffer commandBuffer) {
@@ -567,7 +470,7 @@ void Collision2d::initializeCellIds(VkCommandBuffer commandBuffer) {
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.initCellIDs.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.initCellIDs.pipeline.handle);
-    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, 0);
+    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::Object);
 
     VkBufferCopy region{0, 0, objects.cellIds.size};
     addComputeToTransferReadBarrier(commandBuffer,  { objects.cellIds, objects.attributes });
@@ -589,7 +492,6 @@ void Collision2d::countCells(VkCommandBuffer commandBuffer) {
     sets[0] = globalSet;
     sets[1] = objects.descriptorSet;
 
-    int gx = std::max(1, int((globals.cpu->numCells)/256));   // TODO use dispatch indirect
 
     addComputeToTransferBarrier(commandBuffer, { objects.counts });
     vkCmdFillBuffer(commandBuffer, objects.counts, 0, objects.counts.size, 0);
@@ -597,8 +499,7 @@ void Collision2d::countCells(VkCommandBuffer commandBuffer) {
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.countCells.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.countCells.pipeline.handle);
-//    vkCmdDispatch(commandBuffer, gx, 1, 1);
-    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, 0);
+    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellIDCmd);
 
     addComputeBarrier(commandBuffer, { objects.counts });
     prefixSum(commandBuffer, objects.counts);
@@ -611,10 +512,9 @@ void Collision2d::generateCellIndexArray(VkCommandBuffer commandBuffer) {
     sets[1] = objects.descriptorSet;
     sets[2] = stagingDescriptorSet;
 
-    int gx = std::max(1, int((globals.cpu->numCells)/256)); // TODO use dispatch indirect
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.pipeline.handle);
-    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellIDCmd);
     addComputeBarrier(commandBuffer, { *objects.cellIndexStaging.buffer, *objects.bitSet.buffer });
 
     addComputeToTransferReadBarrier(commandBuffer, { *objects.bitSet.buffer  });
@@ -635,17 +535,16 @@ void Collision2d::compactCellIndexArray(VkCommandBuffer commandBuffer) {
     sets[1] = objects.descriptorSet;
     sets[2] = stagingDescriptorSet;
 
-    int gx = std::max(1, int((globals.cpu->numCells)/256)); // TODO use dispatch indirect
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.pipeline.handle);
-    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellIDCmd);
     addComputeBarrier(commandBuffer, { globals.gpu, objects.cellIndexArray });
 }
 
-void Collision2d::computeDispatch(VkCommandBuffer commandBuffer, ObjectType objectType) {
+void Collision2d::computeDispatch(VkCommandBuffer commandBuffer, uint32_t objectType) {
     static std::array<uint32_t, 2> constants{};
     constants[0] = 256;
-    constants[1] = static_cast<uint32_t>(objectType);
+    constants[1] = objectType;
 
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = globalSet;
@@ -676,7 +575,7 @@ void Collision2d::renderObjects(VkCommandBuffer commandBuffer) {
 }
 
 void Collision2d::update(float time) {
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
         collisionDetection(commandBuffer);
     });
 }
@@ -723,6 +622,107 @@ BufferRegion Collision2d::reserve(VkDeviceSize size) {
     auto start = scratchPad.offset;
     scratchPad.offset += size;
     return { &scratchPad.buffer, start, scratchPad.offset };
+}
+
+void Collision2d::runDebug() {
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        collisionDetection(commandBuffer);
+    });
+
+    glm::uvec2 dim{glm::ceil((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) };
+    const auto numObjects = globals.cpu->numObjects;
+    auto cellIds = prevCellIds.span<uint32_t>(numObjects * 4);
+    auto attributes = prevAttributes.span<Attribute>(numObjects * 4);
+    spdlog::info("num cells: {}", globals.cpu->numCells);
+
+    const auto N = globals.cpu->numObjects;
+    for(int i = 0; i < N; i++){
+        spdlog::info("i: {}, id: {}, cells: [{}, {}, {}, {}], controlBits : {:06b}", i, attributes[i].objectID, cellIds[i], cellIds[i + N], cellIds[i+ N *2], cellIds[i+ N * 3], attributes[i].controlBits);
+    }
+    spdlog::info("");
+    spdlog::info("Initial Cell ID Array");
+    for(int i = 0; i < 4; ++i){
+        std::string row{};
+        for(int j = 0; j < globals.cpu->numObjects; ++j){
+            int idx = j + globals.cpu->numObjects * i;
+            if(cellIds[idx] == 0xFFFFFFFF){
+                row += fmt::format("[     ] ");
+            }else {
+                auto cell = cellIds[idx];
+                uint32_t cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
+                uint32_t homeCellType = attributes[j].controlBits & 0x3;
+                if(cellType == homeCellType){
+                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{:02}]", cellIds[idx], attributes[j].objectID);
+                    label = fmt::format(fg(fmt::color::black), "{}", label);
+                    row += fmt::format("{} ", label);
+                }else {
+                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{:02}]", cellIds[idx], attributes[j].objectID);
+                    label = fmt::format(fg(fmt::color::black), "{}", label);
+                    row += fmt::format("{} ", label);
+                }
+            }
+        }
+        spdlog::info("{}", row);
+    }
+    prevCellIds.unmap();
+    prevAttributes.unmap();
+
+    cellIds = objects.cellIds.span<uint32_t>(numObjects * 4);
+    attributes = objects.attributes.span<Attribute>(numObjects * 4);
+    spdlog::info("");
+    spdlog::info("Sorted Cell ID Array");
+    for(int i = 0; i < 4; ++i){
+        std::string row{};
+        for(int j = 0; j < globals.cpu->numObjects; ++j){
+            int idx = j * 4 + i;
+            if(cellIds[idx] == 0xFFFFFFFF){
+                row += fmt::format("[     ] ");
+            }else {
+                auto cell = cellIds[idx];
+                uint32_t cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
+                uint32_t homeCellType = attributes[idx].controlBits & 0x3;
+                if(cellType == homeCellType){
+                    auto label = fmt::format(bg(fmt::color::yellow), "[{:02}|{:02}]", cellIds[idx], attributes[idx].objectID);
+                    label = fmt::format(fg(fmt::color::black), "{}", label);
+                    row += fmt::format("{} ", label);
+                }else {
+                    auto label = fmt::format(bg(fmt::color::green), "[{:02}|{:02}]", cellIds[idx], attributes[idx].objectID);
+                    label = fmt::format(fg(fmt::color::black), "{}", label);
+                    row += fmt::format("{} ", label);
+                }
+            }
+        }
+        spdlog::info("{}", row);
+    }
+
+    std::string row{};
+
+
+    std::span<CellInfo> cellInfos = { reinterpret_cast<CellInfo*>(objects.cellIndexArray.map()), static_cast<size_t>(globals.cpu->numCellIndices) };
+
+    row = "";
+    spdlog::info("");
+    spdlog::info("Cell Index Array");
+    for(auto cell : cellInfos) {
+//        if(cell.numHomeCells <= 0) continue;
+        std::string label = fmt::format(bg(fmt::color::cyan), "[{:02}|{}+{}]", cell.index, cell.numHomeCells, cell.numPhantomCells);
+        label = fmt::format(fg(fmt::color::black), "{}", label);
+        row += fmt::format("{} ", label);
+    }
+    spdlog::info(row);
+    objects.cellIndexArray.unmap();
+
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        static std::array<VkDescriptorSet, 2> sets;
+        sets[0] = globalSet;
+        sets[1] = objects.descriptorSet;
+
+//        int gx = std::max(1, int((globals.cpu->numCellIndices)/256));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
+        vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
+    });
 }
 
 int main(){

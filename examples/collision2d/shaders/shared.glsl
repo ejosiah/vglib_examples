@@ -28,6 +28,13 @@ struct CellInfo {
     uint numCells;
 };
 
+struct DispatchCommand {
+    uint gx;
+    uint gy;
+    uint gz;
+    uint padding;
+};
+
 layout(set = 0, binding = 0) buffer Globals {
     mat4 projection;
     Domain domain;
