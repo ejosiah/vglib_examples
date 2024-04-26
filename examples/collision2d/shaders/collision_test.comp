@@ -28,33 +28,45 @@ layout(set = 1, binding = 7) buffer CellIndexArray {
     CellInfo cellIndices[];
 };
 
+layout(push_constant) uniform Constants {
+    int pass;
+};
+
 uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
 uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+vec4 passColor[4] = vec4[4](vec4(1, 0, 0, 1), vec4(0, 1, 0, 1), vec4(0, 0, 1, 1), vec4(1, 1, 0, 1));
 
 void main() {
     if(gid >= global.numCellIndices) return;
 
     CellInfo info = cellIndices[gid];
 
+    const uint cellType = 1u << pass;
     uint start = info.index;
     uint end = start + info.numCells;
     for(uint i = start; i < end; i++){
         for(uint j = start; j < end; j++){
             if(i == j) continue;
 
-            uint a = attributes[i].objectID;
-            uint b = attributes[j].objectID;
+            uint ctrlBitsA = attributes[i].controlBits;
+            uint ctrlBitsB = attributes[j].controlBits;
 
-            vec2 posA = positions[a];
-            vec2 posB = positions[b];
+            if(processCollision(cellType, ctrlBitsA, ctrlBitsB)){
+                uint a = attributes[i].objectID;
+                uint b = attributes[j].objectID;
 
-            float rr = radius[a] +radius[b];
+                vec2 posA = positions[a];
+                vec2 posB = positions[b];
 
-            vec2 d = posA - posB;
+                float rr = radius[a] +radius[b];
 
-            if(dot(d, d) < rr * rr){
-                colors[a] = vec4(1, 0, 0, 1);
-                colors[b] = vec4(1, 0, 0, 1);
+                vec2 d = posA - posB;
+
+                if (dot(d, d) < rr * rr){
+                    colors[a] = passColor[pass];
+                    colors[b] = passColor[pass];
+                }
             }
 
         }

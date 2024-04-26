@@ -44,7 +44,7 @@ void Collision2d::initObjects() {
     globals.cpu->domain.lower = glm::vec2(0);
     globals.cpu->domain.upper = glm::vec2(20);
     globals.cpu->gravity = 9.8;
-    globals.cpu->numObjects = 20;
+    globals.cpu->numObjects = 50;
     globals.cpu->segmentSize = 2;
 
     std::default_random_engine engine{1 << 22};
@@ -392,7 +392,7 @@ void Collision2d::createComputePipeline() {
     module = device.createShaderModule(resource("collision_test.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     computeCreateInfo.stage = stage;
-    compute.collisionTest.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout} );
+    compute.collisionTest.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout}, { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t)} } );
     computeCreateInfo.layout = compute.collisionTest.layout.handle;
     compute.collisionTest.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("collision_test", compute.collisionTest.pipeline.handle);
@@ -637,7 +637,7 @@ void Collision2d::runDebug() {
 
     const auto N = globals.cpu->numObjects;
     for(int i = 0; i < N; i++){
-        spdlog::info("i: {}, id: {}, cells: [{}, {}, {}, {}], controlBits : {:06b}", i, attributes[i].objectID, cellIds[i], cellIds[i + N], cellIds[i+ N *2], cellIds[i+ N * 3], attributes[i].controlBits);
+        spdlog::info("i: {}, id: {}, cells: [{}, {}, {}, {}], controlBits : {:06b} => {}", i, attributes[i].objectID, cellIds[i], cellIds[i + N], cellIds[i+ N *2], cellIds[i+ N * 3], attributes[i].controlBits, attributes[i].controlBits);
     }
     spdlog::info("");
     spdlog::info("Initial Cell ID Array");
@@ -718,10 +718,13 @@ void Collision2d::runDebug() {
         sets[0] = globalSet;
         sets[1] = objects.descriptorSet;
 
-//        int gx = std::max(1, int((globals.cpu->numCellIndices)/256));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
-        vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
+        for(uint32_t pass = 0; pass < 4; ++pass) {
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
+            vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
+            vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
+            addComputeBarrier(commandBuffer, { objects.colors });
+        }
     });
 }
 

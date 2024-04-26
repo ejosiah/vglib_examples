@@ -3,8 +3,13 @@
 
 #define PI 3.1415926535897932384626433832795
 #define SQRT2 1.4142135623730950488016887242097
-#define D_BITS 2
-#define _2D_BITS (1 << D_BITS)
+#define TWO_DIMENSIONS 2u
+#define D_BITS TWO_DIMENSIONS
+#define HOME_CELL_MASK ((1u << D_BITS) - 1u)
+#define INTERSECTING_CELLS_MASK ((1u << (1u << D_BITS)) - 1u)
+#define HOME_CELL_TYPE(ctrlBits)  (1u << (ctrlBits & HOME_CELL_MASK))
+#define INTERSECTING_CELLS(ctrlBits) ((ctrlBits >> D_BITS) & INTERSECTING_CELLS_MASK)
+#define SHARE_COMMON_CELLS(A, B) ((INTERSECTING_CELLS(A) & INTERSECTING_CELLS(B)) != 0)
 
 struct Domain {
     vec2 lower;
@@ -106,16 +111,20 @@ void addHomeCellToControlBits(ivec2 cell, inout uint controlBits) {
 }
 
 void addIntersectingCelltoControlBits(ivec2 cell, inout uint controlBits) {
-    uint cellType = (cell.x % 2) + (cell.y % 2) * 2;
-    uint bits = 1 << cellType;
-    controlBits = controlBits | (bits << D_BITS);
+    uint cellType = 1 <<  ((cell.x % 2) + (cell.y % 2) * 2);
+    controlBits = controlBits | (cellType << D_BITS);
 }
 
 bool isHomeCell(uint cell, uint controlBits) {
     uvec2 dim = dimensions();
-    uint cellType = ((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2;
-    uint homeCellType = controlBits & 0x3u;
-    return cellType == homeCellType;
+    uint cellType =  1 << (((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2);
+    return cellType == HOME_CELL_TYPE(controlBits);
+}
+
+bool processCollision(uint cellType, uint controlBitsA, uint controlBitsB) {
+    uint homeCellA = HOME_CELL_TYPE(controlBitsA);
+    uint homeCellB = HOME_CELL_TYPE(controlBitsB);
+    return SHARE_COMMON_CELLS(controlBitsA, controlBitsA)  && min(homeCellA, homeCellB) == cellType;
 }
 
 #endif // SHARED_GLSL
