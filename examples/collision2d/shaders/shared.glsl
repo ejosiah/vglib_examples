@@ -10,6 +10,8 @@
 #define HOME_CELL_TYPE(ctrlBits)  (1u << (ctrlBits & HOME_CELL_MASK))
 #define INTERSECTING_CELLS(ctrlBits) ((ctrlBits >> D_BITS) & INTERSECTING_CELLS_MASK)
 #define SHARE_COMMON_CELLS(A, B) ((INTERSECTING_CELLS(A) & INTERSECTING_CELLS(B)) != 0)
+#define CELL_TYPE_INDEX(X, Y) ((X % 2u) + (Y % 2u) * 2u)
+#define CELL_TYPE_INDEX_3D(X, Y, Z) ((x % 2u) + (Y % 2u) * 2u + (Z % 2u) * 4u)
 
 struct Domain {
     vec2 lower;
@@ -106,18 +108,18 @@ bool test(Bounds a, Bounds b) {
 }
 
 void addHomeCellToControlBits(ivec2 cell, inout uint controlBits) {
-    uint cellType = (cell.x % 2) + (cell.y % 2) * 2;
+    uint cellType = CELL_TYPE_INDEX(cell.x, cell.y);
     controlBits = controlBits | cellType;
 }
 
 void addIntersectingCelltoControlBits(ivec2 cell, inout uint controlBits) {
-    uint cellType = 1 <<  ((cell.x % 2) + (cell.y % 2) * 2);
+    uint cellType = 1 << CELL_TYPE_INDEX(cell.x, cell.y);
     controlBits = controlBits | (cellType << D_BITS);
 }
 
 bool isHomeCell(uint cell, uint controlBits) {
     uvec2 dim = dimensions();
-    uint cellType =  1 << (((cell % dim.x) % 2) + ((cell/dim.x) % 2) * 2);
+    uint cellType =  1 << CELL_TYPE_INDEX(cell % dim.x, cell/dim.x);
     return cellType == HOME_CELL_TYPE(controlBits);
 }
 
