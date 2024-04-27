@@ -70,7 +70,7 @@ void Collision2d::initObjects() {
 
     globals.cpu->halfSpacing = SQRT2 * maxRadius;
     globals.cpu->spacing = globals.cpu->halfSpacing * 2;
-    glm::uvec2 dim{glm::ceil((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) }; // TODO should always be domain.max + 1
+    glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) + 1.f };
     auto numCells = dim.x * dim.y;
 
     objects.position = device.createCpuVisibleBuffer(positions.data(), BYTE_SIZE(positions), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -581,6 +581,40 @@ void Collision2d::update(float time) {
 }
 
 void Collision2d::checkAppInputs() {
+    if(mouse.left.released) {
+        Camera camera{.proj = globals.cpu->projection};
+        auto pos = mousePositionToWorldSpace(camera);
+//        spdlog::info("mouse pos: {}", pos);
+
+        auto hash = [&](glm::vec2 pos) {
+            glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) + 1.f };
+            glm::uvec2 pid{ pos/globals.cpu->spacing };
+            return pid.y * dim.x + pid.x;
+        };
+
+        auto cellInfos = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
+        auto cellIds = objects.cellIds.span<uint32_t>();
+        auto positions = objects.position.span<glm::vec2>();
+        auto attributes = objects.attributes.span<Attribute>();
+
+        auto cellHash = hash(pos.xy());
+        std::string str{fmt::format("\nclicked position: {}\nCell Info\n\tID: {}\n", pos.xy(), cellHash) };
+        for(auto info : cellInfos){
+            auto begin = info.index;
+            auto end = begin + info.numCells;
+
+            if(cellIds[begin] == cellHash) {
+                str += fmt::format("\toffset: {}\n\t{} home cells\n\t{} phantom cells\n", begin, info.numHomeCells, info.numPhantomCells);
+            }
+            for(auto i = begin; i < end; ++i ) {
+                auto cell = cellIds[i];
+                if(cell == cellHash){
+                    str += fmt::format("\tobj: {}, ctrlBits: {:06b}\n", positions[attributes[i].objectID], attributes[i].controlBits);
+                }
+            }
+        }
+        spdlog::info("{}", str);
+    }
 }
 
 void Collision2d::cleanup() {
@@ -704,7 +738,6 @@ void Collision2d::runDebug() {
     spdlog::info("");
     spdlog::info("Cell Index Array");
     for(auto cell : cellInfos) {
-//        if(cell.numHomeCells <= 0) continue;
         std::string label = fmt::format(bg(fmt::color::cyan), "[{:02}|{}+{}]", cell.index, cell.numHomeCells, cell.numPhantomCells);
         label = fmt::format(fg(fmt::color::black), "{}", label);
         row += fmt::format("{} ", label);

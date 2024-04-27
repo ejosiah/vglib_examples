@@ -60,7 +60,7 @@ layout(set = 0, binding = 0) buffer Globals {
 } global;
 
 uvec2 dimensions() {
-    return uvec2(ceil((global.domain.upper - global.domain.lower)/global.spacing));
+    return uvec2(((global.domain.upper - global.domain.lower)/global.spacing) + 1);
 }
 
 uint hash(uvec2 pid) {
