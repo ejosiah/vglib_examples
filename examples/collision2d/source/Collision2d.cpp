@@ -18,6 +18,7 @@ Collision2d::Collision2d(const Settings& settings) : VulkanBaseApp("Collision De
 void Collision2d::initApp() {
     initScratchBuffer();
     initObjects();
+    initObjectsForDebugging();
     createDescriptorPool();
     createDescriptorSetLayouts();
     updateDescriptorSets();
@@ -38,6 +39,47 @@ void Collision2d::initScratchBuffer() {
 }
 
 void Collision2d::initObjects() {
+    if(debugMode) return;
+    globals.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(GlobalData));
+    globals.cpu = reinterpret_cast<GlobalData*>(globals.gpu.map());
+
+    globals.cpu->domain.lower = glm::vec2(0);
+    globals.cpu->domain.upper = glm::vec2(20);
+    globals.cpu->gravity = 9.8;
+    globals.cpu->numObjects = 0;
+    globals.cpu->segmentSize = 2;
+
+
+    globals.cpu->halfSpacing = SQRT2 * objects.defaultRadius;
+    globals.cpu->spacing = globals.cpu->halfSpacing * 2;
+    glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) + 1.f };
+    auto numCells = dim.x * dim.y;
+
+    VkDeviceSize numParticle = objects.maxParticles;
+    objects.position = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numParticle * sizeof(glm::vec2));
+    objects.velocity = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numParticle * sizeof(glm::vec2));
+    objects.radius = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numParticle * sizeof(float));
+    objects.colors = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numParticle * sizeof(glm::vec4));
+    objects.cellIds = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t) * numParticle * 4);
+    prevCellIds = device.createBuffer( VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t) * numParticle* 4);
+    objects.attributes = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(Attribute) * numParticle * 4);
+    prevAttributes = device.createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(Attribute) * numParticle * 4);
+    objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t) * (numCells + 1));
+    objects.cellIndexArray = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(CellInfo) * numCells);
+    objects.cellIndexStaging = reserve(sizeof(CellInfo) * numCells);
+    objects.bitSet = reserve(sizeof(uint32_t) * numCells);
+    objects.compactIndices = reserve(sizeof(uint32_t) * (numCells + 1));
+
+
+    objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, Dispatch::Size, "dispatch_cmd_buffer"); ;
+
+    const auto& domain = globals.cpu->domain;
+    globals.cpu->projection = glm::ortho(domain.lower.x, domain.upper.x, domain.lower.y, domain.upper.y);
+}
+
+
+void Collision2d::initObjectsForDebugging() {
+    if(!debugMode) return;
     globals.gpu = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(GlobalData));
     globals.cpu = reinterpret_cast<GlobalData*>(globals.gpu.map());
 
@@ -659,6 +701,7 @@ BufferRegion Collision2d::reserve(VkDeviceSize size) {
 }
 
 void Collision2d::runDebug() {
+    if(!debugMode) return;
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
         collisionDetection(commandBuffer);
     });

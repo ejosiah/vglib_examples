@@ -83,6 +83,8 @@ protected:
 
     void initObjects();
 
+    void initObjectsForDebugging();
+
     void initGrid();
 
     void initSort();
@@ -166,7 +168,7 @@ protected:
     } compute;
 
     struct  {
-        const int maxParticles{200000};
+        const int maxParticles{10000};
         VulkanBuffer position;
         VulkanBuffer velocity;
         VulkanBuffer radius;
@@ -181,6 +183,7 @@ protected:
         VulkanBuffer dispatchBuffer;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
+        float defaultRadius{0.1};
     } objects;
     VulkanBuffer prevCellIds;
     VulkanBuffer prevAttributes;
@@ -209,6 +212,7 @@ protected:
     } grid;
 
     FixedUpdate fixedUpdate{60};
+    bool debugMode{true};
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
