@@ -24,7 +24,7 @@ uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
 uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 
 void main() {
-    if(gid >= global.numCells) return;
+    if(gid >= global.gridSize) return;
 
     if(setBits[gid] == 1) {
         cellIndicesOut[compactIndices[gid]] = cellIndicesIn[gid];

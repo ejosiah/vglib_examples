@@ -23,8 +23,8 @@ void main() {
     vec2 a = vec2(0, -global.gravity);
     float t = global.time;
 
-    v += a * t;
     p += v * t;
+    v += a * t;
 
     positions[gid] = p;
     velocity[gid] = v;

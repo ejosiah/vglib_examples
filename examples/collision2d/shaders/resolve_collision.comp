@@ -58,21 +58,28 @@ LocalData local[100];
 int numCollisions;
 
 void resolveCollision(inout LocalData a, inout LocalData b, vec2 dir, float dd) {
+     float rr = r + r;
+     rr *= rr;
+
     float d = sqrt(dd);
     dir /= d;
-
-    float corr = (_2r - d) * .5f;
+    
+    float corr = (r + r - d) * .5f;
     a.position -= dir * corr;
     b.position += dir * corr;
 
-    float v1 = dot(a.velocity, dir);
-    float v2 = dot(b.velocity, dir);
-
-    float newV1 = v1 + v2 - (v1 - v2) * restitution;
-    float newV2 = v1 + v2 - (v2 - v1) * restitution;
-
+   float v1 = dot(a.velocity, dir);
+   float v2 = dot(b.velocity, dir);
+    
+    float m1 = 1/inverseMass;
+    float m2 = 1/inverseMass;
+    
+    float newV1 = (m1 * v1 + m2 * v2 - m2 * (v1 - v2) * restitution) / (m1 + m2);
+    float newV2 = (m1 * v1 + m2 * v2 - m1 * (v2 - v1) * restitution) / (m1 + m2);
+    
     a.velocity += dir * (newV1 - v1);
     b.velocity += dir * (newV2 - v2);
+
     a.updated = true;
     b.updated = true;
 }
@@ -103,10 +110,10 @@ void main() {
             LocalData b = local[j];
 
             if(processCollision(cellType, a.controlBits, b.controlBits)){
-                vec2 d = a.position - b.position;
+                vec2 d = b.position - a.position;
                 float dd = dot(d, d);
-                if(dd < rr) {
-                    resolveCollision(local[j], local[i], d, dd);
+                if(dd != 0 && dd < rr) {
+                    resolveCollision(local[i], local[j], d, dd);
                 }
             }
         }

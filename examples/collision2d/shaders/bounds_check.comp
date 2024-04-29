@@ -24,7 +24,7 @@ void main() {
 
     vec2 p = positions[gid];
     vec2 v = velocity[gid];
-    float r = radius[gid];
+    float r = global.radius;
 
 
     Domain newDomain = shrink(global.domain, r);

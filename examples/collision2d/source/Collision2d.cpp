@@ -33,11 +33,14 @@ void Collision2d::initApp() {
 }
 
 void Collision2d::initEmitters() {
-    if(debugMode) return;
+    if(debugMode) {
+        emitters = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 4);
+        return;
+    }
     const auto& domain = globals.cpu->domain;
     const auto radius = objects.defaultRadius;
     const auto diameter = radius * 2;
-    globals.cpu->numEmitters = 1;
+    globals.cpu->numEmitters = 10;
 
     Emitter prototype{
         .origin = { domain.upper.x - diameter, domain.upper.y - diameter },
@@ -46,7 +49,7 @@ void Collision2d::initEmitters() {
         .offset = 1.25,
         .speed = 10,
         .spreadAngleRad = 0,
-        .maxNumberOfParticlePerSecond = 1,
+        .maxNumberOfParticlePerSecond = 20,
         .maxNumberOfParticles = static_cast<int>(glm::max(1u, objects.maxParticles / globals.cpu->numEmitters)),
         .firstFrameTimeInSeconds = 0,
         .currentTime = 0,
@@ -87,7 +90,7 @@ void Collision2d::initObjects() {
     globals.cpu->halfSpacing = objects.defaultRadius;
     globals.cpu->spacing = SQRT2 * objects.defaultRadius * 2;
     glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) + 1.f };
-    auto numCells = dim.x * dim.y;
+    globals.cpu->gridSize = objects.gridSize = dim.x * dim.y;
 
 
     VkDeviceSize numParticle = objects.maxParticles;
@@ -101,11 +104,11 @@ void Collision2d::initObjects() {
     prevCellIds = device.createBuffer( VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t) * numParticle* 4);
     objects.attributes = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(Attribute) * numParticle * 4);
     prevAttributes = device.createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(Attribute) * numParticle * 4);
-    objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t) * (numCells + 1));
-    objects.cellIndexArray = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(CellInfo) * numCells);
-    objects.cellIndexStaging = reserve(sizeof(CellInfo) * numCells);
-    objects.bitSet = reserve(sizeof(uint32_t) * numCells);
-    objects.compactIndices = reserve(sizeof(uint32_t) * (numCells + 1));
+    objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t) * (objects.gridSize + 1));
+    objects.cellIndexArray = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(CellInfo) * objects.gridSize);
+    objects.cellIndexStaging = reserve(sizeof(CellInfo) * objects.gridSize);
+    objects.bitSet = reserve(sizeof(uint32_t) * objects.gridSize);
+    objects.compactIndices = reserve(sizeof(uint32_t) * (objects.gridSize + 1));
 
 
     objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, Dispatch::Size, "dispatch_cmd_buffer"); ;
@@ -124,7 +127,7 @@ void Collision2d::initObjectsForDebugging() {
     globals.cpu->domain.lower = glm::vec2(0);
     globals.cpu->domain.upper = glm::vec2(20);
     globals.cpu->gravity = 9.8;
-    globals.cpu->numObjects = 50;
+    globals.cpu->numObjects = 3;
     globals.cpu->segmentSize = 2;
 
     std::default_random_engine engine{1 << 22};
@@ -135,44 +138,49 @@ void Collision2d::initObjectsForDebugging() {
     auto nextPosition = [&]{ return glm::vec2{ xDist(engine), yDist(engine) }; };
     auto nextRadius = [&]{ return rDist(engine); };
 
-    std::vector<glm::vec2> positions;
+    float maxRadius = objects.defaultRadius;
+    std::vector<glm::vec2> positions(globals.cpu->numObjects);
     std::vector<glm::vec2> velocity(globals.cpu->numObjects);
-    std::vector<float> radius{};
+    std::vector<float> radius(globals.cpu->numObjects, maxRadius);
     std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
-    float maxRadius = MIN_FLOAT;
-    for(int i = 0; i < globals.cpu->numObjects; ++i){
-        auto pos = nextPosition();
-        auto r = nextRadius();
-        maxRadius = glm::max(r, maxRadius);
-        positions.push_back(pos);
-        radius.push_back(r);
-    }
+
+    positions[0] = {18.3755531311, 1.0000000000};
+    positions[1] = {16.0445327759, 1.0000000000};
+    positions[2] = {12.1265420914, 1.0000000000};
+
+//    for(int i = 0; i < globals.cpu->numObjects; ++i){
+//        auto pos = nextPosition();
+//        auto r = nextRadius();
+//        maxRadius = glm::max(r, maxRadius);
+//        positions.push_back(pos);
+//        radius.push_back(r);
+//    }
 
     globals.cpu->halfSpacing = SQRT2 * maxRadius;
     globals.cpu->spacing = globals.cpu->halfSpacing * 2;
     glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) + 1.f };
-    auto numCells = dim.x * dim.y;
+    globals.cpu->gridSize = objects.gridSize = dim.x * dim.y;
 
     objects.position = device.createCpuVisibleBuffer(positions.data(), BYTE_SIZE(positions), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     objects.velocity = device.createCpuVisibleBuffer(velocity.data(), BYTE_SIZE(velocity), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     objects.radius = device.createCpuVisibleBuffer(radius.data(), BYTE_SIZE(radius), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     objects.colors = device.createCpuVisibleBuffer(colors.data(), BYTE_SIZE(colors), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    objects.cellIds = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * globals.cpu->numObjects * 4);
+    objects.cellIds = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * globals.cpu->numObjects * 4);
     prevCellIds = device.createBuffer( VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * globals.cpu->numObjects * 4);
     objects.attributes = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(Attribute) * globals.cpu->numObjects * 4);
     prevAttributes = device.createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(Attribute) * globals.cpu->numObjects * 4);
-    objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * (numCells + 1));
-    objects.cellIndexArray = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(CellInfo) * numCells);
-    objects.cellIndexStaging = reserve(sizeof(CellInfo) * numCells);
-    objects.bitSet = reserve(sizeof(uint32_t) * numCells);
-    objects.compactIndices = reserve(sizeof(uint32_t) * (numCells + 1));
+    objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * (objects.gridSize  + 1));
+    objects.cellIndexArray = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(CellInfo) * objects.gridSize );
+    objects.cellIndexStaging = reserve(sizeof(CellInfo) * objects.gridSize );
+    objects.bitSet = reserve(sizeof(uint32_t) * objects.gridSize );
+    objects.compactIndices = reserve(sizeof(uint32_t) * (objects.gridSize  + 1));
 
 
-    objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, Dispatch::Size, "dispatch_cmd_buffer"); ;
+    objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, Dispatch::Size, "dispatch_cmd_buffer"); ;
 
     const auto& domain = globals.cpu->domain;
     globals.cpu->projection = glm::ortho(domain.lower.x, domain.upper.x, domain.lower.y, domain.upper.y);
-    spdlog::info("spacing: {}, num cells: {}", globals.cpu->spacing, numCells);
+    spdlog::info("spacing: {}, num cells: {}", globals.cpu->spacing, objects.gridSize );
     for(int i = 0; i < globals.cpu->numObjects; i++) {
         spdlog::info("obj[{}] => {} => {}", i, positions[i], glm::floor(positions[i]/globals.cpu->spacing));
     }
@@ -639,9 +647,11 @@ void Collision2d::generateCellIndexArray(VkCommandBuffer commandBuffer) {
     sets[1] = objects.descriptorSet;
     sets[2] = stagingDescriptorSet;
 
+    uint32_t gx = objects.gridSize/workGroupSize + glm::sign(static_cast<float>(objects.gridSize % workGroupSize));
+
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.pipeline.handle);
-    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellIDCmd);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
     addComputeBarrier(commandBuffer, { *objects.cellIndexStaging.buffer, *objects.bitSet.buffer });
 
     addComputeToTransferReadBarrier(commandBuffer, { *objects.bitSet.buffer  });
@@ -656,6 +666,7 @@ void Collision2d::compactCellIndexArray(VkCommandBuffer commandBuffer) {
     prefixSum(commandBuffer, objects.compactIndices);
     addComputeBarrier(commandBuffer, { *objects.compactIndices.buffer });
 
+    uint32_t gx = objects.gridSize/workGroupSize + glm::sign(static_cast<float>(objects.gridSize % workGroupSize));
     globals.cpu->numCellIndices = 0;
     static std::array<VkDescriptorSet, 3> sets;
     sets[0] = globalSet;
@@ -664,14 +675,14 @@ void Collision2d::compactCellIndexArray(VkCommandBuffer commandBuffer) {
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.pipeline.handle);
-    vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellIDCmd);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
     addComputeBarrier(commandBuffer, { globals.gpu, objects.cellIndexArray });
 }
 
 void Collision2d::resolveCollision(VkCommandBuffer commandBuffer) {
-    static int wait = 0;
-    wait++;
-    if(wait < 240) return;
+//    static int wait = 0;
+//    wait++;
+//    if(wait < 240) return;
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = globalSet;
     sets[1] = objects.descriptorSet;
@@ -681,7 +692,7 @@ void Collision2d::resolveCollision(VkCommandBuffer commandBuffer) {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
         vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
         vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
-        addComputeBarrier(commandBuffer, { objects.colors });
+        addComputeBarrier(commandBuffer, { objects.position, objects.velocity });
     }
 }
 
@@ -721,7 +732,7 @@ void Collision2d::integrate(VkCommandBuffer commandBuffer) {
 
 void Collision2d::computeDispatch(VkCommandBuffer commandBuffer, uint32_t objectType) {
     static std::array<uint32_t, 2> constants{};
-    constants[0] = 256;
+    constants[0] = workGroupSize;
     constants[1] = objectType;
 
     static std::array<VkDescriptorSet, 2> sets;
@@ -757,7 +768,7 @@ void Collision2d::renderObjects(VkCommandBuffer commandBuffer) {
 void Collision2d::update(float time) {
     if(!debugMode) {
         fixedUpdate([&] {
-
+            auto frameCount = fixedUpdate.frames();
             device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
                 emitParticles(commandBuffer);
                 computeDispatch(commandBuffer, Dispatch::Object);
@@ -765,24 +776,24 @@ void Collision2d::update(float time) {
                 collisionDetection(commandBuffer);
                 integrate(commandBuffer);
             });
-            auto positions = objects.position.span<glm::vec2>(globals.cpu->numObjects);
-            auto velocity = objects.velocity.span<glm::vec2>(globals.cpu->numObjects);
-            auto radius = objects.radius.span<float>(globals.cpu->numObjects);
-            auto attributes = objects.attributes.span<Attribute>();
-            auto offsets = objects.counts.span<uint>();
-            auto cells = objects.cellIds.span<uint32_t>();
-            auto cellIndexArray = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
-            auto dispatchCommands = objects.dispatchBuffer.span<glm::uvec4>(Dispatch::Count);
-            auto& p = positions;
-            auto& v = velocity;
-            auto r = radius[0];
-            glfwSetWindowTitle(window, fmt::format("{} - FPS {}", title, framePerSecond).c_str());
-            auto frameCount = fixedUpdate.frames();
-            static bool stop = false;
-            if(p.size() >= 3 && !stop) {
-                spdlog::info("frame: {}\n\n{}\t{}\n{}\t{}\n{}\t{}", frameCount, p[0], v[0], p[1], v[1], p[2], v[2]);
-            }
-            stop = glm::any(glm::isnan(p[0]));
+//            auto positions = objects.position.span<glm::vec2>(globals.cpu->numObjects);
+//            auto velocity = objects.velocity.span<glm::vec2>(globals.cpu->numObjects);
+//            auto radius = objects.radius.span<float>(globals.cpu->numObjects);
+//            auto attributes = objects.attributes.span<Attribute>();
+//            auto offsets = objects.counts.span<uint>(12);
+//            auto cells = objects.cellIds.span<uint32_t>();
+//            auto cellIndexArray = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
+//            auto dispatchCommands = objects.dispatchBuffer.span<glm::uvec4>(Dispatch::Count);
+//            auto& p = positions;
+//            auto& v = velocity;
+//            auto r = radius[0];
+            glfwSetWindowTitle(window, fmt::format("{} - FPS {}, frameCount {}, numObjects {}", title, framePerSecond, frameCount, globals.cpu->numObjects).c_str());
+
+//            static bool stop = false;
+//            if(p.size() >= 3 && !stop) {
+//                spdlog::info("frame: {}\n\n{}\t{}\n{}\t{}\n{}\t{}", frameCount, p[0], v[0], p[1], v[1], p[2], v[2]);
+//            }
+//            stop = glm::any(glm::isnan(p[0]));
         });
         fixedUpdate.advance(time);
         globals.cpu->frame++;
@@ -956,21 +967,25 @@ void Collision2d::runDebug() {
     }
     spdlog::info(row);
     objects.cellIndexArray.unmap();
+    auto cellInfoBC = objects.cellIndexStaging.span<CellInfo>();
+    auto bitSet = objects.bitSet.span<uint32_t>();
+    auto compactIndices = objects.compactIndices.span<uint32_t>();
+    auto dispatch = objects.dispatchBuffer.span<glm::uvec4>();
+    auto offsets = objects.counts.span<uint32_t>();
 
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-        static std::array<VkDescriptorSet, 2> sets;
-        sets[0] = globalSet;
-        sets[1] = objects.descriptorSet;
-
-        for(uint32_t pass = 0; pass < 4; ++pass) {
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
-            vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
-            vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
-            addComputeBarrier(commandBuffer, { objects.colors });
-        }
-    });
+//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+//        static std::array<VkDescriptorSet, 2> sets;
+//        sets[0] = globalSet;
+//        sets[1] = objects.descriptorSet;
+//
+//        for(uint32_t pass = 0; pass < 4; ++pass) {
+//            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+//            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
+//            vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
+//            vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
+//            addComputeBarrier(commandBuffer, { objects.colors });
+//        }
+//    });
 }
 
 void Collision2d::endFrame() {

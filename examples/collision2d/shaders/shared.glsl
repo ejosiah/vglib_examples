@@ -50,6 +50,7 @@ layout(set = 0, binding = 0) buffer Globals {
     float radius;
     float time;
     uint numObjects;
+    uint gridSize;
     uint numCells;
     uint segmentSize;
     uint numCellIndices;

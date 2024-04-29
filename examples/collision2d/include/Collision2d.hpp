@@ -30,6 +30,7 @@ struct GlobalData {
     float halfSpacing;
     float time;
     uint32_t numObjects;
+    uint32_t gridSize;
     uint32_t numCells;
     uint32_t segmentSize;
     uint32_t numCellIndices;
@@ -181,7 +182,7 @@ protected:
     } compute;
 
     struct  {
-        const int maxParticles{3};
+        const int maxParticles{5000};
         VulkanBuffer position;
         VulkanBuffer velocity;
         VulkanBuffer radius;
@@ -196,7 +197,8 @@ protected:
         VulkanBuffer dispatchBuffer;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
-        float defaultRadius{1};
+        const float defaultRadius{0.2};
+        uint32_t gridSize{};
     } objects;
     VulkanBuffer prevCellIds;
     VulkanBuffer prevAttributes;
@@ -228,8 +230,9 @@ protected:
         bool show{false};
     } grid;
 
-    FixedUpdate fixedUpdate{60};
-    bool debugMode{true};
+    FixedUpdate fixedUpdate{480};
+    bool debugMode{false};
+    static constexpr uint32_t workGroupSize = 256;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
