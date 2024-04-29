@@ -4,7 +4,7 @@ class FixedUpdate{
 public:
     FixedUpdate() = default;
 
-    FixedUpdate(int fps)
+    explicit FixedUpdate(int fps)
     : _frequency(fps)
     , _period(fps != 0 ? 1/static_cast<float>(fps) : 0)
     {}
@@ -13,11 +13,12 @@ public:
         if(_elapsedTime > _period) {
             body();
             _updates++;
+            _frames++;
             _elapsedTime = 0;
         }
     }
 
-    inline void update(float time) {
+    inline void advance(float time) {
         static float sElapsedTimeSeconds = 0;
         sElapsedTimeSeconds += time;
         _elapsedTime += time;
@@ -35,9 +36,10 @@ public:
         _elapsedTime = 0;
         _updates = 0;
         _updatesPerSecond = 0;
+        _frames = 0;
     }
 
-    inline int frequency() const {
+    [[nodiscard]] inline int frequency() const {
         return _frequency;
     }
 
@@ -47,14 +49,20 @@ public:
     }
 
     [[nodiscard]]
-    inline int framesPerSecond() {
+    inline int framesPerSecond() const {
         return _updatesPerSecond;
+    }
+
+    [[nodiscard]]
+    inline uint64_t frames() const {
+        return _frames;
     }
 
 private:
     int _frequency{};
     int _updates{};
     int _updatesPerSecond{};
+    uint64_t _frames{};
     float _elapsedTime{};
     float _period{};
 };

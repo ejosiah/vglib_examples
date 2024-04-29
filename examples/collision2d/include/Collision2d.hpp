@@ -56,18 +56,18 @@ struct ScratchPad {
     VkDeviceSize offset{0};
 };
 
-struct EmitterData {
+struct Emitter {
     glm::vec2 origin;
     glm::vec2 direction;
-    int maxNumberOfParticlePerSecond;
-    int maxNumberOfParticles;
-    int numberOfEmittedParticles;
-    float firstFrameTimeInSeconds;
-    float currentTime;
-    float speed;
-    float spreadAngleRad;
     float radius;
     float offset;
+    float speed;
+    float spreadAngleRad;
+    int maxNumberOfParticlePerSecond;
+    int maxNumberOfParticles;
+    float firstFrameTimeInSeconds;
+    float currentTime;
+    int numberOfEmittedParticles;
     int disabled;
 };
 
@@ -78,6 +78,8 @@ public:
 
 protected:
     void initApp() override;
+
+    void initEmitters();
 
     void initScratchBuffer();
 
@@ -123,6 +125,14 @@ protected:
 
     void compactCellIndexArray(VkCommandBuffer commandBuffer);
 
+    void resolveCollision(VkCommandBuffer commandBuffer);
+
+    void emitParticles(VkCommandBuffer commandBuffer);
+
+    void boundsCheck(VkCommandBuffer commandBuffer);
+
+    void integrate(VkCommandBuffer commandBuffer);
+
     void computeDispatch(VkCommandBuffer commandBuffer, uint32_t objectType);
 
     void renderObjects(VkCommandBuffer commandBuffer);
@@ -147,7 +157,7 @@ protected:
 
     void onPause() override;
 
-
+    void endFrame() override;
 
     BufferRegion reserve(VkDeviceSize size);
 
@@ -165,10 +175,13 @@ protected:
         Pipeline compactCellIndexArray;
         Pipeline collisionTest;
         Pipeline computeDispatch;
+        Pipeline emitter;
+        Pipeline integrate;
+        Pipeline boundsCheck;
     } compute;
 
     struct  {
-        const int maxParticles{10000};
+        const int maxParticles{3};
         VulkanBuffer position;
         VulkanBuffer velocity;
         VulkanBuffer radius;
@@ -183,10 +196,14 @@ protected:
         VulkanBuffer dispatchBuffer;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
-        float defaultRadius{0.1};
+        float defaultRadius{1};
     } objects;
     VulkanBuffer prevCellIds;
     VulkanBuffer prevAttributes;
+    VulkanBuffer emitters;
+
+    VulkanDescriptorSetLayout emitterSetLayout;
+    VkDescriptorSet emitterDescriptorSet{};
 
     ScratchPad scratchPad;
 

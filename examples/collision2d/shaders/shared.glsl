@@ -47,7 +47,7 @@ layout(set = 0, binding = 0) buffer Globals {
     Domain domain;
     float gravity;
     float spacing;
-    float halfSpacing;
+    float radius;
     float time;
     uint numObjects;
     uint numCells;
@@ -128,5 +128,14 @@ bool processCollision(uint cellType, uint controlBitsA, uint controlBitsB) {
     uint homeCellB = HOME_CELL_TYPE(controlBitsB);
     return SHARE_COMMON_CELLS(controlBitsA, controlBitsA)  && min(homeCellA, homeCellB) == cellType;
 }
+
+Domain shrink(Domain bounds, float factor){
+    Domain newDomain = bounds;
+    newDomain.lower += factor;
+    newDomain.upper -= factor;
+    
+    return newDomain;
+}
+
 
 #endif // SHARED_GLSL

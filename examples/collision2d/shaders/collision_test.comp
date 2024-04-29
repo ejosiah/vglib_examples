@@ -59,7 +59,7 @@ void main() {
                 vec2 posA = positions[a];
                 vec2 posB = positions[b];
 
-                float rr = radius[a] +radius[b];
+                float rr = radius[a] + radius[b];
 
                 vec2 d = posA - posB;
 

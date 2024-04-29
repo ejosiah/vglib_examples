@@ -1,0 +1,26 @@
+#version 460
+
+layout(local_size_x = 1) in;
+
+struct Emitter {
+    vec2 origin;
+    vec2 direction;
+    float radius;
+    float offset;
+    float speed;
+    float spreadAngleRad;
+    int maxNumberOfParticlePerSecond;
+    int maxNumberOfParticles;
+    float firstFrameTimeInSeconds;
+    float currentTime;
+    int numberOfEmittedParticles;
+    int disabled;
+};
+
+layout(set = 0, binding = 0) buffer Emitters {
+    Emitter emitters[];
+};
+
+void main(){
+    Emitter emitter;
+}

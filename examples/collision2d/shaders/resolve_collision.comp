@@ -1,0 +1,122 @@
+#version 460
+
+#include "shared.glsl"
+
+struct LocalData{
+    vec2 position;
+    vec2 velocity;
+    uint controlBits;
+    uint index;
+    bool updated;
+};
+
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer Positions {
+    vec2 positions[];
+};
+
+layout(set = 1, binding = 1) buffer Velocity {
+    vec2 velocity[];
+};
+
+layout(set = 1, binding = 2) buffer Radius {
+    float radius[];
+};
+
+layout(set = 1, binding = 3) buffer Colors {
+    vec4 colors[];
+};
+
+layout(set = 1, binding = 4) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 5) buffer Attributes {
+    Attribute attributes[];
+};
+
+layout(set = 1, binding = 7) buffer CellIndexArray {
+    CellInfo cellIndices[];
+};
+
+layout(push_constant) uniform Constants {
+    int pass;
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+float r = global.radius;
+float _2r = r + r;
+float rr = _2r * _2r;
+float restitution = 0.5;
+float inverseMass = 1;
+
+LocalData local[100];
+int numCollisions;
+
+void resolveCollision(inout LocalData a, inout LocalData b, vec2 dir, float dd) {
+    float d = sqrt(dd);
+    dir /= d;
+
+    float corr = (_2r - d) * .5f;
+    a.position -= dir * corr;
+    b.position += dir * corr;
+
+    float v1 = dot(a.velocity, dir);
+    float v2 = dot(b.velocity, dir);
+
+    float newV1 = v1 + v2 - (v1 - v2) * restitution;
+    float newV2 = v1 + v2 - (v2 - v1) * restitution;
+
+    a.velocity += dir * (newV1 - v1);
+    b.velocity += dir * (newV2 - v2);
+    a.updated = true;
+    b.updated = true;
+}
+
+void main() {
+    if(gid >= global.numCellIndices) return;
+
+    CellInfo info = cellIndices[gid];
+
+    const uint cellType = 1u << pass;
+    uint start = info.index;
+    uint end = start + info.numCells;
+
+    for(uint i = start; i < end; ++i){
+        LocalData data;
+        data.controlBits = attributes[i].controlBits;
+        data.index = attributes[i].objectID;
+        data.position = positions[data.index];
+        data.velocity = velocity[data.index];
+        data.updated = false;
+        local[i - start] = data;
+    }
+
+    for(int i = 0; i < info.numHomeCells; ++i){
+        LocalData a = local[i];
+        for(int j = 0; j < info.numCells; ++j){
+            if(i == j) continue;
+            LocalData b = local[j];
+
+            if(processCollision(cellType, a.controlBits, b.controlBits)){
+                vec2 d = a.position - b.position;
+                float dd = dot(d, d);
+                if(dd < rr) {
+                    resolveCollision(local[j], local[i], d, dd);
+                }
+            }
+        }
+    }
+
+    for(int i = 0; i < info.numCells; ++i) {
+        if(local[i].updated) {
+            positions[local[i].index] = local[i].position;
+            velocity[local[i].index] = local[i].velocity;
+        }
+    }
+
+}

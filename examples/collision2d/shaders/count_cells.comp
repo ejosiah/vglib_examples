@@ -29,7 +29,7 @@ void main() {
 
     uint last = global.numCells - 1;
 
-    while(true) {
+    while(offset <= global.numCells) {
         uint nextCell = cellID[++offset];
         if(nextCell != cell){
             transitions++;

@@ -5,22 +5,26 @@
 struct Emitter {
     vec2 origin;
     vec2 direction;
-    int maxNumberOfParticlePerSecond;
-    int maxNumberOfParticles;
-    int numberOfEmittedParticles;
-    float firstFrameTimeInSeconds;
-    float currentTime;
-    float speed;
-    float spreadAngleRad;
     float radius;
     float offset;
+    float speed;
+    float spreadAngleRad;
+    int maxNumberOfParticlePerSecond;
+    int maxNumberOfParticles;
+    float firstFrameTimeInSeconds;
     int disabled;
+    float currentTime;
+    int numberOfEmittedParticles;
 };
 
 layout(local_size_x = 256) in;
 
 layout(set = 1, binding = 0) buffer Positions {
     vec2 positions[];
+};
+
+layout(set = 1, binding = 1) buffer Velocity {
+    vec2 velocity[];
 };
 
 layout(set = 1, binding = 2) buffer Radius {
@@ -48,6 +52,7 @@ float random(){
 }
 
 vec2 iPositions[100];
+vec2 iVelocity[100];
 float iRadius[100];
 
 void main() {
@@ -62,7 +67,7 @@ void main() {
 
     newMaxTotalNumOfParticlesEmitted = min(newMaxTotalNumOfParticlesEmitted, emitter.maxNumberOfParticles);
 
-    int maxNumberOfNewParticles = max(newMaxTotalNumOfParticlesEmitted - emitter.numberOfEmittedParticles, 100);
+    int maxNumberOfNewParticles = min(newMaxTotalNumOfParticlesEmitted - emitter.numberOfEmittedParticles, 100);
 
     if(maxNumberOfNewParticles > 0) {
         float t = emitter.radius * emitter.offset;
@@ -71,20 +76,22 @@ void main() {
             mat2 rotate = mat2( cos(angle), sin(angle), -sin(angle), cos(angle) );
             vec2 direction = rotate * emitter.direction;
             iPositions[i] = emitter.origin + direction * (i * t);
+            iVelocity[i] = emitter.speed * direction;
             iRadius[i] = emitter.radius;
         }
 
 
-        uint begin = atomicAdd(global.numObjects, maxNumberOfNewParticles);
-        uint end = begin + maxNumberOfNewParticles;
-        for(uint i = begin; i < end; i++){
-            positions[i] = iPositions[i];
-            radius[i] = iRadius[i];
+        uint offset = atomicAdd(global.numObjects, maxNumberOfNewParticles);
+        for(uint i = 0; i < maxNumberOfNewParticles; i++){
+            positions[offset + i] = iPositions[i];
+            velocity[offset + i] = iVelocity[i];
+            radius[offset + i] = iRadius[i];
         }
         emitter.numberOfEmittedParticles += maxNumberOfNewParticles;
 
     }
 
     emitter.currentTime += global.time;
+    emitters[emitterID] = emitter;
 }
 
