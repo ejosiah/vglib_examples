@@ -21,6 +21,13 @@ struct Domain{
     glm::vec2 upper{};
 };
 
+struct UpdateInfo {
+    uint32_t objectId;
+    uint32_t pass;
+    uint32_t tid;
+    uint32_t cellID;
+};
+
 
 struct GlobalData {
     glm::mat4 projection;
@@ -35,6 +42,7 @@ struct GlobalData {
     uint32_t segmentSize;
     uint32_t numCellIndices;
     uint32_t numEmitters;
+    uint32_t numUpdates;
     uint32_t frame;
     uint32_t screenWidth;
     uint32_t screenHeight;
@@ -128,6 +136,8 @@ protected:
 
     void resolveCollision(VkCommandBuffer commandBuffer);
 
+    void bruteForceResolveCollision(VkCommandBuffer commandBuffer);
+
     void emitParticles(VkCommandBuffer commandBuffer);
 
     void boundsCheck(VkCommandBuffer commandBuffer);
@@ -175,6 +185,7 @@ protected:
         Pipeline generateCellIndexArray;
         Pipeline compactCellIndexArray;
         Pipeline collisionTest;
+        Pipeline bruteForceTest;
         Pipeline computeDispatch;
         Pipeline emitter;
         Pipeline integrate;
@@ -182,7 +193,7 @@ protected:
     } compute;
 
     struct  {
-        const int maxParticles{5000};
+        const int maxParticles{20000};
         VulkanBuffer position;
         VulkanBuffer velocity;
         VulkanBuffer radius;
@@ -197,7 +208,7 @@ protected:
         VulkanBuffer dispatchBuffer;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
-        const float defaultRadius{0.2};
+        const float defaultRadius{0.05};
         uint32_t gridSize{};
     } objects;
     VulkanBuffer prevCellIds;
@@ -214,7 +225,7 @@ protected:
 
     VulkanDescriptorSetLayout stagingSetLayout;
     VkDescriptorSet stagingDescriptorSet;
-
+    VulkanBuffer updatesBuffer;
 
     struct {
         VulkanBuffer gpu;
@@ -227,12 +238,15 @@ protected:
             Domain domain;
             float spacing{};
         } constants;
-        bool show{false};
+        bool show{true};
     } grid;
 
     FixedUpdate fixedUpdate{480};
+    uint32_t iterations{8};
     bool debugMode{false};
     static constexpr uint32_t workGroupSize = 256;
+    uint32_t frameStart = 26000;
+    bool useBruteForce = false;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;

@@ -1,0 +1,90 @@
+#version 460
+
+#include "shared.glsl"
+
+struct LocalData{
+    vec2 position;
+};
+
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer Positions {
+    vec2 positions[];
+};
+
+layout(set = 1, binding = 1) buffer PreviousPosition {
+    vec2 previousPosition[];
+};
+
+
+layout(set = 1, binding = 2) buffer Radius {
+    float radius[];
+};
+
+layout(set = 1, binding = 3) buffer Colors {
+    vec4 colors[];
+};
+
+layout(set = 1, binding = 4) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 5) buffer Attributes {
+    Attribute attributes[];
+};
+
+layout(set = 1, binding = 7) buffer CellIndexArray {
+    CellInfo cellIndices[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+float r = global.radius;
+float _2r = r + r;
+float rr = _2r * _2r;
+float restitution = 0.5;
+float inverseMass = 1;
+
+void resolveCollision(inout LocalData a, inout LocalData b, vec2 dir, float dd) {
+
+    float d = sqrt(dd);
+    dir /= d;
+
+    float corr = 0.5 * (_2r - d) * restitution;
+    a.position -= dir * corr;
+    b.position += dir * corr;
+
+}
+
+LocalData local[100];
+
+void main() {
+    const uint N = global.numObjects;
+
+    for(uint i = 0; i < N; ++i){
+        LocalData data;
+        data.position = positions[i];
+        local[i] = data;
+    }
+
+    for(uint i = 0; i < N; ++i){
+        LocalData a = local[i];
+        for(uint j = 0; j < N; ++j) {
+            if(i == j) continue;
+
+            LocalData b = local[j];
+
+            vec2 d = b.position - a.position;
+            float dd = dot(d, d);
+            if(dd != 0 && dd < rr) {
+                resolveCollision(local[i], local[j], d, dd);
+            }
+        }
+    }
+
+    for(uint i = 0; i < N; ++i){
+        positions[i] = local[i].position;
+    }
+}

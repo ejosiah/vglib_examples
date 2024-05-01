@@ -42,17 +42,21 @@ void main() {
 
     CellInfo info = cellIndices[gid];
 
-    const uint cellType = 1u << pass;
+    const uint passCellType = 1u << pass;
+    const uint homeCellType = HOME_CELL_TYPE(attributes[info.index].controlBits);
+
+    if(passCellType != homeCellType) return;
+
     uint start = info.index;
     uint end = start + info.numCells;
     for(uint i = start; i < end; i++){
-        for(uint j = start; j < end; j++){
+        for(uint j = i + 1; j < end; j++){
             if(i == j) continue;
 
             uint ctrlBitsA = attributes[i].controlBits;
             uint ctrlBitsB = attributes[j].controlBits;
 
-            if(processCollision(cellType, ctrlBitsA, ctrlBitsB)){
+            if(processCollision(passCellType, ctrlBitsA, ctrlBitsB)){
                 uint a = attributes[i].objectID;
                 uint b = attributes[j].objectID;
 
@@ -66,6 +70,17 @@ void main() {
                 if (dot(d, d) < rr * rr){
                     colors[a] = passColor[pass];
                     colors[b] = passColor[pass];
+
+                    uint uIndex = atomicAdd(global.numUpdates, 2);
+                    updates[uIndex].objectId = a;
+                    updates[uIndex].pass = pass;
+                    updates[uIndex].tid = gid;
+                    updates[uIndex].cellID = cellID[i];
+
+                    updates[uIndex + 1].objectId = b;
+                    updates[uIndex + 1].pass = pass;
+                    updates[uIndex + 1].tid = gid;
+                    updates[uIndex + 1].cellID = cellID[j];
                 }
             }
 

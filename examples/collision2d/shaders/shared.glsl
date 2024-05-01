@@ -42,6 +42,14 @@ struct DispatchCommand {
     uint padding;
 };
 
+struct UpdateInfo {
+    uint objectId;
+    uint pass;
+    uint tid;
+    uint cellID;
+};
+
+
 layout(set = 0, binding = 0) buffer Globals {
     mat4 projection;
     Domain domain;
@@ -55,10 +63,15 @@ layout(set = 0, binding = 0) buffer Globals {
     uint segmentSize;
     uint numCellIndices;
     uint numEmitters;
+    uint numUpdates;
     uint frame;
     uint screenWidth;
     uint screenHeight;
 } global;
+
+layout(set = 0, binding = 1) buffer Updates {
+    UpdateInfo updates[];
+};
 
 uvec2 dimensions() {
     return uvec2(((global.domain.upper - global.domain.lower)/global.spacing) + 1);
@@ -71,6 +84,16 @@ uint hash(uvec2 pid) {
 
 ivec2 intCoord(vec2 pos) {
     return ivec2(pos/global.spacing);
+}
+
+
+uvec2 uintCoord(vec2 pos) {
+    return uvec2(pos/global.spacing);
+}
+
+vec2 coordinate(uint cellID) {
+    uvec2 dim = dimensions();
+    return vec2( cellID % dim.x, cellID / dim.x );
 }
 
 uint computeHash(vec2 pos) {
@@ -108,6 +131,12 @@ bool test(Bounds a, Bounds b) {
     return all(overlap);
 }
 
+bool test(uvec2 a, uvec2 b) {
+    Bounds aBounds = Bounds(vec2(a), vec2(a) + global.spacing);
+    Bounds bBounds = Bounds(vec2(b), vec2(b) + global.spacing);
+    return test(aBounds, bBounds);
+}
+
 void addHomeCellToControlBits(ivec2 cell, inout uint controlBits) {
     uint cellType = CELL_TYPE_INDEX(cell.x, cell.y);
     controlBits = controlBits | cellType;
@@ -124,11 +153,37 @@ bool isHomeCell(uint cell, uint controlBits) {
     return cellType == HOME_CELL_TYPE(controlBits);
 }
 
-bool processCollision(uint cellType, uint controlBitsA, uint controlBitsB) {
+bool processCollision(uint passCellType, uint controlBitsA, uint controlBitsB) {
     uint homeCellA = HOME_CELL_TYPE(controlBitsA);
     uint homeCellB = HOME_CELL_TYPE(controlBitsB);
-    return SHARE_COMMON_CELLS(controlBitsA, controlBitsA)  && min(homeCellA, homeCellB) == cellType;
+    return SHARE_COMMON_CELLS(controlBitsA, controlBitsA)  && min(homeCellA, homeCellB) == passCellType;
 }
+
+
+uint countCellIntersections(uint controlBits){
+    uint ic = INTERSECTING_CELLS(controlBits);
+    return uint(sign(ic & 8u) + sign(ic & 4u) + sign(ic & 2u) + sign(ic & 1u));
+}
+
+bool test(vec2 position, uint cellHash) {
+    vec2 cell = coordinate(cellHash);
+    Bounds oBounds = createBounds(position, global.radius * SQRT2);
+    Bounds cBounds = Bounds(cell, cell  + global.spacing);
+
+    return test(oBounds, cBounds);
+}
+
+// There is an issue with the original processCollision which relies on only control bits
+// SHARE_COMMON_CELLS will return true for intersections on both sides of controlBitA
+// which means we may get false positives if we test against the wrong side
+// so in addition we check if A intersects the Home Cell of B
+bool processCollision(uint passCellType, uint controlBitsA, uint controlBitsB, vec2 posA, uint cellHashB) {
+    uint homeCellA = HOME_CELL_TYPE(controlBitsA);
+    uint homeCellB = HOME_CELL_TYPE(controlBitsB);
+
+    return SHARE_COMMON_CELLS(controlBitsA, controlBitsA) && (min(homeCellA, homeCellB) == passCellType || !test(posA, cellHashB));
+}
+
 
 Domain shrink(Domain bounds, float factor){
     Domain newDomain = bounds;

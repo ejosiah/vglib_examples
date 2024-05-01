@@ -10,7 +10,7 @@ public:
     {}
 
     inline void operator()(auto body) {
-        if(_elapsedTime > _period) {
+        if(!_paused && _elapsedTime > _period) {
             body();
             _updates++;
             _frames++;
@@ -19,6 +19,7 @@ public:
     }
 
     inline void advance(float time) {
+        if(_paused) return;
         static float sElapsedTimeSeconds = 0;
         sElapsedTimeSeconds += time;
         _elapsedTime += time;
@@ -58,11 +59,25 @@ public:
         return _frames;
     }
 
+    inline void pause() {
+        _paused = true;
+    }
+
+    inline void unPause() {
+        _paused = false;
+    }
+
+    [[nodiscard]]
+    inline bool paused() const {
+        return _paused;
+    }
+
 private:
     int _frequency{};
     int _updates{};
     int _updatesPerSecond{};
     uint64_t _frames{};
+    bool _paused{};
     float _elapsedTime{};
     float _period{};
 };

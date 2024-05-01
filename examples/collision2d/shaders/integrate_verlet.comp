@@ -1,0 +1,29 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer Positions {
+    vec2 position[];
+};
+
+layout(set = 1, binding = 1) buffer PreviousPosition {
+    vec2 previousPosition[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main() {
+
+    vec2 a = vec2(0, -global.gravity);
+    float dt = global.time;
+
+    vec2 p0 = previousPosition[gid];
+    vec2 p1 = position[gid];
+    vec2 p2 = 2.f * p1 - p0 + a * dt * dt;
+
+    position[gid] = p2;
+    previousPosition[gid] = p1;
+}

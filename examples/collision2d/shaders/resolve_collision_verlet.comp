@@ -4,9 +4,10 @@
 
 struct LocalData{
     vec2 position;
-    vec2 velocity;
     uint controlBits;
     uint index;
+    uint cell;
+    int pass;
     bool previousPassUpdate;
     bool updated;
 };
@@ -16,10 +17,6 @@ layout(local_size_x = 256) in;
 
 layout(set = 1, binding = 0) buffer Positions {
     vec2 positions[];
-};
-
-layout(set = 1, binding = 1) buffer Velocity {
-    vec2 velocity[];
 };
 
 layout(set = 1, binding = 2) buffer Radius {
@@ -56,34 +53,22 @@ uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 float r = global.radius;
 float _2r = r + r;
 float rr = _2r * _2r;
-float restitution = 0.5;
+float restitution = 0.75;
 float inverseMass = 1;
 
 LocalData local[100];
 int numCollisions;
 
-void resolveCollision(inout LocalData a, inout LocalData b, vec2 dir, float dd) {
-     float rr = r + r;
-     rr *= rr;
+vec4 passColor[4] = vec4[4](vec4(1, 0, 0, 1), vec4(0, 1, 0, 1), vec4(0, 0, 1, 1), vec4(1, 1, 0, 1));
+
+void resolveCollision(inout LocalData a, inout LocalData b, vec2 dir, float dd, uint pass) {
 
     float d = sqrt(dd);
     dir /= d;
     
-    float corr = (r + r - d) * .5f;
+    float corr = 0.5 * (_2r - d) * restitution;
     a.position -= dir * corr;
     b.position += dir * corr;
-
-   float v1 = dot(a.velocity, dir);
-   float v2 = dot(b.velocity, dir);
-    
-    float m1 = 1/inverseMass;
-    float m2 = 1/inverseMass;
-    
-    float newV1 = (m1 * v1 + m2 * v2 - m2 * (v1 - v2) * restitution) / (m1 + m2);
-    float newV2 = (m1 * v1 + m2 * v2 - m1 * (v2 - v1) * restitution) / (m1 + m2);
-    
-    a.velocity += dir * (newV1 - v1);
-    b.velocity += dir * (newV2 - v2);
 
     a.updated = true;
     b.updated = true;
@@ -94,7 +79,21 @@ void main() {
 
     CellInfo info = cellIndices[gid];
 
-    const uint cellType = 1u << pass;
+    if(info.numCells == 1){
+
+//        if(countCellIntersections(attributes[info.index].controlBits) > 1){
+//            colors[attributes[info.index].objectID] = vec4(1, 0.5, 0, 1);
+//        }else{
+//            colors[attributes[info.index].objectID] = vec4(1);
+//        }
+        return;
+    }
+
+    const uint passCellType = 1u << pass;
+    const uint homeCellType = HOME_CELL_TYPE(attributes[info.index].controlBits);
+
+    if(passCellType != homeCellType) return;
+
     uint start = info.index;
     uint end = start + info.numCells;
 
@@ -103,24 +102,32 @@ void main() {
         data.controlBits = attributes[i].controlBits;
         data.index = attributes[i].objectID;
         data.position = positions[data.index];
-        data.velocity = velocity[data.index];
         data.updated = false;
-        data.previousPassUpdate = bitSet[data.index] == 1;
+        data.pass = -1;
+        data.cell = cellID[i];
         local[i - start] = data;
+//        colors[data.index] = vec4(1);
     }
 
     for(int i = 0; i < info.numHomeCells; ++i){
         LocalData a = local[i];
-        for(int j = 0; j < info.numCells; ++j){
+        for(int j = i + 1; j < info.numCells; ++j){
             if(i == j) continue;
             LocalData b = local[j];
+
+//            colors[local[i].index] = vec4(1);
+//            colors[local[j].index] = vec4(1);
 
             if(SHARE_COMMON_CELLS(a.controlBits, b.controlBits) && !b.previousPassUpdate){
                 vec2 d = b.position - a.position;
                 float dd = dot(d, d);
                 if(dd != 0 && dd < rr) {
-                    resolveCollision(local[i], local[j], d, dd);
+                    resolveCollision(local[i], local[j], d, dd, pass);
                 }
+                local[i].pass = pass;
+                local[j].pass = pass;
+//                colors[local[i].index] = passColor[local[i].pass];
+//                colors[local[j].index] = passColor[local[j].pass];
             }
         }
     }
@@ -128,9 +135,11 @@ void main() {
     for(int i = 0; i < info.numCells; ++i) {
         if(local[i].updated) {
             positions[local[i].index] = local[i].position;
-            velocity[local[i].index] = local[i].velocity;
             bitSet[local[i].index] = 1;
         }
+//        if(local[i].pass != -1) {
+//            colors[local[i].index] = passColor[local[i].pass];
+//        }
     }
 
 }

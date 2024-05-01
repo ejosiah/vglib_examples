@@ -12,8 +12,8 @@ layout(set = 2, binding = 0) buffer ScratchPad {
     CellInfo cellIndicesIn[];
 };
 
-layout(set = 2, binding = 1) buffer SetBits {
-    uint setBits[];
+layout(set = 2, binding = 1) buffer BitSet {
+    uint bitSet[];
 };
 
 layout(set = 2, binding = 2) buffer CompactIndices {
@@ -26,7 +26,7 @@ uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 void main() {
     if(gid >= global.gridSize) return;
 
-    if(setBits[gid] == 1) {
+    if(bitSet[gid] == 1) {
         cellIndicesOut[compactIndices[gid]] = cellIndicesIn[gid];
     }
 

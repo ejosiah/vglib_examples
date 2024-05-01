@@ -1,0 +1,48 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) buffer Positions {
+    vec2 positions[];
+};
+
+layout(set = 1, binding = 1) buffer Velocity {
+    vec2 velocity[];
+};
+
+layout(set = 1, binding = 2) buffer Radius {
+    float radius[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main(){
+    if(gid >= global.numObjects) return;
+
+    vec2 p = positions[gid];
+    float r = global.radius;
+
+
+    Domain newDomain = shrink(global.domain, r);
+    vec2 min = newDomain.lower;
+    vec2 max = newDomain.upper;
+    float rest = 0.5; // Restitution
+
+    if(p.x < min.x){
+        p.x = min.x;
+    }
+    if(p.x > max.x){
+        p.x = max.x;
+    }
+    if(p.y < min.y){
+        p.y = min.y;
+    }
+    if(p.y > max.y){
+        p.y = max.y;
+    }
+
+    positions[gid] = p;
+}

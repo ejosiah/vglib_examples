@@ -49,7 +49,7 @@ void Collision2d::initEmitters() {
         .offset = 1.25,
         .speed = 10,
         .spreadAngleRad = 0,
-        .maxNumberOfParticlePerSecond = 20,
+        .maxNumberOfParticlePerSecond = 100,
         .maxNumberOfParticles = static_cast<int>(glm::max(1u, objects.maxParticles / globals.cpu->numEmitters)),
         .firstFrameTimeInSeconds = 0,
         .currentTime = 0,
@@ -93,7 +93,7 @@ void Collision2d::initObjects() {
     globals.cpu->gridSize = objects.gridSize = dim.x * dim.y;
 
 
-    VkDeviceSize numParticle = objects.maxParticles;
+    uint32_t numParticle = objects.maxParticles;
 
     std::vector<glm::vec4> colors(numParticle, glm::vec4(1, 0, 0, 1) );
     objects.position = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, numParticle * sizeof(glm::vec2));
@@ -107,10 +107,11 @@ void Collision2d::initObjects() {
     objects.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t) * (objects.gridSize + 1));
     objects.cellIndexArray = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(CellInfo) * objects.gridSize);
     objects.cellIndexStaging = reserve(sizeof(CellInfo) * objects.gridSize);
-    objects.bitSet = reserve(sizeof(uint32_t) * objects.gridSize);
+    objects.bitSet = reserve(sizeof(uint32_t) * std::max(objects.gridSize, numParticle));
     objects.compactIndices = reserve(sizeof(uint32_t) * (objects.gridSize + 1));
 
 
+    updatesBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(UpdateInfo) * numParticle * 10);
     objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, Dispatch::Size, "dispatch_cmd_buffer"); ;
 
     const auto& domain = globals.cpu->domain;
@@ -127,7 +128,7 @@ void Collision2d::initObjectsForDebugging() {
     globals.cpu->domain.lower = glm::vec2(0);
     globals.cpu->domain.upper = glm::vec2(20);
     globals.cpu->gravity = 9.8;
-    globals.cpu->numObjects = 3;
+    globals.cpu->numObjects = 100;
     globals.cpu->segmentSize = 2;
 
     std::default_random_engine engine{1 << 22};
@@ -138,16 +139,13 @@ void Collision2d::initObjectsForDebugging() {
     auto nextPosition = [&]{ return glm::vec2{ xDist(engine), yDist(engine) }; };
     auto nextRadius = [&]{ return rDist(engine); };
 
-    float maxRadius = objects.defaultRadius;
-    std::vector<glm::vec2> positions(globals.cpu->numObjects);
-    std::vector<glm::vec2> velocity(globals.cpu->numObjects);
-    std::vector<float> radius(globals.cpu->numObjects, maxRadius);
-    std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
-
-    positions[0] = {18.3755531311, 1.0000000000};
-    positions[1] = {16.0445327759, 1.0000000000};
-    positions[2] = {12.1265420914, 1.0000000000};
-
+//    float maxRadius = MIN_FLOAT;
+//    std::vector<glm::vec2> positions{};
+//    std::vector<glm::vec2> velocity(globals.cpu->numObjects);
+//    std::vector<float> radius{};
+//    std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
+//
+//
 //    for(int i = 0; i < globals.cpu->numObjects; ++i){
 //        auto pos = nextPosition();
 //        auto r = nextRadius();
@@ -155,6 +153,17 @@ void Collision2d::initObjectsForDebugging() {
 //        positions.push_back(pos);
 //        radius.push_back(r);
 //    }
+
+    globals.cpu->numObjects = 3;
+    float maxRadius = objects.defaultRadius;
+    std::vector<glm::vec2> positions(globals.cpu->numObjects);
+    std::vector<glm::vec2> velocity(globals.cpu->numObjects);
+    std::vector<float> radius(globals.cpu->numObjects, maxRadius);
+    std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
+
+    positions[0] = {4.3559451103, 0.9999574423};
+    positions[1] = {6.7158102989, 0.9999574423};
+    positions[2] = {2.8033828735, 0.9999574423};
 
     globals.cpu->halfSpacing = SQRT2 * maxRadius;
     globals.cpu->spacing = globals.cpu->halfSpacing * 2;
@@ -175,7 +184,7 @@ void Collision2d::initObjectsForDebugging() {
     objects.bitSet = reserve(sizeof(uint32_t) * objects.gridSize );
     objects.compactIndices = reserve(sizeof(uint32_t) * (objects.gridSize  + 1));
 
-
+    updatesBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(UpdateInfo) * globals.cpu->numObjects * 10);
     objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, Dispatch::Size, "dispatch_cmd_buffer"); ;
 
     const auto& domain = globals.cpu->domain;
@@ -305,7 +314,7 @@ void Collision2d::updateDescriptorSets(){
     stagingDescriptorSet = sets[2];
     emitterDescriptorSet = sets[3];
 
-    auto writes = initializers::writeDescriptorSets<14>();
+    auto writes = initializers::writeDescriptorSets<15>();
 
     writes[0].dstSet = globalSet;
     writes[0].dstBinding = 0;
@@ -314,97 +323,105 @@ void Collision2d::updateDescriptorSets(){
     VkDescriptorBufferInfo globalInfo{ globals.gpu, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &globalInfo;
 
-    writes[1].dstSet = objects.descriptorSet;
-    writes[1].dstBinding = 0;
+
+    writes[1].dstSet = globalSet;
+    writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo positionInfo{ objects.position, 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &positionInfo;
+    VkDescriptorBufferInfo updatesInfo{ updatesBuffer, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &updatesInfo;
 
     writes[2].dstSet = objects.descriptorSet;
-    writes[2].dstBinding = 1;
+    writes[2].dstBinding = 0;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[2].descriptorCount = 1;
-    VkDescriptorBufferInfo velocityInfo{ objects.velocity, 0, VK_WHOLE_SIZE };
-    writes[2].pBufferInfo = &velocityInfo;
+    VkDescriptorBufferInfo positionInfo{ objects.position, 0, VK_WHOLE_SIZE };
+    writes[2].pBufferInfo = &positionInfo;
 
     writes[3].dstSet = objects.descriptorSet;
-    writes[3].dstBinding = 2;
+    writes[3].dstBinding = 1;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[3].descriptorCount = 1;
-    VkDescriptorBufferInfo radiusInfo{ objects.radius, 0, VK_WHOLE_SIZE };
-    writes[3].pBufferInfo = &radiusInfo;
+    VkDescriptorBufferInfo velocityInfo{ objects.velocity, 0, VK_WHOLE_SIZE };
+    writes[3].pBufferInfo = &velocityInfo;
 
     writes[4].dstSet = objects.descriptorSet;
-    writes[4].dstBinding = 3;
+    writes[4].dstBinding = 2;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 1;
-    VkDescriptorBufferInfo colorInfo{ objects.colors, 0, VK_WHOLE_SIZE };
-    writes[4].pBufferInfo = &colorInfo;
+    VkDescriptorBufferInfo radiusInfo{ objects.radius, 0, VK_WHOLE_SIZE };
+    writes[4].pBufferInfo = &radiusInfo;
 
     writes[5].dstSet = objects.descriptorSet;
-    writes[5].dstBinding = 4;
+    writes[5].dstBinding = 3;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[5].descriptorCount = 1;
-    VkDescriptorBufferInfo cellIdInfo{ objects.cellIds, 0, VK_WHOLE_SIZE };
-    writes[5].pBufferInfo = &cellIdInfo;
+    VkDescriptorBufferInfo colorInfo{ objects.colors, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &colorInfo;
 
     writes[6].dstSet = objects.descriptorSet;
-    writes[6].dstBinding = 5;
+    writes[6].dstBinding = 4;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[6].descriptorCount = 1;
-    VkDescriptorBufferInfo attributesInfo{ objects.attributes, 0, VK_WHOLE_SIZE };
-    writes[6].pBufferInfo = &attributesInfo;
+    VkDescriptorBufferInfo cellIdInfo{ objects.cellIds, 0, VK_WHOLE_SIZE };
+    writes[6].pBufferInfo = &cellIdInfo;
 
     writes[7].dstSet = objects.descriptorSet;
-    writes[7].dstBinding = 6;
+    writes[7].dstBinding = 5;
     writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[7].descriptorCount = 1;
-    VkDescriptorBufferInfo countsInfo{ objects.counts, 0, VK_WHOLE_SIZE };
-    writes[7].pBufferInfo = &countsInfo;
+    VkDescriptorBufferInfo attributesInfo{ objects.attributes, 0, VK_WHOLE_SIZE };
+    writes[7].pBufferInfo = &attributesInfo;
 
     writes[8].dstSet = objects.descriptorSet;
-    writes[8].dstBinding = 7;
+    writes[8].dstBinding = 6;
     writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[8].descriptorCount = 1;
-    VkDescriptorBufferInfo cellIndexInfo{ objects.cellIndexArray, 0, VK_WHOLE_SIZE };
-    writes[8].pBufferInfo = &cellIndexInfo;
+    VkDescriptorBufferInfo countsInfo{ objects.counts, 0, VK_WHOLE_SIZE };
+    writes[8].pBufferInfo = &countsInfo;
 
     writes[9].dstSet = objects.descriptorSet;
-    writes[9].dstBinding = 8;
+    writes[9].dstBinding = 7;
     writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[9].descriptorCount = 1;
-    VkDescriptorBufferInfo dispatchCmdInfo{ objects.dispatchBuffer, 0, VK_WHOLE_SIZE };
-    writes[9].pBufferInfo = &dispatchCmdInfo;
+    VkDescriptorBufferInfo cellIndexInfo{ objects.cellIndexArray, 0, VK_WHOLE_SIZE };
+    writes[9].pBufferInfo = &cellIndexInfo;
 
-    writes[10].dstSet = stagingDescriptorSet;
-    writes[10].dstBinding = 0;
+    writes[10].dstSet = objects.descriptorSet;
+    writes[10].dstBinding = 8;
     writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[10].descriptorCount = 1;
-    VkDescriptorBufferInfo cellIndexStagingInfo{ *objects.cellIndexStaging.buffer, objects.cellIndexStaging.offset, objects.cellIndexStaging.end };
-    writes[10].pBufferInfo = &cellIndexStagingInfo;
+    VkDescriptorBufferInfo dispatchCmdInfo{ objects.dispatchBuffer, 0, VK_WHOLE_SIZE };
+    writes[10].pBufferInfo = &dispatchCmdInfo;
 
     writes[11].dstSet = stagingDescriptorSet;
-    writes[11].dstBinding = 1;
+    writes[11].dstBinding = 0;
     writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[11].descriptorCount = 1;
-    VkDescriptorBufferInfo SetBitsInfo{*objects.bitSet.buffer, objects.bitSet.offset, objects.bitSet.end };
-    writes[11].pBufferInfo = &SetBitsInfo;
+    VkDescriptorBufferInfo cellIndexStagingInfo{ *objects.cellIndexStaging.buffer, objects.cellIndexStaging.offset, objects.cellIndexStaging.end };
+    writes[11].pBufferInfo = &cellIndexStagingInfo;
 
     writes[12].dstSet = stagingDescriptorSet;
-    writes[12].dstBinding = 2;
+    writes[12].dstBinding = 1;
     writes[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[12].descriptorCount = 1;
-    VkDescriptorBufferInfo compactInfo{ *objects.compactIndices.buffer, objects.compactIndices.offset, objects.compactIndices.end };
-    writes[12].pBufferInfo = &compactInfo;
+    VkDescriptorBufferInfo SetBitsInfo{*objects.bitSet.buffer, objects.bitSet.offset, objects.bitSet.end };
+    writes[12].pBufferInfo = &SetBitsInfo;
 
-
-    writes[13].dstSet = emitterDescriptorSet;
-    writes[13].dstBinding = 0;
+    writes[13].dstSet = stagingDescriptorSet;
+    writes[13].dstBinding = 2;
     writes[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[13].descriptorCount = 1;
+    VkDescriptorBufferInfo compactInfo{ *objects.compactIndices.buffer, objects.compactIndices.offset, objects.compactIndices.end };
+    writes[13].pBufferInfo = &compactInfo;
+
+
+    writes[14].dstSet = emitterDescriptorSet;
+    writes[14].dstBinding = 0;
+    writes[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[14].descriptorCount = 1;
     VkDescriptorBufferInfo emitterInfo{ emitters, 0, VK_WHOLE_SIZE};
-    writes[13].pBufferInfo = &emitterInfo;
+    writes[14].pBufferInfo = &emitterInfo;
 
 
     device.updateDescriptorSets(writes);
@@ -494,14 +511,23 @@ void Collision2d::createComputePipeline() {
     compute.compactCellIndexArray.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("compact_cell_index_array", compute.compactCellIndexArray.pipeline.handle);
 
-    module = device.createShaderModule(resource(debugMode ? "collision_test.comp.spv" : "resolve_collision.comp.spv"));
+    module = device.createShaderModule(resource(debugMode ? "collision_test.comp.spv" : "resolve_collision_verlet.comp.spv"));
 //    module = device.createShaderModule(resource( "collision_test.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     computeCreateInfo.stage = stage;
-    compute.collisionTest.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout}, { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t)} } );
+    compute.collisionTest.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout, stagingSetLayout}, { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t)} } );
     computeCreateInfo.layout = compute.collisionTest.layout.handle;
     compute.collisionTest.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("collision_test", compute.collisionTest.pipeline.handle);
+
+    module = device.createShaderModule(resource("brute_force_resolve_collision.comp.spv"));
+//    module = device.createShaderModule(resource( "collision_test.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeCreateInfo.stage = stage;
+    compute.bruteForceTest.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout});
+    computeCreateInfo.layout = compute.bruteForceTest.layout.handle;
+    compute.bruteForceTest.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("brute_forcecollision_test", compute.bruteForceTest.pipeline.handle);
 
     module = device.createShaderModule(resource("compute_dispatch.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
@@ -511,7 +537,7 @@ void Collision2d::createComputePipeline() {
     compute.computeDispatch.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_dispatch", compute.computeDispatch.pipeline.handle);
 
-    module = device.createShaderModule(resource("emitter.comp.spv"));
+    module = device.createShaderModule(resource("emitter_verlet.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     computeCreateInfo.stage = stage;
     compute.emitter.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout, emitterSetLayout} );
@@ -519,7 +545,7 @@ void Collision2d::createComputePipeline() {
     compute.emitter.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("emitter", compute.emitter.pipeline.handle);
 
-    module = device.createShaderModule(resource("integrate.comp.spv"));
+    module = device.createShaderModule(resource("integrate_verlet.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     computeCreateInfo.stage = stage;
     compute.integrate.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout} );
@@ -528,7 +554,7 @@ void Collision2d::createComputePipeline() {
     device.setName<VK_OBJECT_TYPE_PIPELINE>("integrate", compute.integrate.pipeline.handle);
 
 
-    module = device.createShaderModule(resource("bounds_check.comp.spv"));
+    module = device.createShaderModule(resource("bounds_check_verlet.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     computeCreateInfo.stage = stage;
     compute.boundsCheck.layout = device.createPipelineLayout( { globalSetLayout, objects.setLayout} );
@@ -649,6 +675,10 @@ void Collision2d::generateCellIndexArray(VkCommandBuffer commandBuffer) {
 
     uint32_t gx = objects.gridSize/workGroupSize + glm::sign(static_cast<float>(objects.gridSize % workGroupSize));
 
+
+    vkCmdFillBuffer(commandBuffer, *objects.bitSet.buffer, objects.bitSet.offset, objects.bitSet.size(), 0);
+    vkCmdFillBuffer(commandBuffer, *objects.compactIndices.buffer, objects.compactIndices.offset, objects.compactIndices.size(), 0);
+    vkCmdFillBuffer(commandBuffer, *objects.cellIndexStaging.buffer, objects.cellIndexStaging.offset, objects.cellIndexStaging.size(), 0);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.generateCellIndexArray.pipeline.handle);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
@@ -673,6 +703,7 @@ void Collision2d::compactCellIndexArray(VkCommandBuffer commandBuffer) {
     sets[1] = objects.descriptorSet;
     sets[2] = stagingDescriptorSet;
 
+    vkCmdFillBuffer(commandBuffer, objects.cellIndexArray, 0, VK_WHOLE_SIZE, 0);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.compactCellIndexArray.pipeline.handle);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
@@ -683,17 +714,30 @@ void Collision2d::resolveCollision(VkCommandBuffer commandBuffer) {
 //    static int wait = 0;
 //    wait++;
 //    if(wait < 240) return;
-    static std::array<VkDescriptorSet, 2> sets;
+    static std::array<VkDescriptorSet, 3> sets;
     sets[0] = globalSet;
     sets[1] = objects.descriptorSet;
+    sets[2] = stagingDescriptorSet;
 
+    vkCmdFillBuffer(commandBuffer, *objects.bitSet.buffer, objects.bitSet.offset, objects.bitSet.size(), 0);
     for(uint32_t pass = 0; pass < 4; ++pass) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
         vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
         vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
-        addComputeBarrier(commandBuffer, { objects.position, objects.velocity });
+        addComputeBarrier(commandBuffer, { objects.position, objects.velocity, *objects.bitSet.buffer });
     }
+}
+
+void Collision2d::bruteForceResolveCollision(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = globalSet;
+    sets[1] = objects.descriptorSet;
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.bruteForceTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.bruteForceTest.pipeline.handle);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+    addComputeBarrier(commandBuffer, { objects.position, objects.velocity });
 }
 
 void Collision2d::emitParticles(VkCommandBuffer commandBuffer) {
@@ -773,7 +817,11 @@ void Collision2d::update(float time) {
                 emitParticles(commandBuffer);
                 computeDispatch(commandBuffer, Dispatch::Object);
                 boundsCheck(commandBuffer);
-                collisionDetection(commandBuffer);
+                if(useBruteForce){
+                    bruteForceResolveCollision(commandBuffer);
+                }else {
+                    collisionDetection(commandBuffer);
+                }
                 integrate(commandBuffer);
             });
 //            auto positions = objects.position.span<glm::vec2>(globals.cpu->numObjects);
@@ -798,6 +846,16 @@ void Collision2d::update(float time) {
         fixedUpdate.advance(time);
         globals.cpu->frame++;
     }
+    auto positions = objects.position.span<glm::vec2>(globals.cpu->numObjects);
+    auto velocity = objects.velocity.span<glm::vec2>(globals.cpu->numObjects);
+    auto radius = objects.radius.span<float>(globals.cpu->numObjects);
+    auto attributes = objects.attributes.span<Attribute>();
+    auto offsets = objects.counts.span<uint>(12);
+    auto cells = objects.cellIds.span<uint32_t>();
+    auto cellIndexArray = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
+    auto dispatchCommands = objects.dispatchBuffer.span<glm::uvec4>(Dispatch::Count);
+    auto& p = positions;
+    auto& v = velocity;
 
 
 }
@@ -836,6 +894,14 @@ void Collision2d::checkAppInputs() {
             }
         }
         spdlog::info("{}", str);
+    }
+
+    if(mouse.right.released) {
+//        useBruteForce = !useBruteForce;
+//        if(useBruteForce){
+//            spdlog::info("using brute force solver");
+//        }
+        fixedUpdate.paused() ? fixedUpdate.unPause() : fixedUpdate.pause();
     }
 }
 
@@ -882,6 +948,7 @@ BufferRegion Collision2d::reserve(VkDeviceSize size) {
 
 void Collision2d::runDebug() {
     if(!debugMode) return;
+    globals.cpu->numUpdates = 0;
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
         collisionDetection(commandBuffer);
     });
@@ -972,20 +1039,26 @@ void Collision2d::runDebug() {
     auto compactIndices = objects.compactIndices.span<uint32_t>();
     auto dispatch = objects.dispatchBuffer.span<glm::uvec4>();
     auto offsets = objects.counts.span<uint32_t>();
+    auto updates = updatesBuffer.span<UpdateInfo>(globals.cpu->numUpdates);
+    auto positions = objects.position.span<glm::vec2>();
 
-//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-//        static std::array<VkDescriptorSet, 2> sets;
-//        sets[0] = globalSet;
-//        sets[1] = objects.descriptorSet;
-//
-//        for(uint32_t pass = 0; pass < 4; ++pass) {
-//            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-//            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
-//            vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
-//            vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
-//            addComputeBarrier(commandBuffer, { objects.colors });
-//        }
-//    });
+    spdlog::info("");
+    for(int i = 0; i < globals.cpu->numUpdates; i += 2){
+        auto a = updates[i];
+        for(auto j = 0; j < globals.cpu->numUpdates; j++){
+            if(i == j) continue;
+            auto b = updates[j];
+
+            if(a.tid != b.tid && a.objectId == b.objectId && a.pass == b.pass) {
+                b = updates[j % 2 == 0 ? j + 1 : j - 1];
+                glm::uvec2 gpa = glm::uvec2(glm::floor(positions[a.objectId]/globals.cpu->spacing));
+                glm::uvec2 gpb = glm::uvec2(glm::floor(positions[b.objectId]/globals.cpu->spacing));
+                spdlog::info("[{}, {}]: [[{}, {}] | {}] <=> [{}, {}] | {}  updated by threads {} & {} in pass {}, cellInfo: [{}, {}]"
+                             ,a.objectId, b.objectId,gpa.x, gpa.y,  positions[a.objectId], gpb.x, gpb.y,  positions[b.objectId], a.tid, b.tid, a.pass, a.cellID, b.cellID);
+            }
+        }
+    }
+    spdlog::info("");
 }
 
 void Collision2d::endFrame() {
