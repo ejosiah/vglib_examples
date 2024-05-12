@@ -193,7 +193,7 @@ protected:
     } compute;
 
     struct  {
-        const int maxParticles{20000};
+        const int maxParticles{51000};
         VulkanBuffer indices;
         VulkanBuffer position;
         VulkanBuffer velocity;

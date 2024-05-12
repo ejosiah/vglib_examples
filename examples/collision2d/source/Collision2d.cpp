@@ -109,7 +109,7 @@ void Collision2d::initObjects() {
     objects.cellIndexStaging = reserve(sizeof(CellInfo) * objects.gridSize);
     objects.bitSet = reserve(sizeof(uint32_t) * std::max(objects.gridSize, numParticle));
     objects.compactIndices = reserve(sizeof(uint32_t) * (objects.gridSize + 1));
-    objects.indices = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numParticle * sizeof(uint32_t) * 4);
+    objects.indices = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memoryUsage, numParticle * sizeof(uint32_t) * 4);
 
 
     updatesBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, sizeof(UpdateInfo) * numParticle * 10);
@@ -129,8 +129,10 @@ void Collision2d::initObjectsForDebugging() {
     globals.cpu->domain.lower = glm::vec2(0);
     globals.cpu->domain.upper = glm::vec2(20);
     globals.cpu->gravity = 9.8;
-    globals.cpu->numObjects = 100;
+    globals.cpu->numObjects = 20;
     globals.cpu->segmentSize = 2;
+    globals.cpu->frame = 0;
+    globals.cpu->time = 0;
 
     std::default_random_engine engine{1 << 22};
     std::uniform_real_distribution<float> rDist{0.5, 1.0};
@@ -140,31 +142,31 @@ void Collision2d::initObjectsForDebugging() {
     auto nextPosition = [&]{ return glm::vec2{ xDist(engine), yDist(engine) }; };
     auto nextRadius = [&]{ return rDist(engine); };
 
-//    float maxRadius = MIN_FLOAT;
-//    std::vector<glm::vec2> positions{};
-//    std::vector<glm::vec2> velocity(globals.cpu->numObjects);
-//    std::vector<float> radius{};
-//    std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
-//
-//
-//    for(int i = 0; i < globals.cpu->numObjects; ++i){
-//        auto pos = nextPosition();
-//        auto r = nextRadius();
-//        maxRadius = glm::max(r, maxRadius);
-//        positions.push_back(pos);
-//        radius.push_back(r);
-//    }
-
-    globals.cpu->numObjects = 3;
-    float maxRadius = objects.defaultRadius;
-    std::vector<glm::vec2> positions(globals.cpu->numObjects);
+    float maxRadius = MIN_FLOAT;
+    std::vector<glm::vec2> positions{};
     std::vector<glm::vec2> velocity(globals.cpu->numObjects);
-    std::vector<float> radius(globals.cpu->numObjects, maxRadius);
+    std::vector<float> radius{};
     std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
 
-    positions[0] = {4.3559451103, 0.9999574423};
-    positions[1] = {6.7158102989, 0.9999574423};
-    positions[2] = {2.8033828735, 0.9999574423};
+
+    for(int i = 0; i < globals.cpu->numObjects; ++i){
+        auto pos = nextPosition();
+        auto r = nextRadius();
+        maxRadius = glm::max(r, maxRadius);
+        positions.push_back(pos);
+        radius.push_back(r);
+    }
+
+//    globals.cpu->numObjects = 3;
+//    float maxRadius = objects.defaultRadius;
+//    std::vector<glm::vec2> positions(globals.cpu->numObjects);
+//    std::vector<glm::vec2> velocity(globals.cpu->numObjects);
+//    std::vector<float> radius(globals.cpu->numObjects, maxRadius);
+//    std::vector<glm::vec4> colors(globals.cpu->numObjects, glm::vec4(1));
+//
+//    positions[0] = {4.3559451103, 0.9999574423};
+//    positions[1] = {6.7158102989, 0.9999574423};
+//    positions[2] = {2.8033828735, 0.9999574423};
 
     globals.cpu->halfSpacing = SQRT2 * maxRadius;
     globals.cpu->spacing = globals.cpu->halfSpacing * 2;
@@ -184,6 +186,8 @@ void Collision2d::initObjectsForDebugging() {
     objects.cellIndexStaging = reserve(sizeof(CellInfo) * objects.gridSize );
     objects.bitSet = reserve(sizeof(uint32_t) * objects.gridSize );
     objects.compactIndices = reserve(sizeof(uint32_t) * (objects.gridSize  + 1));
+    objects.indices = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, globals.cpu->numObjects * sizeof(uint32_t) * 4);
+
 
     updatesBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(UpdateInfo) * globals.cpu->numObjects * 10);
     objects.dispatchBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, Dispatch::Size, "dispatch_cmd_buffer"); ;
@@ -213,6 +217,7 @@ void Collision2d::initGrid() {
 void Collision2d::initSort() {
     sort = RadixSort{ &device };
     sort.init();
+//    sort.enableOrderChecking();
     prefixSum = PrefixSum{ &device };
     prefixSum.init();
 }
@@ -822,6 +827,10 @@ void Collision2d::renderObjects(VkCommandBuffer commandBuffer) {
 }
 
 void Collision2d::update(float time) {
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        vkCmdFillBuffer(commandBuffer, objects.cellIds, 0, VK_WHOLE_SIZE, 0xFFFFFFFFu);
+        Barrier::transferWriteToComputeRead(commandBuffer, objects.cellIds);
+    });
     if(!debugMode) {
         fixedUpdate([&] {
             auto frameCount = fixedUpdate.frames();
@@ -836,24 +845,8 @@ void Collision2d::update(float time) {
                 }
                 integrate(commandBuffer);
             });
-//            auto positions = objects.position.span<glm::vec2>(globals.cpu->numObjects);
-//            auto velocity = objects.velocity.span<glm::vec2>(globals.cpu->numObjects);
-//            auto radius = objects.radius.span<float>(globals.cpu->numObjects);
-//            auto attributes = objects.attributes.span<Attribute>();
-//            auto offsets = objects.counts.span<uint>(12);
-//            auto cells = objects.cellIds.span<uint32_t>();
-//            auto cellIndexArray = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
-//            auto dispatchCommands = objects.dispatchBuffer.span<glm::uvec4>(Dispatch::Count);
-//            auto& p = positions;
-//            auto& v = velocity;
-//            auto r = radius[0];
-            glfwSetWindowTitle(window, fmt::format("{} - FPS {}, frameCount {}, numObjects {}", title, framePerSecond, frameCount, globals.cpu->numObjects).c_str());
 
-//            static bool stop = false;
-//            if(p.size() >= 3 && !stop) {
-//                spdlog::info("frame: {}\n\n{}\t{}\n{}\t{}\n{}\t{}", frameCount, p[0], v[0], p[1], v[1], p[2], v[2]);
-//            }
-//            stop = glm::any(glm::isnan(p[0]));
+            glfwSetWindowTitle(window, fmt::format("{} - FPS {}, frameCount {}, numObjects {}, numCells {}", title, framePerSecond, frameCount, globals.cpu->numObjects, globals.cpu->numCells).c_str());
         });
         fixedUpdate.advance(time);
         globals.cpu->frame++;
@@ -867,6 +860,7 @@ void Collision2d::update(float time) {
         auto cells = objects.cellIds.span<uint32_t>();
         auto cellIndexArray = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
         auto dispatchCommands = objects.dispatchBuffer.span<glm::uvec4>(Dispatch::Count);
+        auto indices = objects.indices.span<uint32_t>();
         auto &p = positions;
         auto &v = velocity;
     }
