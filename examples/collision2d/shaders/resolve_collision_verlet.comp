@@ -15,6 +15,10 @@ struct LocalData{
 
 layout(local_size_x = 256) in;
 
+layout(set = 1, binding = 9) buffer Indexes {
+    uint indices[];
+};
+
 layout(set = 1, binding = 0) buffer Positions {
     vec2 positions[];
 };
@@ -90,7 +94,7 @@ void main() {
     }
 
     const uint passCellType = 1u << pass;
-    const uint homeCellType = HOME_CELL_TYPE(attributes[info.index].controlBits);
+    const uint homeCellType = HOME_CELL_TYPE(attributes[indices[info.index]].controlBits);
 
     if(passCellType != homeCellType) return;
 
@@ -99,8 +103,8 @@ void main() {
 
     for(uint i = start; i < end; ++i){
         LocalData data;
-        data.controlBits = attributes[i].controlBits;
-        data.index = attributes[i].objectID;
+        data.controlBits = attributes[indices[i]].controlBits;
+        data.index = attributes[indices[i]].objectID;
         data.position = positions[data.index];
         data.updated = false;
         data.pass = -1;

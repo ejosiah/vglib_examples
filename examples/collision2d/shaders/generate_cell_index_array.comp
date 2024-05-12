@@ -4,6 +4,10 @@
 
 layout(local_size_x = 256) in;
 
+layout(set = 1, binding = 9) buffer Indexes {
+    uint indices[];
+};
+
 layout(set = 1, binding = 3) buffer CellId {
     uint cellID[];
 };
@@ -35,7 +39,7 @@ void main() {
     CellInfo cellInfo = CellInfo(start, 0, 0, 0);
 
     for(uint i = start; i < end; i++) {
-        Attribute attr = attributes[i];
+        Attribute attr = attributes[indices[i]];
         if(isHomeCell(cellId, attr.controlBits)) {
             cellInfo.numHomeCells++;
         }else {

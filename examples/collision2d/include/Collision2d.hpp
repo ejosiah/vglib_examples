@@ -193,7 +193,8 @@ protected:
     } compute;
 
     struct  {
-        const int maxParticles{20000};
+        const int maxParticles{51000};
+        VulkanBuffer indices;
         VulkanBuffer position;
         VulkanBuffer velocity;
         VulkanBuffer radius;
@@ -214,6 +215,7 @@ protected:
     VulkanBuffer prevCellIds;
     VulkanBuffer prevAttributes;
     VulkanBuffer emitters;
+    static constexpr VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     VulkanDescriptorSetLayout emitterSetLayout;
     VkDescriptorSet emitterDescriptorSet{};
@@ -245,7 +247,7 @@ protected:
     uint32_t iterations{8};
     bool debugMode{false};
     static constexpr uint32_t workGroupSize = 256;
-    uint32_t frameStart = 26000;
+    uint32_t frameStart = 0;
     bool useBruteForce = false;
 
     VulkanDescriptorPool descriptorPool;
