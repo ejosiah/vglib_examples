@@ -7,12 +7,18 @@ struct LocalData{
     vec2 velocity;
     uint controlBits;
     uint index;
+    uint cell;
+    int pass;
     bool previousPassUpdate;
     bool updated;
 };
 
 
 layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 9) buffer Indexes {
+    uint indices[];
+};
 
 layout(set = 1, binding = 0) buffer Positions {
     vec2 positions[];
@@ -56,32 +62,32 @@ uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 float r = global.radius;
 float _2r = r + r;
 float rr = _2r * _2r;
-float restitution = 0.5;
+float restitution = .75;
 float inverseMass = 1;
 
 LocalData local[100];
 int numCollisions;
 
 void resolveCollision(inout LocalData a, inout LocalData b, vec2 dir, float dd) {
-     float rr = r + r;
-     rr *= rr;
+    float rr = r + r;
+    rr *= rr;
 
     float d = sqrt(dd);
     dir /= d;
-    
+
     float corr = (r + r - d) * .5f;
     a.position -= dir * corr;
     b.position += dir * corr;
 
-   float v1 = dot(a.velocity, dir);
-   float v2 = dot(b.velocity, dir);
-    
+    float v1 = dot(a.velocity, dir);
+    float v2 = dot(b.velocity, dir);
+
     float m1 = 1/inverseMass;
     float m2 = 1/inverseMass;
-    
+
     float newV1 = (m1 * v1 + m2 * v2 - m2 * (v1 - v2) * restitution) / (m1 + m2);
     float newV2 = (m1 * v1 + m2 * v2 - m1 * (v2 - v1) * restitution) / (m1 + m2);
-    
+
     a.velocity += dir * (newV1 - v1);
     b.velocity += dir * (newV2 - v2);
 
@@ -98,20 +104,26 @@ void main() {
     uint start = info.index;
     uint end = start + info.numCells;
 
+    const uint passCellType = 1u << pass;
+    const uint homeCellType = HOME_CELL_TYPE(attributes[indices[info.index]].controlBits);
+
+    if(passCellType != homeCellType) return;
+
     for(uint i = start; i < end; ++i){
         LocalData data;
-        data.controlBits = attributes[i].controlBits;
-        data.index = attributes[i].objectID;
+        data.controlBits = attributes[indices[i]].controlBits;
+        data.index = attributes[indices[i]].objectID;
         data.position = positions[data.index];
         data.velocity = velocity[data.index];
         data.updated = false;
-        data.previousPassUpdate = bitSet[data.index] == 1;
+        data.pass = -1;
+        data.cell = cellID[i];
         local[i - start] = data;
     }
 
     for(int i = 0; i < info.numHomeCells; ++i){
         LocalData a = local[i];
-        for(int j = 0; j < info.numCells; ++j){
+        for(int j = i + 1; j < info.numCells; ++j){
             if(i == j) continue;
             LocalData b = local[j];
 

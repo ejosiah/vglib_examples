@@ -83,15 +83,7 @@ void main() {
 
     CellInfo info = cellIndices[gid];
 
-    if(info.numCells == 1){
-
-//        if(countCellIntersections(attributes[info.index].controlBits) > 1){
-//            colors[attributes[info.index].objectID] = vec4(1, 0.5, 0, 1);
-//        }else{
-//            colors[attributes[info.index].objectID] = vec4(1);
-//        }
-        return;
-    }
+    if(info.numCells == 1) return;
 
     const uint passCellType = 1u << pass;
     const uint homeCellType = HOME_CELL_TYPE(attributes[indices[info.index]].controlBits);
@@ -110,7 +102,6 @@ void main() {
         data.pass = -1;
         data.cell = cellID[i];
         local[i - start] = data;
-//        colors[data.index] = vec4(1);
     }
 
     for(int i = 0; i < info.numHomeCells; ++i){
@@ -119,10 +110,7 @@ void main() {
             if(i == j) continue;
             LocalData b = local[j];
 
-//            colors[local[i].index] = vec4(1);
-//            colors[local[j].index] = vec4(1);
-
-            if(SHARE_COMMON_CELLS(a.controlBits, b.controlBits) && !b.previousPassUpdate){
+            if(SHARE_COMMON_CELLS(a.controlBits, b.controlBits)){
                 vec2 d = b.position - a.position;
                 float dd = dot(d, d);
                 if(dd != 0 && dd < rr) {
@@ -130,8 +118,6 @@ void main() {
                 }
                 local[i].pass = pass;
                 local[j].pass = pass;
-//                colors[local[i].index] = passColor[local[i].pass];
-//                colors[local[j].index] = passColor[local[j].pass];
             }
         }
     }
@@ -141,9 +127,6 @@ void main() {
             positions[local[i].index] = local[i].position;
             bitSet[local[i].index] = 1;
         }
-//        if(local[i].pass != -1) {
-//            colors[local[i].index] = passColor[local[i].pass];
-//        }
     }
 
 }
