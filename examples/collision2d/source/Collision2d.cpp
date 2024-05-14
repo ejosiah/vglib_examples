@@ -739,21 +739,17 @@ void Collision2d::compactCellIndexArray(VkCommandBuffer commandBuffer) {
 }
 
 void Collision2d::resolveCollision(VkCommandBuffer commandBuffer) {
-//    static int wait = 0;
-//    wait++;
-//    if(wait < 240) return;
     static std::array<VkDescriptorSet, 3> sets;
     sets[0] = globalSet;
     sets[1] = objects.descriptorSet;
     sets[2] = stagingDescriptorSet;
 
-    vkCmdFillBuffer(commandBuffer, *objects.bitSet.buffer, objects.bitSet.offset, objects.bitSet.size(), 0);
     for(uint32_t pass = 0; pass < 4; ++pass) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
         vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
         vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
-        addComputeBarrier(commandBuffer, { objects.position, objects.velocity, *objects.bitSet.buffer });
+        addComputeBarrier(commandBuffer, { objects.position, objects.velocity});
     }
 }
 

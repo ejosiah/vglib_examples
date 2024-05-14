@@ -125,7 +125,6 @@ void main() {
     for(int i = 0; i < info.numCells; ++i) {
         if(local[i].updated) {
             positions[local[i].index] = local[i].position;
-            bitSet[local[i].index] = 1;
         }
     }
 
