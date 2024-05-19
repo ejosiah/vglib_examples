@@ -217,7 +217,7 @@ void Collision2d::initGrid() {
 void Collision2d::initSort() {
     sort = RadixSort{ &device };
     sort.init();
-//    sort.enableOrderChecking();
+    sort.enableOrderChecking();
     prefixSum = PrefixSum{ &device };
     prefixSum.init();
 }
@@ -621,6 +621,17 @@ VkCommandBuffer *Collision2d::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     renderObjects(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
+    if(!debugMode) {
+        fixedUpdate([&] {
+            Barrier::fragmentReadToComputeWrite(commandBuffer, { objects.position });
+            emitParticles(commandBuffer);
+            computeDispatch(commandBuffer, Dispatch::Object);
+            boundsCheck(commandBuffer);
+            collisionDetection(commandBuffer);
+            integrate(commandBuffer);
+            Barrier::computeWriteToFragmentRead(commandBuffer, { objects.position });
+        });
+    }
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -728,21 +739,17 @@ void Collision2d::compactCellIndexArray(VkCommandBuffer commandBuffer) {
 }
 
 void Collision2d::resolveCollision(VkCommandBuffer commandBuffer) {
-//    static int wait = 0;
-//    wait++;
-//    if(wait < 240) return;
     static std::array<VkDescriptorSet, 3> sets;
     sets[0] = globalSet;
     sets[1] = objects.descriptorSet;
     sets[2] = stagingDescriptorSet;
 
-    vkCmdFillBuffer(commandBuffer, *objects.bitSet.buffer, objects.bitSet.offset, objects.bitSet.size(), 0);
     for(uint32_t pass = 0; pass < 4; ++pass) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.layout.handle,0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collisionTest.pipeline.handle);
         vkCmdPushConstants(commandBuffer, compute.collisionTest.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pass);
         vkCmdDispatchIndirect(commandBuffer, objects.dispatchBuffer, Dispatch::CellArrayIndexCmd);
-        addComputeBarrier(commandBuffer, { objects.position, objects.velocity, *objects.bitSet.buffer });
+        addComputeBarrier(commandBuffer, { objects.position, objects.velocity});
     }
 }
 
@@ -827,27 +834,23 @@ void Collision2d::renderObjects(VkCommandBuffer commandBuffer) {
 }
 
 void Collision2d::update(float time) {
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        vkCmdFillBuffer(commandBuffer, objects.cellIds, 0, VK_WHOLE_SIZE, 0xFFFFFFFFu);
-        Barrier::transferWriteToComputeRead(commandBuffer, objects.cellIds);
-    });
     if(!debugMode) {
-        fixedUpdate([&] {
-            auto frameCount = fixedUpdate.frames();
-            device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-                emitParticles(commandBuffer);
-                computeDispatch(commandBuffer, Dispatch::Object);
-                boundsCheck(commandBuffer);
-                if(useBruteForce){
-                    bruteForceResolveCollision(commandBuffer);
-                }else {
-                    collisionDetection(commandBuffer);
-                }
-                integrate(commandBuffer);
-            });
-
-            glfwSetWindowTitle(window, fmt::format("{} - FPS {}, frameCount {}, numObjects {}, numCells {}", title, framePerSecond, frameCount, globals.cpu->numObjects, globals.cpu->numCells).c_str());
-        });
+//        fixedUpdate([&] {
+//            auto frameCount = fixedUpdate.frames();
+//            device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+//                emitParticles(commandBuffer);
+//                computeDispatch(commandBuffer, Dispatch::Object);
+//                boundsCheck(commandBuffer);
+//                if(useBruteForce){
+//                    bruteForceResolveCollision(commandBuffer);
+//                }else {
+//                    collisionDetection(commandBuffer);
+//                }
+//                integrate(commandBuffer);
+//            });
+//
+//            glfwSetWindowTitle(window, fmt::format("{} - FPS {}, frameCount {}, numObjects {}, numCells {}", title, framePerSecond, frameCount, globals.cpu->numObjects, globals.cpu->numCells).c_str());
+//        });
         fixedUpdate.advance(time);
         globals.cpu->frame++;
     }
@@ -864,52 +867,59 @@ void Collision2d::update(float time) {
         auto &p = positions;
         auto &v = velocity;
     }
+    glfwSetWindowTitle(window, fmt::format("{} - FPS {}, frameCount {}, numObjects {}, numCells {}"
+                                           , title, framePerSecond, fixedUpdate.frames()
+                                           , globals.cpu->numObjects, globals.cpu->numCells).c_str());
 
 
 }
 
 void Collision2d::checkAppInputs() {
-    if(mouse.left.released) {
-        Camera camera{.proj = globals.cpu->projection};
-        auto pos = mousePositionToWorldSpace(camera);
+    if(debugMode) {
+        if (mouse.left.released) {
+            Camera camera{.proj = globals.cpu->projection};
+            auto pos = mousePositionToWorldSpace(camera);
 //        spdlog::info("mouse pos: {}", pos);
 
-        auto hash = [&](glm::vec2 pos) {
-            glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) + 1.f };
-            glm::uvec2 pid{ pos/globals.cpu->spacing };
-            return pid.y * dim.x + pid.x;
-        };
+            auto hash = [&](glm::vec2 pos) {
+                glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower) / globals.cpu->spacing) + 1.f};
+                glm::uvec2 pid{pos / globals.cpu->spacing};
+                return pid.y * dim.x + pid.x;
+            };
 
-        auto cellInfos = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
-        auto cellIds = objects.cellIds.span<uint32_t>();
-        auto positions = objects.position.span<glm::vec2>();
-        auto attributes = objects.attributes.span<Attribute>();
+            auto cellInfos = objects.cellIndexArray.span<CellInfo>(globals.cpu->numCellIndices);
+            auto cellIds = objects.cellIds.span<uint32_t>();
+            auto positions = objects.position.span<glm::vec2>();
+            auto attributes = objects.attributes.span<Attribute>();
 
-        auto cellHash = hash(pos.xy());
-        std::string str{fmt::format("\nclicked position: {}\nCell Info\n\tID: {}\n", pos.xy(), cellHash) };
-        for(auto info : cellInfos){
-            auto begin = info.index;
-            auto end = begin + info.numCells;
+            auto cellHash = hash(pos.xy());
+            std::string str{fmt::format("\nclicked position: {}\nCell Info\n\tID: {}\n", pos.xy(), cellHash)};
+            for (auto info: cellInfos) {
+                auto begin = info.index;
+                auto end = begin + info.numCells;
 
-            if(cellIds[begin] == cellHash) {
-                str += fmt::format("\toffset: {}\n\t{} home cells\n\t{} phantom cells\n", begin, info.numHomeCells, info.numPhantomCells);
-            }
-            for(auto i = begin; i < end; ++i ) {
-                auto cell = cellIds[i];
-                if(cell == cellHash){
-                    str += fmt::format("\tobj: {}, ctrlBits: {:06b}\n", positions[attributes[i].objectID], attributes[i].controlBits);
+                if (cellIds[begin] == cellHash) {
+                    str += fmt::format("\toffset: {}\n\t{} home cells\n\t{} phantom cells\n", begin, info.numHomeCells,
+                                       info.numPhantomCells);
+                }
+                for (auto i = begin; i < end; ++i) {
+                    auto cell = cellIds[i];
+                    if (cell == cellHash) {
+                        str += fmt::format("\tobj: {}, ctrlBits: {:06b}\n", positions[attributes[i].objectID],
+                                           attributes[i].controlBits);
+                    }
                 }
             }
+            spdlog::info("{}", str);
         }
-        spdlog::info("{}", str);
-    }
 
-    if(mouse.right.released) {
+        if (mouse.right.released) {
 //        useBruteForce = !useBruteForce;
 //        if(useBruteForce){
 //            spdlog::info("using brute force solver");
 //        }
-        fixedUpdate.paused() ? fixedUpdate.unPause() : fixedUpdate.pause();
+            fixedUpdate.paused() ? fixedUpdate.unPause() : fixedUpdate.pause();
+        }
     }
 }
 

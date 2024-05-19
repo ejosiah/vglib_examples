@@ -4,6 +4,10 @@
 
 layout(local_size_x = 256) in;
 
+layout(set = 1, binding = 9) buffer Indexes {
+    uint indices[];
+};
+
 layout(set = 1, binding = 0) buffer Positions {
     vec2 positions[];
 };
@@ -43,7 +47,7 @@ void main() {
     CellInfo info = cellIndices[gid];
 
     const uint passCellType = 1u << pass;
-    const uint homeCellType = HOME_CELL_TYPE(attributes[info.index].controlBits);
+    const uint homeCellType = HOME_CELL_TYPE(attributes[indices[info.index]].controlBits);
 
     if(passCellType != homeCellType) return;
 
@@ -53,12 +57,12 @@ void main() {
         for(uint j = i + 1; j < end; j++){
             if(i == j) continue;
 
-            uint ctrlBitsA = attributes[i].controlBits;
-            uint ctrlBitsB = attributes[j].controlBits;
+            uint ctrlBitsA = attributes[indices[i]].controlBits;
+            uint ctrlBitsB = attributes[indices[j]].controlBits;
 
             if(processCollision(passCellType, ctrlBitsA, ctrlBitsB)){
-                uint a = attributes[i].objectID;
-                uint b = attributes[j].objectID;
+                uint a = attributes[indices[i]].objectID;
+                uint b = attributes[indices[j]].objectID;
 
                 vec2 posA = positions[a];
                 vec2 posB = positions[b];

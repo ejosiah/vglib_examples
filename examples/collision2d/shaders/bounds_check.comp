@@ -30,7 +30,7 @@ void main() {
     Domain newDomain = shrink(global.domain, r);
     vec2 min = newDomain.lower;
     vec2 max = newDomain.upper;
-    float rest = 0.5; // Restitution
+    float rest = 1; // Restitution
 
     vec2 n = vec2(0);
     if(p.x < min.x){

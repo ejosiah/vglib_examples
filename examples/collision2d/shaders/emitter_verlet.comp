@@ -63,23 +63,17 @@ void main() {
 
     if(emitter.disabled == 1) return;
 
-//    positions[0] = vec2(2.8033828735, 0.9999574423);
-//    radius[0] = global.radius;
-//    atomicAdd(global.numObjects, 1);
-//    emitter.disabled == 1;
-//    return;
-
     float elapsedTime = emitter.currentTime - emitter.firstFrameTimeInSeconds;
     int newMaxTotalNumOfParticlesEmitted = int(ceil((elapsedTime + global.time) * emitter.maxNumberOfParticlePerSecond));
 
     newMaxTotalNumOfParticlesEmitted = min(newMaxTotalNumOfParticlesEmitted, emitter.maxNumberOfParticles);
 
     int maxNumberOfNewParticles = min(newMaxTotalNumOfParticlesEmitted - emitter.numberOfEmittedParticles, 100);
-    const float dt = 0.0655;
+    const float dt = 0.050;
     if(maxNumberOfNewParticles > 0) {
         float t = emitter.radius * emitter.offset;
         for(int i = 0; i < maxNumberOfNewParticles; i++) {
-            float angle = (random() - 0.5) * emitter.spreadAngleRad;
+            float angle = cos(elapsedTime) * emitter.spreadAngleRad * 0.5;
             mat2 rotate = mat2( cos(angle), sin(angle), -sin(angle), cos(angle) );
             vec2 direction = rotate * emitter.direction;
             vec2 p = emitter.origin + direction * (i * t);
