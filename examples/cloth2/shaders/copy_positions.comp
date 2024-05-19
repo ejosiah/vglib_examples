@@ -1,0 +1,46 @@
+#version 460
+
+struct Vertex{
+    vec4 position;
+    vec4 color;
+    vec3 normal;
+    vec3 tangent;
+    vec3 bitangent;
+    vec2 uv;
+};
+
+layout(local_size_x = 10, local_size_y = 10) in;
+
+#include "shared.glsl"
+
+layout(set = 0, binding = 0) buffer POINT_MASSES_IN {
+    vec4 positions[];
+};
+
+layout(set = 0, binding = 1) buffer CLOTH_VERTICES {
+    Vertex vertices[];
+};
+
+vec3 calculateNormal(vec3 position){
+    ivec2 coord;
+    int nid;
+    int count = 0;
+    vec3 normal = vec3(0);
+    for(int i = 1; i <= 4; i++){
+        if(!neighbour(i - 1, nid, coord)) continue;
+        vec3 A = positions[nid].xyz - position;
+
+        if(!neighbour(i%4, nid, coord)) continue;
+        vec3 B = positions[nid].xyz - position;
+        normal += cross(B, A);
+        count++;
+    }
+    normal /= count;
+    return normalize(normal);
+}
+
+void main() {
+    vec4 position = positions[id];
+    vertices[id].position = position;
+    vertices[id].normal = calculateNormal(position.xyz);
+}

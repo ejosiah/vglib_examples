@@ -88,6 +88,8 @@ public:
 protected:
     void initApp() override;
 
+    void initProfiler();
+
     void initEmitters();
 
     void initScratchBuffer();
@@ -256,4 +258,5 @@ protected:
     VulkanPipelineCache pipelineCache;
     RadixSort sort;
     PrefixSum prefixSum;
+    Profiler profiler;
 };
