@@ -1,6 +1,7 @@
 #ifndef SHARED_GLSL
 #define SHARED_GLSL
 
+#define EPSILON 1e-6
 
 layout(push_constant) uniform SIM_CONSTANTS {
     vec2 inv_cloth_size;

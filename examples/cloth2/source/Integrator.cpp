@@ -3,14 +3,21 @@
 #include <utility>
 #include "DescriptorSetBuilder.hpp"
 
-Integrator::Integrator(VulkanDevice &device, VulkanDescriptorPool &descriptorPool, std::shared_ptr<Cloth> cloth, int fps)
-: ComputePipelines(&device)
-, _descriptorPool(&descriptorPool)
-, _cloth(std::move(cloth))
-, _fixedUpdate(fps)
-, _profiler()
-, constants{ .inv_cloth_size{ cloth->size()/cloth->gridSize() } }
-{}
+Integrator::Integrator(
+        VulkanDevice &device,
+        VulkanDescriptorPool &descriptorPool,
+        std::shared_ptr<Cloth> cloth,
+        std::shared_ptr<Geometry> geometry,
+        int fps
+        )
+        : ComputePipelines(&device)
+        , _descriptorPool(&descriptorPool)
+        , _cloth(std::move(cloth))
+        , _fixedUpdate(fps)
+        , _profiler()
+        , _geometry(geometry)
+        , constants{ .inv_cloth_size{ cloth->size()/cloth->gridSize() } }
+        {}
 
 void Integrator::init() {
     _profiler.addQuery("integrator");
@@ -25,11 +32,14 @@ void Integrator::integrate(VkCommandBuffer commandBuffer) {
     _fixedUpdate([&]{
         _profiler.profile("integrator", commandBuffer, [&]{
             integrate0(commandBuffer);
+
             Barrier::computeWriteToRead(commandBuffer, { _points } );
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("copy_positions"));
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("copy_positions"), 0, 1, &_attributesSet, 0, VK_NULL_HANDLE);
-            vkCmdPushConstants(commandBuffer, layout("verlet_integrator"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+            vkCmdPushConstants(commandBuffer, layout("copy_positions"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
             vkCmdDispatch(commandBuffer, _cloth->gridSize().x/10, _cloth->gridSize().y/10, 1);
+
+
             Barrier::computeWriteToFragmentRead(commandBuffer, { _cloth->buffer() });
         });
     });
@@ -77,15 +87,25 @@ void Integrator::initDescriptorSetLayout() {
                     .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
+
+    _geometrySetLayout =
+        device->descriptorSetLayoutBuilder()
+                .name("geometry_descriptor_set_layout")
+                .binding(0)
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
+                    .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .createLayout();
 }
 
 void Integrator::initDescriptorSets() {
-    auto sets = _descriptorPool->allocate({ _attributesSetLayout });
-    _attributesSet = sets.front();
+    auto sets = _descriptorPool->allocate({ _attributesSetLayout, _geometrySetLayout });
+    _attributesSet = sets[0];
+    _geometrySet = sets[1];
 
     device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("integrator_cloth_attributes_set", _attributesSet);
 
-    auto writes = initializers::writeDescriptorSets<2>();
+    auto writes = initializers::writeDescriptorSets<3>();
     writes[0].dstSet = _attributesSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -99,6 +119,13 @@ void Integrator::initDescriptorSets() {
     writes[1].descriptorCount = 1;
     VkDescriptorBufferInfo normalInfo{ _cloth->buffer(), 0, VK_WHOLE_SIZE };
     writes[1].pBufferInfo = &normalInfo;
+
+    writes[2].dstSet = _geometrySet;
+    writes[2].dstBinding = 0;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].descriptorCount = 1;
+    VkDescriptorBufferInfo geometryInfo{ _geometry->uboBuffer, 0, VK_WHOLE_SIZE };
+    writes[2].pBufferInfo = &geometryInfo;
 
     device->updateDescriptorSets(writes);
 }

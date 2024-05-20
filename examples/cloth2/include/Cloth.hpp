@@ -37,8 +37,8 @@ private:
     VulkanBuffer _indices;
     uint32_t _indexCount;
     uint32_t _vertexCount;
-    glm::vec2 _size = glm::vec2(4);
-    glm::vec2 _gridSize{20};
+    glm::vec2 _size = glm::vec2(6);
+    glm::vec2 _gridSize{100};
     VkBufferUsageFlags bufferUsage =
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |

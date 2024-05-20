@@ -15,6 +15,7 @@ ClothDemo2::ClothDemo2(const Settings& settings) : VulkanBaseApp("Cloth", settin
 
 void ClothDemo2::initApp() {
     createFloor();
+    createGeometry();
     createCloth();
     initCamera();
     createDescriptorPool();
@@ -28,7 +29,7 @@ void ClothDemo2::initApp() {
 }
 
 void ClothDemo2::initIntegrators() {
-    integrator = std::make_unique<VerletIntegrator>(device, descriptorPool, cloth, 960);
+    integrator = std::make_unique<VerletIntegrator>(device, descriptorPool, cloth, geometry, 960);
     integrator->init();
 }
 
@@ -52,6 +53,7 @@ void ClothDemo2::initCamera() {
     cameraSettings.velocity = glm::vec3{5};
     cameraSettings.acceleration = glm::vec3(5);
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
+    cameraSettings.horizontalFov = true;
     camera = std::make_unique<SpectatorCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     camera->lookAt({-5, 2, 3}, {0, cloth->size().y * .5, 0}, {0, 1, 0});
 }
@@ -175,6 +177,7 @@ VkCommandBuffer *ClothDemo2::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+    renderGeometry(commandBuffer);
     renderCloth(commandBuffer);
     renderFloor(commandBuffer);
     renderPoints(commandBuffer);
@@ -209,7 +212,13 @@ void ClothDemo2::renderCloth(VkCommandBuffer commandBuffer) {
     camera->push(commandBuffer, render.wireframe.layout, identity);
     cloth->bindVertexBuffers(commandBuffer);
     vkCmdDrawIndexed(commandBuffer, cloth->indexCount(), 1, 0, 0, 0);
+}
 
+void ClothDemo2::renderGeometry(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.wireframe.pipeline.handle);
+    camera->push(commandBuffer, render.wireframe.layout, geometry->ubo.worldSpaceXform);
+    geometry->bindVertexBuffers(commandBuffer);
+    vkCmdDrawIndexed(commandBuffer, geometry->indexCount, 1, 0, 0, 0);
 }
 
 void ClothDemo2::renderPoints(VkCommandBuffer commandBuffer) {
@@ -302,6 +311,27 @@ void ClothDemo2::cleanup() {
 
 void ClothDemo2::onPause() {
     VulkanBaseApp::onPause();
+}
+
+void ClothDemo2::createGeometry() {
+    geometry = std::make_shared<Geometry>();
+    auto& worldSpaceXform = geometry->ubo.worldSpaceXform;
+    const auto r = geometry->radius;
+    worldSpaceXform = glm::scale(worldSpaceXform, glm::vec3(r * 2, r, r));
+    worldSpaceXform = glm::translate(worldSpaceXform, {0, geometry->radius, 0});
+    geometry->ubo.localSpaceXform = glm::inverse(worldSpaceXform);
+    geometry->ubo.radius = geometry->radius;
+    geometry->ubo.center = (worldSpaceXform * glm::vec4(0, 0, 0, 1)).xyz();
+    auto localSapce = geometry->ubo.localSpaceXform;
+
+    auto s = primitives::sphere(25, 25, 1.0, glm::mat4(1),  {1, 1, 0, 1});
+    geometry->vertices = device.createDeviceLocalBuffer(s.vertices.data(), sizeof(Vertex) * s.vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    geometry->indices = device.createDeviceLocalBuffer(s.indices.data(), sizeof(uint32_t) * s.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    geometry->indexCount = s.indices.size();
+
+    geometry->uboBuffer = device.createDeviceLocalBuffer(&geometry->ubo, sizeof(geometry->ubo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+    spdlog::error("geom size: {}", sizeof(geometry->ubo));
 }
 
 

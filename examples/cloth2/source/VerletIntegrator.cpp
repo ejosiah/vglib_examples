@@ -1,13 +1,21 @@
 #include "VerletIntegrator.hpp"
 
-VerletIntegrator::VerletIntegrator(VulkanDevice &device, VulkanDescriptorPool &descriptorPool, std::shared_ptr<Cloth> cloth, int fps)
-: Integrator(device, descriptorPool, std::move(cloth), fps)
+VerletIntegrator::VerletIntegrator(VulkanDevice &device,
+                                   VulkanDescriptorPool &descriptorPool,
+                                   std::shared_ptr<Cloth> cloth,
+                                   std::shared_ptr<Geometry> geometry,
+                                   int fps)
+: Integrator(device, descriptorPool, std::move(cloth), std::move(geometry), fps)
+, sets(3)
 {}
 
 void VerletIntegrator::init0() {
     createBuffers();
     createDescriptorSetLayout();
     updateDescriptorSets();
+    sets[0] = descriptorSet[0];
+    sets[1] = descriptorSet[1];
+    sets[2] = _geometrySet;
 }
 
 void VerletIntegrator::integrate0(VkCommandBuffer commandBuffer) {
@@ -16,10 +24,10 @@ void VerletIntegrator::integrate0(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("verlet_integrator"));
     vkCmdPushConstants(commandBuffer, layout("verlet_integrator"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
     for(auto i = 0; i < numIterations; i++) {
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("verlet_integrator"), 0, COUNT(descriptorSet), descriptorSet.data(), 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("verlet_integrator"), 0, COUNT(sets), sets.data(), 0, nullptr);
         vkCmdDispatch(commandBuffer, _cloth->gridSize().x/10, _cloth->gridSize().y/10, 1);
         Barrier::computeWriteToRead(commandBuffer, { positions[0], positions[1] } );
-        std::swap(descriptorSet[0], descriptorSet[1]);
+ //       std::swap(descriptorSet[0], descriptorSet[1]);
     }
 }
 
@@ -37,7 +45,7 @@ void VerletIntegrator::createDescriptorSetLayout() {
 void VerletIntegrator::createBuffers() {
     auto numPoints = _cloth->vertexCount();
     positions[0] = _points;
-    positions[1] = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numPoints * sizeof(glm::vec4));
+    positions[1] = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numPoints * sizeof(glm::vec4));
 
     device->graphicsCommandPool().oneTimeCommand([this](auto commandBuffer) {
         VkBufferCopy region{0, 0, _points.size};
@@ -81,7 +89,7 @@ std::vector<PipelineMetaData> VerletIntegrator::pipelineMetaData0() {
             {
                 "verlet_integrator",
                 R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\spv\verlet_integrator.comp.spv)",
-                { &descriptorSetLayout, &descriptorSetLayout},
+                { &descriptorSetLayout, &descriptorSetLayout, &_geometrySetLayout},
                 { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             }
     };

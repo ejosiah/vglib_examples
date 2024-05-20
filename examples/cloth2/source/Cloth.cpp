@@ -20,7 +20,7 @@ void Cloth::init() {
 Vertices Cloth::initialState() {
     float halfWidth = _size.x * 0.5f;
     glm::mat4 xform{1};
-    xform = glm::translate(xform, {0, _size.x , halfWidth});
+    xform = glm::translate(xform, {0, _size.x , 0});
     xform = glm::rotate(xform, -glm::half_pi<float>(), {1, 0, 0});
     return primitives::plane(_gridSize.x - 1, _gridSize.y - 1, _size.x, _size.y, xform, glm::vec4(0.4, 0.4, 0.4, 1.0));
 }

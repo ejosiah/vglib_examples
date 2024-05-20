@@ -1,6 +1,7 @@
 #include "VulkanBaseApp.h"
 #include "Cloth.hpp"
 #include "Integrator.hpp"
+#include "Geometry.hpp"
 
 class ClothDemo2 : public VulkanBaseApp {
 public:
@@ -16,6 +17,8 @@ protected:
     void createCloth();
 
     void initCamera();
+
+    void createGeometry();
 
     void createDescriptorPool();
 
@@ -39,6 +42,8 @@ protected:
 
     void renderCloth(VkCommandBuffer commandBuffer);
 
+    void renderGeometry(VkCommandBuffer commandBuffer);
+
     void renderPoints(VkCommandBuffer commandBuffer);
 
     void renderNormals(VkCommandBuffer commandBuffer);
@@ -60,7 +65,6 @@ protected:
         Pipeline normals;
     } render;
 
-
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
@@ -72,6 +76,8 @@ protected:
         VulkanBuffer indices;
         uint32_t indexCount;
     } floor;
+
+    std::shared_ptr<Geometry> geometry;
 
     enum class Shading : int {
         WIREFRAME = 0,

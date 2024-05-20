@@ -4,7 +4,11 @@
 
 class VerletIntegrator : public Integrator {
 public:
-    VerletIntegrator(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, std::shared_ptr<Cloth> cloth, int fps = 480);
+    VerletIntegrator(VulkanDevice& device,
+                     VulkanDescriptorPool& descriptorPool,
+                     std::shared_ptr<Cloth> cloth,
+                     std::shared_ptr<Geometry> geometry,
+                     int fps = 480);
 
 protected:
     void init0() final;
@@ -25,4 +29,5 @@ private:
     VulkanBuffer normals;
     VulkanDescriptorSetLayout descriptorSetLayout;
     std::array<VkDescriptorSet, 2> descriptorSet{};
+    std::vector<VkDescriptorSet> sets;
 };

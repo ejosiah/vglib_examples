@@ -5,12 +5,19 @@ layout(local_size_x = 10, local_size_y = 10) in;
 #include "shared.glsl"
 
 layout(set = 0, binding = 0) buffer POINT_MASSES_IN{
-    vec4 particleIn[];
+    vec4 positions1[];
 };
 
 layout(set = 1, binding = 0) buffer POINT_MASS_OUT{
-    vec4 particleOut[];
+    vec4 positions0[];
 };
+
+layout(set = 2, binding = 0) buffer LEVEL_SET_GEOMETRY {
+    mat4 worldSpaceXform;
+    mat4 localSpaceXform;
+    vec3 center;
+    float radius;
+} geometry;
 
 
 bool neighbour(int i, out vec3 pos, out vec3 prev_pos, out float ks, out float kd, out float rest_length){
@@ -20,8 +27,8 @@ bool neighbour(int i, out vec3 pos, out vec3 prev_pos, out float ks, out float k
         return false;
     }
 
-    pos = particleIn[nid].xyz;
-    prev_pos = particleOut[nid].xyz;
+    pos = positions1[nid].xyz;
+    prev_pos = positions0[nid].xyz;
 
     rest_length = length(coord * inv_cloth_size);
     if(i < 4){
@@ -38,12 +45,44 @@ bool neighbour(int i, out vec3 pos, out vec3 prev_pos, out float ks, out float k
     return true;
 }
 
+
+
+bool collision(inout vec3 position){
+    vec3 p = (geometry.localSpaceXform * vec4(position, 1)).xyz; // bring into sphere local space
+    float pd = length(p);
+    float d = pd - geometry.radius;
+
+    bool hitGeom = false;
+    if(d < EPSILON) {
+        vec3 n = p/pd;
+        p = n * (geometry.radius + EPSILON);
+        position = (geometry.worldSpaceXform * vec4(p, 1)).xyz;
+        hitGeom = true;
+    }
+
+//    vec3 d = position - geometry.center;
+//    float r = (geometry.radius + EPSILON);
+//    float dd = dot(d, d);
+//    if(length(d) < r){
+//        d = normalize(d);
+//        position = geometry.center + d * r;
+//        hitGeom = true;
+//    }
+
+    if(position.y < EPSILON) {
+        position.y = EPSILON;
+        return true;
+    }
+    return hitGeom;
+}
+
+
 void main(){
     //    float dt = 0.00083;
     float dt = timeStep;
     float inv_dt = 1/dt;
-    vec3 pos = particleIn[id].xyz;
-    vec3 prev_pos = particleOut[id].xyz;
+    vec3 pos = positions1[id].xyz;
+    vec3 prev_pos = positions0[id].xyz;
     vec3 velocity = (pos - prev_pos) * inv_dt;
 
     vec3 force = mass * gravity + kd * -velocity;
@@ -70,13 +109,18 @@ void main(){
     }
 
     float inv_mass = 1.0f/mass;
-    if(id == (numPoints - width) || id == (numPoints - 1)){
-        inv_mass = 0;
-    }
+//    if(id == (numPoints - width) || id == (numPoints - 1)){
+//        inv_mass = 0;
+//    }
 
     vec3 a = force * inv_mass;
 
     vec3 p = 2 * pos - prev_pos + a * dt * dt;
 
-    particleOut[id] = vec4(p, 1);
+    if(collision(p)) {
+        pos = p;
+    }
+
+    positions0[id] = vec4(pos, 1);
+    positions1[id] = vec4(p, 1);
 }
