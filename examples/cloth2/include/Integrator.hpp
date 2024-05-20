@@ -27,6 +27,8 @@ public:
         float elapsedTime = 0;
         int simWind{0};
         float gravityY{-9.8f};
+        float windStrength{1};
+        float windSpeed{1};
     } constants{};
 
 public:

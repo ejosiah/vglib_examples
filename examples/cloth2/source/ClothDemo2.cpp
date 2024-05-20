@@ -272,7 +272,16 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
     }
 
     static bool wind = integrator->constants.simWind;
+    ImGui::Text("Wind:");
+    ImGui::SameLine();
     ImGui::Checkbox("wind", &wind);
+    ImGui::Indent(16);
+    if(wind){
+        ImGui::SliderFloat("strength", &integrator->constants.windStrength, 1, 10);
+        ImGui::SliderFloat("speed", &integrator->constants.windSpeed, 1, 10);
+    }
+    ImGui::Indent(-16);
+
     integrator->constants.simWind = wind;
 
 //    ImGui::SliderFloat("shine", &shine, 1, 100);

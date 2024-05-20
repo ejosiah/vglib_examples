@@ -2,6 +2,8 @@
 #define SHARED_GLSL
 
 #define EPSILON 1e-6
+#define PI 3.1415926535897932384626433832795
+#define TWO_PI 6.283185307179586476925286766559
 
 layout(push_constant) uniform SIM_CONSTANTS {
     vec2 inv_cloth_size;
@@ -17,6 +19,8 @@ layout(push_constant) uniform SIM_CONSTANTS {
     float elapsedTime;
     int simWind;
     float gravityY;
+    float windStrength;
+    float windSpeed;
 };
 
 vec3 gravity = vec3(0, gravityY, 0);
