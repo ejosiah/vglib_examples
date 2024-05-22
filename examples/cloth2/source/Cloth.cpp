@@ -2,10 +2,11 @@
 #include "primitives.h"
 #include "VulkanInitializers.h"
 
-Cloth::Cloth(VulkanDevice &device, VkDescriptorSet materialSet)
+Cloth::Cloth(VulkanDevice &device, std::vector<VkDescriptorSet> materialSets)
 : _device(&device)
+, _materialSets(materialSets)
 {
-    _material.descriptorSet = materialSet;
+
 }
 
 void Cloth::init() {
@@ -38,58 +39,100 @@ void Cloth::bindVertexBuffers(VkCommandBuffer commandBuffer) {
 
 void Cloth::loadMaterial() {
     uint32_t levelCount  = 11;
-    textures::fromFile(*_device, _material.albedo, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\FabricDenim_COL.png)", false, VK_FORMAT_R8G8B8A8_SRGB, levelCount);
-    textures::fromFile(*_device, _material.normal, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\FabricDenim_NRM.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
-    textures::fromFile(*_device, _material.metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\FabricDenim_METALNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM);
-    textures::fromFile(*_device, _material.roughness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\FabricDenim_ROUGHNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
-    textures::fromFile(*_device, _material.ambientOcclusion, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\FabricDenim_AO.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
 
+    _materials.resize(3);
+    std::vector<std::string> colors {
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_COL_1.jpg)",
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_COL_2.jpg)",
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_COL_3.jpg)"
+    };
+    textures::fromFile(*_device, _materials[0].albedo, colors, false, VK_FORMAT_R8G8B8A8_SRGB, levelCount);
+    textures::fromFile(*_device, _materials[0].normal, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_NRM.jpg)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[0].metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_METALNESS.jpg)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[0].roughness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_ROUGHNESS.jpg)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[0].ambientOcclusion, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_AO.jpg)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
 
-    textures::generateLOD(*_device, _material.albedo, levelCount);
-    textures::generateLOD(*_device, _material.normal, levelCount);
-    textures::generateLOD(*_device, _material.roughness, levelCount);
-    textures::generateLOD(*_device, _material.ambientOcclusion, levelCount);
+    textures::generateLOD(*_device, _materials[0].albedo, levelCount, colors.size());
+    textures::generateLOD(*_device, _materials[0].normal, levelCount);
+    textures::generateLOD(*_device, _materials[0].roughness, levelCount);
+    textures::generateLOD(*_device, _materials[0].ambientOcclusion, levelCount);
+    _materials[0].descriptorSet = _materialSets[0];
+    addMaterial(&_materials[0]);
 
+    colors = { R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_COL.png)" };
+    textures::fromFile(*_device, _materials[1].albedo, colors, false, VK_FORMAT_R8G8B8A8_SRGB, levelCount);
+    textures::fromFile(*_device, _materials[1].normal, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_NRM.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[1].metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_METALNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM);
+    textures::fromFile(*_device, _materials[1].roughness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_ROUGHNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[1].ambientOcclusion, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_AO.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+
+    textures::generateLOD(*_device, _materials[1].albedo, levelCount, colors.size());
+    textures::generateLOD(*_device, _materials[1].normal, levelCount);
+    textures::generateLOD(*_device, _materials[1].roughness, levelCount);
+    textures::generateLOD(*_device, _materials[1].ambientOcclusion, levelCount);
+    _materials[1].descriptorSet = _materialSets[1];
+    addMaterial(&_materials[1]);
+
+    colors = { R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_COL.png)" };
+    textures::fromFile(*_device, _materials[2].albedo, colors, false, VK_FORMAT_R8G8B8A8_SRGB, levelCount);
+    textures::fromFile(*_device, _materials[2].normal, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_NRM.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[2].metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_METALNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM);
+    textures::fromFile(*_device, _materials[2].roughness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_ROUGHNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[2].ambientOcclusion, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_AO.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+
+    textures::generateLOD(*_device, _materials[2].albedo, levelCount, colors.size());
+    textures::generateLOD(*_device, _materials[2].normal, levelCount);
+    textures::generateLOD(*_device, _materials[2].roughness, levelCount);
+    textures::generateLOD(*_device, _materials[2].ambientOcclusion, levelCount);
+    _materials[2].descriptorSet = _materialSets[2];
+    addMaterial(&_materials[2]);
+}
+
+void Cloth::addMaterial(Material *material) {
     auto writes = initializers::writeDescriptorSets<5>();
-    
-    writes[0].dstSet = _material.descriptorSet;
+
+    writes[0].dstSet = material->descriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo albedoInfo{ _material.albedo.sampler.handle, _material.albedo.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo albedoInfo{ material->albedo.sampler.handle, material->albedo.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[0].pImageInfo = &albedoInfo;
 
-    writes[1].dstSet = _material.descriptorSet;
+    writes[1].dstSet = material->descriptorSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo normalInfo{ _material.normal.sampler.handle, _material.normal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo normalInfo{ material->normal.sampler.handle, material->normal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[1].pImageInfo = &normalInfo;
 
-    writes[2].dstSet = _material.descriptorSet;
+    writes[2].dstSet = material->descriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo metalInfo{ _material.metalness.sampler.handle, _material.metalness.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo metalInfo{ material->metalness.sampler.handle, material->metalness.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &metalInfo;
 
-    writes[3].dstSet = _material.descriptorSet;
+    writes[3].dstSet = material->descriptorSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo roughnessInfo{ _material.roughness.sampler.handle, _material.roughness.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo roughnessInfo{ material->roughness.sampler.handle, material->roughness.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[3].pImageInfo = &roughnessInfo;
 
-    writes[4].dstSet = _material.descriptorSet;
+    writes[4].dstSet = material->descriptorSet;
     writes[4].dstBinding = 4;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
-    VkDescriptorImageInfo aoInfo{ _material.ambientOcclusion.sampler.handle, _material.ambientOcclusion.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo aoInfo{ material->ambientOcclusion.sampler.handle, material->ambientOcclusion.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[4].pImageInfo = &aoInfo;
 
     _device->updateDescriptorSets(writes);
 }
 
-void Cloth::bindMaterial(VkCommandBuffer commandBuffer, VkPipelineLayout layout) {
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &_material.descriptorSet, 0, VK_NULL_HANDLE);
+void Cloth::bindMaterial(VkCommandBuffer commandBuffer, VkPipelineLayout layout, int id) {
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &_materials[id].descriptorSet, 0, VK_NULL_HANDLE);
+}
+
+size_t Cloth::numMaterials() const {
+    return _materials.size();
 }

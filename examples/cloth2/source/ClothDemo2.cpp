@@ -78,8 +78,8 @@ void ClothDemo2::loadModel() {
 }
 
 void ClothDemo2::createCloth() {
-    auto materialSet = descriptorPool.allocate( { materialSetLayout }).front();
-    cloth = std::make_shared<Cloth>( device, materialSet );
+    auto materialSets = descriptorPool.allocate( { materialSetLayout, materialSetLayout, materialSetLayout });
+    cloth = std::make_shared<Cloth>( device, materialSets );
     cloth->init();
 }
 
@@ -304,6 +304,7 @@ void ClothDemo2::createRenderPipeline() {
             .shaderStage()
                 .fragmentShader(resource("solid_texture.frag.spv"))
             .layout()
+                .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(int))
                 .addDescriptorSetLayout(materialSetLayout)
             .name("solid_render_texture")
             .build(render.solidTex.layout);
@@ -372,14 +373,13 @@ void ClothDemo2::renderFloor(VkCommandBuffer commandBuffer) {
 void ClothDemo2::renderCloth(VkCommandBuffer commandBuffer) {
     static glm::mat4 identity{1};
 
-    auto& pipeline = shading == Shading::WIREFRAME ? render.wireframe : render.solid;
-
     if(shading == Shading::WIREFRAME) {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.wireframe.pipeline.handle);
         camera->push(commandBuffer, render.wireframe.layout, identity);
     }else {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.solidTex.pipeline.handle);
-        cloth->bindMaterial(commandBuffer, render.solidTex.layout.handle);
+        cloth->bindMaterial(commandBuffer, render.solidTex.layout.handle, materialId);
+        vkCmdPushConstants(commandBuffer, render.solidTex.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(int), &clothColor);
         camera->push(commandBuffer, render.solidTex.layout, identity);
     }
 
@@ -456,15 +456,27 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::Checkbox("normals", &showNormals);
     }
 
+    static int numMaterials = cloth->numMaterials();
+    ImGui::Text("Material:");
+    ImGui::Indent(16);
+    static std::array<const char*, 3> matLabel{"Chenille Polyester Upholstery", "Denim", "Bengaline"};
+    ImGui::Combo("material", &materialId, matLabel.data(), matLabel.size());
+
+    if(materialId == 0) {
+        ImGui::SliderInt("color variation", &clothColor, 0, 2);
+    }else{
+        clothColor = 0;
+    }
+    ImGui::Indent(-16);
+
     static bool wind = integrator->constants.simWind;
     ImGui::Text("Wind:");
-    ImGui::SameLine();
-    ImGui::Checkbox("wind", &wind);
     ImGui::Indent(16);
     if(wind){
         ImGui::SliderFloat("strength", &integrator->constants.windStrength, 1, 10);
         ImGui::SliderFloat("speed", &integrator->constants.windSpeed, 0.1, 1);
     }
+    ImGui::Checkbox("wind", &wind);
     ImGui::Indent(-16);
 
     integrator->constants.simWind = wind;
