@@ -150,3 +150,6 @@ build
 doc
 
 **/.DS_store
+
+**/*.vdb
+**/*.ply
