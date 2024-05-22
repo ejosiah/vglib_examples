@@ -1,14 +1,5 @@
 #version 460
 
-struct Vertex{
-    vec4 position;
-    vec4 color;
-    vec3 normal;
-    vec3 tangent;
-    vec3 bitangent;
-    vec2 uv;
-};
-
 layout(local_size_x = 10, local_size_y = 10) in;
 
 #include "shared.glsl"
@@ -21,7 +12,9 @@ layout(set = 0, binding = 1) buffer CLOTH_VERTICES {
     Vertex vertices[];
 };
 
-vec3 calculateNormal(vec3 position){
+vec3 calculateNormal(vec3 position, out vec3 tangent, out vec3 bitangent){
+    tangent = vec3(0);
+    bitangent = vec3(0);
     ivec2 coord;
     int nid;
     int count = 0;
@@ -33,14 +26,25 @@ vec3 calculateNormal(vec3 position){
         if(!neighbour(i%4, nid, coord)) continue;
         vec3 B = positions[nid].xyz - position;
         normal += cross(B, A);
+        tangent += B;
+        bitangent += A;
         count++;
     }
     normal /= count;
+    tangent /= count;
+    bitangent /= count;
+
+    tangent = normalize(tangent);
+    bitangent = normalize(bitangent);
     return normalize(normal);
 }
 
 void main() {
     vec4 position = positions[id];
     vertices[id].position = position;
-    vertices[id].normal = calculateNormal(position.xyz);
+
+    vec3 tangent, bitangent;
+    vertices[id].normal = calculateNormal(position.xyz, tangent, bitangent);
+    vertices[id].tangent = tangent;
+    vertices[id].bitangent = bitangent;
 }

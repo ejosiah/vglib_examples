@@ -36,9 +36,13 @@ public:
 
     Integrator(VulkanDevice& device,
                VulkanDescriptorPool& descriptorPool,
+               VulkanDescriptorSetLayout accStructDescriptorSetLayout,
+               VkDescriptorSet accStructDescriptorSet,
                std::shared_ptr<Cloth> cloth,
                std::shared_ptr<Geometry> geometry,
                int fps = 480);
+
+    virtual ~Integrator() = default;
 
     void init();
 
@@ -75,6 +79,8 @@ protected:
     std::shared_ptr<Geometry> _geometry;
 
     VulkanDescriptorSetLayout _attributesSetLayout;
+    VulkanDescriptorSetLayout _accStructDescriptorSetLayout;
+    VkDescriptorSet _accStructDescriptorSet;
     VkDescriptorSet _attributesSet{};
     VulkanDescriptorSetLayout _geometrySetLayout;
     VkDescriptorSet _geometrySet{};

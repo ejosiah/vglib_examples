@@ -6,12 +6,16 @@
 Integrator::Integrator(
         VulkanDevice &device,
         VulkanDescriptorPool &descriptorPool,
+        VulkanDescriptorSetLayout accStructDescriptorSetLayout,
+        VkDescriptorSet accStructDescriptorSet,
         std::shared_ptr<Cloth> cloth,
         std::shared_ptr<Geometry> geometry,
         int fps
         )
         : ComputePipelines(&device)
         , _descriptorPool(&descriptorPool)
+        , _accStructDescriptorSetLayout(accStructDescriptorSetLayout)
+        , _accStructDescriptorSet(accStructDescriptorSet)
         , _cloth(std::move(cloth))
         , _fixedUpdate(fps)
         , _profiler()

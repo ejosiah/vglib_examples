@@ -2,6 +2,7 @@
 
 #include "VulkanDevice.h"
 #include "Vertex.h"
+#include "Texture.h"
 #include <glm/glm.hpp>
 
 
@@ -12,9 +13,11 @@ public:
 
     Cloth() = default;
 
-    Cloth(VulkanDevice& device);
+    Cloth(VulkanDevice& device, VkDescriptorSet materialSet);
 
     void init();
+
+    void loadMaterial();
 
     inline uint32_t indexCount() const { return _indexCount; }
 
@@ -28,7 +31,9 @@ public:
 
     void bindVertexBuffers(VkCommandBuffer commandBuffer);
 
-    Vertices initialState();
+    void bindMaterial(VkCommandBuffer commandBuffer, VkPipelineLayout layout);
+
+    Vertices initialState() const;
 
 
 private:
@@ -44,4 +49,13 @@ private:
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
         VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    struct {
+        Texture albedo;
+        Texture normal;
+        Texture metalness;
+        Texture roughness;
+        Texture ambientOcclusion;
+        VkDescriptorSet descriptorSet{};
+    } _material;
 };

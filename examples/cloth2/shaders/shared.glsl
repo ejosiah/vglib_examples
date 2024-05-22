@@ -5,6 +5,22 @@
 #define PI 3.1415926535897932384626433832795
 #define TWO_PI 6.283185307179586476925286766559
 
+struct VertexOffsets{
+    int firstIndex;
+    int vertexOffset;
+    int material;
+    int padding1;
+};
+
+struct Vertex{
+    vec4 position;
+    vec4 color;
+    vec3 normal;
+    vec3 tangent;
+    vec3 bitangent;
+    vec2 uv;
+};
+
 layout(push_constant) uniform SIM_CONSTANTS {
     vec2 inv_cloth_size;
     float timeStep;

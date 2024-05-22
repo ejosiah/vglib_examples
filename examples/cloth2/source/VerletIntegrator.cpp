@@ -1,21 +1,25 @@
 #include "VerletIntegrator.hpp"
 
+#include <utility>
+
 VerletIntegrator::VerletIntegrator(VulkanDevice &device,
                                    VulkanDescriptorPool &descriptorPool,
+                                   VulkanDescriptorSetLayout accStructDescriptorSetLayout,
+                                   VkDescriptorSet accStructDescriptorSet,
                                    std::shared_ptr<Cloth> cloth,
                                    std::shared_ptr<Geometry> geometry,
                                    int fps)
-: Integrator(device, descriptorPool, std::move(cloth), std::move(geometry), fps)
-, sets(3)
+: Integrator(device, descriptorPool, std::move(accStructDescriptorSetLayout), accStructDescriptorSet,  std::move(cloth), std::move(geometry), fps)
 {}
 
 void VerletIntegrator::init0() {
     createBuffers();
     createDescriptorSetLayout();
     updateDescriptorSets();
-    sets[0] = descriptorSet[0];
-    sets[1] = descriptorSet[1];
-    sets[2] = _geometrySet;
+    sets.push_back(descriptorSet[0]);
+    sets.push_back(descriptorSet[1]);
+    sets.push_back(_geometrySet);
+    sets.push_back(_accStructDescriptorSet);
 }
 
 void VerletIntegrator::integrate0(VkCommandBuffer commandBuffer) {
@@ -89,7 +93,7 @@ std::vector<PipelineMetaData> VerletIntegrator::pipelineMetaData0() {
             {
                 "verlet_integrator",
                 R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\spv\verlet_integrator.comp.spv)",
-                { &descriptorSetLayout, &descriptorSetLayout, &_geometrySetLayout},
+                { &descriptorSetLayout, &descriptorSetLayout, &_geometrySetLayout, &_accStructDescriptorSetLayout},
                 { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             }
     };

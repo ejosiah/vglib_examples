@@ -2,8 +2,10 @@
 #include "Cloth.hpp"
 #include "Integrator.hpp"
 #include "Geometry.hpp"
+#include "VulkanRayTraceModel.hpp"
+#include "VulkanRayQuerySupport.hpp"
 
-class ClothDemo2 : public VulkanBaseApp {
+class ClothDemo2 : public VulkanBaseApp, public VulkanRayQuerySupport {
 public:
     explicit ClothDemo2(const Settings& settings = {});
 
@@ -13,6 +15,10 @@ protected:
     void initIntegrators();
 
     void createFloor();
+
+    void beforeDeviceCreation() override;
+
+    void loadModel();
 
     void createCloth();
 
@@ -44,6 +50,8 @@ protected:
 
     void renderGeometry(VkCommandBuffer commandBuffer);
 
+    void renderModel(VkCommandBuffer commandBuffer);
+
     void renderPoints(VkCommandBuffer commandBuffer);
 
     void renderNormals(VkCommandBuffer commandBuffer);
@@ -63,6 +71,9 @@ protected:
         Pipeline wireframe;
         Pipeline points;
         Pipeline normals;
+        Pipeline floor;
+        Pipeline solid;
+        Pipeline solidTex;
     } render;
 
     VulkanDescriptorPool descriptorPool;
@@ -82,10 +93,21 @@ protected:
     enum class Shading : int {
         WIREFRAME = 0,
         SHADED = 1
-    } shading = Shading::WIREFRAME;
+    } shading = Shading::SHADED;
 
     bool showPoints{};
     bool showNormals{};
     bool simRunning{};
     std::unique_ptr<Integrator> integrator;
+    VulkanDrawable model;
+
+    VulkanDescriptorSetLayout accStructDescriptorSetLayout;
+    VulkanDescriptorSetLayout materialSetLayout;
+    VkDescriptorSet accStructDescriptorSet;
+    std::vector<rt::Instance> asInstances;
+    rt::AccelerationStructureBuilder accStructBuilder;
+    VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR posFetchFeature{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR
+    };
+
 };

@@ -2,13 +2,17 @@
 
 #include "Integrator.hpp"
 
-class VerletIntegrator : public Integrator {
+class VerletIntegrator final : public Integrator {
 public:
     VerletIntegrator(VulkanDevice& device,
                      VulkanDescriptorPool& descriptorPool,
+                     VulkanDescriptorSetLayout accStructDescriptorSetLayout,
+                     VkDescriptorSet accStructDescriptorSet,
                      std::shared_ptr<Cloth> cloth,
                      std::shared_ptr<Geometry> geometry,
                      int fps = 480);
+
+    ~VerletIntegrator() final = default;
 
 protected:
     void init0() final;
