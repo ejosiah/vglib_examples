@@ -125,7 +125,7 @@ Texture BRDFGenerator::generate() {
 
         VkDeviceSize offset = 0;
         vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle);
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenVertices, &offset);
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
         vkCmdEndRenderPass(commandBuffer);
