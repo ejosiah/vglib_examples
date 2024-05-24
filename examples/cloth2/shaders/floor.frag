@@ -27,7 +27,8 @@ void main() {
 
     if(t > 0){
         vec3 p = o + rd * t;
-        vec4 depth = view * proj * vec4(0, 0, t, 1);
+        vec4 depth = proj * view * vec4(p, 1);
+        depth /= depth.w;
         gl_FragDepth = depth.z;
         float sd = length(p.xz) - 10;
         sd = 1 - smoothstep(0, 10, sd);

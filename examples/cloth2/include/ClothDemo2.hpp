@@ -9,6 +9,8 @@ class ClothDemo2 : public VulkanBaseApp, public VulkanRayQuerySupport {
 public:
     explicit ClothDemo2(const Settings& settings = {});
 
+    ~ClothDemo2() override = default;
+
 protected:
     void initApp() override;
 
@@ -111,4 +113,14 @@ protected:
     };
     int clothColor = 0;
     int materialId = 0;
+
+    enum class Collider : int {
+        Sphere = 0, Box, Cow, None
+    } collider = Collider::Sphere;
+
+    struct {
+        glm::vec3 position{0};
+        glm::vec3 scale{1};
+        glm::vec3 rotation{0};
+    } xform{};
 };

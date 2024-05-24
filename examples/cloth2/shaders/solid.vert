@@ -36,7 +36,7 @@ void main() {
     vs_out.bitangent = B;
     vs_out.viewPos = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
     vs_out.color = color;
-    vs_out.uv = uv;
+    vs_out.uv = uv * 2;
 
     gl_Position = proj * view * worldPos;
 }

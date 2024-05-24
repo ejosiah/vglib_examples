@@ -50,17 +50,10 @@ void ClothDemo2::loadModel() {
     mesh::load(meshes, resource("cow.ply"));
     for(auto& mesh : meshes) {
         for(auto& vertex : mesh.vertices){
+            vertex.position = glm::vec4{vertex.position.xyz() * 1.04f, 1};
             vertex.color = glm::vec4(1, 1, 0, 1);
         }
     }
-//    spdlog::info("bounds [min: {}, max: {}]", meshes.front().bounds.min, meshes.front().bounds.max);
-
-//    auto s = primitives::sphere(25, 25, 1.0, glm::mat4(1),  {1, 1, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//    auto s = primitives::hemisphere(25, 25, 1.0,  {1, 1, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//    mesh::Mesh mesh;
-//    mesh.vertices = s.vertices;
-//    mesh.indices = s.indices;
-//    meshes.push_back(mesh);
 
     phong::VulkanDrawableInfo info{};
     info.vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -114,6 +107,7 @@ void ClothDemo2::createDescriptorPool() {
 void ClothDemo2::createDescriptorSetLayouts() {
     accStructDescriptorSetLayout =
         device.descriptorSetLayoutBuilder()
+            .name("acceleration_structure_set_layout")
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
                 .descriptorCount(1)
@@ -353,6 +347,9 @@ VkCommandBuffer *ClothDemo2::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     vkCmdEndRenderPass(commandBuffer);
 
+    vkCmdUpdateBuffer(commandBuffer, geometry->uboBuffer, 0, sizeof(geometry->ubo), &geometry->ubo);
+    Barrier::transferWriteToComputeRead(commandBuffer, geometry->uboBuffer);
+
     integrator->integrate(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -390,10 +387,11 @@ void ClothDemo2::renderCloth(VkCommandBuffer commandBuffer) {
 }
 
 void ClothDemo2::renderGeometry(VkCommandBuffer commandBuffer) {
+    if(geometry->type() == Geometry::Type::None) return;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.solid.pipeline.handle);
     camera->push(commandBuffer, render.solid.layout, geometry->ubo.worldSpaceXform);
     geometry->bindVertexBuffers(commandBuffer);
-    vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+    vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_BACK_BIT);
     vkCmdDrawIndexed(commandBuffer, geometry->indexCount, 1, 0, 0, 0);
 }
@@ -445,6 +443,8 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SetWindowSize("Cloth Simulation", {0, 0});
     static int option = static_cast<int>(shading);
 
+    ImGui::Text("Debug:");
+    ImGui::Indent(16);
     ImGui::RadioButton("wireframe", &option, 0);
     ImGui::SameLine();
     ImGui::RadioButton("shaded", &option, 1);
@@ -455,19 +455,38 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::Checkbox("points", &showPoints);
         ImGui::Checkbox("normals", &showNormals);
     }
+    ImGui::Indent(-16);
 
-    static int numMaterials = cloth->numMaterials();
-    ImGui::Text("Material:");
+    ImGui::Text("Cloth:");
     ImGui::Indent(16);
     static std::array<const char*, 3> matLabel{"Chenille Polyester Upholstery", "Denim", "Bengaline"};
     ImGui::Combo("material", &materialId, matLabel.data(), matLabel.size());
 
     if(materialId == 0) {
-        ImGui::SliderInt("color variation", &clothColor, 0, 2);
+        ImGui::SliderInt("color", &clothColor, 0, 2);
     }else{
         clothColor = 0;
     }
     ImGui::Indent(-16);
+
+    ImGui::Text("Collider:");
+    ImGui::Indent(16);
+    static int colliderValue = static_cast<int>(collider);
+
+    ImGui::RadioButton("Sphere", &colliderValue, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Box", &colliderValue, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Cow", &colliderValue, 2);
+    ImGui::SameLine();
+    ImGui::RadioButton("None", &colliderValue, 3);
+    ImGui::Indent(-16);
+    collider = static_cast<Collider>(colliderValue);
+
+    auto geometryType = static_cast<Geometry::Type>(collider);
+    if(geometryType != geometry->type()) {
+        geometry->switchTo(static_cast<Geometry::Type>(collider));
+    }
 
     static bool wind = integrator->constants.simWind;
     ImGui::Text("Wind:");
@@ -476,7 +495,7 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::SliderFloat("strength", &integrator->constants.windStrength, 1, 10);
         ImGui::SliderFloat("speed", &integrator->constants.windSpeed, 0.1, 1);
     }
-    ImGui::Checkbox("wind", &wind);
+    ImGui::Checkbox("on", &wind);
     ImGui::Indent(-16);
 
     integrator->constants.simWind = wind;
@@ -491,6 +510,36 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
     }
     ImGui::End();
 
+    if(collider != Collider::None) {
+
+        ImGui::Begin("Collider transform");
+        ImGui::Text("Position:");
+        auto& pos = xform.position;
+        ImGui::Indent(16);
+        ImGui::SliderFloat("x##pos", &pos.x, -3, 3);
+        ImGui::SliderFloat("y##pos", &pos.y, -3, 3);
+        ImGui::SliderFloat("z##pos", &pos.z, -3, 3);
+        ImGui::Indent(-16);
+
+        ImGui::Text("Orientation:");
+        auto& orient = xform.rotation;
+        ImGui::Indent(16);
+        ImGui::SliderFloat("x##orient", &orient.x, 0, 360);
+        ImGui::SliderFloat("y##orient", &orient.y, 0, 360);
+        ImGui::SliderFloat("z##orient", &orient.z, 0, 360);
+        ImGui::Indent(-16);
+
+        ImGui::Text("Scale:");
+        auto& scale = xform.scale;
+        ImGui::Indent(16);
+        ImGui::SliderFloat("x##scale", &scale.x, 0.5, 2);
+        ImGui::SliderFloat("y##scale", &scale.y, 0.5, 2);
+        ImGui::SliderFloat("z##scale", &scale.z, 0.5, 2);
+        ImGui::Indent(-16);
+
+        ImGui::End();
+    }
+
     imGuiPlugin.draw(commandBuffer);
 }
 
@@ -501,7 +550,16 @@ void ClothDemo2::update(float time) {
     auto cam = camera->cam();
     glfwSetWindowTitle(window, fmt::format("{}, vertex count {}, fps {}", title, cloth->vertexCount(), framePerSecond).c_str());
 
+    auto& gTransform = geometry->ubo.worldSpaceXform;
+    gTransform = glm::translate(glm::mat4(1), xform.position);
+    gTransform = glm::scale(gTransform, xform.scale);
+    gTransform = glm::rotate(gTransform, glm::radians(xform.rotation.z), {0, 0, 1});
+    gTransform = glm::rotate(gTransform, glm::radians(xform.rotation.y), {0, 1, 0});
+    gTransform = glm::rotate(gTransform, glm::radians(xform.rotation.z), {1, 0, 0});
+    geometry->ubo.localSpaceXform = glm::inverse(gTransform);
+
     if(simRunning) {
+        integrator->constants.collider = static_cast<int>(collider);
         integrator->update(time);
     }
 
@@ -521,23 +579,8 @@ void ClothDemo2::onPause() {
 
 void ClothDemo2::createGeometry() {
     geometry = std::make_shared<Geometry>();
-    auto& worldSpaceXform = geometry->ubo.worldSpaceXform;
-    const auto r = geometry->radius;
-    worldSpaceXform = glm::scale(worldSpaceXform, glm::vec3(r * 2, r, r));
-    worldSpaceXform = glm::translate(worldSpaceXform, {0, geometry->radius, 0});
-    geometry->ubo.localSpaceXform = glm::inverse(worldSpaceXform);
-    geometry->ubo.radius = geometry->radius;
-    geometry->ubo.center = (worldSpaceXform * glm::vec4(0, 0, 0, 1)).xyz();
-    auto localSapce = geometry->ubo.localSpaceXform;
-
-    auto s = primitives::sphere(25, 25, 1.0, glm::mat4(1),  {1, 1, 0, 1});
-    geometry->vertices = device.createDeviceLocalBuffer(s.vertices.data(), sizeof(Vertex) * s.vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    geometry->indices = device.createDeviceLocalBuffer(s.indices.data(), sizeof(uint32_t) * s.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    geometry->indexCount = s.indices.size();
-
-    geometry->uboBuffer = device.createDeviceLocalBuffer(&geometry->ubo, sizeof(geometry->ubo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-    spdlog::error("geom size: {}", sizeof(geometry->ubo));
+    geometry->initialize(device, fileManager);
+    collider = static_cast<Collider>(geometry->type());
 }
 
 void ClothDemo2::beforeDeviceCreation() {
@@ -551,7 +594,6 @@ void ClothDemo2::beforeDeviceCreation() {
         spdlog::warn("ray tracing position fetch not supported...");
     }
 }
-
 
 int main(){
     try{

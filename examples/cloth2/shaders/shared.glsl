@@ -37,6 +37,7 @@ layout(push_constant) uniform SIM_CONSTANTS {
     float gravityY;
     float windStrength;
     float windSpeed;
+    int collider;
 };
 
 vec3 gravity = vec3(0, gravityY, 0);

@@ -29,6 +29,7 @@ public:
         float gravityY{-9.8f};
         float windStrength{1};
         float windSpeed{1};
+        int collider{};
     } constants{};
 
 public:
