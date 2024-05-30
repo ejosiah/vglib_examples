@@ -42,13 +42,14 @@ void main() {
         ivec3 voxelDim = textureSize(Voxels, 0);
         int maxSteps = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
         float delta = 1/float(maxSteps);
-        vec3 start = (worldToVoxelTransform * vec4(pos, 1)).xyz + rd * delta * 0.5;
+        vec3 start = (worldToVoxelTransform * vec4(pos, 1)).xyz + sign(rd) * 0.5/vec3(voxelDim);
         for(int i = 0; i < maxSteps; ++i) {
             pos = start + rd * delta * i;
 
+            if(outOfBounds(pos)) break;
+
             uint val = texture(Voxels, pos).r;
             if(val == 1) {
-
 
                 pos = (voxelToWordTransform * vec4(pos, 1)).xyz;
                 vec4 clipPos = proj * view * model * vec4(pos, 1);
@@ -57,7 +58,7 @@ void main() {
                 gl_FragDepth = clipPos.z;
 
 //                fragColor = vec4(1, 0, 0, 1);
-                fragColor.rgb = pos;
+                fragColor.rgb = vec3(1, 0, 0);
                 break;
             }
         }
