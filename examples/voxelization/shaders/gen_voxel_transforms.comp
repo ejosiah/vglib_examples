@@ -1,0 +1,39 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(set = 0, binding = 0, r32ui) uniform uimage3D Voxels;
+
+layout(set = 0, binding = 1) buffer Transforms {
+    mat4 transforms[];
+};
+
+layout(set = 0, binding = 2) buffer Params {
+    mat4 worldToVoxelTransform;
+    mat4 voxelToWordTransform;
+    int numVoxels;
+};
+
+void main() {
+    ivec3 voxelDim = imageSize(Voxels);
+    vec3 invDim = 1/vec3(voxelDim);
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+
+    if(gid.x >= voxelDim.x || gid.y >= voxelDim.y || gid.z >= voxelDim.z) return;
+
+    uint value = imageLoad(Voxels, gid).r;
+
+    if(value == 1) {
+        int index = atomicAdd(numVoxels, 1);
+        vec3 pos = (vec3(gid) + 0.5) * invDim;;
+
+        mat4 transform = mat4(1);
+        transform[0][0] = invDim.x;
+        transform[1][1] = invDim.y;
+        transform[2][2] = invDim.z;
+        transform[3][0] = pos.x;
+        transform[3][1] = pos.y;
+        transform[3][2] = pos.z;
+        transforms[index] = voxelToWordTransform * transform;
+    }
+}

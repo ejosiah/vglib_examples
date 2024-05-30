@@ -202,7 +202,7 @@ void VolumetricFog::initShadowMap() {
 void VolumetricFog::loadModel() {
     m_sponza = m_loader->load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
 //    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res\smoke_044_0.10_0106.vdb)");
-    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)");
+//    m_smoke = m_loader->loadVolume(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)");
 }
 
 void VolumetricFog::initScene() {
@@ -628,12 +628,12 @@ void VolumetricFog::renderWithRayMarching(VkCommandBuffer commandBuffer) {
 }
 
 void VolumetricFog::renderVolumeOutline(VkCommandBuffer commandBuffer) {
-    VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, volumeOutline.pipeline.handle);
-    camera->push(commandBuffer, volumeOutline.layout, m_smoke->transform);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, boxBuffer, &offset);
-    vkCmdDraw(commandBuffer, 24, 1, 0, 0);
-    camera->setModel(glm::mat4{1});
+//    VkDeviceSize offset = 0;
+//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, volumeOutline.pipeline.handle);
+//    camera->push(commandBuffer, volumeOutline.layout, m_smoke->transform);
+//    vkCmdBindVertexBuffers(commandBuffer, 0, 1, boxBuffer, &offset);
+//    vkCmdDraw(commandBuffer, 24, 1, 0, 0);
+//    camera->setModel(glm::mat4{1});
 }
 
 void VolumetricFog::renderUI(VkCommandBuffer commandBuffer) {
@@ -669,17 +669,17 @@ void VolumetricFog::renderUI(VkCommandBuffer commandBuffer) {
             ImGui::SliderFloat("Temporal blend weight", &m_fog.cpu->temporalFilterBlendWeight, 0, 1);
         }
 
-        if(ImGui::CollapsingHeader("volume")){
-            static bool dirty = false;
-            dirty |= ImGui::SliderFloat("scale", &m_smoke->scale, 0.01, 1.0);
-            dirty |= ImGui::SliderFloat("x", &m_smoke->offset.x, -50, 50);
-            dirty |= ImGui::SliderFloat("y", &m_smoke->offset.y, -50, 50);
-            dirty |= ImGui::SliderFloat("z", &m_smoke->offset.z, -50, 50);
-            if(dirty) {
-                m_smoke->updateTransform();
-                dirty = false;
-            }
-        }
+//        if(ImGui::CollapsingHeader("volume")){
+//            static bool dirty = false;
+//            dirty |= ImGui::SliderFloat("scale", &m_smoke->scale, 0.01, 1.0);
+//            dirty |= ImGui::SliderFloat("x", &m_smoke->offset.x, -50, 50);
+//            dirty |= ImGui::SliderFloat("y", &m_smoke->offset.y, -50, 50);
+//            dirty |= ImGui::SliderFloat("z", &m_smoke->offset.z, -50, 50);
+//            if(dirty) {
+//                m_smoke->updateTransform();
+//                dirty = false;
+//            }
+//        }
     }
 
     if(ImGui::CollapsingHeader("Camera")){
@@ -716,7 +716,7 @@ void VolumetricFog::update(float time) {
     sky.update(time);
     castShadow();
     m_scene.cpu->lightViewProjection = m_shadowMap.lightSpace.cpu->viewProj;
-    m_smoke->update(time);
+//    m_smoke->update(time);
 
     computeFog();
 
@@ -755,22 +755,22 @@ void VolumetricFog::castShadow() {
 }
 
 void VolumetricFog::computeFog() {
-    m_fog.cpu->inverseVolumeTransform = glm::inverse(m_smoke->transform);
-    m_fog.cpu->boxMin = m_smoke->bounds.min * m_smoke->scale;
-    m_fog.cpu->boxMax = m_smoke->bounds.max * m_smoke->scale;
-
-    static bool once = false;
-    if(!once && m_smoke->initialized) {
-        once = true;
-        auto bounds = m_smoke->scaledBounds();
-        auto wBounds = m_smoke->scaledBounds();
-        auto center = (wBounds.max + wBounds.min) * .5f;
-        bounds.min = (m_fog.cpu->inverseVolumeTransform * glm::vec4(bounds.min, 1));
-        bounds.max = (m_fog.cpu->inverseVolumeTransform * glm::vec4(bounds.max, 1));
-        auto lcenter = (m_fog.cpu->inverseVolumeTransform * glm::vec4(center, 1));
-        spdlog::error("worldSpace bounds: [{}, {}], localSpace bounds: [{}, {}]", wBounds.min, wBounds.max, bounds.min, bounds.max);
-        spdlog::error("worldSpace center: {}, localSpace center: {}", center, lcenter);
-    }
+//    m_fog.cpu->inverseVolumeTransform = glm::inverse(m_smoke->transform);
+//    m_fog.cpu->boxMin = m_smoke->bounds.min * m_smoke->scale;
+//    m_fog.cpu->boxMax = m_smoke->bounds.max * m_smoke->scale;
+//
+//    static bool once = false;
+//    if(!once && m_smoke->initialized) {
+//        once = true;
+//        auto bounds = m_smoke->scaledBounds();
+//        auto wBounds = m_smoke->scaledBounds();
+//        auto center = (wBounds.max + wBounds.min) * .5f;
+//        bounds.min = (m_fog.cpu->inverseVolumeTransform * glm::vec4(bounds.min, 1));
+//        bounds.max = (m_fog.cpu->inverseVolumeTransform * glm::vec4(bounds.max, 1));
+//        auto lcenter = (m_fog.cpu->inverseVolumeTransform * glm::vec4(center, 1));
+//        spdlog::error("worldSpace bounds: [{}, {}], localSpace bounds: [{}, {}]", wBounds.min, wBounds.max, bounds.min, bounds.max);
+//        spdlog::error("worldSpace center: {}, localSpace center: {}", center, lcenter);
+//    }
 
     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -899,8 +899,8 @@ void VolumetricFog::endFrame() {
     m_scene.cpu->previousViewProjection = m_scene.cpu->viewProjection;
     m_scene.cpu->previousInverseViewProjection = m_scene.cpu->inverseViewProjection;
 
-    m_smoke->checkLoadState(m_bindLessDescriptor);
-    m_smoke->advanceFrame(device);
+//    m_smoke->checkLoadState(m_bindLessDescriptor);
+//    m_smoke->advanceFrame(device);
 }
 
 
