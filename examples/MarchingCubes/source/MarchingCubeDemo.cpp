@@ -61,18 +61,18 @@ VkCommandBuffer *MarchingCubeDemo::buildCommandBuffers(uint32_t imageIndex, uint
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, cellBuffer, &offset);
     vkCmdBindIndexBuffer(commandBuffer, cellIndices, 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.lines);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.lines.handle);
     camera->push(commandBuffer, pipelineLayout.lines);
     vkCmdDrawIndexed(commandBuffer, cellIndices.size/sizeof(uint32_t), 1, 0, 0, 0);
 
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.points);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.points.handle);
     camera->push(commandBuffer, pipelineLayout.points);
-    vkCmdPushConstants(commandBuffer, pipelineLayout.points, VK_SHADER_STAGE_VERTEX_BIT, sizeof(Camera), sizeof(uint32_t), &config);
+    vkCmdPushConstants(commandBuffer, pipelineLayout.points.handle, VK_SHADER_STAGE_VERTEX_BIT, sizeof(Camera), sizeof(uint32_t), &config);
     vkCmdDraw(commandBuffer, cellBuffer.size/sizeof(glm::vec3), 1, 0, 0);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangles);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout.triangles, 0, 1, &sdfDescriptorSet, 0, nullptr);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangles.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout.triangles.handle, 0, 1, &sdfDescriptorSet, 0, nullptr);
     camera->push(commandBuffer, pipelineLayout.triangles, VK_SHADER_STAGE_VERTEX_BIT);
 
 //    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffer, &offset);
@@ -146,8 +146,9 @@ void MarchingCubeDemo::createCellBuffer() {
 }
 
 void MarchingCubeDemo::createPipeline() {
-    auto cellVertModule = VulkanShaderModule{"../../data/shaders/marching_cubes/cell.vert.spv", device};
-    auto cellFragModule = VulkanShaderModule{"../../data/shaders/marching_cubes/cell.frag.spv", device};
+    
+    auto cellVertModule = device.createShaderModule("../../data/shaders/marching_cubes/cell.vert.spv");
+    auto cellFragModule = device.createShaderModule("../../data/shaders/marching_cubes/cell.frag.spv");
 
     auto shaderStages = initializers::vertexShaderStages({
         { cellVertModule, VK_SHADER_STAGE_VERTEX_BIT },
@@ -199,14 +200,14 @@ void MarchingCubeDemo::createPipeline() {
     createInfo.pMultisampleState = &multisampleState;
     createInfo.pDepthStencilState = &depthStencilState;
     createInfo.pColorBlendState = &colorBlendState;
-    createInfo.layout = pipelineLayout.lines;
+    createInfo.layout = pipelineLayout.lines.handle;
     createInfo.renderPass = renderPass;
     createInfo.subpass = 0;
 
     pipelines.lines = device.createGraphicsPipeline(createInfo);
 
-    auto pointVertModule = VulkanShaderModule{"../../data/shaders/marching_cubes/point.vert.spv", device};
-    auto pointfragtModule = VulkanShaderModule{"../../data/shaders/marching_cubes/point.frag.spv", device};
+    auto pointVertModule = device.createShaderModule("../../data/shaders/marching_cubes/point.vert.spv");
+    auto pointfragtModule = device.createShaderModule("../../data/shaders/marching_cubes/point.frag.spv");
 
     auto pointStages = initializers::vertexShaderStages(
             {
@@ -222,14 +223,14 @@ void MarchingCubeDemo::createPipeline() {
     createInfo.stageCount = COUNT(pointStages);
     createInfo.pStages = pointStages.data();
     createInfo.pInputAssemblyState = &inputAssemblyState;
-    createInfo.layout = pipelineLayout.points;
+    createInfo.layout = pipelineLayout.points.handle;
     createInfo.basePipelineIndex = -1;
-    createInfo.basePipelineHandle = pipelines.lines;
+    createInfo.basePipelineHandle = pipelines.lines.handle;
 
     pipelines.points = device.createGraphicsPipeline(createInfo);
 
-    auto triVertModule = VulkanShaderModule{"../../data/shaders/marching_cubes/triangle.vert.spv", device};
-    auto triFragModule = VulkanShaderModule{"../../data/shaders/marching_cubes/triangle.frag.spv", device};
+    auto triVertModule = device.createShaderModule("../../data/shaders/marching_cubes/triangle.vert.spv");
+    auto triFragModule = device.createShaderModule("../../data/shaders/marching_cubes/triangle.frag.spv");
 
     auto triStages = initializers::vertexShaderStages({
                          { triVertModule, VK_SHADER_STAGE_VERTEX_BIT },
@@ -254,20 +255,20 @@ void MarchingCubeDemo::createPipeline() {
     createInfo.pVertexInputState = &vertexInputState;
     createInfo.pInputAssemblyState = &inputAssemblyState;
     createInfo.pRasterizationState = &rasterizationState;
-    createInfo.layout = pipelineLayout.triangles;
+    createInfo.layout = pipelineLayout.triangles.handle;
     createInfo.basePipelineIndex = -1;
-    createInfo.basePipelineHandle = pipelines.lines;
+    createInfo.basePipelineHandle = pipelines.lines.handle;
 
     pipelines.triangles = device.createGraphicsPipeline(createInfo);
 
-    auto sdfComputeModule = VulkanShaderModule{"../../data/shaders/marching_cubes/sdf.comp.spv", device};
+    auto sdfComputeModule = device.createShaderModule("../../data/shaders/marching_cubes/sdf.comp.spv");
     auto stage = initializers::shaderStage({ sdfComputeModule, VK_SHADER_STAGE_COMPUTE_BIT});
 
     pipelineLayout.sdf = device.createPipelineLayout({computeDescriptorSetLayout});
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = pipelineLayout.sdf;
+    computeCreateInfo.layout = pipelineLayout.sdf.handle;
 
     pipelines.sdf = device.createComputePipeline(computeCreateInfo);
 }
@@ -430,13 +431,13 @@ void MarchingCubeDemo::createDescriptorSet() {
    auto writes = initializers::writeDescriptorSets<4>();
    
    VkDescriptorImageInfo imageInfo;
-   imageInfo.imageView = sdf.imageView;
-   imageInfo.sampler = sdf.sampler;
+   imageInfo.imageView = sdf.imageView.handle;
+   imageInfo.sampler = sdf.sampler.handle;
    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     VkDescriptorImageInfo normalInfo;
-    normalInfo.imageView = normalMap.imageView;
-    normalInfo.sampler = normalMap.sampler;
+    normalInfo.imageView = normalMap.imageView.handle;
+    normalInfo.sampler = normalMap.sampler.handle;
     normalInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
    
    writes[0].dstSet = sdfDescriptorSet;
@@ -468,8 +469,8 @@ void MarchingCubeDemo::createDescriptorSet() {
 
 void MarchingCubeDemo::createSdf() {
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines.sdf);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout.sdf, 0, 1, &computeDescriptorSet, 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines.sdf.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout.sdf.handle, 0, 1, &computeDescriptorSet, 0, VK_NULL_HANDLE);
         vkCmdDispatch(commandBuffer, sdfSize/8 , sdfSize/8 , sdfSize/8 );
     });
 
@@ -575,14 +576,14 @@ void MarchingCubeDemo::initMarchingCubeBuffers() {
 }
 
 void MarchingCubeDemo::createMarchingCubePipeline() {
-    auto marchingCubeModule = VulkanShaderModule{"../../data/shaders/marching_cubes/march.comp.spv", device};
+    auto marchingCubeModule = device.createShaderModule("../../data/shaders/marching_cubes/march.comp.spv");
     auto stage = initializers::shaderStage({ marchingCubeModule, VK_SHADER_STAGE_COMPUTE_BIT});
 
     marchingCube.layout = device.createPipelineLayout({sdfDescriptorSetLayout, marchingCube.descriptorSetLayout}, { { VK_SHADER_STAGE_COMPUTE_BIT, sizeof(Camera), sizeof(decltype(marchingCube.constants)) } });
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = marchingCube.layout;
+    computeCreateInfo.layout = marchingCube.layout.handle;
 
     marchingCube.pipeline = device.createComputePipeline(computeCreateInfo);
 }
@@ -596,9 +597,9 @@ uint32_t MarchingCubeDemo::march(int pass) {
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         marchingCube.constants.pass = pass;
         marchingCube.constants.frameCount = frameCount;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, marchingCube.pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, marchingCube.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdPushConstants(commandBuffer, marchingCube.layout, VK_SHADER_STAGE_COMPUTE_BIT, sizeof(Camera), sizeof(marchingCube.constants), &marchingCube.constants);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, marchingCube.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, marchingCube.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdPushConstants(commandBuffer, marchingCube.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, sizeof(Camera), sizeof(marchingCube.constants), &marchingCube.constants);
         vkCmdDispatch(commandBuffer, numGrids, numGrids, numGrids);
     });
     uint32_t numVertex = 0;
