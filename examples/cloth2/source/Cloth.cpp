@@ -40,7 +40,7 @@ void Cloth::bindVertexBuffers(VkCommandBuffer commandBuffer) {
 void Cloth::loadMaterial() {
     uint32_t levelCount  = 11;
 
-    _materials.resize(3);
+    _materials.resize(4);
     std::vector<std::string> colors {
             R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_COL_1.jpg)",
             R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric002_COL_2.jpg)",
@@ -59,10 +59,13 @@ void Cloth::loadMaterial() {
     _materials[0].descriptorSet = _materialSets[0];
     addMaterial(&_materials[0]);
 
-    colors = { R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_COL.png)" };
+    colors = {
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_COL.png)",
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_COL.png)"
+    };
     textures::fromFile(*_device, _materials[1].albedo, colors, false, VK_FORMAT_R8G8B8A8_SRGB, levelCount);
     textures::fromFile(*_device, _materials[1].normal, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_NRM.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
-    textures::fromFile(*_device, _materials[1].metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_METALNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM);
+    textures::fromFile(*_device, _materials[1].metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Dielectric.png)", false, VK_FORMAT_R8G8B8A8_UNORM);
     textures::fromFile(*_device, _materials[1].roughness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_ROUGHNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
     textures::fromFile(*_device, _materials[1].ambientOcclusion, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric001_AO.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
 
@@ -73,7 +76,10 @@ void Cloth::loadMaterial() {
     _materials[1].descriptorSet = _materialSets[1];
     addMaterial(&_materials[1]);
 
-    colors = { R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_COL.png)" };
+    colors = {
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_COL.png)",
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_COL.png)"
+    };
     textures::fromFile(*_device, _materials[2].albedo, colors, false, VK_FORMAT_R8G8B8A8_SRGB, levelCount);
     textures::fromFile(*_device, _materials[2].normal, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_NRM.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
     textures::fromFile(*_device, _materials[2].metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric003_METALNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM);
@@ -86,6 +92,23 @@ void Cloth::loadMaterial() {
     textures::generateLOD(*_device, _materials[2].ambientOcclusion, levelCount);
     _materials[2].descriptorSet = _materialSets[2];
     addMaterial(&_materials[2]);
+
+    colors = {
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric004_COL.png)",
+            R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric004_COL.png)"
+            };
+    textures::fromFile(*_device, _materials[3].albedo, colors, false, VK_FORMAT_R8G8B8A8_SRGB, levelCount);
+    textures::fromFile(*_device, _materials[3].normal, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric004_NRM.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[3].metalness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Dielectric.png)", false, VK_FORMAT_R8G8B8A8_UNORM);
+    textures::fromFile(*_device, _materials[3].roughness, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric004_ROUGHNESS.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+    textures::fromFile(*_device, _materials[3].ambientOcclusion, R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\data\Fabric004_AO.png)", false, VK_FORMAT_R8G8B8A8_UNORM, levelCount);
+
+    textures::generateLOD(*_device, _materials[3].albedo, levelCount, colors.size());
+    textures::generateLOD(*_device, _materials[3].normal, levelCount);
+    textures::generateLOD(*_device, _materials[3].roughness, levelCount);
+    textures::generateLOD(*_device, _materials[3].ambientOcclusion, levelCount);
+    _materials[3].descriptorSet = _materialSets[3];
+    addMaterial(&_materials[3]);
 }
 
 void Cloth::addMaterial(Material *material) {

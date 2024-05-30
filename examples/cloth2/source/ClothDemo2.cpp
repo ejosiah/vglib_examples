@@ -5,12 +5,12 @@
 #include "VerletIntegrator.hpp"
 
 ClothDemo2::ClothDemo2(const Settings& settings) : VulkanBaseApp("Cloth", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/cloth2");
-    fileManager.addSearchPathFront("../../examples/cloth2/data");
-    fileManager.addSearchPathFront("../../examples/cloth2/spv");
-    fileManager.addSearchPathFront("../../examples/cloth2/models");
-    fileManager.addSearchPathFront("../../examples/cloth2/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/cloth2");
+    fileManager().addSearchPathFront("../../examples/cloth2/data");
+    fileManager().addSearchPathFront("../../examples/cloth2/spv");
+    fileManager().addSearchPathFront("../../examples/cloth2/models");
+    fileManager().addSearchPathFront("../../examples/cloth2/textures");
 }
 
 void ClothDemo2::initApp() {
@@ -71,7 +71,7 @@ void ClothDemo2::loadModel() {
 }
 
 void ClothDemo2::createCloth() {
-    auto materialSets = descriptorPool.allocate( { materialSetLayout, materialSetLayout, materialSetLayout });
+    auto materialSets = descriptorPool.allocate( { materialSetLayout, materialSetLayout, materialSetLayout, materialSetLayout });
     cloth = std::make_shared<Cloth>( device, materialSets );
     cloth->init();
 }
@@ -459,7 +459,7 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::Text("Cloth:");
     ImGui::Indent(16);
-    static std::array<const char*, 3> matLabel{"Chenille Polyester Upholstery", "Denim", "Bengaline"};
+    static std::array<const char*, 4> matLabel{"Chenille Polyester Upholstery", "Denim", "Bengaline", "Inca Stripped"};
     ImGui::Combo("material", &materialId, matLabel.data(), matLabel.size());
 
     if(materialId == 0) {
@@ -579,7 +579,7 @@ void ClothDemo2::onPause() {
 
 void ClothDemo2::createGeometry() {
     geometry = std::make_shared<Geometry>();
-    geometry->initialize(device, fileManager);
+    geometry->initialize(device);
     collider = static_cast<Collider>(geometry->type());
 }
 

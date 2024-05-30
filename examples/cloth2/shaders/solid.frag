@@ -7,7 +7,7 @@ layout(location = 0) in struct {
     vec3 worldPos;
     vec3 viewPos;
     vec3 normal;
-    vec3 tanget;
+    vec3 tangent;
     vec3 bitangent;
     vec2 uv;
 } fs_in;
