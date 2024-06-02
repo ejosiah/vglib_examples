@@ -68,6 +68,8 @@ protected:
 
     void fragmentParallelVoxelization(VkCommandBuffer commandBuffer);
 
+    static glm::mat4 fpMatrix(glm::ivec3 voxelDim);
+
     void generateVoxelTransforms(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
@@ -126,7 +128,7 @@ protected:
         VulkanBuffer transforms;
         VoxelData* data;
         VulkanBuffer dataBuffer;
-        uint32_t size{128};
+        uint32_t size{256};
     } voxels;
 
 

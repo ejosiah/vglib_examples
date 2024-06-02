@@ -9,7 +9,7 @@
 
 #define THIN 0 	//6-separating
 #define FAT  1	//26-separating
-layout(constant_id = 0) const int THICKNESS = 0;
+layout(constant_id = 0) const int THICKNESS = FAT;
 
 layout(set = 0, binding = 0, r32ui) uniform uimage3D Voxels;
 

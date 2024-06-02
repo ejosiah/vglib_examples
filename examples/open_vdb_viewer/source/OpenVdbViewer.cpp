@@ -13,12 +13,12 @@
 #include <future>
 
 OpenVdbViewer::OpenVdbViewer(const Settings& settings) : VulkanBaseApp("Open Vdb viewer", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/open_vdb_viewer");
-    fileManager.addSearchPathFront("../../examples/open_vdb_viewer/data");
-    fileManager.addSearchPathFront("../../examples/open_vdb_viewer/spv");
-    fileManager.addSearchPathFront("../../examples/open_vdb_viewer/models");
-    fileManager.addSearchPathFront("../../examples/open_vdb_viewer/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/open_vdb_viewer");
+    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/data");
+    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/spv");
+    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/models");
+    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/textures");
 
     static VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT feature{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT};
     feature.mutableDescriptorType = VK_TRUE;
@@ -46,7 +46,7 @@ void OpenVdbViewer::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
-    blur = std::make_unique<Blur>(&device, &descriptorPool, &fileManager, width, height);
+    blur = std::make_unique<Blur>(&device, &descriptorPool, &fileManager(), width, height);
 
 }
 

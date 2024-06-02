@@ -6,7 +6,7 @@
 
 #define THIN 0	//6-separating
 #define FAT  1	//26-separating
-layout(constant_id = 0) const int THICKNESS = 0;
+layout(constant_id = 0) const int THICKNESS = FAT;
 
 
 #define AFTER             0

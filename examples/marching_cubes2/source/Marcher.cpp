@@ -1,0 +1,183 @@
+#include "Marcher.hpp"
+#include "MarchingCubeLuts.hpp"
+#include "AppContext.hpp"
+#include <spdlog/spdlog.h>
+#include "Vertex.h"
+
+Marcher::Marcher(Voxels *voxels, float minGridSize)
+: ComputePipelines(&AppContext::device())
+, _voxels(voxels)
+, _minGridSize(minGridSize)
+, _constants{
+    .bMin = voxels->bounds.min,
+    .bMax = voxels->bounds.max,
+}
+{}
+
+void Marcher::init() {
+    initBuffers();
+    createDescriptorSetLayouts();
+    updateDescriptorSets();
+    createPipelines();
+}
+
+VulkanBuffer Marcher::generateMesh(float gridSize) {
+    device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        generateMesh(commandBuffer, gridSize);
+    });
+    size_t numVertices = *reinterpret_cast<uint32_t*>(_vertexCount.map());
+    _vertexCount.unmap();
+
+    spdlog::info("generated {} vertices", numVertices);
+    VulkanBuffer vertexStagingBuffer = device->createStagingBuffer(numVertices * sizeof(glm::vec4));
+    VulkanBuffer normalStagingBuffer = device->createStagingBuffer(numVertices * sizeof(glm::vec4));
+
+    device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        VkBufferCopy region{0, 0, vertexStagingBuffer.size};
+        vkCmdCopyBuffer(commandBuffer, _vertices, vertexStagingBuffer, 1, &region);
+        vkCmdCopyBuffer(commandBuffer, _vertices, normalStagingBuffer, 1, &region);
+    });
+
+    std::vector<Vertex> vertices{};
+    vertices.reserve(numVertices);
+
+    std::span<glm::vec4> vs = { reinterpret_cast<glm::vec4*>(vertexStagingBuffer.map()), numVertices };
+    std::span<glm::vec4> ns = { reinterpret_cast<glm::vec4*>(normalStagingBuffer.map()), numVertices };
+
+    for(int i = 0; i < numVertices; ++i){
+        Vertex v{};
+        v.color = {1, 1, 0, 1};
+        v.position = glm::vec4{ vs[i].xyz(), 1 };
+        v.normal = ns[i].xyz();
+        vertices.push_back(v);
+    }
+
+    return device->createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+}
+
+void Marcher::generateMesh(VkCommandBuffer commandBuffer, float gridSize) {
+    _constants.gridSize = gridSize;
+
+    static std::array<VkDescriptorSet, 3> sets{};
+    sets[0] = _voxels->descriptorSet;
+    sets[1] = _lutDescriptorSet;
+    sets[2] = _vertexDescriptorSet;
+
+    glm::uvec3 gc{ ((_voxels->bounds.max - _voxels->bounds.min) + _minGridSize)/_minGridSize };
+    gc /= 8;
+
+    vkCmdFillBuffer(commandBuffer, _vertexCount, 0, sizeof(uint32_t), 0);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("marching_cubes"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("marching_cubes"), 0, sets.size(), sets.data(), 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("marching_cubes"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(_constants), &_constants);
+    vkCmdDispatch(commandBuffer, gc.x, gc.y,  gc.z);
+
+}
+
+
+std::vector<PipelineMetaData> Marcher::pipelineMetaData() {
+    return {
+            {
+                "marching_cubes",
+                AppContext::resource("marching_cubes.comp.spv"),
+                {&_voxels->descriptorSetLayout, &_lutDescriptorSetLayout, &_vertexDescriptorSetLayout},
+                {{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(_constants)}}
+            }
+    };
+}
+
+void Marcher::initBuffers() {
+    VkDeviceSize size = computeVertxBufferSize();
+    _vertices = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size);
+    _normals = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size);
+    _vertexCount = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t));
+    _edgeLUT = device->createDeviceLocalBuffer(EdgeTable.data(), BYTE_SIZE(EdgeTable), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    _triangleLUT = device->createDeviceLocalBuffer(TriangleTable.data(), BYTE_SIZE(TriangleTable), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+}
+
+void Marcher::createDescriptorSetLayouts() {
+    _lutDescriptorSetLayout =
+        device->descriptorSetLayoutBuilder()
+            .name("mc_lut_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+        .createLayout();
+
+    _vertexDescriptorSetLayout =
+        device->descriptorSetLayoutBuilder()
+            .name("mc_vertex_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+        .createLayout();
+
+}
+
+void Marcher::updateDescriptorSets() {
+    auto sets =  AppContext::allocateDescriptorSets({ _lutDescriptorSetLayout, _vertexDescriptorSetLayout });
+    _lutDescriptorSet = sets[0];
+    _vertexDescriptorSet = sets[1];
+    
+    auto writes = initializers::writeDescriptorSets<5>();
+    
+    writes[0].dstSet = _lutDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    VkDescriptorBufferInfo edgeInfo{ _edgeLUT, 0, VK_WHOLE_SIZE };
+    writes[0].pBufferInfo = &edgeInfo;
+
+    writes[1].dstSet = _lutDescriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo triInfo{ _triangleLUT, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &triInfo;
+
+    writes[2].dstSet = _vertexDescriptorSet;
+    writes[2].dstBinding = 0;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].descriptorCount = 1;
+    VkDescriptorBufferInfo vertexInfo{ _vertices, 0, VK_WHOLE_SIZE };
+    writes[2].pBufferInfo = &vertexInfo;
+
+    writes[3].dstSet = _vertexDescriptorSet;
+    writes[3].dstBinding = 1;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[3].descriptorCount = 1;
+    VkDescriptorBufferInfo normalInfo{ _normals, 0, VK_WHOLE_SIZE };
+    writes[3].pBufferInfo = &normalInfo;
+
+    writes[4].dstSet = _vertexDescriptorSet;
+    writes[4].dstBinding = 2;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
+    VkDescriptorBufferInfo vCountInfo{ _vertexCount, 0, VK_WHOLE_SIZE };
+    writes[4].pBufferInfo = &vCountInfo;
+
+    device->updateDescriptorSets(writes);
+
+}
+
+VkDeviceSize Marcher::computeVertxBufferSize() const {
+    glm::ivec3 dim{ (_voxels->bounds.max - _voxels->bounds.min)/_minGridSize };
+    VkDeviceSize size = dim.x * dim.y * dim.z * sizeof(glm::vec4) * MaxTriangleVertices;
+
+    return size;
+}
+

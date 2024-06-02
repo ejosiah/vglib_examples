@@ -381,7 +381,7 @@ void Voxelization::renderUI(VkCommandBuffer commandBuffer) {
 }
 
 void Voxelization::voxelize(VkCommandBuffer commandBuffer) {
-    triangleParallelVoxelization(commandBuffer);
+    fragmentParallelVoxelization(commandBuffer);
 }
 
 void Voxelization::triangleParallelVoxelization(VkCommandBuffer commandBuffer) {
@@ -400,7 +400,7 @@ void Voxelization::fragmentParallelVoxelization(VkCommandBuffer commandBuffer) {
     static std::array<glm::mat4, 2> pushConstants{};
     VkDeviceSize offset = 0;
     pushConstants[0] = voxels.transform;
-    pushConstants[1] = vkn::ortho(0.f, float(voxels.size), 0.f, float(voxels.size), 0, float(voxels.size));
+    pushConstants[1] = fpMatrix(glm::ivec3(voxels.size));
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.fragment.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.fragment.layout.handle, 0, 1, &voxels.descriptorSet, 0, VK_NULL_HANDLE);
@@ -506,6 +506,28 @@ void Voxelization::endFrame() {
     }
 }
 
+glm::mat4 Voxelization::fpMatrix(glm::ivec3 voxelDim) {
+    float l = 0.0f; //left
+    float b = 0.0f; //bottom
+    float n = 0.0f; //near
+
+    auto r = (float)voxelDim.x; //right
+    auto t = (float)voxelDim.y; //top
+    auto f = (float)voxelDim.z; //far
+
+    float inv_dx = 1.0f / (r-l);
+    float inv_dy = 1.0f / (t-b);
+    float inv_dz = 1.0f / (f-n);
+
+    glm::mat4 matrix{
+            2*inv_dx,        0,               0,             0,
+            0,               2*inv_dy,        0,             0,
+            0,               0,               inv_dz,        0,
+            -1*(r+l)*inv_dx, -1*(t+b)*inv_dy, 0,             1
+    };
+
+    return matrix;
+}
 
 int main(){
     try{

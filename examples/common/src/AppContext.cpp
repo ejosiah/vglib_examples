@@ -58,7 +58,7 @@ VulkanDescriptorSetLayout &AppContext::instanceSetLayout() {
 
 
 VkDescriptorSet AppContext::allocateInstanceDescriptorSet() {
-    return instance._descriptorPool->allocate( { instance._instanceSetLayout  }).front();;
+    return instance._descriptorPool->allocate( { instance._instanceSetLayout  }).front();
 }
 
 void AppContext::renderClipSpaceQuad(VkCommandBuffer commandBuffer) {
@@ -82,6 +82,18 @@ void AppContext::init0() {
 
 void AppContext::shutdown() {
     auto localInstance = std::move(instance);
+}
+
+std::vector<VkDescriptorSet> AppContext::allocateDescriptorSets(const std::vector<VulkanDescriptorSetLayout>& setLayouts) {
+    return  instance._descriptorPool->allocate(setLayouts);
+}
+
+std::string AppContext::resource(const std::string &name) {
+    return FileManager::resource(name);
+}
+
+void AppContext::createPipelines() {
+
 }
 
 AppContext AppContext::instance;
