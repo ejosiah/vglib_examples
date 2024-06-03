@@ -23,12 +23,12 @@ layout(set = 1, binding = 1, scalar) uniform TRI_TABLE{
     int triTable[4096];
 };
 
-layout(set = 2, binding = 0) buffer VERTICES {
-    vec4 vertices[];
+layout(set = 2, binding = 0, scalar) buffer VERTICES {
+    vec3 vertices[];
 };
 
-layout(set = 2, binding = 1) buffer NORMALS {
-    vec4 normals[];
+layout(set = 2, binding = 1, scalar) buffer NORMALS {
+    vec3 normals[];
 };
 
 
@@ -121,7 +121,7 @@ void main() {
     uint offset = atomicAdd(vertex_count, numVertices);
     for(int i = 0; i < numVertices; i++){
         vertices[i + offset].xyz = triangles[i];
-        normals[i + offset].xyz = triNormals[i];
+        normals[i + offset] = triNormals[i];
     }
 }
 

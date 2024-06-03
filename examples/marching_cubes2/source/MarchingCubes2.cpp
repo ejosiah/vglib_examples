@@ -110,9 +110,9 @@ void MarchingCubes2::loadVoxel() {
 }
 
 void MarchingCubes2::initMarcher() {
-    cubeMarcher = Marcher{ &voxels, 0.0184 };
+    cubeMarcher = Marcher{ &voxels, 0.0184/2};
     cubeMarcher.init();
-    result = cubeMarcher.generateMesh(0.0184);
+    result = cubeMarcher.generateMesh(0.0184/2);
 }
 
 void MarchingCubes2::createDescriptorPool() {
@@ -251,8 +251,10 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.pipeline.handle);
     AppContext::bindInstanceDescriptorSets(commandBuffer, pipelines.render.layout);
     camera->push(commandBuffer, pipelines.render.layout);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, result, &offset);
-    vkCmdDraw(commandBuffer, result.sizeAs<Vertex>(), 1, 0, 0);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, result.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, result.indices, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDraw(commandBuffer, result.vertices.sizeAs<Vertex>(), 1, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, result.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -298,6 +300,7 @@ int main(){
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.fillModeNonSolid = true;
+        settings.deviceExtensions.push_back("VK_EXT_scalar_block_layout");
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 
         auto app = MarchingCubes2{ settings };

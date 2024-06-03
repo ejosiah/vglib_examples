@@ -67,7 +67,7 @@ protected:
     std::unique_ptr<BaseCameraController> camera;
     Floor floor;
     Marcher cubeMarcher;
-    VulkanBuffer result;
+    Marcher::Mesh result;
 
     Voxels voxels;
 };

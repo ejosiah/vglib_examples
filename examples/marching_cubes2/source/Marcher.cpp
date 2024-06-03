@@ -3,6 +3,8 @@
 #include "AppContext.hpp"
 #include <spdlog/spdlog.h>
 #include "Vertex.h"
+#include <meshoptimizer.h>
+#include <unordered_map>
 
 Marcher::Marcher(Voxels *voxels, float minGridSize)
 : ComputePipelines(&AppContext::device())
@@ -21,7 +23,7 @@ void Marcher::init() {
     createPipelines();
 }
 
-VulkanBuffer Marcher::generateMesh(float gridSize) {
+Marcher::Mesh Marcher::generateMesh(float gridSize) {
     device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         generateMesh(commandBuffer, gridSize);
     });
@@ -35,14 +37,15 @@ VulkanBuffer Marcher::generateMesh(float gridSize) {
     device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         VkBufferCopy region{0, 0, vertexStagingBuffer.size};
         vkCmdCopyBuffer(commandBuffer, _vertices, vertexStagingBuffer, 1, &region);
-        vkCmdCopyBuffer(commandBuffer, _vertices, normalStagingBuffer, 1, &region);
+        vkCmdCopyBuffer(commandBuffer, _normals, normalStagingBuffer, 1, &region);
     });
 
     std::vector<Vertex> vertices{};
     vertices.reserve(numVertices);
 
-    std::span<glm::vec4> vs = { reinterpret_cast<glm::vec4*>(vertexStagingBuffer.map()), numVertices };
-    std::span<glm::vec4> ns = { reinterpret_cast<glm::vec4*>(normalStagingBuffer.map()), numVertices };
+    std::span<glm::vec3> vs = { reinterpret_cast<glm::vec3*>(vertexStagingBuffer.map()), numVertices };
+    std::span<glm::vec3> ns = { reinterpret_cast<glm::vec3*>(normalStagingBuffer.map()), numVertices };
+
 
     for(int i = 0; i < numVertices; ++i){
         Vertex v{};
@@ -52,7 +55,12 @@ VulkanBuffer Marcher::generateMesh(float gridSize) {
         vertices.push_back(v);
     }
 
-    return device->createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    auto [indices, newVertices] = generateIndices(vertices, gridSize * 0.25);
+
+    return  {
+              .vertices =  device->createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
+              .indices = device->createDeviceLocalBuffer(indices.data(), BYTE_SIZE(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
+            };
 }
 
 void Marcher::generateMesh(VkCommandBuffer commandBuffer, float gridSize) {
@@ -87,7 +95,7 @@ std::vector<PipelineMetaData> Marcher::pipelineMetaData() {
 }
 
 void Marcher::initBuffers() {
-    VkDeviceSize size = computeVertxBufferSize();
+    VkDeviceSize size = (50 << 20); // 50 mb
     _vertices = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size);
     _normals = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size);
     _vertexCount = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t));
@@ -176,8 +184,79 @@ void Marcher::updateDescriptorSets() {
 
 VkDeviceSize Marcher::computeVertxBufferSize() const {
     glm::ivec3 dim{ (_voxels->bounds.max - _voxels->bounds.min)/_minGridSize };
-    VkDeviceSize size = dim.x * dim.y * dim.z * sizeof(glm::vec4) * MaxTriangleVertices;
+    VkDeviceSize size = dim.x * dim.y * dim.z * sizeof(glm::vec3) * MaxTriangleVertices;
 
     return size;
+}
+
+struct IndexedVertex{
+    glm::vec3 position;
+    uint32_t oldIndex;
+    uint32_t newIndex;
+};
+
+std::tuple<std::vector<uint32_t>, std::vector<Vertex>>
+Marcher::generateIndices(std::vector<Vertex> vertices, float threshold) {
+    std::vector<uint32_t> indices(vertices.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::vector<IndexedVertex> indexedVertices;
+    indexedVertices.reserve(vertices.size());
+    for(uint32_t i = 0; i < vertices.size(); ++i) {
+        indexedVertices.push_back({ vertices[i].position, i, i });
+    }
+
+    std::sort(indexedVertices.begin(), indexedVertices.end(), [&](const auto& va, const auto& vb) {
+       auto da = glm::distance(va.position, _voxels->bounds.min);
+       auto db = glm::distance(vb.position, _voxels->bounds.min);
+       return da < db;
+    });
+
+    for(auto i = 1u; i < indexedVertices.size(); ++i) {
+        auto& va = indexedVertices[i - 1];
+        auto& vb = indexedVertices[i];
+
+        if(glm::all(glm::epsilonEqual(va.position, vb.position, threshold))){
+            vb.newIndex = va.newIndex;
+        }
+    }
+
+//    int count = 0;
+//    glm::vec3 normal{0};
+//    for(auto i = 1; i < indexedVertices.size(); ++i) {
+//        auto va = indexedVertices[i - 1];
+//        auto vb = indexedVertices[i];
+//
+//        if(va.newIndex == vb.newIndex) {
+//            count++;
+//            normal += vertices[va.oldIndex].normal;
+//        }else {
+//            normal /= count;
+//            vertices[indexedVertices[i - count - 1].newIndex].normal = glm::normalize(normal);
+//            count = 0;
+//            normal = glm::vec3(0);
+//        }
+//    }
+
+//    std::sort(indexedVertices.begin(), indexedVertices.end(), [&](const auto& va, const auto& vb) {
+//        return va.oldIndex < vb.oldIndex;
+//    });
+
+    for(const auto& iv : indexedVertices) {
+        indices[iv.oldIndex] = iv.newIndex;
+    }
+
+    std::vector<Vertex> newVertices{};
+
+    std::set<uint32_t> visited;
+    for(const auto& iv : indexedVertices) {
+        if(visited.contains(iv.newIndex)) continue;
+        newVertices.push_back(vertices[iv.newIndex]);
+        visited.insert(iv.newIndex);
+    }
+
+    spdlog::info("{} vertices generated after indexing", newVertices.size());
+
+    return std::make_tuple(indices, newVertices);
 }
 
