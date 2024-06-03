@@ -38,7 +38,7 @@ layout(set = 2, binding = 2) buffer ATOMIC_COUNTERS{
 
 layout(push_constant) uniform Constants{
     vec3 bmin;
-    float gridSize;
+    float cubeSize;
 
     vec3 bmax;
     float isoLevel;
@@ -75,7 +75,7 @@ vec3 getVertex(vec3 center, int edgeIndex);
 vec3 voxelsDim = vec3(textureSize(Voxels, 0));
 
 void main() {
-    vec3 pos = bmin + (vec3(gl_GlobalInvocationID) + 0.5) * gridSize;
+    vec3 pos = bmin + (vec3(gl_GlobalInvocationID) + 0.5) * cubeSize;
 
     if(outOfBounds(pos)) return;
 
@@ -127,7 +127,7 @@ void main() {
 
 void initCubeVertices() {
     for(int i = 0; i < NUM_VERTICES; ++i) {
-        cube[i] = UnitCube[i] * gridSize;
+        cube[i] = UnitCube[i] * cubeSize;
     }
 }
 
