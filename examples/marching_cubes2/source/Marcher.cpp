@@ -58,7 +58,7 @@ Marcher::Mesh Marcher::generateMesh(float gridSize) {
     auto [indices, newVertices] = generateIndices(vertices, gridSize * 0.25);
 
     return  {
-              .vertices =  device->createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
+              .vertices =  device->createDeviceLocalBuffer(newVertices.data(), BYTE_SIZE(newVertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
               .indices = device->createDeviceLocalBuffer(indices.data(), BYTE_SIZE(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
             };
 }
@@ -221,27 +221,6 @@ Marcher::generateIndices(std::vector<Vertex> vertices, float threshold) {
         }
     }
 
-//    int count = 0;
-//    glm::vec3 normal{0};
-//    for(auto i = 1; i < indexedVertices.size(); ++i) {
-//        auto va = indexedVertices[i - 1];
-//        auto vb = indexedVertices[i];
-//
-//        if(va.newIndex == vb.newIndex) {
-//            count++;
-//            normal += vertices[va.oldIndex].normal;
-//        }else {
-//            normal /= count;
-//            vertices[indexedVertices[i - count - 1].newIndex].normal = glm::normalize(normal);
-//            count = 0;
-//            normal = glm::vec3(0);
-//        }
-//    }
-
-//    std::sort(indexedVertices.begin(), indexedVertices.end(), [&](const auto& va, const auto& vb) {
-//        return va.oldIndex < vb.oldIndex;
-//    });
-
     for(const auto& iv : indexedVertices) {
         indices[iv.oldIndex] = iv.newIndex;
     }
@@ -249,14 +228,22 @@ Marcher::generateIndices(std::vector<Vertex> vertices, float threshold) {
     std::vector<Vertex> newVertices{};
 
     std::set<uint32_t> visited;
-    for(const auto& iv : indexedVertices) {
-        if(visited.contains(iv.newIndex)) continue;
-        newVertices.push_back(vertices[iv.newIndex]);
-        visited.insert(iv.newIndex);
+    std::vector<uint32_t> newIndices;
+    std::unordered_map<uint32_t, uint32_t> indexMap{};
+
+    for(const auto& index : indices) {
+        if(indexMap.contains(index)){
+            newIndices.push_back(indexMap[index]);
+            continue;
+        }
+        newVertices.push_back(vertices[index]);
+        uint32_t nIndex = newVertices.size() - 1;
+        newIndices.push_back(nIndex);
+        indexMap[index] = nIndex;
     }
 
     spdlog::info("{} vertices generated after indexing", newVertices.size());
 
-    return std::make_tuple(indices, newVertices);
+    return std::make_tuple(newIndices, newVertices);
 }
 

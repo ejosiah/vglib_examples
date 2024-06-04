@@ -247,20 +247,24 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
 
 //    rayMarch(commandBuffer);
 
-    VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.pipeline.handle);
-    AppContext::bindInstanceDescriptorSets(commandBuffer, pipelines.render.layout);
-    camera->push(commandBuffer, pipelines.render.layout);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, result.vertices, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, result.indices, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDraw(commandBuffer, result.vertices.sizeAs<Vertex>(), 1, 0, 0);
-    vkCmdDrawIndexed(commandBuffer, result.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
+    renderMesh(commandBuffer);
+    renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
     return &commandBuffer;
+}
+
+void MarchingCubes2::renderMesh(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.pipeline.handle);
+    AppContext::bindInstanceDescriptorSets(commandBuffer, pipelines.render.layout);
+    camera->push(commandBuffer, pipelines.render.layout);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, result.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, result.indices, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, result.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
 }
 
 void MarchingCubes2::rayMarch(VkCommandBuffer commandBuffer) {
@@ -275,8 +279,36 @@ void MarchingCubes2::rayMarch(VkCommandBuffer commandBuffer) {
     AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
+void MarchingCubes2::renderUI(VkCommandBuffer commandBuffer) {
+
+    ImGui::Begin("Marching cubes");
+    ImGui::SetWindowSize({300, 200});
+
+    if(ImGui::CollapsingHeader("Shading", ImGuiTreeNodeFlags_DefaultOpen)){
+        int shading = 1;
+        ImGui::RadioButton("wireframe", &shading, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("Solid", &shading, 1);
+    }
+
+    if(ImGui::CollapsingHeader("Properties", ImGuiTreeNodeFlags_DefaultOpen)){
+        float cubeSizeMultiplier = 0.5;
+        ImGui::SliderFloat("Cube size", &cubeSizeMultiplier, 0.25, 4.0);
+
+        bool mergeDuplicateVertices = true;
+        ImGui::Checkbox("Merge duplicate vertices", &mergeDuplicateVertices);
+        ImGui::Text("%d vertices generated", result.vertices.sizeAs<Vertex>());
+    }
+
+    ImGui::End();
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+}
+
 void MarchingCubes2::update(float time) {
-    camera->update(time);
+    if(!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
     auto cam = camera->cam();
 }
 

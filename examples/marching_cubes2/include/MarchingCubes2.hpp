@@ -37,7 +37,11 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void renderMesh(VkCommandBuffer commandBuffer);
+
     void rayMarch(VkCommandBuffer commandBuffer);
+
+    void renderUI(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
