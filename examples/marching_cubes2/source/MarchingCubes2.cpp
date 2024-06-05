@@ -18,7 +18,7 @@ MarchingCubes2::MarchingCubes2(const Settings& settings) : VulkanBaseApp("Marchi
 void MarchingCubes2::initApp() {
     openvdb::initialize();
     createDescriptorPool();
-    AppContext::init(device, descriptorPool);
+    AppContext::init(device, descriptorPool, swapChain, renderPass);
     loadVoxel();
     initCamera();
     initFloor();
@@ -69,6 +69,7 @@ void MarchingCubes2::loadVoxel() {
     openvdb::Vec3d bMax = grid->indexToWorld(bounds.max());
     voxels.bounds.min = { bMin.x(), bMin.y(), bMin.z() };
     voxels.bounds.max = { bMax.x(), bMax.y(), bMax.z() };
+    voxels.voxelSize = grid->voxelSize().x();
 
     std::vector<float> data(dim.x() * dim.y() * dim.z(), grid->background());
 
@@ -110,9 +111,9 @@ void MarchingCubes2::loadVoxel() {
 }
 
 void MarchingCubes2::initMarcher() {
-    cubeMarcher = Marcher{ &voxels, 0.0184/2};
+    cubeMarcher = Marcher{ &voxels, voxels.voxelSize/2};
     cubeMarcher.init();
-    result = cubeMarcher.generateMesh(0.0184/2);
+    result = cubeMarcher.generateMesh(voxels.voxelSize * cubeSizeMultiplier);
 }
 
 void MarchingCubes2::createDescriptorPool() {
@@ -220,6 +221,9 @@ void MarchingCubes2::onSwapChainDispose() {
 void MarchingCubes2::onSwapChainRecreation() {
     updateDescriptorSets();
     createRenderPipeline();
+    AppContext::init(device, descriptorPool, swapChain, renderPass);
+    initFloor();
+    camera->perspective(swapChain.aspectRatio());
 }
 
 VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -247,7 +251,11 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
 
 //    rayMarch(commandBuffer);
 
-    renderMesh(commandBuffer);
+    if(shadingMode == 0){
+        renderMeshWireframe(commandBuffer);
+    }else {
+        renderMesh(commandBuffer);
+    }
     renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -258,13 +266,21 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
 }
 
 void MarchingCubes2::renderMesh(VkCommandBuffer commandBuffer) {
-    VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.render.pipeline.handle);
-    AppContext::bindInstanceDescriptorSets(commandBuffer, pipelines.render.layout);
-    camera->push(commandBuffer, pipelines.render.layout);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, result.vertices, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, result.indices, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(commandBuffer, result.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
+    AppContext::renderSolid(commandBuffer, *camera, [&]{
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, result.vertices, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, result.indices, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexedIndirect(commandBuffer, result.drawCmd, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+    });
+}
+
+void MarchingCubes2::renderMeshWireframe(VkCommandBuffer commandBuffer) {
+    AppContext::renderWireframe(commandBuffer, *camera, [&]{
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, result.vertices, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, result.indices, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexedIndirect(commandBuffer, result.drawCmd, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+    }, {1, 1, 0});
 }
 
 void MarchingCubes2::rayMarch(VkCommandBuffer commandBuffer) {
@@ -285,19 +301,17 @@ void MarchingCubes2::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SetWindowSize({300, 200});
 
     if(ImGui::CollapsingHeader("Shading", ImGuiTreeNodeFlags_DefaultOpen)){
-        int shading = 1;
-        ImGui::RadioButton("wireframe", &shading, 0);
+        ImGui::RadioButton("wireframe", &shadingMode, 0);
         ImGui::SameLine();
-        ImGui::RadioButton("Solid", &shading, 1);
+        ImGui::RadioButton("Solid", &shadingMode, 1);
     }
 
     if(ImGui::CollapsingHeader("Properties", ImGuiTreeNodeFlags_DefaultOpen)){
-        float cubeSizeMultiplier = 0.5;
         ImGui::SliderFloat("Cube size", &cubeSizeMultiplier, 0.25, 4.0);
 
         bool mergeDuplicateVertices = true;
         ImGui::Checkbox("Merge duplicate vertices", &mergeDuplicateVertices);
-        ImGui::Text("%d vertices generated", result.vertices.sizeAs<Vertex>());
+        ImGui::Text("%d vertices generated", *result.numVertices);
     }
 
     ImGui::End();
@@ -322,6 +336,16 @@ void MarchingCubes2::cleanup() {
 
 void MarchingCubes2::onPause() {
     VulkanBaseApp::onPause();
+}
+
+void MarchingCubes2::endFrame() {
+    if(!ImGui::IsAnyItemActive()){
+        static float prevCubeSizeMultiplier = cubeSizeMultiplier;
+        if(prevCubeSizeMultiplier != cubeSizeMultiplier) {
+            cubeMarcher.generateMesh(voxels.voxelSize * cubeSizeMultiplier);
+            prevCubeSizeMultiplier = cubeSizeMultiplier;
+        }
+    }
 }
 
 

@@ -10,6 +10,9 @@ public:
     struct Mesh {
         VulkanBuffer vertices;
         VulkanBuffer indices;
+        VulkanBuffer drawCmd;
+        VulkanBuffer vertexCount;
+        uint32_t* numVertices{};
     };
 
     Marcher() = default;
@@ -37,16 +40,11 @@ protected:
 
 private:
     Voxels* _voxels{};
-    VulkanBuffer _vertices;
-    VulkanBuffer _normals;
     VulkanBuffer _edgeLUT;
     VulkanBuffer _triangleLUT;
-    VulkanBuffer _vertexCount;
     float _minGridSize{};
 
-    struct {
-        VulkanBuffer vertices;
-    } _mesh;
+    Mesh _mesh;
 
     struct {
         glm::vec3 bMin{0};

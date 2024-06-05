@@ -30,3 +30,8 @@ may generate the same hash (this is known as hash collision), this will be resol
 The initial index generation will be based on the order of the generated vertices as the vertices are generated as a triangle triplet so I will initially have as many indexes are there are vertices.
 Before I merge vertices, each vertex is tagged with its old index and after merging I scan the index list and replace duplicate vertex indexes with the vertex index of the vertex at the head of the duplicate list.
 For the Area based vertex merging method, I use a distance check to make sure vertices with colliding hashes don't map to the same index
+
+# Demo
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=49RZ0w_6QTk
+" target="_blank"><img src="http://img.youtube.com/vi/49RZ0w_6QTk/0.jpg"
+alt="IMAGE ALT TEXT HERE" width="240" height="180" border="10" /></a>

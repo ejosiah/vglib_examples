@@ -5,6 +5,7 @@
 #include "Vertex.h"
 #include <meshoptimizer.h>
 #include <unordered_map>
+#include "Barrier.hpp"
 
 Marcher::Marcher(Voxels *voxels, float minGridSize)
 : ComputePipelines(&AppContext::device())
@@ -27,40 +28,41 @@ Marcher::Mesh Marcher::generateMesh(float gridSize) {
     device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         generateMesh(commandBuffer, gridSize);
     });
-    size_t numVertices = *reinterpret_cast<uint32_t*>(_vertexCount.map());
-    _vertexCount.unmap();
+//    VulkanBuffer vertexStagingBuffer = device->createStagingBuffer(numVertices * sizeof(glm::vec4));
+//    VulkanBuffer normalStagingBuffer = device->createStagingBuffer(numVertices * sizeof(glm::vec4));
+//
+//    device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+//        VkBufferCopy region{0, 0, vertexStagingBuffer.size};
+//        vkCmdCopyBuffer(commandBuffer, _vertices, vertexStagingBuffer, 1, &region);
+//        vkCmdCopyBuffer(commandBuffer, _normals, normalStagingBuffer, 1, &region);
+//    });
+//
+//    std::vector<Vertex> vertices{};
+//    vertices.reserve(numVertices);
+//
+//    std::span<glm::vec3> vs = { reinterpret_cast<glm::vec3*>(vertexStagingBuffer.map()), numVertices };
+//    std::span<glm::vec3> ns = { reinterpret_cast<glm::vec3*>(normalStagingBuffer.map()), numVertices };
+//
+//
+//    for(int i = 0; i < numVertices; ++i){
+//        Vertex v{};
+//        v.color = {1, 1, 0, 1};
+//        v.position = glm::vec4{ vs[i].xyz(), 1 };
+//        v.normal = ns[i].xyz();
+//        vertices.push_back(v);
+//    }
+//    std::vector<uint32_t> oindices(vertices.size());
+//    std::iota(oindices.begin(), oindices.end(), 0);
+//    auto [indices, newVertices] = generateIndices(vertices, gridSize * 0.25f);
 
-    spdlog::info("generated {} vertices", numVertices);
-    VulkanBuffer vertexStagingBuffer = device->createStagingBuffer(numVertices * sizeof(glm::vec4));
-    VulkanBuffer normalStagingBuffer = device->createStagingBuffer(numVertices * sizeof(glm::vec4));
+//    drawCmd->indexCount = oindices.size();
+//    drawCmd->instanceCount = 1;
+//    drawCmd->firstIndex = 0;
+//    drawCmd->vertexOffset = 0;
+//    drawCmd->firstInstance = 0;
+//    _drawCmd.unmap();
 
-    device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        VkBufferCopy region{0, 0, vertexStagingBuffer.size};
-        vkCmdCopyBuffer(commandBuffer, _vertices, vertexStagingBuffer, 1, &region);
-        vkCmdCopyBuffer(commandBuffer, _normals, normalStagingBuffer, 1, &region);
-    });
-
-    std::vector<Vertex> vertices{};
-    vertices.reserve(numVertices);
-
-    std::span<glm::vec3> vs = { reinterpret_cast<glm::vec3*>(vertexStagingBuffer.map()), numVertices };
-    std::span<glm::vec3> ns = { reinterpret_cast<glm::vec3*>(normalStagingBuffer.map()), numVertices };
-
-
-    for(int i = 0; i < numVertices; ++i){
-        Vertex v{};
-        v.color = {1, 1, 0, 1};
-        v.position = glm::vec4{ vs[i].xyz(), 1 };
-        v.normal = ns[i].xyz();
-        vertices.push_back(v);
-    }
-
-    auto [indices, newVertices] = generateIndices(vertices, gridSize * 0.25);
-
-    return  {
-              .vertices =  device->createDeviceLocalBuffer(newVertices.data(), BYTE_SIZE(newVertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
-              .indices = device->createDeviceLocalBuffer(indices.data(), BYTE_SIZE(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
-            };
+    return  _mesh;
 }
 
 void Marcher::generateMesh(VkCommandBuffer commandBuffer, float gridSize) {
@@ -73,8 +75,11 @@ void Marcher::generateMesh(VkCommandBuffer commandBuffer, float gridSize) {
 
     glm::uvec3 gc{ ((_voxels->bounds.max - _voxels->bounds.min) + _minGridSize)/_minGridSize };
     gc /= 8;
+    VkDrawIndexedIndirectCommand drawCmd{0, 1, 0, 0, 0};
 
-    vkCmdFillBuffer(commandBuffer, _vertexCount, 0, sizeof(uint32_t), 0);
+    vkCmdFillBuffer(commandBuffer, _mesh.vertexCount, 0, sizeof(uint32_t), 0);
+    vkCmdUpdateBuffer(commandBuffer, _mesh.drawCmd, 0, sizeof(drawCmd), &drawCmd);
+    Barrier::transferWriteToComputeWrite(commandBuffer, _mesh.drawCmd);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("marching_cubes"));
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("marching_cubes"), 0, sets.size(), sets.data(), 0, nullptr);
     vkCmdPushConstants(commandBuffer, layout("marching_cubes"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(_constants), &_constants);
@@ -95,12 +100,16 @@ std::vector<PipelineMetaData> Marcher::pipelineMetaData() {
 }
 
 void Marcher::initBuffers() {
-    VkDeviceSize size = (50 << 20); // 50 mb
-    _vertices = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size);
-    _normals = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size);
-    _vertexCount = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t));
+    VkDeviceSize size = (20 << 20); // 20 mb
+
     _edgeLUT = device->createDeviceLocalBuffer(EdgeTable.data(), BYTE_SIZE(EdgeTable), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     _triangleLUT = device->createDeviceLocalBuffer(TriangleTable.data(), BYTE_SIZE(TriangleTable), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
+    _mesh.vertices = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size * sizeof(Vertex));
+    _mesh.indices = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, size);
+    _mesh.drawCmd = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(VkDrawIndexedIndirectCommand));
+    _mesh.vertexCount = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t));
+    _mesh.numVertices = reinterpret_cast<uint32_t*>(_mesh.vertexCount.map());
 }
 
 void Marcher::createDescriptorSetLayouts() {
@@ -132,6 +141,10 @@ void Marcher::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
 
 }
@@ -141,7 +154,7 @@ void Marcher::updateDescriptorSets() {
     _lutDescriptorSet = sets[0];
     _vertexDescriptorSet = sets[1];
     
-    auto writes = initializers::writeDescriptorSets<5>();
+    auto writes = initializers::writeDescriptorSets<6>();
     
     writes[0].dstSet = _lutDescriptorSet;
     writes[0].dstBinding = 0;
@@ -161,22 +174,29 @@ void Marcher::updateDescriptorSets() {
     writes[2].dstBinding = 0;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[2].descriptorCount = 1;
-    VkDescriptorBufferInfo vertexInfo{ _vertices, 0, VK_WHOLE_SIZE };
-    writes[2].pBufferInfo = &vertexInfo;
+    VkDescriptorBufferInfo meshVertexInfo{ _mesh.vertices, 0, VK_WHOLE_SIZE };
+    writes[2].pBufferInfo = &meshVertexInfo;
 
     writes[3].dstSet = _vertexDescriptorSet;
     writes[3].dstBinding = 1;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[3].descriptorCount = 1;
-    VkDescriptorBufferInfo normalInfo{ _normals, 0, VK_WHOLE_SIZE };
-    writes[3].pBufferInfo = &normalInfo;
+    VkDescriptorBufferInfo meshIndexInfo{ _mesh.indices, 0, VK_WHOLE_SIZE };
+    writes[3].pBufferInfo = &meshIndexInfo;
 
     writes[4].dstSet = _vertexDescriptorSet;
     writes[4].dstBinding = 2;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 1;
-    VkDescriptorBufferInfo vCountInfo{ _vertexCount, 0, VK_WHOLE_SIZE };
-    writes[4].pBufferInfo = &vCountInfo;
+    VkDescriptorBufferInfo meshVertexCountInfo{ _mesh.vertexCount, 0, VK_WHOLE_SIZE };
+    writes[4].pBufferInfo = &meshVertexCountInfo;
+
+    writes[5].dstSet = _vertexDescriptorSet;
+    writes[5].dstBinding = 3;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[5].descriptorCount = 1;
+    VkDescriptorBufferInfo meshDrawInfo{ _mesh.drawCmd, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &meshDrawInfo;
 
     device->updateDescriptorSets(writes);
 
@@ -221,6 +241,7 @@ Marcher::generateIndices(std::vector<Vertex> vertices, float threshold) {
         }
     }
 
+    std::array<Vertex, 3> triangle{};
     for(const auto& iv : indexedVertices) {
         indices[iv.oldIndex] = iv.newIndex;
     }

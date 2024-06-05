@@ -5,6 +5,15 @@
 #define NUM_EDGES 12
 #define MAX_TRIANGLE_VERTICES 16
 
+struct Vertex {
+    vec4 position;
+    vec4 color;
+    vec3 normal;
+    vec3 tangent;
+    vec3 bitangent;
+    vec2 uv;
+};
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 layout(set = 0, binding = 0) uniform sampler3D Voxels;
@@ -23,18 +32,26 @@ layout(set = 1, binding = 1, scalar) uniform TRI_TABLE{
     int triTable[4096];
 };
 
-layout(set = 2, binding = 0, scalar) buffer VERTICES {
-    vec3 vertices[];
+
+layout(set = 2, binding = 0) buffer MESH_ATTRIBUTES {
+    Vertex mesh[];
 };
 
-layout(set = 2, binding = 1, scalar) buffer NORMALS {
-    vec3 normals[];
+layout(set = 2, binding = 1) buffer IndexBuffer {
+    uint indices[];
 };
-
 
 layout(set = 2, binding = 2) buffer ATOMIC_COUNTERS{
-    uint vertex_count;
+    uint vertexCount;
 };
+
+layout(set = 2, binding = 3, scalar) buffer IndirecDrawBuffer {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+} draw;
 
 layout(push_constant) uniform Constants{
     vec3 bmin;
@@ -118,10 +135,13 @@ void main() {
     }
 
 
-    uint offset = atomicAdd(vertex_count, numVertices);
+    uint offset = atomicAdd(draw.indexCount, numVertices);
+    atomicAdd(vertexCount, numVertices);
     for(int i = 0; i < numVertices; i++){
-        vertices[i + offset].xyz = triangles[i];
-        normals[i + offset] = triNormals[i];
+        mesh[i + offset].position = vec4(triangles[i], 1);
+        mesh[i + offset].normal = triNormals[i];
+        mesh[i + offset].color = vec4(1, 1, 0, 1);
+        indices[i + offset] = i + offset;
     }
 }
 

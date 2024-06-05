@@ -39,6 +39,8 @@ protected:
 
     void renderMesh(VkCommandBuffer commandBuffer);
 
+    void renderMeshWireframe(VkCommandBuffer commandBuffer);
+
     void rayMarch(VkCommandBuffer commandBuffer);
 
     void renderUI(VkCommandBuffer commandBuffer);
@@ -50,6 +52,8 @@ protected:
     void cleanup() override;
 
     void onPause() override;
+
+    void endFrame() override;
 
 protected:
     struct {
@@ -74,4 +78,6 @@ protected:
     Marcher::Mesh result;
 
     Voxels voxels;
+    int shadingMode{1};
+    float cubeSizeMultiplier{1};
 };
