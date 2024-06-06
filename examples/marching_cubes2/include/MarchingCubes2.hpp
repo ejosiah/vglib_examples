@@ -13,8 +13,6 @@ protected:
 
     void initCamera();
 
-    void initFloor();
-
     void loadVoxel();
 
     void initMarcher();
@@ -73,7 +71,6 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<BaseCameraController> camera;
-    Floor floor;
     Marcher cubeMarcher;
     Marcher::Mesh result;
 

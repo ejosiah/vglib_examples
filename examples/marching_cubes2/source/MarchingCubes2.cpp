@@ -21,7 +21,6 @@ void MarchingCubes2::initApp() {
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     loadVoxel();
     initCamera();
-    initFloor();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     initMarcher();
@@ -38,11 +37,6 @@ void MarchingCubes2::initCamera() {
     cameraSettings.horizontalFov = true;
     camera = std::make_unique<SpectatorCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     camera->lookAt({-5, 2, 3}, {0, 0, 0}, {0, 1, 0});
-}
-
-void MarchingCubes2::initFloor() {
-    floor = Floor{ device, *prototypes };
-    floor.init();
 }
 
 void MarchingCubes2::loadVoxel() {
@@ -222,7 +216,6 @@ void MarchingCubes2::onSwapChainRecreation() {
     updateDescriptorSets();
     createRenderPipeline();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
-    initFloor();
     camera->perspective(swapChain.aspectRatio());
 }
 
@@ -247,7 +240,7 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    floor.render(commandBuffer, *camera);
+    AppContext::renderFloor(commandBuffer, *camera);
 
 //    rayMarch(commandBuffer);
 
