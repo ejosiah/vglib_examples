@@ -2,14 +2,16 @@
 #include "FileManager.hpp"
 #include "Vertex.h"
 
-AppContext::AppContext(VulkanDevice &device, VulkanDescriptorPool& descriptorPool)
+AppContext::AppContext(VulkanDevice &device, VulkanDescriptorPool& descriptorPool, VulkanSwapChain& swapChain, VulkanRenderPass& renderPass)
 :_device{ &device}
 , _descriptorPool{ &descriptorPool}
+, _swapChain{ &swapChain }
+, _renderPass{ &renderPass }
 {}
 
 
-void AppContext::init(VulkanDevice &device, VulkanDescriptorPool &descriptorPool) {
-    instance = AppContext{ device, descriptorPool };
+void AppContext::init(VulkanDevice &device, VulkanDescriptorPool &descriptorPool, VulkanSwapChain& swapChain, VulkanRenderPass& renderPass) {
+    instance = AppContext{ device, descriptorPool, swapChain, renderPass};
     instance.init0();
 }
 
@@ -22,8 +24,8 @@ VulkanDescriptorPool& AppContext::descriptorPool() {
 }
 
 void AppContext::createDescriptorSets() {
-    instance._instanceSetLayout =
-        instance._device->descriptorSetLayoutBuilder()
+    _instanceSetLayout =
+        _device->descriptorSetLayoutBuilder()
             .name("default_instance_set_layout")
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
@@ -31,7 +33,7 @@ void AppContext::createDescriptorSets() {
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
 
-    instance._defaultInstanceSet = instance._descriptorPool->allocate( { instance._instanceSetLayout  }).front();
+    _defaultInstanceSet = _descriptorPool->allocate( { _instanceSetLayout  }).front();
 }
 
 void AppContext::updateDescriptorSets() {
@@ -44,7 +46,7 @@ void AppContext::updateDescriptorSets() {
     VkDescriptorBufferInfo instanceInfo{ instance._instanceTransforms, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &instanceInfo;
 
-    instance._device->updateDescriptorSets(writes);
+    _device->updateDescriptorSets(writes);
 }
 
 void AppContext::bindInstanceDescriptorSets(VkCommandBuffer commandBuffer, VulkanPipelineLayout& layout) {
@@ -70,7 +72,7 @@ void AppContext::renderClipSpaceQuad(VkCommandBuffer commandBuffer) {
 void AppContext::init0() {
     FileManager::instance().addSearchPath("../../examples/common/spv");
     FileManager::instance().addSearchPath("../../examples/common/data");
-
+    initPrototype();
     glm::mat4 model{1};
     _instanceTransforms = _device->createDeviceLocalBuffer(glm::value_ptr(model), sizeof(model), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     createDescriptorSets();
@@ -78,6 +80,12 @@ void AppContext::init0() {
 
     auto clipQuad = ClipSpace::Quad::positions;
     _clipSpaceBuffer  = _device->createDeviceLocalBuffer(clipQuad.data(), BYTE_SIZE(clipQuad), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createPipelines();
+    initFloor();
+}
+
+void AppContext::initPrototype() {
+    _prototype = std::make_unique<Prototypes>(*_device, *_swapChain, *_renderPass);
 }
 
 void AppContext::shutdown() {
@@ -93,7 +101,52 @@ std::string AppContext::resource(const std::string &name) {
 }
 
 void AppContext::createPipelines() {
+    _shading.solid.pipeline =
+        _prototype->cloneGraphicsPipeline()
+			.shaderStage()
+				.vertexShader(resource("solid.vert.spv"))
+                .fragmentShader(resource("solid.frag.spv"))
+            .inputAssemblyState()
+                .triangles()
+            .dynamicState()
+                .primitiveTopology()
+                .cullMode()
+            .layout()
+                .addDescriptorSetLayout(AppContext::instanceSetLayout())
+			.name("solid_render")
+			.build(_shading.solid.layout);
+			
+	_shading.wireframe.pipeline =
+        _prototype->cloneGraphicsPipeline()
+			.shaderStage()
+				.vertexShader(resource("wireframe.vert.spv"))
+				.fragmentShader(resource("wireframe.frag.spv"))
+			.inputAssemblyState()
+				.triangles()
+			.rasterizationState()
+				.cullNone()
+				.polygonModeLine()
+            .dynamicState()
+                .primitiveTopology()
+            .layout()
+                .addDescriptorSetLayout(AppContext::instanceSetLayout())
+                .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec3))
+			.name("wireframe")
+			.build(_shading.wireframe.layout);
 
+}
+
+void AppContext::onResize(VulkanSwapChain &swapChain, VulkanRenderPass &renderPass) {
+    instance.init0();
+}
+
+void AppContext::initFloor() {
+    _floor = Floor{ *_device, *_prototype };
+    _floor.init();
+}
+
+void AppContext::renderFloor(VkCommandBuffer commandBuffer, BaseCameraController &camera) {
+    instance._floor.render(commandBuffer, camera);
 }
 
 AppContext AppContext::instance;
