@@ -1,0 +1,28 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0) uniform sampler2D imgeTex;
+
+layout(set = 2, binding = 0) buffer Positions {
+    vec2 position[];
+};
+
+layout(set = 2, binding = 3) buffer Colors {
+    vec4 colors[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main() {
+    if(gid >= global.numObjects) return;
+
+    vec2 id = floor(position[gid]/global.spacing);
+    vec2 dim = floor((global.domain.upper - global.domain.lower)/global.spacing);
+
+    vec2 uv = (id + 0.5)/dim;
+    colors[gid].rgb = texture(imgeTex, uv).rgb;
+}

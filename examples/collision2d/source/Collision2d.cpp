@@ -7,15 +7,16 @@
 #include <fmt/color.h>
 
 Collision2d::Collision2d(const Settings& settings) : VulkanBaseApp("Collision Detection", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/collision2d");
-    fileManager.addSearchPathFront("../../examples/collision2d/data");
-    fileManager.addSearchPathFront("../../examples/collision2d/spv");
-    fileManager.addSearchPathFront("../../examples/collision2d/models");
-    fileManager.addSearchPathFront("../../examples/collision2d/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/collision2d");
+    fileManager().addSearchPathFront("../../examples/collision2d/data");
+    fileManager().addSearchPathFront("../../examples/collision2d/spv");
+    fileManager().addSearchPathFront("../../examples/collision2d/models");
+    fileManager().addSearchPathFront("../../examples/collision2d/textures");
 }
 
 void Collision2d::initApp() {
+    loadImage();
     initScratchBuffer();
     initObjects();
     initEmitters();
@@ -30,6 +31,10 @@ void Collision2d::initApp() {
     initGrid();
     initSort();
     runDebug();
+}
+
+void Collision2d::loadImage() {
+    textures::fromFile(device, imageTex, resource("forest-hill-base_grande.png"), true, VK_FORMAT_R8G8B8A8_SRGB);
 }
 
 void Collision2d::initEmitters() {
@@ -95,11 +100,15 @@ void Collision2d::initObjects() {
 
     uint32_t numParticle = objects.maxParticles;
 
-    std::vector<glm::vec4> colors(numParticle, glm::vec4(1, 0, 0, 1) );
+    auto colorMap = load(resource("color_map.dat"));
+
+    auto colors = std::span{ reinterpret_cast<glm::vec4*>(colorMap.data()), colorMap.size()/sizeof(glm::vec4)};
+
+//    std::vector<glm::vec4> colors(numParticle, glm::vec4(1, 0, 0, 1) );
     objects.position = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(glm::vec2));
     objects.velocity = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(glm::vec2));
     objects.radius = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(float));
-    objects.colors = device.createDeviceLocalBuffer(colors.data(), BYTE_SIZE(colors), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    objects.colors = device.createCpuVisibleBuffer(colors.data(), BYTE_SIZE(colors), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     objects.cellIds = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memoryUsage, sizeof(uint32_t) * numParticle * 4);
     prevCellIds = device.createBuffer( VK_BUFFER_USAGE_TRANSFER_DST_BIT, memoryUsage, sizeof(uint32_t) * numParticle* 4);
     objects.attributes = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memoryUsage, sizeof(Attribute) * numParticle * 4);
@@ -316,15 +325,27 @@ void Collision2d::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
+
+    imageDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .createLayout();
 }
 void Collision2d::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({globalSetLayout, objects.setLayout, stagingSetLayout, emitterSetLayout});
+    auto sets = descriptorPool.allocate({
+        globalSetLayout, objects.setLayout, stagingSetLayout, emitterSetLayout,
+        imageDescriptorSetLayout
+    });
     globalSet = sets[0];
     objects.descriptorSet = sets[1];
     stagingDescriptorSet = sets[2];
     emitterDescriptorSet = sets[3];
+    imageDescriptorSet = sets[4];
 
-    auto writes = initializers::writeDescriptorSets<16>();
+    auto writes = initializers::writeDescriptorSets<17>();
 
     writes[0].dstSet = globalSet;
     writes[0].dstBinding = 0;
@@ -440,6 +461,12 @@ void Collision2d::updateDescriptorSets(){
     VkDescriptorBufferInfo indicesInfo{ objects.indices, 0, VK_WHOLE_SIZE };
     writes[15].pBufferInfo = &indicesInfo;
 
+    writes[16].dstSet = imageDescriptorSet;
+    writes[16].dstBinding = 0;
+    writes[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[16].descriptorCount = 1;
+    VkDescriptorImageInfo imageInfo{ imageTex.sampler.handle, imageTex.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    writes[16].pImageInfo = &imageInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -579,6 +606,15 @@ void Collision2d::createComputePipeline() {
     compute.boundsCheck.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("bounds_check", compute.boundsCheck.pipeline.handle);
 
+
+    module = device.createShaderModule(resource("map_colors.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    computeCreateInfo.stage = stage;
+    compute.mapColor.layout = device.createPipelineLayout( { globalSetLayout, imageDescriptorSetLayout, objects.setLayout} );
+    computeCreateInfo.layout = compute.mapColor.layout.handle;
+    compute.mapColor.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("map_colors", compute.mapColor.pipeline.handle);
+
 }
 
 
@@ -621,7 +657,7 @@ VkCommandBuffer *Collision2d::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     renderObjects(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
-    if(!debugMode) {
+    if(!debugMode && startSim) {
         fixedUpdate([&] {
             Barrier::fragmentReadToComputeWrite(commandBuffer, { objects.position });
             emitParticles(commandBuffer);
@@ -1080,7 +1116,25 @@ void Collision2d::runDebug() {
 }
 
 void Collision2d::endFrame() {
-//    globals.cpu->frame++;
+    if(generateColorMap && fixedUpdate.frames() > 30000) {
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+           const std::array<VkDescriptorSet, 3> sets{ globalSet, imageDescriptorSet, objects.descriptorSet };
+           const uint gx = (globals.cpu->numObjects + 256)/256;
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.mapColor.pipeline.handle);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.mapColor.layout.handle, 0, sets.size(), sets.data(), 0, 0);
+            vkCmdDispatch(commandBuffer, gx, 1, 1);
+        });
+
+        auto colors = objects.colors.span<char>();
+
+        std::ofstream fout{"color_map.dat", std::ios::binary};
+        if(!fout.good()){
+            spdlog::error("unable to open color_map.dat for writing");
+        }
+        fout.write(colors.data(), colors.size());
+
+        generateColorMap = false;
+    }
 }
 
 int main(){
@@ -1088,7 +1142,7 @@ int main(){
 
         Settings settings;
         settings.width = 1024;
-        settings.height = 1024;
+        settings.height = 766;
         settings.depthTest = true;
         settings.enabledFeatures.geometryShader = true;
         settings.enableBindlessDescriptors = false;

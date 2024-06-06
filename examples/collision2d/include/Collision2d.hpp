@@ -102,6 +102,8 @@ protected:
 
     void initSort();
 
+    void loadImage();
+
     void createDescriptorPool();
 
     void createDescriptorSetLayouts();
@@ -192,6 +194,7 @@ protected:
         Pipeline emitter;
         Pipeline integrate;
         Pipeline boundsCheck;
+        Pipeline mapColor;
     } compute;
 
     struct  {
@@ -231,6 +234,10 @@ protected:
     VkDescriptorSet stagingDescriptorSet;
     VulkanBuffer updatesBuffer;
 
+    Texture imageTex;
+    VulkanDescriptorSetLayout imageDescriptorSetLayout;
+    VkDescriptorSet imageDescriptorSet{};
+
     struct {
         VulkanBuffer gpu;
         GlobalData* cpu{};
@@ -259,4 +266,5 @@ protected:
     RadixSort sort;
     PrefixSum prefixSum;
     Profiler profiler;
+    bool generateColorMap{};
 };
