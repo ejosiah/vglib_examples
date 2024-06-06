@@ -1,36 +1,14 @@
-"# Vulkan bootstrap g8 template
+# Broad-Phase Collision Detection
 
-# create a new project
-Run the command below from root project level
+## Description
 
-`g8 file://project_template.g8/ --name=project_name --classname=className --title="window title" --render=yes --compute=no --raytracing=no`
+A Vulkan implementation of the broad-phase collision detection algorithm described in [GPU Gems 3 - Chapter 32. Broad-Phase Collision Detection with CUDA](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-32-broad-phase-collision-detection-cuda)
 
-# installing giter8
+## Implementation Details
+TODO
 
-## windows installation
-first install coursier by running this on the command line:
+# Demo
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=58RMi6hUytc
+" target="_blank"><img src="http://img.youtube.com/vi/58RMi6hUytc/0.jpg"
+alt="IMAGE ALT TEXT HERE" width="240" height="180" border="10" /></a>
 
-`bitsadmin /transfer cs-cli https://git.io/coursier-cli-windows-exe "%cd%\cs.exe"`
-
-run `cs --help` to confirm that the installation was successful
-
-now install giter 8 by running this on the command line:
-
-`cs install giter8`
-
-## Linux & macOS
-first install coursier by running these on the command line:
-
-`curl -fLo cs https://git.io/coursier-cli-"$(uname | tr LD ld)"`
-
-`chmod +x cs`
-
-`rm cs`
-
-Alternatively on macOS if you have brew installed then you can install coursier by running this:
-
-`brew install coursier/formulas/coursier`
-
-now install giter 8 by running this on the command line:
-
-`cs install giter8`
