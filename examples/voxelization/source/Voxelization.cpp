@@ -16,7 +16,7 @@ Voxelization::Voxelization(const Settings& settings) : VulkanBaseApp("Computatin
 
 void Voxelization::initApp() {
     createDescriptorPool();
-    AppContext::init(device, descriptorPool);
+    AppContext::init(device, descriptorPool, swapChain, renderPass);
     initFloor();
     initCube();
     loadModel();
