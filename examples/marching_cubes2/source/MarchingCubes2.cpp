@@ -5,6 +5,7 @@
 #include "AppContext.hpp"
 #include <openvdb/openvdb.h>
 #include <openvdb/io/Stream.h>
+#include "Barrier.hpp"
 
 MarchingCubes2::MarchingCubes2(const Settings& settings) : VulkanBaseApp("Marching Cubes", settings) {
     fileManager().addSearchPathFront(".");
@@ -17,6 +18,7 @@ MarchingCubes2::MarchingCubes2(const Settings& settings) : VulkanBaseApp("Marchi
 
 void MarchingCubes2::initApp() {
     openvdb::initialize();
+    checkMeshShaderSupport();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     loadVoxel();
@@ -27,6 +29,15 @@ void MarchingCubes2::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+}
+
+void MarchingCubes2::checkMeshShaderSupport() {
+    VkPhysicalDeviceFeatures2 features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+    VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
+    features.pNext = &meshFeatures;
+
+    vkGetPhysicalDeviceFeatures2(device.physicalDevice, &features);
+    meshShaderSupported = meshFeatures.meshShader && meshFeatures.taskShader;
 }
 
 void MarchingCubes2::initCamera() {
@@ -102,6 +113,9 @@ void MarchingCubes2::loadVoxel() {
     voxels.dataBuffer = device.createCpuVisibleBuffer(&voxelData, sizeof(voxelData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     voxels.data = reinterpret_cast<VoxelData*>(voxels.dataBuffer.map());
 
+    pipelines.cubeMarcher.constants.bmin = voxels.bounds.min;
+    pipelines.cubeMarcher.constants.bmax = voxels.bounds.max;
+
 }
 
 void MarchingCubes2::initMarcher() {
@@ -129,11 +143,11 @@ void MarchingCubes2::createDescriptorSetLayouts() {
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
+                .shaderStages(VK_SHADER_STAGE_ALL | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT)
             .binding(1)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
+                .shaderStages(VK_SHADER_STAGE_ALL | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT)
             .createLayout();
     
     voxels.descriptorSet = descriptorPool.allocate( { voxels.descriptorSetLayout }).front();	
@@ -204,6 +218,24 @@ void MarchingCubes2::createRenderPipeline() {
                 .addDescriptorSetLayout(AppContext::instanceSetLayout())
 			.name("solid_render")
 			.build(pipelines.render.layout);
+
+	pipelines.cubeMarcher.pipeline =
+        prototypes->cloneGraphicsPipeline()
+			.shaderStage()
+                .taskSShader(resource("marching_cubes.task.spv"))
+				.meshShader(resource("marching_cube.mesh.spv"))
+                .fragmentShader(resource("solid.frag.spv"))
+            .inputAssemblyState()
+                .triangles()
+            .dynamicState()
+                .polygonModeEnable()
+            .layout().clear()
+                .addPushConstantRange(VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(pipelines.cubeMarcher.constants))
+                .addDescriptorSetLayout(voxels.descriptorSetLayout)
+                .addDescriptorSetLayout(cubeMarcher.lutDescriptorSetLayout())
+                .addDescriptorSetLayout(cubeMarcher.vertexDescriptorSetLayout())
+			.name("mesh_shader_cube_marcher")
+			.build(pipelines.cubeMarcher.layout);
     //    @formatter:on
 }
 
@@ -244,14 +276,46 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
 
 //    rayMarch(commandBuffer);
 
-    if(shadingMode == 0){
-        renderMeshWireframe(commandBuffer);
+    if(useMeshShader){
+        static std::array<VkDescriptorSet, 3> sets{};
+        sets[0] = voxels.descriptorSet;
+        sets[1] = cubeMarcher.lutDescriptorSet();
+        sets[2] = cubeMarcher.vertexDescriptorSet();
+
+        auto cubeSize = voxels.voxelSize * cubeSizeMultiplier;
+        pipelines.cubeMarcher.constants.cubeSize = cubeSize;
+        glm::uvec3 gc{ ((voxels.bounds.max - voxels.bounds.min) + cubeSize)/cubeSize};
+        gc /= glm::uvec3(4, 4, 2);
+
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.cubeMarcher.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.cubeMarcher.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdPushConstants(commandBuffer, pipelines.cubeMarcher.layout.handle, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(pipelines.cubeMarcher.constants), &pipelines.cubeMarcher.constants);
+
+        if(shadingMode == 0) {
+            vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_LINE);
+        }else {
+            vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_FILL);
+        }
+
+        vkCmdDrawMeshTasksEXT(commandBuffer, gc.x, gc.y, gc.z);
+
+
     }else {
-        renderMesh(commandBuffer);
+        if (shadingMode == 0) {
+            renderMeshWireframe(commandBuffer);
+        } else {
+            renderMesh(commandBuffer);
+        }
     }
     renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
+
+    if(!useMeshShader) {
+        cubeMarcher.generateMesh(voxels.voxelSize * cubeSizeMultiplier);
+        Barrier::computeWriteToVertexDraw(commandBuffer, { result.vertices, result.indices, result.drawCmd });
+    }
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -302,8 +366,13 @@ void MarchingCubes2::renderUI(VkCommandBuffer commandBuffer) {
     if(ImGui::CollapsingHeader("Properties", ImGuiTreeNodeFlags_DefaultOpen)){
         ImGui::SliderFloat("Cube size", &cubeSizeMultiplier, 0.25, 4.0);
 
-        bool mergeDuplicateVertices = true;
-        ImGui::Checkbox("Merge duplicate vertices", &mergeDuplicateVertices);
+        ImGui::Checkbox("Use mesh shader", &useMeshShader);
+
+        if(!useMeshShader) {
+            bool mergeDuplicateVertices = true;
+            ImGui::Checkbox("Merge duplicate vertices", &mergeDuplicateVertices);
+        }
+
         ImGui::Text("%d vertices generated", *result.numVertices);
     }
 
@@ -316,7 +385,8 @@ void MarchingCubes2::update(float time) {
     if(!ImGui::IsAnyItemActive()) {
         camera->update(time);
     }
-    auto cam = camera->cam();
+    pipelines.cubeMarcher.constants.camera = camera->cam();
+    glfwSetWindowTitle(window, fmt::format("{}, FPS {}", title, framePerSecond).c_str());
 }
 
 void MarchingCubes2::checkAppInputs() {
@@ -332,13 +402,28 @@ void MarchingCubes2::onPause() {
 }
 
 void MarchingCubes2::endFrame() {
-    if(!ImGui::IsAnyItemActive()){
-        static float prevCubeSizeMultiplier = cubeSizeMultiplier;
-        if(prevCubeSizeMultiplier != cubeSizeMultiplier) {
-            cubeMarcher.generateMesh(voxels.voxelSize * cubeSizeMultiplier);
-            prevCubeSizeMultiplier = cubeSizeMultiplier;
-        }
-    }
+//    if(!ImGui::IsAnyItemActive() && !useMeshShader){
+//        static float prevCubeSizeMultiplier = cubeSizeMultiplier;
+//        if(prevCubeSizeMultiplier != cubeSizeMultiplier) {
+//            cubeMarcher.generateMesh(voxels.voxelSize * cubeSizeMultiplier);
+//            prevCubeSizeMultiplier = cubeSizeMultiplier;
+//        }
+//    }
+}
+
+void MarchingCubes2::beforeDeviceCreation() {
+    static VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
+    meshFeatures.meshShader = VK_TRUE;
+    meshFeatures.taskShader = VK_TRUE;
+    meshFeatures.multiviewMeshShader = VK_TRUE;
+    meshFeatures.meshShaderQueries = VK_TRUE;
+
+    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
+    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
+    meshFeatures.pNext = &dsFeatures;
+
+    deviceCreateNextChain = &meshFeatures;
+
 }
 
 
@@ -349,7 +434,9 @@ int main(){
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.fillModeNonSolid = true;
-        settings.deviceExtensions.push_back("VK_EXT_scalar_block_layout");
+        settings.deviceExtensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 
         auto app = MarchingCubes2{ settings };

@@ -27,6 +27,17 @@ public:
 
     std::tuple<std::vector<uint32_t>, std::vector<Vertex>> generateIndices(std::vector<Vertex> vertices, float threshold);
 
+    const VulkanDescriptorSetLayout& lutDescriptorSetLayout() const;
+
+    const VulkanDescriptorSetLayout& vertexDescriptorSetLayout() const;
+
+    const VkDescriptorSet lutDescriptorSet() const;
+
+    const VkDescriptorSet vertexDescriptorSet() const;
+
+    Mesh _mesh;
+
+
 protected:
     std::vector<PipelineMetaData> pipelineMetaData() final;
 
@@ -43,8 +54,6 @@ private:
     VulkanBuffer _edgeLUT;
     VulkanBuffer _triangleLUT;
     float _minGridSize{};
-
-    Mesh _mesh;
 
     struct {
         glm::vec3 bMin{0};

@@ -6,12 +6,12 @@
 #include "primitives.h"
 
 WeightedVoronoiStippling::WeightedVoronoiStippling(const Settings& settings) : VulkanBaseApp("Weighted Voronoi Stippling", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/weighted_voronoi_stippling");
-    fileManager.addSearchPathFront("../../examples/weighted_voronoi_stippling/spv");
-    fileManager.addSearchPathFront("../../examples/weighted_voronoi_stippling/data");
-    fileManager.addSearchPathFront("../../examples/weighted_voronoi_stippling/models");
-    fileManager.addSearchPathFront("../../examples/weighted_voronoi_stippling/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling");
+    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/spv");
+    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/data");
+    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/models");
+    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/textures");
 
     static VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
     dynamicRenderingFeatures.dynamicRendering = VK_TRUE;

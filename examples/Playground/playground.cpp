@@ -24,6 +24,9 @@
 #include <openvdb/openvdb.h>
 #include <openvdb/io/Stream.h>
 #include "spectrum/spectrum.hpp"
+#include "mp4.hpp"
+#include <meshoptimizer.h>
+#include "primitives.h"
 
 using namespace glm;
 
@@ -164,32 +167,32 @@ void pushHeap(Queue& queue) {
     }
 }
 
-int main(int argc, char** argv){
-    Queue queue{ .capacity = 5};
-    push(queue, 2);
-    push(queue, 3);
-    push(queue, 4);
-    push(queue, 5);
-    push(queue, 10);
-
-//    fmt::print("queue: {}", queue.data);
-
-    makeHeap(queue);
-//   std::make_heap(queue.begin(), queue.end());
-//    fmt::print("\nqueue: {}\n", queue.data);
-
-    for(int i = 0; i < queue.length; i++) {
-//        popHeap(queue);
-    std::pop_heap(queue.begin(), std::next(queue.end(), -i));
-        fmt::print("queue: {}\n", queue.data);
-    }
-
-//    queue.data[queue.length - 1] = 8;
-////    std::push_heap(queue.begin(), queue.end());
-//    pushHeap(queue);
-//    fmt::print("\nqueue: {}", queue.data);
-    return 0;
-}
+//int main(int argc, char** argv){
+//    Queue queue{ .capacity = 5};
+//    push(queue, 2);
+//    push(queue, 3);
+//    push(queue, 4);
+//    push(queue, 5);
+//    push(queue, 10);
+//
+////    fmt::print("queue: {}", queue.data);
+//
+//    makeHeap(queue);
+////   std::make_heap(queue.begin(), queue.end());
+////    fmt::print("\nqueue: {}\n", queue.data);
+//
+//    for(int i = 0; i < queue.length; i++) {
+////        popHeap(queue);
+//    std::pop_heap(queue.begin(), std::next(queue.end(), -i));
+//        fmt::print("queue: {}\n", queue.data);
+//    }
+//
+////    queue.data[queue.length - 1] = 8;
+//////    std::push_heap(queue.begin(), queue.end());
+////    pushHeap(queue);
+////    fmt::print("\nqueue: {}", queue.data);
+//    return 0;
+//}
 
 glm::vec2 randomPointOnSphericalAnnulus(glm::vec2 x, float r, auto rng) {
     float angle = rng() * glm::two_pi<float>();
@@ -311,121 +314,56 @@ glm::vec3 sampleHemisphere(glm::vec2 u){
     return res;
 }
 
+#include "vulkan_context.hpp"
 
 
+int main(int argc, char** argv){
+    ContextCreateInfo createInfo{};
+    createInfo.applicationInfo.sType  = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    createInfo.applicationInfo.applicationVersion = VK_MAKE_VERSION(0, 0, 0);
+    createInfo.applicationInfo.pApplicationName = "Vulkan Performance Test";
+    createInfo.applicationInfo.apiVersion = VK_API_VERSION_1_3;
+    createInfo.applicationInfo.pEngineName = "";
+    createInfo.settings.uniqueQueueFlags = VK_QUEUE_COMPUTE_BIT;
+    createInfo.deviceExtAndLayers.extensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
 
-//int main(int argc, char** argv){
-//    auto cornellBox = primitives::cornellBox();
-//
-//    std::stringstream ss;
-//
-//    auto light = spectrum::blackbodySpectrum({5000, 1000}).front()/100.f;
-//    ss << fmt::format("newmtl Light\n");
-//    ss << "\tKa 0 0 0\n";
-//    ss << std::format("\tKd {} {} {}\n", light.x, light.y, light.z);
-//    ss << "\tKs 0 0 0\n";
-//    ss << "\tTf 1 1 1\n";
-//    ss << fmt::format("\tillum {}\n", 10);
-//    ss << "\tNs 0\n";
-//    ss << "\tNi 1\n";
-//
-//    ss << fmt::format("\nnewmtl White\n");
-//    ss << fmt::format("\tKa {} {} {}\n", cornellBox[1].vertices[0].color.r, cornellBox[1].vertices[0].color.g, cornellBox[1].vertices[0].color.b);
-//    ss << fmt::format("\tKd {} {} {}\n", cornellBox[1].vertices[0].color.r, cornellBox[1].vertices[0].color.g, cornellBox[1].vertices[0].color.b);
-//    ss << "\tKs 1 1 1\n";
-//    ss << "\tTf 1 1 1\n";
-//    ss << "\tillum 0\n";
-//    ss << "\tNs 50\n";
-//    ss << "\tNi 1\n";
-//
-//    ss << fmt::format("\nnewmtl Red\n");
-//    ss << fmt::format("\tKa {} {} {}\n", cornellBox[2].vertices[0].color.r, cornellBox[2].vertices[0].color.g, cornellBox[2].vertices[0].color.b);
-//    ss << fmt::format("\tKd {} {} {}\n", cornellBox[2].vertices[0].color.r, cornellBox[2].vertices[0].color.g, cornellBox[2].vertices[0].color.b);
-//    ss << "\tKs 1 1 1\n";
-//    ss << "\tTf 1 1 1\n";
-//    ss << "\tillum 0\n";
-//    ss << "\tNs 50\n";
-//    ss << "\tNi 1\n";
-//
-//
-//    ss << fmt::format("\nnewmtl Green\n");
-//    ss << fmt::format("\tKa {} {} {}\n", cornellBox[4].vertices[0].color.r, cornellBox[4].vertices[0].color.g, cornellBox[4].vertices[0].color.b);
-//    ss << fmt::format("\tKd {} {} {}\n", cornellBox[4].vertices[0].color.r, cornellBox[4].vertices[0].color.g, cornellBox[4].vertices[0].color.b);
-//    ss << "\tKs 1 1 1\n";
-//    ss << "\tTf 1 1 1\n";
-//    ss << "\tillum 0\n";
-//    ss << "\tNs 50\n";
-//    ss << "\tNi 1\n";
-//
-//    std::ofstream materialOut{"../../data/models/cornell_box.mtl"};
-//    materialOut << ss.str();
-//
-//    ss.str("");
-//    ss.clear();
-//
-//    ss << fmt::format("# cornell_box.obj\n\n");
-//
-//    ss << "mtllib cornell_box.mtl\n\n";
-//
-//    struct Meta{
-//        std::string name;
-//        std::string material;
-//    };
-//
-//    std::map<int, Meta> objMetadata{};
-//    objMetadata[0] = { "Light", "Light" };
-//    objMetadata[1] = { "Ceiling", "White" };
-//    objMetadata[2] = { "RightWall", "Red" };
-//    objMetadata[3] = { "Floor", "White" };
-//    objMetadata[4] = { "LeftWall", "Green" };
-//    objMetadata[5] = { "TallBox", "White" };
-//    objMetadata[6] = { "ShortBox", "White" };
-//    objMetadata[7] = { "BackWall", "White" };
-//
-//    for(auto [index, metadata] : objMetadata) {
-//        ss << std::format("o {}\n", metadata.name);
-//        ss << std::format("usemtl {}\n", metadata.material);
-//        const auto& obj = cornellBox[index];
-//
-//        for(auto vertices : obj.vertices) {
-//            ss << std::format("v {} {} {}\n", vertices.position.x, vertices.position.y, vertices.position.z);
-//        }
-//
-//        ss << "\n";
-//        for(auto vertices : obj.vertices) {
-//            ss << std::format("vn {:f} {:f} {:f}\n", vertices.normal.x, vertices.normal.y, vertices.normal.z);
-//        }
-//
-//        ss << "\n";
-//        for(auto vertices : obj.vertices) {
-//            ss << std::format("vt {} {}\n", vertices.uv.s, vertices.uv.t);
-//        }
-//
-//        ss << "\n";
-//        const auto& indices = obj.indices;
-//        for(int i = 0; i < indices.size(); i+= 3){
-//            ss << std::format("f {} {} {}\n", indices[i] + 1, indices[i+1] + 1, indices[i+2] + 1);
-//        }
-//        ss << "\n";
-//    }
-//
-//    std::ofstream objOut{"../../data/models/cornell_box.obj"};
-//    objOut << ss.str();
+    VulkanContext context{ createInfo };
+    context.init();
+    vkDevice = context.device.logicalDevice;
 
-//    glm::mat4 xform{1};
-//    xform = glm::rotate(xform, glm::half_pi<float>(), {1, 0, 0});
-//    auto plane = primitives::plane(1, 1, 1, 1, xform, glm::vec4(0), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//
-//    for(auto vertex :plane.vertices) {
-//        fmt::print("position: [{:.1f}, {:.1f}, {:.1f}], uv: [{:.1f}, {:.1f}]\n",
-//                   vertex.position.x, vertex.position.y, vertex.position.z,
-//                   vertex.uv.x, vertex.uv.y);
-//    }
-//
-//    auto vertex = plane.vertices.front();
-////    fmt::print("position: {}\n", vertex.position.xyz());
-//    fmt::print("normal: {}\n", vertex.normal.xyz());
-//    fmt::print("tangent: {}\n", vertex.tangent.xyz());
-//    fmt::print("bitangent: {}\n", vertex.bitangent.xyz());
-//
-//}
+    VkPhysicalDeviceProperties2 props{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+
+    VkPhysicalDeviceMeshShaderPropertiesEXT meshProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
+    props.pNext = &meshProps;
+
+    vkGetPhysicalDeviceProperties2(context.device.physicalDevice, &props);
+
+
+    VkPhysicalDeviceFeatures2 features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+    VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
+    features.pNext = &meshFeatures;
+
+    vkGetPhysicalDeviceFeatures2(context.device.physicalDevice, &features);
+
+    fmt::print("task shader{} supported\n", meshFeatures.taskShader ? "": " not");
+    fmt::print("mesh shader{} supported\n", meshFeatures.meshShader ? "": " not");
+    fmt::print("multiView mesh shader{} supported\n", meshFeatures.multiviewMeshShader ? "": " not");
+
+    auto cube = primitives::cube();
+
+    const size_t maxVertices = 64;
+    const size_t maxTriangles = 124;
+    const float coneWeight = 0.0f;
+
+    auto maxMeshlets = meshopt_buildMeshletsBound(cube.indices.size(), maxVertices, maxTriangles);
+
+    std::vector<meshopt_Meshlet> meshlets(maxMeshlets);
+    std::vector<uint32> meshletVertices(maxMeshlets * maxVertices);
+    std::vector<uint8_t> meshletTriangles(maxMeshlets * maxTriangles * 3);
+
+    auto meshletCount = meshopt_buildMeshlets(meshlets.data(), meshletVertices.data(), meshletTriangles.data()
+                                              , cube.indices.data(), cube.indices.size(), &cube.vertices[0].position.x,
+                                              cube.vertices.size(), sizeof(Vertex), maxVertices, maxTriangles, coneWeight);
+
+    fmt::print("hello\n");
+}

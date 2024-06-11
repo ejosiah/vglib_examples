@@ -11,6 +11,10 @@ public:
 protected:
     void initApp() override;
 
+    void checkMeshShaderSupport();
+
+    void beforeDeviceCreation() override;
+
     void initCamera();
 
     void loadVoxel();
@@ -64,6 +68,20 @@ protected:
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } render;
+
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+
+            struct {
+                Camera camera;
+                glm::vec3 bmin;
+                float cubeSize;
+
+                glm::vec3 bmax;
+                float isoLevel{0};
+            } constants;
+        } cubeMarcher;
     } pipelines;
 
     VulkanDescriptorPool descriptorPool;
@@ -77,4 +95,6 @@ protected:
     Voxels voxels;
     int shadingMode{1};
     float cubeSizeMultiplier{1};
+    bool useMeshShader{};
+    bool meshShaderSupported;
 };

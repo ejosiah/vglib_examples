@@ -79,8 +79,8 @@ private:
 
     VulkanDevice* _device{};
     VulkanDescriptorPool* _descriptorPool{};
-    VulkanSwapChain* _swapChain;
-    VulkanRenderPass* _renderPass;
+    VulkanSwapChain* _swapChain{};
+    VulkanRenderPass* _renderPass{};
     VulkanDescriptorSetLayout _instanceSetLayout;
     VkDescriptorSet _defaultInstanceSet{};
     VulkanBuffer _instanceTransforms;

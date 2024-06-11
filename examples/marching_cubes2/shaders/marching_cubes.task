@@ -1,0 +1,127 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+#define NUM_VERTICES 8
+#define NUM_EDGES 12
+#define MAX_TRIANGLE_VERTICES 16
+
+struct TaskData {
+    float isoValues[NUM_VERTICES];
+    vec3 position;
+    int config;
+};
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 2) in;
+
+layout(set = 0, binding = 0) uniform sampler3D Voxels;
+
+layout(set = 0, binding = 1) buffer Params {
+    mat4 worldToVoxelTransform;
+    mat4 voxelToWordTransform;
+    int numVoxels;
+};
+
+layout(set = 1, binding = 0, scalar) uniform EDGE_TABLE{
+    uint edgeTable[256];
+};
+layout(set = 1, binding = 1, scalar) uniform TRI_TABLE{
+    int triTable[4096];
+};
+
+layout(set = 2, binding = 2) buffer ATOMIC_COUNTERS{
+    uint nextPrimitive;
+};
+
+layout(push_constant) uniform Constants{
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+
+    vec3 bmin;
+    float cubeSize;
+
+    vec3 bmax;
+    float isoLevel;
+};
+
+const vec3 UnitCube[NUM_VERTICES] = {
+    vec3(0, 0, 0),
+    vec3(1, 0, 0),
+    vec3(1, 0, 1),
+    vec3(0, 0, 1),
+    vec3(0, 1, 0),
+    vec3(1, 1, 0),
+    vec3(1, 1, 1),
+    vec3(0, 1, 1),
+};
+vec3 cube[NUM_VERTICES];
+
+const ivec2 cubeEdges[NUM_EDGES] = {
+    ivec2(0, 1), ivec2(1, 2), ivec2(2, 3), ivec2(3, 0),
+    ivec2(4, 5), ivec2(5, 6), ivec2(6, 7), ivec2(7, 4),
+    ivec2(0, 4), ivec2(1, 5), ivec2(2, 6), ivec2(3, 7)
+};
+
+float isoValues[NUM_VERTICES];
+
+bool outOfBounds(vec3 pos);
+void initCubeVertices();
+float getIsoValue(vec3 pos, int index);
+
+vec3 voxelsDim = vec3(textureSize(Voxels, 0));
+
+taskPayloadSharedEXT TaskData td[32];
+
+void main() {
+    vec3 pos = bmin + (vec3(gl_GlobalInvocationID) + 0.5) * cubeSize;
+
+    int config = 0;
+    initCubeVertices();
+
+    for(int i = 0; i < 8; i++){
+        isoValues[i] = getIsoValue(pos, i);
+        if(isoValues[i] < isoLevel){
+            config |= (1 << i);
+        }
+    }
+
+    bool vote = !outOfBounds(pos) && edgeTable[config] != 0;
+
+    uvec4 ballot = subgroupBallot(vote);
+    uint index = subgroupBallotExclusiveBitCount(ballot);
+
+    if(vote){
+        td[index].position = pos;
+        td[index].config = config;
+
+        for(int i = 0; i < NUM_VERTICES; ++i){
+            td[index].isoValues[i] = isoValues[i];
+        }
+    }
+
+    uint gx = subgroupBallotBitCount(ballot);
+
+    EmitMeshTasksEXT(gx, 1, 1);
+}
+
+bool outOfBounds(vec3 pos) {
+    bvec3 near = lessThan(pos, bmin);
+    bvec3 far = greaterThanEqual(pos, bmax);
+
+    return any(near) || any(far);
+}
+
+void initCubeVertices() {
+    for(int i = 0; i < NUM_VERTICES; ++i) {
+        cube[i] = UnitCube[i] * cubeSize;
+    }
+}
+
+float getIsoValue(vec3 center, int index){
+    vec4 p = vec4(center + cube[index], 1);
+    vec3 tc = (worldToVoxelTransform * p).xyz;
+    tc += 0.5/voxelsDim;
+    return texture(Voxels,tc).r;
+}

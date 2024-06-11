@@ -119,11 +119,11 @@ void Marcher::createDescriptorSetLayouts() {
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT)
             .binding(1)
                 .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT)
         .createLayout();
 
     _vertexDescriptorSetLayout =
@@ -132,7 +132,7 @@ void Marcher::createDescriptorSetLayouts() {
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT)
             .binding(1)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
@@ -140,7 +140,7 @@ void Marcher::createDescriptorSetLayouts() {
             .binding(2)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT)
             .binding(3)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
@@ -153,6 +153,8 @@ void Marcher::updateDescriptorSets() {
     auto sets =  AppContext::allocateDescriptorSets({ _lutDescriptorSetLayout, _vertexDescriptorSetLayout });
     _lutDescriptorSet = sets[0];
     _vertexDescriptorSet = sets[1];
+
+    device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("Lookup_tables", _lutDescriptorSet);
     
     auto writes = initializers::writeDescriptorSets<6>();
     
@@ -266,5 +268,21 @@ Marcher::generateIndices(std::vector<Vertex> vertices, float threshold) {
     spdlog::info("{} vertices generated after indexing", newVertices.size());
 
     return std::make_tuple(newIndices, newVertices);
+}
+
+const VulkanDescriptorSetLayout &Marcher::lutDescriptorSetLayout() const {
+    return _lutDescriptorSetLayout;
+}
+
+const VkDescriptorSet Marcher::lutDescriptorSet() const {
+    return _lutDescriptorSet;
+}
+
+const VulkanDescriptorSetLayout &Marcher::vertexDescriptorSetLayout() const {
+    return _vertexDescriptorSetLayout;
+}
+
+const VkDescriptorSet Marcher::vertexDescriptorSet() const {
+    return _vertexDescriptorSet;
 }
 

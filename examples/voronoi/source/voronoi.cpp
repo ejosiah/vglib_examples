@@ -4,12 +4,12 @@
 #include "ImGuiPlugin.hpp"
 
 Voronoi::Voronoi(const Settings& settings) : VulkanBaseApp("voronoi", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/voronoi");
-    fileManager.addSearchPathFront("../../examples/voronoi/data");
-    fileManager.addSearchPathFront("../../examples/voronoi/spv");
-    fileManager.addSearchPathFront("../../examples/voronoi/models");
-    fileManager.addSearchPathFront("../../examples/voronoi/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/voronoi");
+    fileManager().addSearchPathFront("../../examples/voronoi/data");
+    fileManager().addSearchPathFront("../../examples/voronoi/spv");
+    fileManager().addSearchPathFront("../../examples/voronoi/models");
+    fileManager().addSearchPathFront("../../examples/voronoi/textures");
 
     static VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
     dynamicRenderingFeatures.dynamicRendering = VK_TRUE;

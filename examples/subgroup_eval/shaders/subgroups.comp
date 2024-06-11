@@ -1,0 +1,30 @@
+#version 460
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D oimage;
+
+float hash13(vec3 p3){
+    p3  = fract(p3 * .1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 hash32(vec2 p){
+    vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+    p3 += dot(p3, p3.yxz+33.33);
+    return fract((p3.xxy+p3.yzz)*p3.zyx);
+}
+
+void main() {
+    vec3 color = hash32(vec2(gl_SubgroupID + 1));
+
+    uvec2 gridSize = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
+    uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+    uint wid = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+    uvec4 ballot = subgroupBallot(gl_SubgroupInvocationID % 2 == 0);
+    int bit = int(subgroupInverseBallot(ballot));
+    imageStore(oimage, ivec2(gl_GlobalInvocationID), vec4(gl_SubgroupInvocationID, bit, 0, 0));
+}
