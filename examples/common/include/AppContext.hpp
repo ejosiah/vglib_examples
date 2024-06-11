@@ -38,6 +38,7 @@ public:
         bindInstanceDescriptorSets(commandBuffer, solid.layout);
         vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_BACK_BIT);
+        vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_FILL);
         content();
     }
 

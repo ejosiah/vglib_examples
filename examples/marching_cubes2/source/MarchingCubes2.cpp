@@ -6,6 +6,7 @@
 #include <openvdb/openvdb.h>
 #include <openvdb/io/Stream.h>
 #include "Barrier.hpp"
+#include "ExtensionChain.hpp"
 
 MarchingCubes2::MarchingCubes2(const Settings& settings) : VulkanBaseApp("Marching Cubes", settings) {
     fileManager().addSearchPathFront(".");
@@ -302,11 +303,7 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
 
 
     }else {
-        if (shadingMode == 0) {
-            renderMeshWireframe(commandBuffer);
-        } else {
-            renderMesh(commandBuffer);
-        }
+        renderMesh(commandBuffer);
     }
     renderUI(commandBuffer);
 
@@ -327,6 +324,11 @@ void MarchingCubes2::renderMesh(VkCommandBuffer commandBuffer) {
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, result.vertices, &offset);
         vkCmdBindIndexBuffer(commandBuffer, result.indices, 0, VK_INDEX_TYPE_UINT32);
+        if(shadingMode == 0) {
+            vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_LINE);
+        }else {
+            vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_FILL);
+        }
         vkCmdDrawIndexedIndirect(commandBuffer, result.drawCmd, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
     });
 }

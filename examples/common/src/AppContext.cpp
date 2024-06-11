@@ -110,6 +110,7 @@ void AppContext::createPipelines() {
                 .triangles()
             .dynamicState()
                 .primitiveTopology()
+                .polygonModeEnable()
                 .cullMode()
             .layout()
                 .addDescriptorSetLayout(AppContext::instanceSetLayout())
