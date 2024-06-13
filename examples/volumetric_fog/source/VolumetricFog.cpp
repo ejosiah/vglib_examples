@@ -4,12 +4,12 @@
 #include "ImGuiPlugin.hpp"
 
 VolumetricFog::VolumetricFog(const Settings& settings) : VulkanBaseApp("Volumetric fog", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/volumetric_fog");
-    fileManager.addSearchPathFront("../../examples/volumetric_fog/data");
-    fileManager.addSearchPathFront("../../examples/volumetric_fog/spv");
-    fileManager.addSearchPathFront("../../examples/volumetric_fog/models");
-    fileManager.addSearchPathFront("../../examples/volumetric_fog/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/volumetric_fog");
+    fileManager().addSearchPathFront("../../examples/volumetric_fog/data");
+    fileManager().addSearchPathFront("../../examples/volumetric_fog/spv");
+    fileManager().addSearchPathFront("../../examples/volumetric_fog/models");
+    fileManager().addSearchPathFront("../../examples/volumetric_fog/textures");
 
     static VkPhysicalDeviceSynchronization2Features sync2Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES};
     sync2Features.synchronization2 = VK_TRUE;
@@ -136,7 +136,7 @@ void VolumetricFog::loadBlueNoise() {
 }
 
 void VolumetricFog::initSky() {
-    sky = Sky{&fileManager, &device, &descriptorPool, &renderPass, {width, height}, &camera->camera, &m_scene, &m_bindLessDescriptor};
+    sky = Sky{&fileManager(), &device, &descriptorPool, &renderPass, {width, height}, &camera->camera, &m_scene, &m_bindLessDescriptor};
     sky.init();
 }
 
@@ -194,7 +194,7 @@ void VolumetricFog::createFogTextures() {
 }
 
 void VolumetricFog::initShadowMap() {
-    m_shadowMap = ShadowMap{ &fileManager, &device, &descriptorPool, &m_scene };
+    m_shadowMap = ShadowMap{ &fileManager(), &device, &descriptorPool, &m_scene };
     m_shadowMap.init();
     m_bindLessDescriptor.update({ &m_shadowMap.texture(), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1U});
 }
@@ -962,8 +962,10 @@ int main(){
         settings.height = 1080;
         settings.depthTest = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+//        settings.deviceExtensions.push_back(VK_KHR_MULTIVIEW_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
+        settings.enabledFeatures.geometryShader = VK_TRUE;
 
         auto app = VolumetricFog{ settings };
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();

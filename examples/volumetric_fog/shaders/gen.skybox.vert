@@ -1,10 +1,13 @@
 #version 460
 
-layout(push_constant) uniform Camera {
-    mat4 transform;
-} cam;
+#extension GL_ARB_shader_viewport_layer_array : enable
+#extension GL_EXT_multiview : enable
 
 layout(location = 0) in vec3 position;
+
+layout(set = 3, binding = 0) uniform Camera {
+    mat4 transform[6];
+} cam;
 
 layout(location = 0) out struct {
     vec3 direction;
@@ -12,5 +15,6 @@ layout(location = 0) out struct {
 
 void main() {
     vs_out.direction = position;
-    gl_Position = cam.transform * vec4(position, 1);
+    gl_Layer = gl_ViewIndex;
+    gl_Position = cam.transform[gl_ViewIndex] * vec4(position, 1);
 }

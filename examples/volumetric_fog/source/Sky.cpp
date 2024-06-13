@@ -1,6 +1,7 @@
 #include "Sky.hpp"
 #include "primitives.h"
 #include "GraphicsPipelineBuilder.hpp"
+#include "Barrier.hpp"
 
 
 Sky::Sky(FileManager* fileManager,
@@ -26,6 +27,7 @@ Sky::Sky(FileManager* fileManager,
 void Sky::init() {
     m_descriptor.init();
     m_descriptor.load(resource("default.atmosphere"));
+    cameraBuffer = m_device->createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::mat4) * 6);
     createTexture();
     createSkyBox();
     createDescriptorSet();
@@ -71,14 +73,11 @@ void Sky::createTexture() {
     VkImageSubresourceRange resourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6};
     texture.imageView = texture.image.createView(format, VK_IMAGE_VIEW_TYPE_CUBE, resourceRange);
 
-    for(auto i = 0; i < 6; i++) {
-        resourceRange.baseArrayLayer = i;
-        resourceRange.layerCount = 1;
-        views[i] = texture.image.createView(format, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
-    }
-
     resourceRange.baseArrayLayer = 0;
     resourceRange.layerCount = 6;
+
+    layeredView = texture.image.createView(format, VK_IMAGE_VIEW_TYPE_CUBE, resourceRange);
+
     texture.image.transitionLayout(m_device->graphicsCommandPool(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, resourceRange);
     texture.image.transitionLayout(m_device->graphicsCommandPool(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, resourceRange);
 }
@@ -103,11 +102,23 @@ void Sky::createDescriptorSet() {
                 .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
     
-    skyBoxSet = m_pool->allocate({skyBoxSetLayout }).front();
+    cameraSetLayout =
+        m_device->descriptorSetLayoutBuilder()
+            .name("camera_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT)
+        .createLayout();
+    
+    
+    auto sets = m_pool->allocate({skyBoxSetLayout, cameraSetLayout });
+    skyBoxSet = sets[0];
+    cameraSet = sets[1];
 }
 
 void Sky::updateDescriptorSet() {
-    auto writes = initializers::writeDescriptorSets<1>();
+    auto writes = initializers::writeDescriptorSets<2>();
     
     writes[0].dstSet = skyBoxSet;
     writes[0].dstBinding = 0;
@@ -115,6 +126,13 @@ void Sky::updateDescriptorSet() {
     writes[0].descriptorCount = 1;
     VkDescriptorImageInfo skyboxInfo{texture.sampler.handle, texture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[0].pImageInfo = &skyboxInfo;
+    
+    writes[1].dstSet = cameraSet;
+    writes[1].dstBinding = 0;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo cameraInfo{ cameraBuffer, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &cameraInfo;
     
     m_device->updateDescriptorSets(writes);
     
@@ -156,9 +174,10 @@ void Sky::createPipeline() {
                     .addDescriptorSetLayout(m_descriptor.uboDescriptorSetLayout)
                     .addDescriptorSetLayout(m_descriptor.bindnessSetLayout())
                     .addDescriptorSetLayout(m_scene->sceneSetLayout)
-                    .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4))
+                    .addDescriptorSetLayout(cameraSetLayout)
                 .dynamicRenderPass()
                     .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                    .viewMask(0b00111111u)
                 .subpass(0)
                 .name("generate_skybox")
             .build(generatePipeline.layout);
@@ -232,10 +251,11 @@ void Sky::update(float time) {
 
 void Sky::generateSkybox() {
     m_device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        static std::array<VkDescriptorSet, 3> sets;
+        static std::array<VkDescriptorSet, 4> sets;
         sets[0] = m_descriptor.uboDescriptorSet;
         sets[1] = m_descriptor.bindessDescriptorSet();
         sets[2] = m_scene->sceneSet;
+        sets[3] = cameraSet;
 
         std::array<VkClearValue, 6> clearColors{};
         clearColors[0].color = {1.f, 0, 0, 1.f};
@@ -247,42 +267,46 @@ void Sky::generateSkybox() {
 
         auto origin = m_scene->cpu->camera;
         auto projection = glm::perspective(glm::half_pi<float>(), 1.0f, 0.1f, 147.17e6f);
-        for(auto i = 0; i < 6; i++) {
-            auto face = faces[i];
-            VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
-            info.flags = 0;
-            info.renderArea = {{0, 0}, {SKY_BOX_SIZE, SKY_BOX_SIZE}};
-            info.layerCount = 1;
-            info.colorAttachmentCount = 1;
 
-            VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-            attachmentInfo.imageView = views[i].handle;
-            attachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            attachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
-            attachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            attachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-            attachmentInfo.clearValue = clearColors[i];
-            info.pColorAttachments = &attachmentInfo;
-
-            vkCmdBeginRendering(commandBuffer, &info);
-
-            VkDeviceSize offset = 0;
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, generatePipeline.pipeline.handle);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, generatePipeline.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.vertices, &offset);
-            vkCmdBindIndexBuffer(commandBuffer, cube.indices, 0, VK_INDEX_TYPE_UINT32);
-
+        std::vector<glm::mat4> camViews;
+        for(auto& face : faces) {
             auto model = glm::translate(glm::mat4{1}, origin);
             auto view = glm::lookAt(origin, origin + face.direction, face.up);
             auto transform = projection * view * model;
-            vkCmdPushConstants(commandBuffer
-                    , generatePipeline.layout.handle
-                    , VK_SHADER_STAGE_VERTEX_BIT
-                    , 0, sizeof(glm::mat4), glm::value_ptr(transform));
-            vkCmdDrawIndexed(commandBuffer, cube.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
-
-            vkCmdEndRendering(commandBuffer);
+            camViews.push_back(transform);
         }
+
+        vkCmdUpdateBuffer(commandBuffer, cameraBuffer, 0, cameraBuffer.size, camViews.data());
+        Barrier::transferWriteToFragmentRead(commandBuffer, cameraBuffer);
+
+        VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
+        info.flags = 0;
+        info.renderArea = {{0, 0}, {SKY_BOX_SIZE, SKY_BOX_SIZE}};
+        info.layerCount = 6;
+        info.viewMask = 0b00111111u;
+        info.colorAttachmentCount = 1;
+
+        VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+        attachmentInfo.imageView = layeredView.handle;
+        attachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
+        attachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachmentInfo.clearValue = clearColors[0];
+        info.pColorAttachments = &attachmentInfo;
+
+        vkCmdBeginRendering(commandBuffer, &info);
+
+        VkDeviceSize offset = 0;
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, generatePipeline.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, generatePipeline.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.vertices, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, cube.indices, 0, VK_INDEX_TYPE_UINT32);
+
+
+        vkCmdDrawIndexed(commandBuffer, cube.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
+
+        vkCmdEndRendering(commandBuffer);
     });
 }
 

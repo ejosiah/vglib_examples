@@ -3,15 +3,15 @@
 #include "ImGuiPlugin.hpp"
 
 SsaoDemo::SsaoDemo(const Settings& settings) : VulkanBaseApp("Screen Space Ambiant Occulsion", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/ssao");
-    fileManager.addSearchPath("../../examples/ssao/spv");
-    fileManager.addSearchPath("../../examples/ssao/models");
-    fileManager.addSearchPath("../../examples/ssao/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("../../examples/ssao");
+    fileManager().addSearchPath("../../examples/ssao/spv");
+    fileManager().addSearchPath("../../examples/ssao/models");
+    fileManager().addSearchPath("../../examples/ssao/textures");
+    fileManager().addSearchPath("../../data/shaders");
+    fileManager().addSearchPath("../../data/models");
+    fileManager().addSearchPath("../../data/textures");
+    fileManager().addSearchPath("../../data");
 }
 
 void SsaoDemo::initApp() {
@@ -48,7 +48,7 @@ void SsaoDemo::initCamera() {
 }
 
 void SsaoDemo::createDescriptorPool() {
-    constexpr uint32_t maxSets = 300;
+    constexpr uint32_t maxSets = 100;
     std::array<VkDescriptorPoolSize, 12> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
@@ -261,7 +261,7 @@ void SsaoDemo::renderScene(VkCommandBuffer commandBuffer) {
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-    cameraController->push(commandBuffer, render.layout.handle);
+    cameraController->push(commandBuffer, render.layout);
     model.draw(commandBuffer, render.layout);
 
     vkCmdEndRenderPass(commandBuffer);

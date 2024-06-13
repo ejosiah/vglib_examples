@@ -56,6 +56,7 @@ private:
     VulkanRenderPass* m_renderPass;
     glm::uvec3 m_screenDimension;
     Camera* m_camera;
+    VulkanBuffer cameraBuffer;
 
     Texture texture;
     struct {
@@ -66,7 +67,7 @@ private:
         VulkanPipeline pipeline;
         VulkanPipelineLayout layout;
     } generatePipeline;
-    std::array<VulkanImageView, 6> views;
+    VulkanImageView layeredView;
     struct {
         VulkanBuffer vertices;
         VulkanBuffer indices;
@@ -74,6 +75,9 @@ private:
 
     VulkanDescriptorSetLayout skyBoxSetLayout;
     VkDescriptorSet skyBoxSet;
+
+    VulkanDescriptorSetLayout cameraSetLayout;
+    VkDescriptorSet cameraSet;
 
     struct Face {
         glm::vec3 direction;

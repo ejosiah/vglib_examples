@@ -223,7 +223,7 @@ void MarchingCubes2::createRenderPipeline() {
 	pipelines.cubeMarcher.pipeline =
         prototypes->cloneGraphicsPipeline()
 			.shaderStage()
-                .taskSShader(resource("marching_cubes.task.spv"))
+//                .taskSShader(resource("marching_cubes.task.spv"))
 				.meshShader(resource("marching_cube.mesh.spv"))
                 .fragmentShader(resource("solid.frag.spv"))
             .inputAssemblyState()
