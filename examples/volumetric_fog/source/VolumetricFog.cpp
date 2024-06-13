@@ -2,6 +2,7 @@
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
+#include "ExtensionChain.hpp"
 
 VolumetricFog::VolumetricFog(const Settings& settings) : VulkanBaseApp("Volumetric fog", settings) {
     fileManager().addSearchPathFront(".");
@@ -951,6 +952,19 @@ void VolumetricFog::createBox() {
     };
 
     boxBuffer = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+}
+
+void VolumetricFog::beforeDeviceCreation() {
+    auto maybeExt = findExtension<VkPhysicalDeviceVulkan11Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, deviceCreateNextChain);
+    if(maybeExt.has_value()) {
+        auto ext = *maybeExt;
+        ext->multiview = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan11Features  vulkan11Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+        vulkan11Features.multiview = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, vulkan11Features);
+
+    }
 }
 
 

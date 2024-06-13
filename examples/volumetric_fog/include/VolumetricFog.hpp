@@ -93,6 +93,8 @@ protected:
 
     void createBox();
 
+    void beforeDeviceCreation() override;
+
 protected:
     Pipeline render;
     Pipeline rayMarch;
