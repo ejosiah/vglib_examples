@@ -223,7 +223,7 @@ void MarchingCubes2::createRenderPipeline() {
 	pipelines.cubeMarcher.pipeline =
         prototypes->cloneGraphicsPipeline()
 			.shaderStage()
-//                .taskSShader(resource("marching_cubes.task.spv"))
+                .taskSShader(resource("marching_cubes.task.spv"))
 				.meshShader(resource("marching_cube.mesh.spv"))
                 .fragmentShader(resource("solid.frag.spv"))
             .inputAssemblyState()
@@ -231,7 +231,7 @@ void MarchingCubes2::createRenderPipeline() {
             .dynamicState()
                 .polygonModeEnable()
             .layout().clear()
-                .addPushConstantRange(VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(pipelines.cubeMarcher.constants))
+                .addPushConstantRange(VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT, 0, sizeof(pipelines.cubeMarcher.constants))
                 .addDescriptorSetLayout(voxels.descriptorSetLayout)
                 .addDescriptorSetLayout(cubeMarcher.lutDescriptorSetLayout())
                 .addDescriptorSetLayout(cubeMarcher.vertexDescriptorSetLayout())
@@ -291,7 +291,7 @@ VkCommandBuffer *MarchingCubes2::buildCommandBuffers(uint32_t imageIndex, uint32
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.cubeMarcher.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.cubeMarcher.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdPushConstants(commandBuffer, pipelines.cubeMarcher.layout.handle, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(pipelines.cubeMarcher.constants), &pipelines.cubeMarcher.constants);
+        vkCmdPushConstants(commandBuffer, pipelines.cubeMarcher.layout.handle, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT , 0, sizeof(pipelines.cubeMarcher.constants), &pipelines.cubeMarcher.constants);
 
         if(shadingMode == 0) {
             vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_LINE);
@@ -426,6 +426,26 @@ void MarchingCubes2::beforeDeviceCreation() {
 
     deviceCreateNextChain = &meshFeatures;
 
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    if(devFeatures13.has_value()) {
+        devFeatures13.value()->maintenance4 = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        devFeatures13.maintenance4 = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
+    };
+
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    if(devFeatures12.has_value()) {
+        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
+        devFeatures12.value()->descriptorIndexing = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        devFeatures12.scalarBlockLayout = VK_TRUE;
+        devFeatures12.descriptorIndexing = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
+    };
+
 }
 
 
@@ -439,6 +459,7 @@ int main(){
         settings.deviceExtensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME);
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 
         auto app = MarchingCubes2{ settings };
