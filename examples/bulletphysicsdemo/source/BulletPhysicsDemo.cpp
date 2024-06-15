@@ -6,12 +6,12 @@
 #include "glm_bullet_interpreter.hpp"
 
 BulletPhysicsDemo::BulletPhysicsDemo(const Settings& settings) : VulkanBaseApp("bullet physics demo", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/bulletphysicsdemo");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("../../examples/bulletphysicsdemo");
+    fileManager().addSearchPath("../../data/shaders");
+    fileManager().addSearchPath("../../data");
+    fileManager().addSearchPath("../../data/models");
+    fileManager().addSearchPath("../../data/textures");
 }
 
 void BulletPhysicsDemo::initApp() {
@@ -359,7 +359,7 @@ void BulletPhysicsDemo::createCubes() {
     std::vector<FloorVertexData> floorVertices;
     vertices.reserve(cube.vertices.size());
     for(auto& vertex : cube.vertices){
-        glm::vec3 pos = (glm::scale(glm::mat4(1), glm::vec3(0.2)) * vertex.position).xyz();
+        glm::vec3 pos = (glm::scale(glm::mat4(1), glm::vec3(0.1)) * vertex.position).xyz();
         VertexData data{ pos, vertex.normal};
         vertices.push_back(data);
 
