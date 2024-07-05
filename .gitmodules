@@ -1,3 +1,6 @@
 [submodule "dependencies/vglib.github.io"]
 	path = dependencies/vglib.github.io
 	url = git@github.com:ejosiah/vglib.github.io.git
+[submodule "dependencies/glTF-Sample-Assets"]
+	path = dependencies/glTF-Sample-Assets
+	url = https://github.com/KhronosGroup/glTF-Sample-Assets.git

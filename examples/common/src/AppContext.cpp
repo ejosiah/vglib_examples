@@ -101,8 +101,9 @@ std::string AppContext::resource(const std::string &name) {
 }
 
 void AppContext::createPipelines() {
+    auto solidBuilder = _prototype->cloneGraphicsPipeline();
     _shading.solid.pipeline =
-        _prototype->cloneGraphicsPipeline()
+        solidBuilder
 			.shaderStage()
 				.vertexShader(resource("solid.vert.spv"))
                 .fragmentShader(resource("solid.frag.spv"))
@@ -114,8 +115,32 @@ void AppContext::createPipelines() {
                 .cullMode()
             .layout()
                 .addDescriptorSetLayout(AppContext::instanceSetLayout())
-			.name("solid_render")
+			.name("solid_renderer")
 			.build(_shading.solid.layout);
+
+    _shading.dynamic.solid.pipeline =
+        solidBuilder
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .name("dynamic_solid_renderer")
+        .build(_shading.dynamic.solid.layout);
+
+    _shading.flat.pipeline =
+        _prototype->cloneGraphicsPipeline()
+			.shaderStage()
+				.vertexShader(resource("flat.vert.spv"))
+                .fragmentShader(resource("flat.frag.spv"))
+            .inputAssemblyState()
+                .triangles()
+            .dynamicState()
+                .primitiveTopology()
+                .polygonModeEnable()
+                .cullMode()
+            .layout()
+                .addDescriptorSetLayout(AppContext::instanceSetLayout())
+			.name("flat_render")
+			.build(_shading.flat.layout);
 			
 	_shading.wireframe.pipeline =
         _prototype->cloneGraphicsPipeline()

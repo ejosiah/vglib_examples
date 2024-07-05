@@ -963,7 +963,6 @@ void VolumetricFog::beforeDeviceCreation() {
         static VkPhysicalDeviceVulkan11Features  vulkan11Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
         vulkan11Features.multiview = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, vulkan11Features);
-
     }
 }
 

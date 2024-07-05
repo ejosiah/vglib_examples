@@ -8,12 +8,12 @@ $classname$::$classname$(const Settings& settings) : VulkanRayTraceBaseApp("$tit
 $else$
 $classname$::$classname$(const Settings& settings) : VulkanBaseApp("$title$", settings) {
 $endif$
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/$name$");
-    fileManager.addSearchPathFront("../../examples/$name$/data");
-    fileManager.addSearchPathFront("../../examples/$name$/spv");
-    fileManager.addSearchPathFront("../../examples/$name$/models");
-    fileManager.addSearchPathFront("../../examples/$name$/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/$name$");
+    fileManager().addSearchPathFront("../../examples/$name$/data");
+    fileManager().addSearchPathFront("../../examples/$name$/spv");
+    fileManager().addSearchPathFront("../../examples/$name$/models");
+    fileManager().addSearchPathFront("../../examples/$name$/textures");
 }
 
 void $classname$::initApp() {

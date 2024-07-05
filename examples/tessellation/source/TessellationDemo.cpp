@@ -4,15 +4,15 @@
 #include "ImGuiPlugin.hpp"
 
 TessellationDemo::TessellationDemo(const Settings& settings) : VulkanBaseApp("Tessellation", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/tessellation");
-    fileManager.addSearchPath("../../examples/tessellation/spv");
-    fileManager.addSearchPath("../../examples/tessellation/models");
-    fileManager.addSearchPath("../../examples/tessellation/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("../../examples/tessellation");
+    fileManager().addSearchPath("../../examples/tessellation/spv");
+    fileManager().addSearchPath("../../examples/tessellation/models");
+    fileManager().addSearchPath("../../examples/tessellation/textures");
+    fileManager().addSearchPath("../../data/shaders");
+    fileManager().addSearchPath("../../data/models");
+    fileManager().addSearchPath("../../data/textures");
+    fileManager().addSearchPath("../../data");
 }
 
 void TessellationDemo::initApp() {
@@ -181,16 +181,16 @@ void TessellationDemo::createRenderPipeline() {
 }
 
 void TessellationDemo::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -293,8 +293,8 @@ void TessellationDemo::renderPatch(VkCommandBuffer commandBuffer) {
 void
 TessellationDemo::render(VkCommandBuffer commandBuffer, Pipeline &pipeline, Patch &patch, const void *constants, uint32_t constantsSize) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
-    vkCmdPushConstants(commandBuffer, pipeline.layout, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0, constantsSize, constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, pipeline.layout.handle, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0, constantsSize, constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch.vertices, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }

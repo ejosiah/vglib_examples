@@ -48,7 +48,7 @@ void SsaoDemo::initCamera() {
 }
 
 void SsaoDemo::createDescriptorPool() {
-    constexpr uint32_t maxSets = 100;
+    constexpr uint32_t maxSets = 300;
     std::array<VkDescriptorPoolSize, 12> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},

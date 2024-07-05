@@ -111,6 +111,7 @@ namespace asyncml {
                         || !_pendingVolumeUploads.empty();
                 });
             }
+            if(!_running) break;
             uploadMeshes();
             uploadTextures();
             processVolumes();
@@ -496,6 +497,7 @@ namespace asyncml {
 
     void Loader::stop() {
         _running = false;
+        _loadRequest.notify_one();
         _thread.join();
     }
 
@@ -602,7 +604,6 @@ namespace asyncml {
 
         while(!meshes.empty()) {
             const auto mesh = meshes.pop();
-            meshDrawIds.insert(std::make_pair(mesh.meshId, draw.count));
 
             auto& drawCommand = draw.cpu[draw.count++];
             drawCommand.indexCount = mesh.indexCount;

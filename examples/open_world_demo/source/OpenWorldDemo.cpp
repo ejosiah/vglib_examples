@@ -5,12 +5,12 @@
 #include "atmosphere/AtmosphereContants.hpp"
 
 OpenWorldDemo::OpenWorldDemo(const Settings& settings) : VulkanBaseApp("Open World Demo", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/open_world_demo");
-    fileManager.addSearchPathFront("../../examples/open_world_demo/data");
-    fileManager.addSearchPathFront("../../examples/open_world_demo/spv");
-    fileManager.addSearchPathFront("../../examples/open_world_demo/models");
-    fileManager.addSearchPathFront("../../examples/open_world_demo/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/open_world_demo");
+    fileManager().addSearchPathFront("../../examples/open_world_demo/data");
+    fileManager().addSearchPathFront("../../examples/open_world_demo/spv");
+    fileManager().addSearchPathFront("../../examples/open_world_demo/models");
+    fileManager().addSearchPathFront("../../examples/open_world_demo/textures");
 }
 
 void OpenWorldDemo::initApp() {
@@ -26,8 +26,8 @@ void OpenWorldDemo::initApp() {
     createPipelineCache();
     createRenderPipeline();
     createComputePipeline();
-    terrain = std::make_unique<Terrain>(device, descriptorPool, fileManager, swapChain.width(), swapChain.height(), renderPass, sceneGBuffer);
-    skyDome = std::make_unique<SkyDome>(device, descriptorPool, fileManager, renderPass, swapChain.width(), swapChain.height());
+    terrain = std::make_unique<Terrain>(device, descriptorPool, fileManager(), swapChain.width(), swapChain.height(), renderPass, sceneGBuffer);
+    skyDome = std::make_unique<SkyDome>(device, descriptorPool, fileManager(), renderPass, swapChain.width(), swapChain.height());
 //    shadowVolumeGenerator = std::make_unique<ShadowVolumeGenerator>(device, descriptorPool, fileManager, swapChain.width(), swapChain.height(), renderPass);
 //    atmosphere = std::make_unique<AtmosphereG>(device, descriptorPool, fileManager, renderPass, swapChain.width(),
 //                                              swapChain.height(), atmosphereLUT, terrain->gBuffer, shadowVolumeGenerator->shadowVolume);

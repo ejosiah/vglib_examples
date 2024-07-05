@@ -31,11 +31,22 @@ public:
 
     static std::string resource(const std::string& name);
 
-    static void renderSolid(VkCommandBuffer commandBuffer, BaseCameraController& camera,  auto content) {
-        auto& solid = instance._shading.solid;
+    static void renderSolid(VkCommandBuffer commandBuffer, BaseCameraController& camera,  auto content, bool dynamic = false) {
+        auto& solid = !dynamic ? instance._shading.solid : instance._shading.dynamic.solid;
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, solid.pipeline.handle);
         camera.push(commandBuffer, solid.layout);
         bindInstanceDescriptorSets(commandBuffer, solid.layout);
+        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_BACK_BIT);
+        vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_FILL);
+        content();
+    }
+
+    static void renderFlat(VkCommandBuffer commandBuffer, BaseCameraController& camera,  auto content) {
+        auto& flat = instance._shading.flat;
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, flat.pipeline.handle);
+        camera.push(commandBuffer, flat.layout);
+        bindInstanceDescriptorSets(commandBuffer, flat.layout);
         vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_BACK_BIT);
         vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_FILL);
@@ -94,6 +105,10 @@ private:
         Pipeline solid;
         Pipeline material;
         Pipeline wireframe;
+        Pipeline flat;
+        struct {
+            Pipeline solid;
+        } dynamic;
     } _shading;
     Floor _floor;
 

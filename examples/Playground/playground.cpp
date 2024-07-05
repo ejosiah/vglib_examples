@@ -13,6 +13,7 @@
 #include <random>
 #include <vector>
 #include <optional>
+#include <boost/asio.hpp>
 #include <fstream>
 #include "primitives.h"
 #include <assimp/scene.h>
@@ -27,6 +28,7 @@
 #include "mp4.hpp"
 #include <meshoptimizer.h>
 #include "primitives.h"
+#include "gltf/GltfLoader.hpp"
 
 using namespace glm;
 
@@ -317,53 +319,101 @@ glm::vec3 sampleHemisphere(glm::vec2 u){
 #include "vulkan_context.hpp"
 
 
-int main(int argc, char** argv){
+void asioTimer() {
+    boost::asio::io_context io;
+    boost::asio::steady_timer t(io, boost::asio::chrono::seconds(5));
+    t.wait();
+    std::cout << "Hello, world!" << std::endl;
+}
+
+void evalGLTF() {
     ContextCreateInfo createInfo{};
     createInfo.applicationInfo.sType  = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     createInfo.applicationInfo.applicationVersion = VK_MAKE_VERSION(0, 0, 0);
     createInfo.applicationInfo.pApplicationName = "Vulkan Performance Test";
     createInfo.applicationInfo.apiVersion = VK_API_VERSION_1_3;
     createInfo.applicationInfo.pEngineName = "";
-    createInfo.settings.uniqueQueueFlags = VK_QUEUE_COMPUTE_BIT;
+    createInfo.settings.uniqueQueueFlags = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
     createInfo.deviceExtAndLayers.extensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
 
     VulkanContext context{ createInfo };
     context.init();
-    vkDevice = context.device.logicalDevice;
 
-    VkPhysicalDeviceProperties2 props{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    gltf::Loader loader{ &context.device, nullptr};
+    loader.start();
 
-    VkPhysicalDeviceMeshShaderPropertiesEXT meshProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
-    props.pNext = &meshProps;
+    auto model = loader.load(nullptr, R"(C:\Users\Josiah Ebhomenye\source\repos\glTF-Sample-Assets\Models\FlightHelmet\glTF\FlightHelmet.gltf)");
 
-    vkGetPhysicalDeviceProperties2(context.device.physicalDevice, &props);
+//    using namespace std::chrono_literals;
+//    std::this_thread::sleep_for(10s);
+    loader.stop();
+}
 
 
-    VkPhysicalDeviceFeatures2 features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
-    VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
-    features.pNext = &meshFeatures;
+int main(int argc, char** argv){
 
-    vkGetPhysicalDeviceFeatures2(context.device.physicalDevice, &features);
-
-    fmt::print("task shader{} supported\n", meshFeatures.taskShader ? "": " not");
-    fmt::print("mesh shader{} supported\n", meshFeatures.meshShader ? "": " not");
-    fmt::print("multiView mesh shader{} supported\n", meshFeatures.multiviewMeshShader ? "": " not");
-
-    auto cube = primitives::cube();
-
-    const size_t maxVertices = 64;
-    const size_t maxTriangles = 124;
-    const float coneWeight = 0.0f;
-
-    auto maxMeshlets = meshopt_buildMeshletsBound(cube.indices.size(), maxVertices, maxTriangles);
-
-    std::vector<meshopt_Meshlet> meshlets(maxMeshlets);
-    std::vector<uint32> meshletVertices(maxMeshlets * maxVertices);
-    std::vector<uint8_t> meshletTriangles(maxMeshlets * maxTriangles * 3);
-
-    auto meshletCount = meshopt_buildMeshlets(meshlets.data(), meshletVertices.data(), meshletTriangles.data()
-                                              , cube.indices.data(), cube.indices.size(), &cube.vertices[0].position.x,
-                                              cube.vertices.size(), sizeof(Vertex), maxVertices, maxTriangles, coneWeight);
-
-    fmt::print("hello\n");
+//    ContextCreateInfo createInfo{};
+//    createInfo.applicationInfo.sType  = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+//    createInfo.applicationInfo.applicationVersion = VK_MAKE_VERSION(0, 0, 0);
+//    createInfo.applicationInfo.pApplicationName = "Vulkan Performance Test";
+//    createInfo.applicationInfo.apiVersion = VK_API_VERSION_1_3;
+//    createInfo.applicationInfo.pEngineName = "";
+//    createInfo.settings.uniqueQueueFlags = VK_QUEUE_COMPUTE_BIT;
+//    createInfo.deviceExtAndLayers.extensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+//
+//    VulkanContext context{ createInfo };
+//    context.init();
+//    vkDevice = context.device.logicalDevice;
+//
+//    VkPhysicalDeviceProperties2 props{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+//
+//    VkPhysicalDeviceMeshShaderPropertiesEXT meshProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
+//    props.pNext = &meshProps;
+//
+//    vkGetPhysicalDeviceProperties2(context.device.physicalDevice, &props);
+//
+//
+//    VkPhysicalDeviceFeatures2 features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+//    VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
+//    features.pNext = &meshFeatures;
+//
+//    vkGetPhysicalDeviceFeatures2(context.device.physicalDevice, &features);
+//
+//    fmt::print("task shader{} supported\n", meshFeatures.taskShader ? "": " not");
+//    fmt::print("mesh shader{} supported\n", meshFeatures.meshShader ? "": " not");
+//    fmt::print("multiView mesh shader{} supported\n", meshFeatures.multiviewMeshShader ? "": " not");
+//
+//    auto cube = primitives::cube();
+//
+//    const size_t maxVertices = 64;
+//    const size_t maxTriangles = 124;
+//    const float coneWeight = 0.0f;
+//
+//    auto maxMeshlets = meshopt_buildMeshletsBound(cube.indices.size(), maxVertices, maxTriangles);
+//
+//    std::vector<meshopt_Meshlet> meshlets(maxMeshlets);
+//    std::vector<uint32> meshletVertices(maxMeshlets * maxVertices);
+//    std::vector<uint8_t> meshletTriangles(maxMeshlets * maxTriangles * 3);
+//
+//    auto meshletCount = meshopt_buildMeshlets(meshlets.data(), meshletVertices.data(), meshletTriangles.data()
+//                                              , cube.indices.data(), cube.indices.size(), &cube.vertices[0].position.x,
+//                                              cube.vertices.size(), sizeof(Vertex), maxVertices, maxTriangles, coneWeight);
+//
+//    std::vector<mesh::Mesh> meshes;
+//    mesh::load(meshes, R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\Cliff_Rock_Two_Texture4K\Cliff_Rock_Two_OBJ.obj)");
+////
+////    auto itr = std::find_if(meshes.begin(), meshes.end(), [](const mesh::Mesh& mesh){
+////       return mesh.name == "CeilingLampshade";
+////    });
+////
+//    auto& mesh = meshes.front();
+//    auto bounds = mesh.bounds;
+//    auto center = (bounds.min + bounds.max) * 0.5f;
+//    fmt::print("min: {}\nmax: {}\ndim:{}\n", bounds.min, bounds.max, bounds.max - bounds.min);
+//    fmt::print("center: {}\n", center);
+//
+//    for(const auto& m : meshes) {
+//        fmt::print("{}\n", m.name);
+//    }
+    evalGLTF();
 }
