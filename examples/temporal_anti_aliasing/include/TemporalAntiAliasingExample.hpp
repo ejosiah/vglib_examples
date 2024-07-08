@@ -3,6 +3,7 @@
 #include "Offscreen.hpp"
 #include "Canvas.hpp"
 #include "gltf/GltfLoader.hpp"
+#include "Sampler.hpp"
 
 struct SceneData {
     glm::mat4 current_view_projection{};
@@ -18,6 +19,10 @@ struct SceneData {
 
     glm::vec2 jitter_xy{};
     glm::vec2 previous_jitter_xy{};
+
+    glm::vec2 resolution;
+    int color_buffer_index;
+    int depth_buffer_index;
 };
 
 struct TaaData {
@@ -45,6 +50,8 @@ protected:
     void initApp() override;
 
     void initCamera();
+
+    void initJitter();
 
     void initBindlessDescriptor();
 
@@ -88,6 +95,14 @@ protected:
 
     void renderScene(VkCommandBuffer commandBuffer);
 
+    void renderUI(VkCommandBuffer commandBuffer);
+
+    void applyTaa(VkCommandBuffer commandBuffer);
+
+    void computeMotionVectors(VkCommandBuffer commandBuffer);
+
+    void taaResolve(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void updateScene(float time);
@@ -99,6 +114,8 @@ protected:
     void onPause() override;
 
     void endFrame() override;
+
+    void newFrame() override;
 
 protected:
     struct {
@@ -118,6 +135,10 @@ protected:
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } velocity;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } taa;
     } _compute;
 
     VulkanDescriptorPool _descriptorPool;
@@ -140,9 +161,29 @@ protected:
         uint32_t height{};
     } _textures;
 
+    Jitter jitter{};
+
+    struct {
+        bool jitterEnabled{true};
+        bool taaEnabled{true};
+        int samplerType{static_cast<int>(SamplerType::Halton)};
+        int jitterPeriod{8};
+        const std::array<const char*, 4> samplers{ "Halton", "R2", "Hammersley", "IG" };
+    } options;
+
     Offscreen::RenderInfo _offscreenInfo{};
     Canvas _canvas;
     VkDescriptorSet _displaySet{};
+    VkDescriptorSet _colorDisplaySet{};
+    std::array<VkDescriptorSet, 2> _historyDisplaySet;
     std::shared_ptr<gltf::Model> _model;
     std::unique_ptr<gltf::Loader> _loader;
+    VulkanDescriptorSetLayout _modelDescriptorSetLayout;
+    VkDescriptorSet _modelDescriptorSet;
+
+    static constexpr uint32_t HistoryBindingIndex = 0;
+    static constexpr uint32_t TaaOutputBindingIndex = 1;
+    static constexpr uint32_t VelocityBindingIndex = 2;
+    static constexpr uint32_t ColorBindingIndex = 3;
+    static constexpr uint32_t DepthBindingIndex = 4;
 };

@@ -1,6 +1,15 @@
 #include "gltf/gltf.hpp"
 
-glm::vec3 vec3From(std::vector<double> v) {
+glm::vec2 gltf::vec2From(const std::vector<double>& v) {
+    glm::vec2 res{};
+
+    if(v.size() >= 1) res.x = v[0];
+    if(v.size() >= 2) res.y = v[1];
+
+    return res;
+}
+
+glm::vec3 gltf::vec3From(const std::vector<double>& v) {
     glm::vec3 res{};
 
     if(v.size() >= 1) res.x = v[0];
@@ -10,7 +19,7 @@ glm::vec3 vec3From(std::vector<double> v) {
     return res;
 }
 
-glm::vec4 vec4From(std::vector<double> v) {
+glm::vec4 gltf::vec4From(const std::vector<double>& v) {
     glm::vec4 res{};
 
     if(v.size() >= 1) res.x = v[0];
@@ -21,7 +30,17 @@ glm::vec4 vec4From(std::vector<double> v) {
     return res;
 }
 
-int alphaModeToIndex(std::string mode) {
+glm::quat gltf::quaternionFrom(const std::vector<double> &q) {
+    glm::quat res{};
+    if(q.empty()) return res;
+
+    res.x = q[0];
+    res.y = q[1];
+    res.z = q[2];
+    res.w = q[3];
+}
+
+int alphaModeToIndex(const std::string& mode) {
     if(mode == "OPAQUE") return 0;
     if(mode == "MASK") return 1;
     if(mode == "BLEND") return 2;
@@ -51,6 +70,7 @@ void gltf::PendingModel::updateDrawState() {
         meshData.push_back(data);
     }
 
+    if(numMeshes == 0) return;
     
     auto meshDataSize = BYTE_SIZE(meshData);
     auto drawCommandsSize = BYTE_SIZE(drawCommands);
@@ -169,4 +189,12 @@ void gltf::PendingModel::uploadMaterials() {
 
 void gltf::Model::sync() const {
     while( draw.count >= numMeshes) {} //  TODO use condition variables
+}
+
+bool gltf::Model::fullyLoaded() const {
+    return draw.count >= numMeshes && texturesLoaded();
+}
+
+bool gltf::Model::texturesLoaded() const {
+    return textures.size() >= numTextures;
 }

@@ -27,6 +27,7 @@
 #define EMISSION_TEXTURE global_textures[nonuniformEXT(EMISSION_TEX_ID)]
 
 #include "gltf.glsl"
+#include "lighting.glsl"
 
 layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
@@ -133,8 +134,8 @@ vec3 getMRO() {
 
     if(METAL_ROUGHNESS_TEX_ID != -1) {
         vec3 res = texture(METAL_ROUGHNESS_TEXTURE, fs_in.uv).rgb;
-        mro.r = res.g;
-        mro.g = res.b;
+        mro.r = res.b;
+        mro.g = res.g;
 
         if(OCCLUSION_TEX_ID != 1) {
             if(OCCLUSION_TEX_ID == METAL_ROUGHNESS_TEX_ID) {

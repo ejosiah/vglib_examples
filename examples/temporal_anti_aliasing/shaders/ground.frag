@@ -32,8 +32,8 @@ void main() {
         gl_FragDepth = depth.z;
         float sd = length(p.xz) - 10;
         sd = 1 - smoothstep(0, 10, sd);
-        //      vec3 color = mod(floor(p.x) + floor(p.z), 2) == 0 ? vec3(1) : vec3(0.2);
-        vec3 albedo =  GetColorFromPositionAndNormal(p, n);
+      vec3 albedo = mod(floor(p.x) + floor(p.z), 2) == 0 ? vec3(1) : vec3(0);
+//        vec3 albedo =  GetColorFromPositionAndNormal(p, n);
 
         vec4 radiance = computeRadiance(createLightParams(p, o, n, defaultLightDir, 2, albedo));
         radiance.rgb = pow(vec3(1.0) - exp(-radiance.rgb / whitePoint * exposure), vec3(1.0 / 2.2));

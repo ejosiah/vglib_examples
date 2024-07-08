@@ -22,6 +22,11 @@ namespace gltf {
         return static_cast<int>(textureType);
     }
 
+    glm::vec2 vec2From(const std::vector<double>& v);
+    glm::vec3 vec3From(const std::vector<double>& v);
+    glm::vec4 vec4From(const std::vector<double>& v);
+    glm::quat quaternionFrom(const std::vector<double>& q);
+
     struct Mesh{
         uint32_t meshId{};
         uint32_t indexCount{};
@@ -58,17 +63,17 @@ namespace gltf {
         std::atomic_int count{};
     };
 
-    struct PendingModel;
-
     struct Model{
         friend class Loader;
 
+        glm::mat4 transform{1};
         std::vector<Texture> textures;
         VulkanBuffer vertexBuffer;
         VulkanBuffer indexBuffer;
         VulkanBuffer meshBuffer;
         VulkanBuffer materialBuffer;
         uint32_t numMeshes{0};
+        uint32_t numTextures{0};
         Draw draw;
         VkDescriptorSet descriptorSet{};
         struct {
@@ -77,6 +82,10 @@ namespace gltf {
         } bounds;
 
         void sync() const;
+
+        bool texturesLoaded() const;
+
+        bool fullyLoaded() const;
 
     };
 
@@ -103,6 +112,7 @@ namespace gltf {
 
     struct TextureUploadRequest {
         std::shared_ptr<Model> model;
+        std::string uri;
         uint32_t bindingId{};
         tinygltf::Image image{};
     };

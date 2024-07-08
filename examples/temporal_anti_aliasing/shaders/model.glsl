@@ -15,13 +15,17 @@ layout(set = 0, binding = 0) uniform SceneConstants {
 
     vec2 jitter_xy;
     vec2 previous_jitter_xy;
+
+    vec2 resolution;
+    int color_buffer_index;
+    int depth_buffer_index;
 } scene;
 
-layout(set = 1, binding = 0) uniform TaaConstants {
+layout(set = 0, binding = 1) uniform TaaConstants {
     uint history_color_texture_index;
-    uint taa_output_texture_index;
+    uint output_texture_index;
     uint velocity_texture_index;
     uint current_color_texture_index;
-};
+} taa;
 
 #endif // SCENE_GLSL

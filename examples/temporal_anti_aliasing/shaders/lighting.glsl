@@ -10,6 +10,7 @@ const vec3 whitePoint = vec3(1);
 const float exposure = 10;
 
 struct LightParams {
+    vec3 lightIntensity;
     vec3 position;
     vec3 viewDir;
     vec3 normal;
@@ -23,6 +24,7 @@ struct LightParams {
 
 LightParams createLightParams(vec3 fragPos, vec3 viewPos, vec3 normal, vec3 lightPos, int lightType, vec3 albedo) {
     LightParams params;
+    params.lightIntensity = vec3(10);
     params.position = fragPos;
     params.viewDir = viewPos - fragPos;
     params.normal = normal;
@@ -73,7 +75,12 @@ vec4 computeRadiance(LightParams params) {
     float NdotL = max(dot(N, L), 0.0);
 
     // add to outgoing radiance Lo
-    vec3 radiance = vec3(1);
+    vec3 radiance = params.lightIntensity;
+    if(params.lightType == LIGHT_TYPE_POSITIONAL) {
+        float dd = length(params.lightDir);
+        dd *= dd;
+        radiance /= dd;
+    }
     vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
 
     float ao = params.ambientOcclusion;

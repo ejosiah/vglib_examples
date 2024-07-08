@@ -1,0 +1,39 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#include "model.glsl"
+
+#define DEPTH_BUFFER global_textures[nonuniformEXT(scene.depth_buffer_index)]
+#define VELOCITY_OUT global_images_rg16f[nonuniformEXT(taa.velocity_texture_index)]
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 11, rg16f) uniform image2D global_images_rg16f[];
+layout(set = 1, binding = 11, rgba32f) uniform image2D global_images[];
+
+
+void main() {
+    ivec2 iPos = ivec2(gl_GlobalInvocationID);
+
+    if(iPos.x >= scene.resolution.x || iPos.y >= scene.resolution.y) {
+        return;
+    }
+
+    float depth = texelFetch(DEPTH_BUFFER, iPos, 0).r;
+    vec2 screenUV = (vec2(iPos) + 0.5)/scene.resolution;
+    vec4 clipPos = vec4( 2 * screenUV - 1, depth, 1);
+
+    vec4 worldPos = scene.inverse_current_view_projection * clipPos;
+    worldPos.xyz /= worldPos.w;
+
+    vec4 prevClipPos = scene.previous_view_projection * vec4(worldPos.xyz, 1);
+    prevClipPos.xyz /= prevClipPos.w;
+
+    vec2 jitter_diff = (scene.jitter_xy - scene.previous_jitter_xy) * 0.5;
+
+    vec2 velocity = clipPos.xy - prevClipPos.xy;
+    velocity -= jitter_diff;
+
+    imageStore(VELOCITY_OUT, iPos, vec4(velocity, 0, 0));
+}

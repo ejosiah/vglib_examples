@@ -39,7 +39,7 @@ void tinyGltfLoad(tinygltf::Model& model, const std::string& path) {
 }
 
 
-std::tuple<size_t, size_t, size_t> primitiveCounts(const tinygltf::Model& model) {
+std::tuple<size_t, size_t, size_t, size_t> primitiveCounts(const tinygltf::Model& model) {
     size_t numVertices = 0;
     size_t numIndices = 0;
     size_t numPrimitives = 0;
@@ -50,7 +50,13 @@ std::tuple<size_t, size_t, size_t> primitiveCounts(const tinygltf::Model& model)
             numIndices += model.accessors[primitive.indices].count;
         }
     }
-    return std::make_tuple(numPrimitives, numVertices, numIndices);
+
+    size_t numMeshInstances = 0;
+    for(const auto& node : model.nodes) {
+        numMeshInstances += node.mesh == -1 ? 0 : node.mesh;
+     }
+
+    return std::make_tuple(numMeshInstances, numPrimitives, numVertices, numIndices);
 }
 
 size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Mesh& mesh) {
@@ -67,6 +73,10 @@ size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Primitive& p
 }
 template<typename T>
 std::span<const T> getAttributeData(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const std::string& attribute) {
+    if(!primitive.attributes.contains(attribute)){
+        return {};
+    }
+
     auto& accessor = model.accessors[primitive.attributes.at(attribute)];
 
     if(accessor.count == 0) {
@@ -143,7 +153,7 @@ std::shared_ptr<gltf::Model> gltf::Loader::load(const std::filesystem::path &pat
     tinyGltfLoad(*gltf, path.string());
 
     const auto numMaterials = gltf->materials.size();
-    const auto [numMeshes, numVertices, numIndices] = primitiveCounts(*gltf);
+    const auto [numMeshInstances, numMeshes, numVertices, numIndices] = primitiveCounts(*gltf);
     auto [bMin, bMax] = computeBounds(*gltf);
 
     auto pendingModel = std::make_shared<PendingModel>();
@@ -154,6 +164,7 @@ std::shared_ptr<gltf::Model> gltf::Loader::load(const std::filesystem::path &pat
 
     pendingModel->model = std::make_shared<gltf::Model>();
     pendingModel->model->numMeshes = numMeshes;
+    pendingModel->model->numTextures = pendingModel->gltf->textures.size();
     pendingModel->meshes.reset(numMeshes);
 
     pendingModel->model->vertexBuffer = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
@@ -195,7 +206,7 @@ std::shared_ptr<gltf::Model> gltf::Loader::load(const std::filesystem::path &pat
 
         const auto& texture = pendingModel->gltf->textures[i];
         // TODO create sampler
-        TextureUploadRequest request{ pendingModel->model, bindingId, pendingModel->gltf->images[texture.source] };
+        TextureUploadRequest request{ pendingModel->model, pendingModel->gltf->images[texture.source].uri, bindingId, pendingModel->gltf->images[texture.source] };
         _texturesUploads.push(request);
     }
 
@@ -366,7 +377,7 @@ void gltf::Loader::uploadTextures() {
         VkImageCreateInfo createInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
         createInfo.imageType = VK_IMAGE_TYPE_2D;
         createInfo.format = VK_FORMAT_R8G8B8A8_UNORM; // TODO derive format i.e. getFormat(imate);
-        createInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        createInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         createInfo.mipLevels = 1; // TODO generate mip levels;
         createInfo.arrayLayers = 1;
@@ -391,15 +402,21 @@ void gltf::Loader::uploadTextures() {
             auto& texture = uploadedTexture.texture;
             texture.width = static_cast<uint32_t>(request.image.width);
             texture.height = static_cast<uint32_t>(request.image.height);
+            texture.levels = static_cast<uint32_t>(std::log2(std::max(texture.width, texture.height))) + 1;
+            createInfo.mipLevels = texture.levels;
+
             createInfo.extent = { texture.width, texture.height, 1 };
 
             texture.image = _device->createImage(createInfo);
-            texture.imageView = texture.image.createView(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, DEFAULT_SUB_RANGE);
+            _device->setName<VK_OBJECT_TYPE_IMAGE>(request.uri, texture.image.image);
+
+            VkImageSubresourceRange subresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, texture.levels, 0, 1};
+            texture.imageView = texture.image.createView(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
 
             _stagingBuffer.copy(request.image.image, bufferOffset);  // TODO retrieve data from BufferView if uri.empty() == true
 
             prepTransferBarriers[textureId].image = texture.image.image;
-            prepTransferBarriers[textureId].subresourceRange = DEFAULT_SUB_RANGE;
+            prepTransferBarriers[textureId].subresourceRange = subresourceRange;
             prepTransferBarriers[textureId].srcAccessMask = VK_ACCESS_NONE;
             prepTransferBarriers[textureId].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             prepTransferBarriers[textureId].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -416,14 +433,14 @@ void gltf::Loader::uploadTextures() {
             vkCmdCopyBufferToImage(commandBuffer, _stagingBuffer.buffer, texture.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &regions[textureId]);
 
             prepReadBarriers[textureId].image = texture.image.image;
-            prepReadBarriers[textureId].subresourceRange = DEFAULT_SUB_RANGE;
+            prepReadBarriers[textureId].subresourceRange = subresourceRange;
             prepReadBarriers[textureId].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            prepReadBarriers[textureId].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+            prepReadBarriers[textureId].dstAccessMask = VK_ACCESS_NONE;
             prepReadBarriers[textureId].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             prepReadBarriers[textureId].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             prepReadBarriers[textureId].srcQueueFamilyIndex = *_device->queueFamilyIndex.transfer;
             prepReadBarriers[textureId].dstQueueFamilyIndex = *_device->queueFamilyIndex.graphics;
-            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &prepReadBarriers[textureId]);
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_NONE, 0, 0, nullptr, 0, nullptr, 1, &prepReadBarriers[textureId]);
 
             uploadedTextures.push_back(std::move(uploadedTexture));
             ++textureId;
