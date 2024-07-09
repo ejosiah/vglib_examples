@@ -27,17 +27,4 @@ struct Material {
     ivec4 textures0;
     ivec4 textures1;
 };
-
-struct BrdfInfo {
-    vec3 V; // view vector
-    vec3 L; // light vector
-    vec3 N; // normal
-    vec3 H; // halfway vector
-    float NdotL;
-    float NdotV;
-    float NdotH;
-    float LdotH;
-    float VdotH;
-};
-
 #endif // GLTF_GLSL

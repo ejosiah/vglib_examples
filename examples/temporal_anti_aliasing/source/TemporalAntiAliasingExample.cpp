@@ -45,8 +45,8 @@ void TemporalAntiAliasingExample::initJitter() {
 }
 
 void TemporalAntiAliasingExample::loadModel() {
-    _model = _loader->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
-//    _model = _loader->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
+//    _model = _loader->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
+    _model = _loader->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
 //    _model = _loader->load( &_bindlessDescriptor, resource("WaterBottle/glTF/WaterBottle.gltf"));
     _model->transform = glm::translate(glm::mat4{1}, -_model->bounds.min);
 }
@@ -331,6 +331,7 @@ void TemporalAntiAliasingExample::createRenderPipeline() {
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant())
                     .addDescriptorSetLayout(_loader->descriptorSetLayout())
+                    .addDescriptorSetLayout(_loader->descriptorSetLayout())
                     .addDescriptorSetLayout(*_bindlessDescriptor.descriptorSetLayout)
                 .name("model_pipeline")
             .build(_render.model.layout);
@@ -438,17 +439,24 @@ void TemporalAntiAliasingExample::renderGround(VkCommandBuffer commandBuffer) {
 }
 
 void TemporalAntiAliasingExample::renderScene(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = _model->descriptorSet;
-    sets[1] = _bindlessDescriptor.descriptorSet;
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = _model->mesh16descriptorSet;
+    sets[1] = _model->materialDescriptorSet;
+    sets[2] = _bindlessDescriptor.descriptorSet;
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-//    _camera->push(commandBuffer, _render.model.layout, _model->transform);
+    _camera->push(commandBuffer, _render.model.layout);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, _model->vertexBuffer, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, _model->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw.gpu, 0, _model->draw.count, sizeof(VkDrawIndexedIndirectCommand));
+
+    vkCmdBindIndexBuffer(commandBuffer, _model->indexBufferUint16, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw_16.gpu, 0, _model->draw_16.count, sizeof(VkDrawIndexedIndirectCommand));
+
+    sets[0] = _model->mesh32descriptorSet;
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindIndexBuffer(commandBuffer, _model->indexBufferUint32, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw_32.gpu, 0, _model->draw_32.count, sizeof(VkDrawIndexedIndirectCommand));
 
 }
 

@@ -33,11 +33,11 @@ layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
 };
 
-layout(set = 0, binding = 1) buffer GLTF_MATERIAL {
+layout(set = 1, binding = 0) buffer GLTF_MATERIAL {
     Material materials[];
 };
 
-layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
 layout(location = 0) in struct {
     vec3 position;
@@ -55,6 +55,7 @@ float saturate(float x);
 vec4 getBaseColor();
 vec3 getNormal();
 vec3 getMRO();
+bool noTangets();
 
 layout(location = 0) out vec4 fragColor;
 
@@ -149,7 +150,7 @@ vec3 getMRO() {
 }
 
 vec3 getNormal() {
-    if(NORMAL_TEX_ID == -1) {
+    if(NORMAL_TEX_ID == -1 || noTangets()) {
         return fs_in.normal;
     }
     mat3 TBN = mat3(fs_in.tangent, fs_in.bitangent, fs_in.normal);
@@ -161,4 +162,8 @@ vec3 getNormal() {
         normal *= -1;
     }
     return normal;
+}
+
+bool noTangets() {
+    return all(equal(fs_in.tangent, vec3(0)));
 }

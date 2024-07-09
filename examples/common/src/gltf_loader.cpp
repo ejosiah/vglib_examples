@@ -4,7 +4,7 @@
 #include "gltf/GltfLoader.hpp"
 #include <Texture.h>
 #include <Vertex.h>
-
+#include <primitives.h>
 #include <tuple>
 #include <stdexcept>
 #include <numeric>
@@ -39,24 +39,39 @@ void tinyGltfLoad(tinygltf::Model& model, const std::string& path) {
 }
 
 
-std::tuple<size_t, size_t, size_t, size_t> primitiveCounts(const tinygltf::Model& model) {
+std::tuple<size_t, size_t, size_t, size_t, size_t, size_t> primitiveCounts(const tinygltf::Model& model) {
+    using namespace gltf;
     size_t numVertices = 0;
-    size_t numIndices = 0;
+    size_t numIndices16 = 0;
+    size_t numIndices32 = 0;
     size_t numPrimitives = 0;
     for(const auto& mesh : model.meshes) {
         for(const auto& primitive : mesh.primitives) {
             ++numPrimitives;
             numVertices += model.accessors[primitive.attributes.at("POSITION")].count;
-            numIndices += model.accessors[primitive.indices].count;
+            if (model.accessors[primitive.indices].componentType == 5123) {
+                numIndices16 += model.accessors[primitive.indices].count;
+            } else if (model.accessors[primitive.indices].componentType == 5125) {
+                numIndices32 += model.accessors[primitive.indices].count;
+            }
         }
     }
 
-    size_t numMeshInstances = 0;
+    size_t numMeshInstances16 = 0;
+    size_t numMeshInstances32 = 0;
     for(const auto& node : model.nodes) {
-        numMeshInstances += node.mesh == -1 ? 0 : node.mesh;
+        if(node.mesh != -1){
+            for(const auto& prim : model.meshes[node.mesh].primitives) {
+                if(model.accessors[prim.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_SHORT)) {
+                    numMeshInstances16++;
+                }else if(model.accessors[prim.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_INT)){
+                    numMeshInstances32++;
+                }
+            }
+        }
      }
 
-    return std::make_tuple(numMeshInstances, numPrimitives, numVertices, numIndices);
+    return std::make_tuple(numMeshInstances32, numMeshInstances16, numPrimitives, numVertices, numIndices32, numIndices16);
 }
 
 size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Mesh& mesh) {
@@ -70,6 +85,14 @@ size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Mesh& mesh) 
 size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Primitive& primitive) {
     return model.accessors[primitive.attributes.at("POSITION")].count;
 
+}
+
+uint32_t getNumInstances(const tinygltf::Model& model, uint32_t meshId) {
+    auto numInstances = 0u;
+    for(const auto& node : model.nodes) {
+        numInstances += node.mesh == meshId ? 1 : 0;
+    }
+    return numInstances;
 }
 template<typename T>
 std::span<const T> getAttributeData(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const std::string& attribute) {
@@ -92,7 +115,8 @@ std::span<const T> getAttributeData(const tinygltf::Model& model, const tinygltf
     return { start, size };
 }
 
-std::span<const uint16_t> getIndices(const tinygltf::Model& model, const tinygltf::Primitive& primitive) {
+template<typename IndexType>
+std::span<const IndexType> getIndices(const tinygltf::Model& model, const tinygltf::Primitive& primitive) {
     auto& accessor = model.accessors[primitive.indices];
 
     if(accessor.count == 0) {
@@ -102,7 +126,7 @@ std::span<const uint16_t> getIndices(const tinygltf::Model& model, const tinyglt
     auto& bufferView = model.bufferViews[accessor.bufferView];
     auto& buffer = model.buffers[bufferView.buffer];
 
-    auto start = reinterpret_cast<const uint16_t *>(buffer.data.data() + bufferView.byteOffset + accessor.byteOffset);
+    auto start = reinterpret_cast<const IndexType *>(buffer.data.data() + bufferView.byteOffset + accessor.byteOffset);
     auto size = accessor.count;
 
     return { start, size };
@@ -124,6 +148,43 @@ std::tuple<glm::vec3, glm::vec3> computeBounds(const tinygltf::Model& model) {
     }
 
     return std::make_tuple(bMin, bMax);
+}
+
+template<typename indexType>
+void calculateTangents(std::vector<Vertex>& vertices, std::vector<indexType> indices) {
+    for(int i = 0; i < indices.size(); i+= 3){
+        auto& v0 = vertices[indices[i]];
+        auto& v1 = vertices[indices[i+1]];
+        auto& v2 = vertices[indices[i+2]];
+
+        auto e1 = v1.position.xyz() - v0.position.xyz();
+        auto e2 = v2.position.xyz() - v0.position.xyz();
+
+        auto du1 = v1.uv.x - v0.uv.x;
+        auto dv1 = v1.uv.y - v0.uv.y;
+        auto du2 = v2.uv.x - v0.uv.x;
+        auto dv2 = v2.uv.y - v0.uv.y;
+
+        auto d = 1.f/(du1 * dv2 - dv1 * du2);
+
+        glm::vec3 tn{0};
+        tn.x = d * (dv2 * e1.x - dv1 * e2.x);
+        tn.y = d * (dv2 * e1.y - dv1 * e2.y);
+        tn.z = d * (dv2 * e1.z - dv1 * e2.z);
+
+        glm::vec3 bn{0};
+        bn.x = d * (du1 * e2.x - du2 * e1.x);
+        bn.y = d * (du1 * e2.y - du2 * e1.y);
+        bn.z = d * (du1 * e2.z - du2 * e1.z);
+
+        v0.tangent = normalize(tn);
+        v1.tangent = normalize(tn);
+        v2.tangent = normalize(tn);
+
+        v0.bitangent = normalize(bn);
+        v1.bitangent = normalize(bn);
+        v2.bitangent = normalize(bn);
+    }
 }
 
 gltf::Loader::Loader(VulkanDevice *device, VulkanDescriptorPool* descriptorPool, BindlessDescriptor* bindlessDescriptor, size_t reserve)
@@ -153,7 +214,7 @@ std::shared_ptr<gltf::Model> gltf::Loader::load(const std::filesystem::path &pat
     tinyGltfLoad(*gltf, path.string());
 
     const auto numMaterials = gltf->materials.size();
-    const auto [numMeshInstances, numMeshes, numVertices, numIndices] = primitiveCounts(*gltf);
+    const auto [numMeshInstances32, numMeshInstances16, numMeshes, numVertices, numIndices32, numIndices16] = primitiveCounts(*gltf);
     auto [bMin, bMax] = computeBounds(*gltf);
 
     auto pendingModel = std::make_shared<PendingModel>();
@@ -163,40 +224,57 @@ std::shared_ptr<gltf::Model> gltf::Loader::load(const std::filesystem::path &pat
     pendingModel->gltf = std::move(gltf);
 
     pendingModel->model = std::make_shared<gltf::Model>();
-    pendingModel->model->numMeshes = numMeshes;
+    pendingModel->model->numMeshes = numMeshInstances32 + numMeshInstances32;
     pendingModel->model->numTextures = pendingModel->gltf->textures.size();
-    pendingModel->meshes.reset(numMeshes);
 
     pendingModel->model->vertexBuffer = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
             , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(Vertex) * numVertices, "");
 
-    pendingModel->model->indexBuffer = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-            , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint16_t) * numIndices, "");
+    pendingModel->model->indexBufferUint16 = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+            , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint16_t) + sizeof(uint16_t) * numIndices16, "");
 
-    pendingModel->model->draw.gpu = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numMeshes * sizeof(VkDrawIndexedIndirectCommand));
-    pendingModel->model->draw.count = 0;
+    pendingModel->model->indexBufferUint32 = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+            , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t) + sizeof(uint32_t) * numIndices32, "");
 
-    pendingModel->model->meshBuffer = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(gltf::MeshData) * numMeshes);
-    pendingModel->model->materialBuffer = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(gltf::MeshData) * numMaterials);
+    pendingModel->model->draw_16.gpu = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numMeshInstances16 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand));
+    pendingModel->model->draw_16.count = 0;
 
+    pendingModel->model->draw_32.gpu = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numMeshInstances32 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand));
+    pendingModel->model->draw_32.count = 0;
+
+    pendingModel->model->instanceOffsetBuffer = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(gltf::DrawInstanceOffset) * numMeshes);
+    pendingModel->model->mesh16Buffer = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(gltf::MeshData) * numMeshInstances16 + sizeof(gltf::MeshData));
+    pendingModel->model->mesh32Buffer = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(gltf::MeshData) * numMeshInstances32 + sizeof(gltf::MeshData));
+    pendingModel->model->materialBuffer = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(gltf::MaterialData) * numMaterials);
+
+    auto sets = _descriptorPool->allocate({_descriptorSetLayout, _descriptorSetLayout, _descriptorSetLayout });
     pendingModel->model->bounds.min = bMin;
     pendingModel->model->bounds.max = bMax;
-    pendingModel->model->descriptorSet = _descriptorPool->allocate( { _descriptorSetLayout } ).front();
-    
-    auto writes = initializers::writeDescriptorSets<2>();
-    writes[0].dstSet = pendingModel->model->descriptorSet;
+    pendingModel->model->mesh16descriptorSet = sets[0];
+    pendingModel->model->mesh32descriptorSet = sets[1];
+    pendingModel->model->materialDescriptorSet = sets[2];
+
+    auto writes = initializers::writeDescriptorSets<3>();
+    writes[0].dstSet = pendingModel->model->mesh16descriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
-    VkDescriptorBufferInfo meshBufferInfo{ pendingModel->model->meshBuffer, 0, VK_WHOLE_SIZE };
-    writes[0].pBufferInfo = &meshBufferInfo;
+    VkDescriptorBufferInfo meshBuffer16Info{ pendingModel->model->mesh16Buffer, 0, VK_WHOLE_SIZE };
+    writes[0].pBufferInfo = &meshBuffer16Info;
 
-    writes[1].dstSet = pendingModel->model->descriptorSet;
-    writes[1].dstBinding = 1;
+    writes[1].dstSet = pendingModel->model->mesh32descriptorSet;
+    writes[1].dstBinding = 0;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo meshBufferInfo{ pendingModel->model->mesh32Buffer, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &meshBufferInfo;
+
+    writes[2].dstSet = pendingModel->model->materialDescriptorSet;
+    writes[2].dstBinding = 0;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].descriptorCount = 1;
     VkDescriptorBufferInfo materialBufferInfo{ pendingModel->model->materialBuffer, 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &materialBufferInfo;
+    writes[2].pBufferInfo = &materialBufferInfo;
 
     _device->updateDescriptorSets(writes);
 
@@ -255,14 +333,15 @@ void gltf::Loader::uploadMeshes() {
         auto& meshes = pending->gltf->meshes;
 
         uint32_t vertexOffset = 0;
-        uint32_t firstIndex = 0;
-        std::array<VkBufferCopy, 2> regions{};
+        uint32_t firstIndex16 = 0;
+        uint32_t firstIndex32 = 0;
+        std::array<VkBufferCopy, 3> regions{};
 
         auto meshId = 0u;
         for(auto& gltfMesh : meshes) {
 
             for(const auto& primitive : gltfMesh.primitives) {
-
+                auto indexType = ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType);
                 const auto numVertices = getNumVertices(*pending->gltf, primitive);
                 std::vector<Vertex> vertices;
                 vertices.reserve(numVertices);
@@ -281,15 +360,32 @@ void gltf::Loader::uploadMeshes() {
                     vertex.uv = uvs.empty() ? glm::vec2(0) : uvs[i];
                     vertices.push_back(vertex);
                 }
-                auto pIndices = getIndices(*pending->gltf, primitive);
-                std::vector<uint16_t> indices{pIndices.begin(), pIndices.end()};
 
                 regions[0].size = BYTE_SIZE(vertices);
-                _stagingBuffer.copy(vertices, 0);
 
-                regions[1].srcOffset = regions[0].size;
-                regions[1].size = BYTE_SIZE(indices);
-                _stagingBuffer.copy(indices, regions[1].srcOffset);
+                if(indexType == ComponentType::UNSIGNED_SHORT) {
+                    auto pIndices = getIndices<uint16_t>(*pending->gltf, primitive);
+                    std::vector<uint16_t> indices{pIndices.begin(), pIndices.end()};
+                    regions[1].srcOffset = regions[0].size;
+                    regions[1].size = BYTE_SIZE(indices);
+                    _stagingBuffer.copy(indices, regions[1].srcOffset);
+
+                    if(tangents.empty()) {
+                        calculateTangents(vertices, indices);
+                    }
+                }else {
+                    auto pIndices = getIndices<uint32_t>(*pending->gltf, primitive);
+                    std::vector<uint32_t> indices{pIndices.begin(), pIndices.end()};
+                    regions[2].srcOffset = regions[0].size;
+                    regions[2].size = BYTE_SIZE(indices);
+                    _stagingBuffer.copy(indices, regions[2].srcOffset);
+
+                    if(tangents.empty()) {
+                        calculateTangents(vertices, indices);
+                    }
+                }
+
+                _stagingBuffer.copy(vertices, 0);
 
                 _fence.reset();
                 auto beginInfo = initializers::commandBufferBeginInfo();
@@ -298,8 +394,13 @@ void gltf::Loader::uploadMeshes() {
                 assert(model->vertexBuffer.size >= regions[0].dstOffset);
                 vkCmdCopyBuffer(commandBuffer, _stagingBuffer, model->vertexBuffer, 1, &regions[0]);
 
-                assert(model->indexBuffer.size >= regions[1].dstOffset);
-                vkCmdCopyBuffer(commandBuffer, _stagingBuffer, model->indexBuffer, 1, &regions[1]);
+                if(indexType == ComponentType::UNSIGNED_SHORT) {
+                    assert(model->indexBufferUint16.size >= regions[1].dstOffset);
+                    vkCmdCopyBuffer(commandBuffer, _stagingBuffer, model->indexBufferUint16, 1, &regions[1]);
+                }else {
+                    assert(model->indexBufferUint32.size >= regions[2].dstOffset);
+                    vkCmdCopyBuffer(commandBuffer, _stagingBuffer, model->indexBufferUint32, 1, &regions[2]);
+                }
 
                 std::vector<VkBufferMemoryBarrier> barriers(2);
                 barriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -316,9 +417,15 @@ void gltf::Loader::uploadMeshes() {
                 barriers[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
                 barriers[1].srcQueueFamilyIndex = _device->queueFamilyIndex.transfer.value();
                 barriers[1].dstQueueFamilyIndex = _device->queueFamilyIndex.graphics.value();
-                barriers[1].offset = regions[1].dstOffset;
-                barriers[1].buffer = model->indexBuffer;
-                barriers[1].size = regions[1].size;
+
+                if(indexType == ComponentType::UNSIGNED_SHORT) {
+                    barriers[1].offset = regions[1].dstOffset;
+                    barriers[1].buffer = model->indexBufferUint16;
+                    barriers[1].size = regions[1].size;
+                }else {
+                    barriers[1].offset = regions[2].dstOffset;
+                    barriers[1].buffer = model->indexBufferUint32;
+                    barriers[1].size = regions[2].size;                }
 
                 vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0,
                                      VK_NULL_HANDLE, COUNT(barriers), barriers.data(), 0, VK_NULL_HANDLE);
@@ -334,19 +441,29 @@ void gltf::Loader::uploadMeshes() {
 
                 Mesh mesh{
                         .meshId = static_cast<uint32_t>(meshId++),
-                        .indexCount = static_cast<uint32_t>(indices.size()),
-                        .instanceCount = 1u,
-                        .firstIndex = firstIndex,
+                        .indexCount = static_cast<uint32_t>(pending->gltf->accessors[primitive.indices].count),
+                        .instanceCount = 1,
+                        .firstIndex =  indexType == ComponentType::UNSIGNED_SHORT ? firstIndex16 : firstIndex32,
                         .vertexOffset = vertexOffset,
                         .firstInstance = 0,
-                        .materialId = primitive.material == -1 ? 0 : static_cast<uint32_t>(primitive.material)
+                        .materialId = primitive.material == -1 ? 0 : static_cast<uint32_t>(primitive.material),
+                        .indexType = indexType
                 };
-                pending->meshes.push(mesh);
+                pending->meshes.push_back(mesh);
 
-                firstIndex += mesh.indexCount;
+                if(indexType == ComponentType::UNSIGNED_SHORT) {
+                    firstIndex16 += mesh.indexCount;
+                }else if(indexType == ComponentType::UNSIGNED_INT){
+                    firstIndex32 += mesh.indexCount;
+                }
                 vertexOffset += vertices.size();
                 regions[0].dstOffset += regions[0].size;
-                regions[1].dstOffset += regions[1].size;
+
+                if(indexType == ComponentType::UNSIGNED_SHORT) {
+                    regions[1].dstOffset += regions[1].size;
+                }else {
+                    regions[2].dstOffset += regions[2].size;
+                }
             }
 
         }
@@ -360,10 +477,6 @@ void gltf::Loader::createDescriptorSetLayout() {
         _device->descriptorSetLayoutBuilder()
             .name("gltf_model_set_layout")
             .binding(0)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
-            .binding(1)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
