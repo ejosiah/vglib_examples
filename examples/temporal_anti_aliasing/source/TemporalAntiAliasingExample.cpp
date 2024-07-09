@@ -45,8 +45,8 @@ void TemporalAntiAliasingExample::initJitter() {
 }
 
 void TemporalAntiAliasingExample::loadModel() {
-//    _model = _loader->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
-    _model = _loader->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
+    _model = _loader->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
+//    _model = _loader->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
 //    _model = _loader->load( &_bindlessDescriptor, resource("WaterBottle/glTF/WaterBottle.gltf"));
     _model->transform = glm::translate(glm::mat4{1}, -_model->bounds.min);
 }
@@ -353,18 +353,18 @@ void TemporalAntiAliasingExample::createComputePipeline() {
     device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("motion_vectors_layout", _compute.velocity.layout.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("motion_vectors_pipeline", _compute.velocity.pipeline.handle);
 
-    module = device.createShaderModule(resource("taa_simple.comp.spv"));
+    module = device.createShaderModule(resource("resolve.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    _compute.taa.layout = device.createPipelineLayout({_modelDescriptorSetLayout, *_bindlessDescriptor.descriptorSetLayout });
+    _compute.resolve.layout = device.createPipelineLayout({_modelDescriptorSetLayout, *_bindlessDescriptor.descriptorSetLayout });
 
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = _compute.taa.layout.handle;
+    computeCreateInfo.layout = _compute.resolve.layout.handle;
 
-    _compute.taa.pipeline = device.createComputePipeline(computeCreateInfo, _pipelineCache.handle);
+    _compute.resolve.pipeline = device.createComputePipeline(computeCreateInfo, _pipelineCache.handle);
 
-    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("compute_taa_layout", _compute.taa.layout.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("compute_taa_pipeline", _compute.taa.pipeline.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("taa_resolve_layout", _compute.resolve.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("taa_resolve_pipeline", _compute.resolve.pipeline.handle);
 
 }
 
@@ -468,6 +468,24 @@ void TemporalAntiAliasingExample::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Checkbox("Jittering", &options.jitterEnabled);
     ImGui::Combo("Sampler", &options.samplerType, options.samplers.data(), options.samplers.size());
     ImGui::SliderInt("period", &options.jitterPeriod, 2, 16);
+
+    if(!options.simple) {
+        ImGui::Combo("Filter", &options.filter, options.filters.data(), options.filters.size());
+        ImGui::Combo("Sub-Sample Filter", &options.sub_sample_filter, options.subSampleFilters.data(), options.subSampleFilters.size());
+        ImGui::Combo("History Constraint", &options.history_constraint, options.historyConstraints.data(), options.historyConstraints.size());
+
+        ImGui::Text("Blending Weights filtering:");
+        ImGui::Indent(16);
+        ImGui::Checkbox("Temporal", &options.temporal_filtering);
+        ImGui::SameLine();
+        ImGui::Checkbox("Inverse Luminance", &options.inverse_luminance_filtering);
+        ImGui::SameLine();
+        ImGui::Checkbox("Luminance Difference", &options.luminance_difference_filtering);
+        ImGui::Indent(-16);
+    }
+
+    ImGui::Checkbox("Simple TAA", &options.simple);
+
     ImGui::End();
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
@@ -564,6 +582,13 @@ void TemporalAntiAliasingExample::newFrame() {
     _scene.cpu->camera_position = glm::vec4(_camera->position(), 0);
     _scene.cpu->camera_direction = _camera->viewDir;
     _scene.cpu->current_frame++;
+    _taa.cpu->taaSimple = int(options.simple);
+    _taa.cpu->filter = options.filter;
+    _taa.cpu->sub_sample_filter = options.sub_sample_filter;
+    _taa.cpu->history_constraint = options.history_constraint;
+    _taa.cpu->temporal_filtering = int(options.temporal_filtering);
+    _taa.cpu->inverse_luminance_filtering = int(options.inverse_luminance_filtering);
+    _taa.cpu->luminance_difference_filtering = int(options.luminance_difference_filtering);
     std::swap(_taa.cpu->taa_output_texture_index, _taa.cpu->history_color_texture_index);
 
 
@@ -624,8 +649,8 @@ void TemporalAntiAliasingExample::taaResolve(VkCommandBuffer commandBuffer) {
 
     glm::uvec3 gc{ (swapChain.width() + 8)/8, (swapChain.height() + 8)/8, 1 };
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.taa.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.taa.layout.handle, 0, sets.size(), sets.data(), 0, 0);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.resolve.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.resolve.layout.handle, 0, sets.size(), sets.data(), 0, 0);
     vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
 }
 
@@ -633,6 +658,9 @@ int main(){
     try{
 
         Settings settings;
+        settings.width = 1440;
+        settings.height = 1280;
+        settings.vSync = true;
         settings.depthTest = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);

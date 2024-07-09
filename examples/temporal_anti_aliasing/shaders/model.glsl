@@ -26,6 +26,13 @@ layout(set = 0, binding = 1) uniform TaaConstants {
     uint output_texture_index;
     uint velocity_texture_index;
     uint current_color_texture_index;
+    int simple;
+    int history_filter;
+    int subsample_filter;
+    int history_constraint;
+    int temporal_filtering;
+    int inverse_luminance_filtering;
+    int luminance_difference_filtering;
 } taa;
 
 #endif // SCENE_GLSL

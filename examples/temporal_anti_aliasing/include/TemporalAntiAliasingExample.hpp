@@ -30,6 +30,13 @@ struct TaaData {
     uint32_t taa_output_texture_index{};
     uint32_t velocity_texture_index{};
     uint32_t current_color_texture_index{};
+    int taaSimple{};
+    int filter{};
+    int sub_sample_filter{};
+    int history_constraint{};
+    int temporal_filtering{};
+    int inverse_luminance_filtering{};
+    int luminance_difference_filtering{};
 };
 
 struct Scene {
@@ -138,7 +145,7 @@ protected:
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
-        } taa;
+        } resolve;
     } _compute;
 
     VulkanDescriptorPool _descriptorPool;
@@ -166,9 +173,19 @@ protected:
     struct {
         bool jitterEnabled{true};
         bool taaEnabled{true};
+        bool simple{};
         int samplerType{static_cast<int>(SamplerType::Halton)};
         int jitterPeriod{8};
+        int filter{1};
+        int sub_sample_filter{1};
+        int history_constraint{1};
+        bool temporal_filtering{};
+        bool inverse_luminance_filtering{};
+        bool luminance_difference_filtering{};
         const std::array<const char*, 4> samplers{ "Halton", "R2", "Hammersley", "IG" };
+        const std::array<const char*, 2> filters{"Single", "Catmull Rom"};
+        const std::array<const char*, 4> subSampleFilters{"None", "Mitchell", "Blackman Harris", "Catmull Rom"};
+        const std::array<const char*, 5> historyConstraints{"None", "Clamp", "Clip", "Variance Clip", "Variance Clip with Clamp"};
     } options;
 
     Offscreen::RenderInfo _offscreenInfo{};

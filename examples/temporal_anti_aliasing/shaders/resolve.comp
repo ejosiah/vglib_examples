@@ -4,6 +4,7 @@
 #include "model.glsl"
 
 #define COLOR_BUFFER global_textures[nonuniformEXT(scene.color_buffer_index)]
+#define DEPTH_BUFFER global_textures[nonuniformEXT(scene.depth_buffer_index)]
 #define VELOCITY_BUFFER global_textures[nonuniformEXT(taa.velocity_texture_index)]
 #define HISTORY_BUFFER global_textures[nonuniformEXT(taa.history_color_texture_index)]
 #define TAA_IMAGE global_images[nonuniformEXT(taa.output_texture_index)]
@@ -14,6 +15,7 @@ layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 11, rg16f) uniform image2D global_images_rg16f[];
 layout(set = 1, binding = 11, rgba32f) uniform image2D global_images[];
 
+#include "resolve.glsl"
 
 void main() {
     ivec2 iPos = ivec2(gl_GlobalInvocationID);
@@ -22,15 +24,7 @@ void main() {
         return;
     }
 
-    vec2 velocity = texelFetch(VELOCITY_BUFFER, iPos, 0).xy;
-    vec2 screen_uv = (vec2(iPos) + 0.5)/scene.resolution;
-    vec2 reprojected_uv = screen_uv - velocity;
-
-    vec3 current_color = texture(COLOR_BUFFER, screen_uv).rgb;
-    vec3 historic_color = texture(HISTORY_BUFFER, reprojected_uv).rgb;
-
-    vec3 final_color = mix(current_color, historic_color, 0.9);
-
-    imageStore(TAA_IMAGE, iPos, vec4(final_color, 1));
+    vec3 color = resolve(iPos);
+    imageStore(TAA_IMAGE, iPos, vec4(color, 1));
 
 }
