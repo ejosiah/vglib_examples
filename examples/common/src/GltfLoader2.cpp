@@ -124,7 +124,9 @@ namespace gltf2 {
     , _commandBufferQueue(1024)
     , _workerCount(numWorkers)
     , _barrierObjectPools(numWorkers, BufferMemoryBarrierPool(1024) )
+    , _imageMemoryBarrierObjectPools(numWorkers, ImageMemoryBarrierPool(1024) )
     , _bufferCopyPool( numWorkers, BufferCopyPool(1024))
+    , _bufferImageCopyPool( numWorkers, BufferImageCopyPool(1024))
     {}
 
     void Loader::start() {
@@ -303,11 +305,11 @@ namespace gltf2 {
                     _workerQueue.push(MeshUploadTask{ pending, mesh, i});
                 }
 
-//                for(auto i = 0; i < pending->gltf->textures.size(); ++i) {
-//                    uint32_t bindingId = i + pending->textureBindingOffset;
-//                    auto& texture = pending->gltf->textures[i];
-//                    _workerQueue.push(TextureUploadTask{ pending, texture, bindingId });
-//                }
+                for(auto i = 0; i < pending->gltf->textures.size(); ++i) {
+                    uint32_t bindingId = i + pending->textureBindingOffset;
+                    auto& texture = pending->gltf->textures[i];
+                    _workerQueue.push(TextureUploadTask{ pending, texture, bindingId });
+                }
 //
 //                for(auto& material : pending->gltf->materials) {
 //                    _workerQueue.push(MaterialUploadTask{ pending, material});
@@ -536,9 +538,78 @@ namespace gltf2 {
         }
     }
 
-    void Loader::process(VkCommandBuffer, TextureUploadTask* textureUpload, int workerId) {
+    void Loader::process(VkCommandBuffer commandBuffer, TextureUploadTask* textureUpload, int workerId) {
         if(!textureUpload) return;
-//        spdlog::info("worker{} processing texture upload", workerId);
+
+        static std::vector<VulkanBuffer> stagingBufferRef; // FIXME, used pooled memory to allocate staging buffer
+
+        VkImageCreateInfo createInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+        createInfo.imageType = VK_IMAGE_TYPE_2D;
+        createInfo.format = VK_FORMAT_R8G8B8A8_UNORM; // TODO derive format i.e. getFormat(imate);
+        createInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        createInfo.mipLevels = 1; // TODO generate mip levels;
+        createInfo.arrayLayers = 1;
+        createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        auto& prepTransferBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
+        auto& prepReadBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
+        int textureId = 0;
+
+        auto& region = *_bufferImageCopyPool[workerId].acquire();
+        VkDeviceSize bufferOffset = 0;
+
+        Texture texture;
+        const auto& image = textureUpload->pending->gltf->images[textureUpload->texture.source];
+        texture.width = static_cast<uint32_t>(image.width);
+        texture.height = static_cast<uint32_t>(image.height);
+        texture.levels = static_cast<uint32_t>(std::log2(std::max(texture.width, texture.height))) + 1;
+        createInfo.mipLevels = texture.levels;
+
+        createInfo.extent = { texture.width, texture.height, 1 };
+
+        texture.image = _device->createImage(createInfo);
+        _device->setName<VK_OBJECT_TYPE_IMAGE>(image.uri, texture.image.image);
+
+        VkImageSubresourceRange subresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, texture.levels, 0, 1};
+        texture.imageView = texture.image.createView(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
+
+        auto stagingBuffer = _device->createStagingBuffer(image.image.size());
+        stagingBufferRef.push_back(stagingBuffer);  // FIXME remove this hack
+        stagingBuffer.copy(image.image);  // TODO retrieve data from BufferView if uri.empty() == true
+
+        prepTransferBarrier.image = texture.image.image;
+        prepTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        prepTransferBarrier.subresourceRange = subresourceRange;
+        prepTransferBarrier.srcAccessMask = VK_ACCESS_NONE;
+        prepTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        prepTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        prepTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &prepTransferBarrier);
+
+        region.bufferOffset = bufferOffset;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = { texture.width, texture.height, 1 };
+        vkCmdCopyBufferToImage(commandBuffer, stagingBuffer.buffer, texture.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        prepReadBarrier.image = texture.image.image;
+        prepReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        prepReadBarrier.subresourceRange = subresourceRange;
+        prepReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        prepReadBarrier.dstAccessMask = VK_ACCESS_NONE;
+        prepReadBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        prepReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        prepReadBarrier.srcQueueFamilyIndex = *_device->queueFamilyIndex.transfer;
+        prepReadBarrier.dstQueueFamilyIndex = *_device->queueFamilyIndex.graphics;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_NONE, 0, 0, nullptr, 0, nullptr, 1, &prepReadBarrier);
+
+        textureUpload->pending->model->textures.push_back(std::move(texture));      // FIXME not thread safe
+        textureUpload->gpuTexture = &textureUpload->pending->model->textures.back(); // FIXME not thread safe
     }
 
     void Loader::process(VkCommandBuffer, MaterialUploadTask* materialUpload, int workerId) {
@@ -731,6 +802,7 @@ namespace gltf2 {
     void Loader::onComplete(Task& task) {
         onComplete(std::get_if<MeshUploadTask>(&task));
         onComplete(std::get_if<InstanceUploadTask>(&task));
+        onComplete(std::get_if<TextureUploadTask>(&task));
     }
 
     void Loader::onComplete(MeshUploadTask *meshUpload) {
@@ -751,6 +823,10 @@ namespace gltf2 {
         spdlog::info("i32: {}, 116: {}", instanceUpload->pending->model->draw.u32.count, instanceUpload->pending->model->draw.u16.count);
     }
 
+    void Loader::onComplete(TextureUploadTask *textureUpload) {
+        if(!textureUpload) return;
+        spdlog::info("texture upload complete..");
+    }
 
 
     void tinyGltfLoad(tinygltf::Model& model, const std::string& path) {

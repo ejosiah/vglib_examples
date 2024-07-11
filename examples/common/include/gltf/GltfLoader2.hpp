@@ -67,6 +67,7 @@ namespace gltf2 {
         std::shared_ptr<PendingModel> pending;
         tinygltf::Texture texture;
         uint32_t bindingId{};
+        Texture* gpuTexture;
     };
 
     struct MaterialUploadTask {
@@ -97,7 +98,9 @@ namespace gltf2 {
     };
 
     using BufferMemoryBarrierPool = ObjectPool<VkBufferMemoryBarrier>;
+    using ImageMemoryBarrierPool = ObjectPool<VkImageMemoryBarrier>;
     using BufferCopyPool = ObjectPool<VkBufferCopy>;
+    using BufferImageCopyPool = ObjectPool<VkBufferImageCopy>;
 
     class Loader {
     public:
@@ -135,6 +138,8 @@ namespace gltf2 {
          void onComplete(MeshUploadTask* meshUpload);
 
          void onComplete(InstanceUploadTask* instanceUpload);
+
+         void onComplete(TextureUploadTask* textureUpload);
 
         void createDescriptorSetLayout();
 
@@ -178,7 +183,9 @@ namespace gltf2 {
         Texture _placeHolderNormalTexture;
         VulkanDescriptorSetLayout _descriptorSetLayout;
         std::vector<BufferMemoryBarrierPool> _barrierObjectPools;
+        std::vector<ImageMemoryBarrierPool> _imageMemoryBarrierObjectPools;
         std::vector<BufferCopyPool> _bufferCopyPool;
+        std::vector<BufferImageCopyPool> _bufferImageCopyPool;
         uint32_t _modelId{};
 
         static constexpr uint32_t MegaBytes =  1024 * 1024;
