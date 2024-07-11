@@ -235,6 +235,7 @@ namespace gltf2 {
         auto pendingModel = std::make_shared<PendingModel>();
         pendingModel->device = _device;
         pendingModel->bindlessDescriptor = _bindlessDescriptor;
+        pendingModel->textures.resize(model->numTextures);
         pendingModel->gltf = std::move(gltf);
         pendingModel->model = model;
         pendingModel->transforms = transforms;
@@ -551,12 +552,12 @@ namespace gltf2 {
 
         auto& prepTransferBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
         auto& prepReadBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
-        int textureId = 0;
 
         auto& region = *_bufferImageCopyPool[workerId].acquire();
         VkDeviceSize bufferOffset = 0;
 
-        Texture texture;
+        auto textureId = textureUpload->pending->textureId.fetch_add(1);
+        auto& texture = textureUpload->pending->textures[textureId];
         const auto& image = textureUpload->pending->gltf->images[textureUpload->texture.source];
         texture.width = static_cast<uint32_t>(image.width);
         texture.height = static_cast<uint32_t>(image.height);
@@ -604,8 +605,7 @@ namespace gltf2 {
         prepReadBarrier.dstQueueFamilyIndex = *_device->queueFamilyIndex.graphics;
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_NONE, 0, 0, nullptr, 0, nullptr, 1, &prepReadBarrier);
 
-        textureUpload->pending->model->textures.push_back(std::move(texture));      // FIXME not thread safe
-        textureUpload->gpuTexture = &textureUpload->pending->model->textures.back(); // FIXME not thread safe
+        textureUpload->textureId = textureId; // FIXME not thread safe
     }
 
     void Loader::process(VkCommandBuffer, MaterialUploadTask* materialUpload, int workerId) {
@@ -821,6 +821,9 @@ namespace gltf2 {
     void Loader::onComplete(TextureUploadTask *textureUpload) {
         if(!textureUpload) return;
         spdlog::info("texture upload complete..");
+        auto& texture = textureUpload->pending->textures[textureUpload->textureId];
+        _bindlessDescriptor->update({ &texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureUpload->bindingId });
+        textureUpload->pending->model->textures.push_back(std::move(texture));
     }
 
 

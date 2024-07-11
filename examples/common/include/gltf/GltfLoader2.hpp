@@ -50,6 +50,8 @@ namespace gltf2 {
         int textureBindingOffset{};
         std::vector<Mesh> meshes;
         std::atomic_uint32_t meshID{};
+        std::vector<Texture> textures;
+        std::atomic_uint32_t textureId;
         struct {
             std::atomic_uint32_t u16{};
             std::atomic_uint32_t u32{};
@@ -67,7 +69,7 @@ namespace gltf2 {
         std::shared_ptr<PendingModel> pending;
         tinygltf::Texture texture;
         uint32_t bindingId{};
-        Texture* gpuTexture;
+        uint32_t textureId;
     };
 
     struct MaterialUploadTask {
