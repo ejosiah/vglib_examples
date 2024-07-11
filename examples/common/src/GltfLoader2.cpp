@@ -316,7 +316,6 @@ namespace gltf2 {
 //                }
                 _taskPending.signalAll();
             }
-
         }
         spdlog::info("GLTF async loader offline");
     }
@@ -403,10 +402,7 @@ namespace gltf2 {
         regions[1].dstOffset = firstIndex16 * sizeof(uint16_t);
         regions[2].dstOffset = firstIndex32 * sizeof(uint32_t);
 
-        static std::vector<VulkanBuffer> stagingRefs; // FIXME remove this indefinite buffer lifetime hack
-
-
-
+        
         for(const auto& primitive : meshUpload->mesh.primitives) {
             auto indexType = ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType);
             const auto numVertices = getNumVertices(*pending->gltf, primitive);
@@ -420,7 +416,7 @@ namespace gltf2 {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint32_t);
             }
             auto stagingBuffer = _device->createStagingBuffer(numVertices * sizeof(Vertex) + indicesByteSize);
-            stagingRefs.push_back(stagingBuffer);
+            _stagingRefs.push_back(stagingBuffer);
 
             auto positions = getAttributeData<glm::vec3>(*pending->gltf, primitive, "POSITION");
             auto normals = getAttributeData<glm::vec3>(*pending->gltf, primitive, "NORMAL");
@@ -704,11 +700,10 @@ namespace gltf2 {
         meshStaging.u16.handle = _device->createStagingBuffer(BYTE_SIZE(meshData.u16) + sizeof(MeshData));
         meshStaging.u32.handle = _device->createStagingBuffer(BYTE_SIZE(meshData.u32) + sizeof(MeshData));
 
-        static std::vector<VulkanBuffer> stagingRefs; // FIXME remove this indefinite buffer lifetime hack
-        stagingRefs.push_back(meshStaging.u16.handle);
-        stagingRefs.push_back(meshStaging.u32.handle);
-        stagingRefs.push_back(drawCmdStaging.u32.handle);
-        stagingRefs.push_back(drawCmdStaging.u32.handle);
+        _stagingRefs.push_back(meshStaging.u16.handle);
+        _stagingRefs.push_back(meshStaging.u32.handle);
+        _stagingRefs.push_back(drawCmdStaging.u32.handle);
+        _stagingRefs.push_back(drawCmdStaging.u32.handle);
 
         const auto model = instanceUpload->pending->model;
         if(!drawCommands.u16.empty()) {

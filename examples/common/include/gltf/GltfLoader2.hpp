@@ -190,6 +190,7 @@ namespace gltf2 {
 
         static constexpr uint32_t MegaBytes =  1024 * 1024;
         static constexpr VkDeviceSize stagingBufferSize = 128 * MegaBytes;
+        std::vector<VulkanBuffer> _stagingRefs; // FIXME remove this indefinite buffer lifetime hack
     };
 
 }
