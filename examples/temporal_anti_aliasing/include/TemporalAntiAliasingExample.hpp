@@ -3,6 +3,7 @@
 #include "Offscreen.hpp"
 #include "Canvas.hpp"
 #include "gltf/GltfLoader.hpp"
+#include "gltf/GltfLoader2.hpp"
 #include "Sampler.hpp"
 
 struct SceneData {
@@ -102,6 +103,8 @@ protected:
 
     void renderScene(VkCommandBuffer commandBuffer);
 
+    void renderPlaceHolders(VkCommandBuffer commandBuffer);
+
     void renderUI(VkCommandBuffer commandBuffer);
 
     void applyTaa(VkCommandBuffer commandBuffer);
@@ -130,6 +133,11 @@ protected:
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } model;
+
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } placeHolder;
 
         struct {
             VulkanPipelineLayout layout;
@@ -195,8 +203,11 @@ protected:
     std::array<VkDescriptorSet, 2> _historyDisplaySet;
     std::shared_ptr<gltf::Model> _model;
     std::unique_ptr<gltf::Loader> _loader;
+    std::shared_ptr<gltf2::Model> _model2;
+    std::unique_ptr<gltf2::Loader> _loader2;
     VulkanDescriptorSetLayout _modelDescriptorSetLayout;
     VkDescriptorSet _modelDescriptorSet;
+    VulkanBuffer _modelPlaceHolder;
 
     static constexpr uint32_t HistoryBindingIndex = 0;
     static constexpr uint32_t TaaOutputBindingIndex = 1;

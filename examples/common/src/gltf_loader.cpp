@@ -84,7 +84,6 @@ size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Mesh& mesh) 
 
 size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Primitive& primitive) {
     return model.accessors[primitive.attributes.at("POSITION")].count;
-
 }
 
 uint32_t getNumInstances(const tinygltf::Model& model, uint32_t meshId) {
