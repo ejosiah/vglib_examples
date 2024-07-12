@@ -187,9 +187,9 @@ protected:
         int filter{1};
         int sub_sample_filter{1};
         int history_constraint{1};
-        bool temporal_filtering{};
-        bool inverse_luminance_filtering{};
-        bool luminance_difference_filtering{};
+        bool temporal_filtering{true};
+        bool inverse_luminance_filtering{true};
+        bool luminance_difference_filtering{true};
         const std::array<const char*, 4> samplers{ "Halton", "R2", "Hammersley", "IG" };
         const std::array<const char*, 2> filters{"Single", "Catmull Rom"};
         const std::array<const char*, 4> subSampleFilters{"None", "Mitchell", "Blackman Harris", "Catmull Rom"};

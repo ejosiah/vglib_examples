@@ -422,7 +422,7 @@ namespace gltf2 {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint32_t);
             }
             auto stagingBuffer = _stagingBuffers[workerId].allocate(numVertices * sizeof(Vertex) + indicesByteSize);
-            spdlog::info("buffer offset: {} size: {}", stagingBuffer.offset, stagingBuffer.size());
+//            spdlog::info("buffer offset: {} size: {}", stagingBuffer.offset, stagingBuffer.size());
 
             auto positions = getAttributeData<glm::vec3>(*pending->gltf, primitive, "POSITION");
             auto normals = getAttributeData<glm::vec3>(*pending->gltf, primitive, "NORMAL");
@@ -576,7 +576,8 @@ namespace gltf2 {
         VkImageSubresourceRange subresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, texture.levels, 0, 1};
         texture.imageView = texture.image.createView(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
 
-        auto stagingBuffer = _stagingBuffers[workerId].allocate(image.image.size());
+        constexpr VkDeviceSize alignment = 4; // buffer offset should be multiple of VK_FORMAT_R8G8B8A8_UNORM (4 bytes)
+        auto stagingBuffer = _stagingBuffers[workerId].allocate(image.image.size(), alignment);
         stagingBuffer.upload(image.image.data());
 
         prepTransferBarrier.image = texture.image.image;

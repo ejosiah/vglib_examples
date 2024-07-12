@@ -81,7 +81,7 @@ void main() {
     float specularWeight = 1;
 
     const vec3 lightDir = fs_in.eyes - fs_in.position;
-    const vec3 L = normalize(lightDir);
+    const vec3 L = normalize(vec3(1));
     const vec3 N = getNormal();
     const vec3 V = normalize(fs_in.eyes - fs_in.position);
     const vec3 H = normalize(L + V);
@@ -96,9 +96,6 @@ void main() {
     if(NdotL > 0 || NdotV > 0){
 
         vec3 intensity = vec3(10);
-        float dist2 = length(lightDir);
-        dist2 *= dist2;
-        intensity /= dist2;
 
         vec3 diffuse = vec3(0);
         vec3 specular = vec3(0);

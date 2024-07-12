@@ -9,7 +9,7 @@ public:
 
     StagingBuffer(VulkanDevice* device, VkDeviceSize size);
 
-    BufferRegion allocate(VkDeviceSize size);
+    BufferRegion allocate(VkDeviceSize size, VkDeviceSize alignment = 1);
 
 private:
     VulkanBuffer _buffer;
