@@ -545,8 +545,6 @@ namespace gltf2 {
     void Loader::process(VkCommandBuffer commandBuffer, TextureUploadTask* textureUpload, int workerId) {
         if(!textureUpload) return;
 
-        static std::vector<VulkanBuffer> stagingBufferRef; // FIXME, used pooled memory to allocate staging buffer
-
         VkImageCreateInfo createInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
         createInfo.imageType = VK_IMAGE_TYPE_2D;
         createInfo.format = VK_FORMAT_R8G8B8A8_UNORM; // TODO derive format i.e. getFormat(imate);
@@ -561,7 +559,6 @@ namespace gltf2 {
         auto& prepReadBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
 
         auto& region = *_bufferImageCopyPool[workerId].acquire();
-        VkDeviceSize bufferOffset = 0;
 
         auto textureId = textureUpload->pending->textureId.fetch_add(1);
         auto& texture = textureUpload->pending->textures[textureId];
@@ -579,9 +576,8 @@ namespace gltf2 {
         VkImageSubresourceRange subresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, texture.levels, 0, 1};
         texture.imageView = texture.image.createView(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
 
-        auto stagingBuffer = _device->createStagingBuffer(image.image.size());
-        stagingBufferRef.push_back(stagingBuffer);  // FIXME remove this hack
-        stagingBuffer.copy(image.image);  // TODO retrieve data from BufferView if uri.empty() == true
+        auto stagingBuffer = _stagingBuffers[workerId].allocate(image.image.size());
+        stagingBuffer.upload(image.image.data());
 
         prepTransferBarrier.image = texture.image.image;
         prepTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -592,14 +588,14 @@ namespace gltf2 {
         prepTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &prepTransferBarrier);
 
-        region.bufferOffset = bufferOffset;
+        region.bufferOffset = stagingBuffer.offset;
         region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         region.imageSubresource.mipLevel = 0;
         region.imageSubresource.baseArrayLayer = 0;
         region.imageSubresource.layerCount = 1;
         region.imageOffset = {0, 0, 0};
         region.imageExtent = { texture.width, texture.height, 1 };
-        vkCmdCopyBufferToImage(commandBuffer, stagingBuffer.buffer, texture.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        vkCmdCopyBufferToImage(commandBuffer, *stagingBuffer.buffer, texture.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
         prepReadBarrier.image = texture.image.image;
         prepReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -612,7 +608,7 @@ namespace gltf2 {
         prepReadBarrier.dstQueueFamilyIndex = *_device->queueFamilyIndex.graphics;
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_NONE, 0, 0, nullptr, 0, nullptr, 1, &prepReadBarrier);
 
-        textureUpload->textureId = textureId; // FIXME not thread safe
+        textureUpload->textureId = textureId;
     }
 
     void Loader::process(VkCommandBuffer commandBuffer, MaterialUploadTask* materialUpload, int workerId) {
