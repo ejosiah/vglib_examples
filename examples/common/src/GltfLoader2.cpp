@@ -38,6 +38,8 @@ namespace gltf2 {
 
     std::tuple<glm::vec3, glm::vec3> computeBounds(const tinygltf::Model& model, const std::vector<glm::mat4>& transforms);
 
+    void computeOffsets(const std::shared_ptr<PendingModel>& pending);
+
     template<typename T>
     std::span<const T> getAttributeData(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const std::string& attribute) {
         if(!primitive.attributes.contains(attribute)){
@@ -286,7 +288,7 @@ namespace gltf2 {
             }
 
             if(!commandBuffers.empty()){
-                spdlog::info("executing {} commandBuffers", commandBuffers.size());
+//                spdlog::info("executing {} commandBuffers", commandBuffers.size());
                 execute(commandBuffers);
                 while(!completedTasks.empty()){
                     auto task = completedTasks.top();
@@ -300,6 +302,8 @@ namespace gltf2 {
 
             while(!_pendingModels.empty()) {
                 auto pending = _pendingModels.pop();
+
+                computeOffsets(pending);
 
                 for(auto meshId = 0u; meshId < pending->gltf->meshes.size(); ++meshId) {
                     auto& mesh = pending->gltf->meshes[meshId];
@@ -393,11 +397,11 @@ namespace gltf2 {
         auto vertexCount = getNumVertices(*pending->gltf, meshUpload->mesh);
         auto [u32, u16] = getNumIndices(*pending->gltf, meshUpload->mesh);
 
-        uint32_t vertexOffset = _offsets.vertexOffset.fetch_add(vertexCount);
-        uint32_t firstIndex16 = _offsets.firstIndex16.fetch_add(u16);
-        uint32_t firstIndex32 = _offsets.firstIndex32.fetch_add(u32);
+        uint32_t vertexOffset = pending->offsets.vertex[meshUpload->meshId];
+        uint32_t firstIndex16 = pending->offsets.u16[meshUpload->meshId];
+        uint32_t firstIndex32 = pending->offsets.u32[meshUpload->meshId];
 
-        spdlog::info("worker{}, {}, {}, {}", workerId, vertexOffset, firstIndex16, firstIndex32);
+//        spdlog::info("worker{}, {}, {}, {}", workerId, vertexOffset, firstIndex16, firstIndex32);
 
         std::array<VkBufferCopy, 3> regions{};
         regions[0].dstOffset = vertexOffset * sizeof(Vertex);
@@ -675,7 +679,7 @@ namespace gltf2 {
 //        _barrierObjectPools[workerId].releaseAll();
 //        _bufferCopyPool[workerId].releaseAll();
 
-        spdlog::info("worker{} processing Instance upload", workerId);
+//        spdlog::info("worker{} processing Instance upload", workerId);
 
         std::map<uint32_t, std::vector<Mesh>> groups;
 
@@ -699,8 +703,6 @@ namespace gltf2 {
 
         }
 
-        spdlog::info("meshInstances: {}", meshInstances);
-
         struct {
             std::vector<VkDrawIndexedIndirectCommand> u16;
             std::vector<VkDrawIndexedIndirectCommand> u32;
@@ -713,49 +715,23 @@ namespace gltf2 {
 
         auto transforms = instanceUpload->pending->transforms;
 
-//        for(const auto& [meshId, instanceIds] : meshInstances) {
-//            const auto meshes = groups[meshId];
-//
-//            for(auto instanceId : instanceIds) {
-//                for (auto mesh: meshes) {
-//                    VkDrawIndexedIndirectCommand drawCommand{};
-//                    drawCommand.indexCount = mesh.indexCount;
-//                    drawCommand.instanceCount = 1;
-//                    drawCommand.firstIndex = mesh.firstIndex;
-//                    drawCommand.vertexOffset = mesh.vertexOffset;
-//                    drawCommand.firstInstance = mesh.firstInstance;
-//
-//                    MeshData data{.materialId = static_cast<int>(mesh.materialId)};
-//                    data.model = transforms[instanceId];
-//                    data.ModelInverse = glm::inverse(data.model);
-//
-//                    if(mesh.indexType == ComponentType::UNSIGNED_SHORT) {
-//                        drawCommands.u16.push_back(drawCommand);
-//                        meshData.u16.push_back(data);
-//                    }else {
-//                        drawCommands.u32.push_back(drawCommand);
-//                        meshData.u32.push_back(data);
-//                    }
-//                }
-//            }
-//        }
+        for(const auto& [meshId, instanceIds] : meshInstances) {
+            const auto meshes = groups[meshId];
 
-        for(auto nodeId = 0; nodeId < instanceUpload->pending->gltf->nodes.size(); ++nodeId) {
-            const auto& node = instanceUpload->pending->gltf->nodes[nodeId];
-            for(const auto& primitive : instanceUpload->primitives) {
-                if(node.mesh == primitive.meshId) {
+            for(auto instanceId : instanceIds) {
+                for (auto mesh: meshes) {
                     VkDrawIndexedIndirectCommand drawCommand{};
-                    drawCommand.indexCount = primitive.indexCount;
+                    drawCommand.indexCount = mesh.indexCount;
                     drawCommand.instanceCount = 1;
-                    drawCommand.firstIndex = primitive.firstIndex;
-                    drawCommand.vertexOffset = primitive.vertexOffset;
-                    drawCommand.firstInstance = primitive.firstInstance;
+                    drawCommand.firstIndex = mesh.firstIndex;
+                    drawCommand.vertexOffset = mesh.vertexOffset;
+                    drawCommand.firstInstance = mesh.firstInstance;
 
-                    MeshData data{.materialId = static_cast<int>(primitive.materialId)};
-                    data.model = transforms[nodeId];
+                    MeshData data{.materialId = static_cast<int>(mesh.materialId)};
+                    data.model = transforms[instanceId];
                     data.ModelInverse = glm::inverse(data.model);
 
-                    if(primitive.indexType == ComponentType::UNSIGNED_SHORT) {
+                    if(mesh.indexType == ComponentType::UNSIGNED_SHORT) {
                         drawCommands.u16.push_back(drawCommand);
                         meshData.u16.push_back(data);
                     }else {
@@ -766,6 +742,32 @@ namespace gltf2 {
             }
         }
 
+//        for(auto nodeId = 0; nodeId < instanceUpload->pending->gltf->nodes.size(); ++nodeId) {
+//            const auto& node = instanceUpload->pending->gltf->nodes[nodeId];
+//            for(const auto& primitive : instanceUpload->primitives) {
+//                if(node.mesh == primitive.meshId) {
+//                    VkDrawIndexedIndirectCommand drawCommand{};
+//                    drawCommand.indexCount = primitive.indexCount;
+//                    drawCommand.instanceCount = 1;
+//                    drawCommand.firstIndex = primitive.firstIndex;
+//                    drawCommand.vertexOffset = primitive.vertexOffset;
+//                    drawCommand.firstInstance = primitive.firstInstance;
+//
+//                    MeshData data{.materialId = static_cast<int>(primitive.materialId)};
+//                    data.model = transforms[nodeId];
+//                    data.ModelInverse = glm::inverse(data.model);
+//
+//                    if(primitive.indexType == ComponentType::UNSIGNED_SHORT) {
+//                        drawCommands.u16.push_back(drawCommand);
+//                        meshData.u16.push_back(data);
+//                    }else {
+//                        drawCommands.u32.push_back(drawCommand);
+//                        meshData.u32.push_back(data);
+//                    }
+//                }
+//            }
+//        }
+
         struct {
             uint32_t u16{};
             uint32_t u32{};
@@ -773,6 +775,11 @@ namespace gltf2 {
 
         drawOffset.u16 = instanceUpload->pending->drawOffset.u16.fetch_add(drawCommands.u16.size());
         drawOffset.u32 = instanceUpload->pending->drawOffset.u32.fetch_add(drawCommands.u32.size());
+
+        if(!drawCommands.u16.empty()) {
+            spdlog::info("offset: {}, meshInstances: {}", drawOffset.u16, meshInstances);
+        }
+
 
         Buffer drawCmdStaging{};
         drawCmdStaging.u16.handle = _device->createStagingBuffer(BYTE_SIZE(drawCommands.u16) + sizeof(VkDrawIndexedIndirectCommand));
@@ -815,7 +822,7 @@ namespace gltf2 {
         VkBufferCopy& meshRegion = *_bufferCopyPool[workerId].acquire();
         meshRegion.srcOffset = 0;
         meshRegion.dstOffset = meshOffset;
-        meshRegion.size = meshDataSrc.size;
+        meshRegion.size = meshDataSrc.size - sizeof(MeshData);
 
 
         vkCmdCopyBuffer(commandBuffer, meshDataSrc, meshDataDst, 1, &meshRegion);
@@ -823,7 +830,7 @@ namespace gltf2 {
         VkBufferCopy& drawRegion = *_bufferCopyPool[workerId].acquire();
         drawRegion.srcOffset = 0;
         drawRegion.dstOffset = drawCmdOffset;
-        drawRegion.size = drawCmdSrc.size;
+        drawRegion.size = drawCmdSrc.size - sizeof(VkDrawIndexedIndirectCommand);
 
 
         vkCmdCopyBuffer(commandBuffer, drawCmdSrc, drawCmdDst, 1, &drawRegion);
@@ -898,12 +905,12 @@ namespace gltf2 {
             model->_loaded.signal();
         }
 
-        spdlog::info("i32: {}, 116: {}", instanceUpload->pending->model->draw.u32.count, instanceUpload->pending->model->draw.u16.count);
+//        spdlog::info("i32: {}, 116: {}", instanceUpload->pending->model->draw.u32.count, instanceUpload->pending->model->draw.u16.count);
     }
 
     void Loader::onComplete(TextureUploadTask *textureUpload) {
         if(!textureUpload) return;
-        spdlog::info("texture upload complete..");
+//        spdlog::info("texture upload complete..");
         auto& texture = textureUpload->pending->textures[textureUpload->textureId];
         _bindlessDescriptor->update({ &texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureUpload->bindingId });
         textureUpload->pending->model->textures.push_back(std::move(texture));
@@ -911,7 +918,7 @@ namespace gltf2 {
 
     void Loader::onComplete(MaterialUploadTask *materialUpload) {
         if(!materialUpload) return;
-        spdlog::info("material{} upload complete", materialUpload->materialId);
+//        spdlog::info("material{} upload complete", materialUpload->materialId);
     }
 
 
@@ -1156,6 +1163,29 @@ namespace gltf2 {
         if(mode == "BLEND") return 2;
 
         throw std::runtime_error{"unknown alpha mode"};
+    }
+
+    void computeOffsets(const std::shared_ptr<PendingModel>& pending) {
+        uint32_t vertexOffset = 0;
+        uint32_t firstIndex16 = 0;
+        uint32_t firstIndex32 = 0;
+
+        for(const auto& mesh : pending->gltf->meshes) {
+            pending->offsets.vertex.push_back(vertexOffset);
+            pending->offsets.u16.push_back(firstIndex16);
+            pending->offsets.u32.push_back(firstIndex32);
+
+            for(const auto& primitive : mesh.primitives){
+                vertexOffset += getNumVertices(*pending->gltf, primitive);
+
+                auto indexType = ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType);
+                if(indexType == ComponentType::UNSIGNED_SHORT) {
+                    firstIndex16 += pending->gltf->accessors[primitive.indices].count;
+                }else {
+                    firstIndex32 += pending->gltf->accessors[primitive.indices].count;
+                }
+            }
+        }
     }
 
 }

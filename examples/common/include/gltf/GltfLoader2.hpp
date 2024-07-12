@@ -57,6 +57,11 @@ namespace gltf2 {
             std::atomic_uint32_t u16{};
             std::atomic_uint32_t u32{};
         } drawOffset;
+        struct {
+            std::vector<uint32_t> vertex;
+            std::vector<uint32_t> u16;
+            std::vector<uint32_t> u32;
+        } offsets;
     };
 
     struct MeshUploadTask {
@@ -172,12 +177,6 @@ namespace gltf2 {
             VulkanBuffer buffer;
             VkDeviceSize offset{};
         } _staging;
-
-        struct {
-            std::atomic_uint32_t vertexOffset{};
-            std::atomic_uint32_t firstIndex16{};
-            std::atomic_uint32_t firstIndex32{};
-        } _offsets;
 
         std::thread _coordinator;
         std::vector<std::thread> _workers;

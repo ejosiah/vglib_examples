@@ -58,7 +58,7 @@ void TemporalAntiAliasingExample::loadModel() {
 //    _model2 = _loader2->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
     _model2 = _loader2->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
     _model2->transform = glm::translate(glm::mat4{1}, -_model2->bounds.min);
-//    _model2->sync();
+    _model2->sync();
 }
 
 void TemporalAntiAliasingExample::initCamera() {
