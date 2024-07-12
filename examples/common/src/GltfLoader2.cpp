@@ -18,7 +18,7 @@ namespace gltf2 {
     glm::vec4 vec4From(const std::vector<double>& v);
     glm::quat quaternionFrom(const std::vector<double>& q);
     glm::mat4 getTransformation(const tinygltf::Node& node);
-
+    int alphaModeToIndex(const std::string& mode);
 
     size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Primitive& primitive);
 
@@ -301,9 +301,9 @@ namespace gltf2 {
             while(!_pendingModels.empty()) {
                 auto pending = _pendingModels.pop();
 
-                for(auto i = 0u; i < pending->gltf->meshes.size(); ++i) {
-                    auto&  mesh = pending->gltf->meshes[i];
-                    _workerQueue.push(MeshUploadTask{ pending, mesh, i});
+                for(auto meshId = 0u; meshId < pending->gltf->meshes.size(); ++meshId) {
+                    auto& mesh = pending->gltf->meshes[meshId];
+                    _workerQueue.push(MeshUploadTask{ pending, mesh, meshId});
                 }
 
                 for(auto i = 0; i < pending->gltf->textures.size(); ++i) {
@@ -311,10 +311,11 @@ namespace gltf2 {
                     auto& texture = pending->gltf->textures[i];
                     _workerQueue.push(TextureUploadTask{ pending, texture, bindingId });
                 }
-//
-//                for(auto& material : pending->gltf->materials) {
-//                    _workerQueue.push(MaterialUploadTask{ pending, material});
-//                }
+
+                for(auto materialId = 0u; materialId < pending->gltf->materials.size(); ++materialId) {
+                    auto& material = pending->gltf->materials[materialId];
+                    _workerQueue.push(MaterialUploadTask{ pending, material, materialId});
+                }
                 _taskPending.signalAll();
             }
         }
@@ -515,7 +516,8 @@ namespace gltf2 {
                     .vertexOffset = vertexOffset,
                     .firstInstance = 0,
                     .materialId = primitive.material == -1 ? 0 : static_cast<uint32_t>(primitive.material),
-                    .indexType = indexType
+                    .indexType = indexType,
+                    .name = meshUpload->mesh.name
             };
             meshUpload->primitives.push_back(mesh);
 
@@ -608,9 +610,63 @@ namespace gltf2 {
         textureUpload->textureId = textureId; // FIXME not thread safe
     }
 
-    void Loader::process(VkCommandBuffer, MaterialUploadTask* materialUpload, int workerId) {
+    void Loader::process(VkCommandBuffer commandBuffer, MaterialUploadTask* materialUpload, int workerId) {
         if(!materialUpload) return;
-//        spdlog::info("worker{} processing material upload", workerId);
+
+        MaterialData material{};
+        material.baseColor = vec4From(materialUpload->material.pbrMetallicRoughness.baseColorFactor);
+        material.roughness = static_cast<float>(materialUpload->material.pbrMetallicRoughness.roughnessFactor);
+        material.metalness = static_cast<float>(materialUpload->material.pbrMetallicRoughness.metallicFactor);
+        material.emission = vec3From(materialUpload->material.emissiveFactor);
+        material.alphaMode = alphaModeToIndex(materialUpload->material.alphaMode);
+        material.alphaCutOff = static_cast<float>(materialUpload->material.alphaCutoff);
+        material.doubleSided = materialUpload->material.doubleSided;
+        material.textures.fill(-1);
+
+        if(materialUpload->material.pbrMetallicRoughness.baseColorTexture.index != -1) {
+            material.textures[static_cast<int>(TextureType::BASE_COLOR)] = materialUpload->material.pbrMetallicRoughness.baseColorTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index != -1) {
+            material.textures[static_cast<int>(TextureType::METALLIC_ROUGHNESS)] = materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.normalTexture.index != -1 ) {
+            material.textures[static_cast<int>(TextureType::NORMAL)] = materialUpload->material.normalTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.emissiveTexture.index != -1) {
+            material.textures[static_cast<int>(TextureType::EMISSION)] = materialUpload->material.emissiveTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.occlusionTexture.index != -1) {
+            material.textures[static_cast<int>(TextureType::OCCLUSION)] = materialUpload->material.occlusionTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        VulkanBuffer stagingBuffer = _device->createStagingBuffer(sizeof(material));
+        stagingBuffer.copy(&material, sizeof(material));
+        _stagingRefs.push_back(stagingBuffer);   // FIXME remove this hack, use memory pooling
+
+        auto& region = *_bufferCopyPool[workerId].acquire();
+        region.srcOffset = 0;
+        region.dstOffset = materialUpload->materialId * sizeof(MaterialData);
+        region.size = stagingBuffer.size;
+
+        const auto model = materialUpload->pending->model;
+        vkCmdCopyBuffer(commandBuffer, stagingBuffer, model->materials, 1, &region);
+
+        auto& barrier = *_barrierObjectPools[workerId].acquire();
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        barrier.srcQueueFamilyIndex = _device->queueFamilyIndex.transfer.value();
+        barrier.dstQueueFamilyIndex = _device->queueFamilyIndex.graphics.value();
+        barrier.offset = region.dstOffset;
+        barrier.buffer = model->materials;
+        barrier.size = region.size;
+
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0,
+                             VK_NULL_HANDLE, 1, &barrier, 0, VK_NULL_HANDLE);
     }
 
     void Loader::process(VkCommandBuffer commandBuffer, InstanceUploadTask* instanceUpload, int workerId) {
@@ -657,23 +713,49 @@ namespace gltf2 {
 
         auto transforms = instanceUpload->pending->transforms;
 
-        for(const auto& [meshId, instanceIds] : meshInstances) {
-            const auto meshes = groups[meshId];
+//        for(const auto& [meshId, instanceIds] : meshInstances) {
+//            const auto meshes = groups[meshId];
+//
+//            for(auto instanceId : instanceIds) {
+//                for (auto mesh: meshes) {
+//                    VkDrawIndexedIndirectCommand drawCommand{};
+//                    drawCommand.indexCount = mesh.indexCount;
+//                    drawCommand.instanceCount = 1;
+//                    drawCommand.firstIndex = mesh.firstIndex;
+//                    drawCommand.vertexOffset = mesh.vertexOffset;
+//                    drawCommand.firstInstance = mesh.firstInstance;
+//
+//                    MeshData data{.materialId = static_cast<int>(mesh.materialId)};
+//                    data.model = transforms[instanceId];
+//                    data.ModelInverse = glm::inverse(data.model);
+//
+//                    if(mesh.indexType == ComponentType::UNSIGNED_SHORT) {
+//                        drawCommands.u16.push_back(drawCommand);
+//                        meshData.u16.push_back(data);
+//                    }else {
+//                        drawCommands.u32.push_back(drawCommand);
+//                        meshData.u32.push_back(data);
+//                    }
+//                }
+//            }
+//        }
 
-            for(auto instanceId : instanceIds) {
-                for (auto mesh: meshes) {
+        for(auto nodeId = 0; nodeId < instanceUpload->pending->gltf->nodes.size(); ++nodeId) {
+            const auto& node = instanceUpload->pending->gltf->nodes[nodeId];
+            for(const auto& primitive : instanceUpload->primitives) {
+                if(node.mesh == primitive.meshId) {
                     VkDrawIndexedIndirectCommand drawCommand{};
-                    drawCommand.indexCount = mesh.indexCount;
+                    drawCommand.indexCount = primitive.indexCount;
                     drawCommand.instanceCount = 1;
-                    drawCommand.firstIndex = mesh.firstIndex;
-                    drawCommand.vertexOffset = mesh.vertexOffset;
-                    drawCommand.firstInstance = mesh.firstInstance;
+                    drawCommand.firstIndex = primitive.firstIndex;
+                    drawCommand.vertexOffset = primitive.vertexOffset;
+                    drawCommand.firstInstance = primitive.firstInstance;
 
-                    MeshData data{.materialId = static_cast<int>(mesh.materialId)};
-                    data.model = transforms[instanceId];
+                    MeshData data{.materialId = static_cast<int>(primitive.materialId)};
+                    data.model = transforms[nodeId];
                     data.ModelInverse = glm::inverse(data.model);
 
-                    if(mesh.indexType == ComponentType::UNSIGNED_SHORT) {
+                    if(primitive.indexType == ComponentType::UNSIGNED_SHORT) {
                         drawCommands.u16.push_back(drawCommand);
                         meshData.u16.push_back(data);
                     }else {
@@ -798,6 +880,7 @@ namespace gltf2 {
         onComplete(std::get_if<MeshUploadTask>(&task));
         onComplete(std::get_if<InstanceUploadTask>(&task));
         onComplete(std::get_if<TextureUploadTask>(&task));
+        onComplete(std::get_if<MaterialUploadTask>(&task));
     }
 
     void Loader::onComplete(MeshUploadTask *meshUpload) {
@@ -824,6 +907,11 @@ namespace gltf2 {
         auto& texture = textureUpload->pending->textures[textureUpload->textureId];
         _bindlessDescriptor->update({ &texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureUpload->bindingId });
         textureUpload->pending->model->textures.push_back(std::move(texture));
+    }
+
+    void Loader::onComplete(MaterialUploadTask *materialUpload) {
+        if(!materialUpload) return;
+        spdlog::info("material{} upload complete", materialUpload->materialId);
     }
 
 
@@ -886,14 +974,19 @@ namespace gltf2 {
         for(auto i = 0; i < numNodes; ++i) {
             transforms[i] = getTransformation(model.nodes[i]);
         }
-        
-        for(auto nodeId : model.scenes[0].nodes) {
-            const auto& node = model.nodes[nodeId];
-            if(!node.children.empty()) {
-                for(auto childId : node.children) {
-                    transforms[childId] = transforms[nodeId] * transforms[childId];
+
+        const auto& nodes = model.nodes;
+        std::function<void(int, glm::mat4)> visit = [&](int id, glm::mat4 parentTransform) {
+            transforms[id] = parentTransform * transforms[id];
+            if(!nodes[id].children.empty()) {
+                for(auto child : nodes[id].children) {
+                    visit(child, transforms[id]);
                 }
             }
+        };
+        
+        for(auto node : model.scenes[0].nodes) {
+            visit(node, glm::mat4{1});
         }
 
         return transforms;
@@ -1057,5 +1150,12 @@ namespace gltf2 {
         return model.accessors[primitive.attributes.at("POSITION")].count;
     }
 
+    int alphaModeToIndex(const std::string& mode) {
+        if(mode == "OPAQUE") return 0;
+        if(mode == "MASK") return 1;
+        if(mode == "BLEND") return 2;
+
+        throw std::runtime_error{"unknown alpha mode"};
+    }
 
 }

@@ -18,6 +18,7 @@ namespace gltf2 {
         uint32_t firstInstance{};
         uint32_t materialId{};
         ComponentType indexType{VK_INDEX_TYPE_UINT16};
+        std::string name;
     };
 
     struct MeshData {
@@ -75,6 +76,7 @@ namespace gltf2 {
     struct MaterialUploadTask {
         std::shared_ptr<PendingModel> pending;
         tinygltf::Material material;
+        uint32_t materialId;
     };
 
     struct InstanceUploadTask {
@@ -142,6 +144,8 @@ namespace gltf2 {
          void onComplete(InstanceUploadTask* instanceUpload);
 
          void onComplete(TextureUploadTask* textureUpload);
+
+         void onComplete(MaterialUploadTask* materialUpload);
 
         void createDescriptorSetLayout();
 

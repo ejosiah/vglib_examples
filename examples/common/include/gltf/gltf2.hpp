@@ -20,7 +20,18 @@ namespace gltf2 {
 
     enum class ComponentType : int { BYTE = 5120, UNSIGNED_BYTE = 5121, SHORT = 5122, UNSIGNED_SHORT = 5123, UNSIGNED_INT = 5125, FLOAT = 5126  };
 
+    enum class TextureType : int { BASE_COLOR = 0, NORMAL, METALLIC_ROUGHNESS, OCCLUSION, EMISSION};
+
+    struct TextureTypes final {
+
+        static int ordinal(TextureType type) { return static_cast<int>(type);  }
+        static TextureType valueOf(int v) { return static_cast<TextureType>(v); }
+
+    };
+
+
     struct ComponentTypes {
+        static int ordinals(ComponentType type) { return static_cast<int>(type);  }
         static ComponentType valueOf(int v) { return static_cast<ComponentType>(v); }
     };
 
@@ -87,3 +98,4 @@ namespace gltf2 {
     };
 
 }
+

@@ -54,6 +54,8 @@ void TemporalAntiAliasingExample::loadModel() {
 //    _model = _loader->load( &_bindlessDescriptor, resource("WaterBottle/glTF/WaterBottle.gltf"));
 //    _model->transform = glm::translate(glm::mat4{1}, -_model->bounds.min);
 
+//    _model2 = _loader2->load(resource("Sponza/glTF/Sponza.gltf"));
+//    _model2 = _loader2->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
     _model2 = _loader2->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
     _model2->transform = glm::translate(glm::mat4{1}, -_model2->bounds.min);
 //    _model2->sync();
@@ -63,8 +65,8 @@ void TemporalAntiAliasingExample::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
-//    cameraSettings.velocity = glm::vec3(200);
-//    cameraSettings.acceleration = glm::vec3(100);
+    cameraSettings.velocity = glm::vec3(20);
+    cameraSettings.acceleration = glm::vec3(10);
 
     _camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 
@@ -455,7 +457,7 @@ void TemporalAntiAliasingExample::offscreenRender(VkCommandBuffer commandBuffer)
     static Offscreen offscreen;
 
     offscreen.render(commandBuffer, _offscreenInfo, [&]{
-        renderGround(commandBuffer);
+//        renderGround(commandBuffer);
 //        renderPlaceHolders(commandBuffer);
         renderScene(commandBuffer);
     });
