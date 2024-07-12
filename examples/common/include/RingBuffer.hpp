@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <span>
 
 template<typename T>
 class RingBuffer {
@@ -117,6 +118,13 @@ public:
     void push(T&& entry) {
         std::lock_guard<std::mutex> lk{ _mutex };
         _buffer.push(entry);
+    }
+
+    void push(std::span<T> entries) {
+        std::lock_guard<std::mutex> lk{ _mutex };
+        for(auto& entry : entries) {
+            _buffer.push(entry);
+        }
     }
 
     [[nodiscard]]

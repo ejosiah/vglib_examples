@@ -125,6 +125,8 @@ namespace gltf2 {
 
         void stop();
 
+        void commandBufferBatchSize(size_t size);
+
     private:
         void coordinatorLoop();
 
@@ -187,7 +189,7 @@ namespace gltf2 {
         std::vector<BufferCopyPool> _bufferCopyPool;
         std::vector<BufferImageCopyPool> _bufferImageCopyPool;
         uint32_t _modelId{};
-
+        uint32_t _commandBufferBatchSize{1};
         static constexpr uint32_t MegaBytes =  1024 * 1024;
         static constexpr VkDeviceSize stagingBufferSize = 1024 * MegaBytes;
     };

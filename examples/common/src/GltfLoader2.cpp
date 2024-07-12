@@ -288,7 +288,7 @@ namespace gltf2 {
             }
 
             if(!commandBuffers.empty()){
-//                spdlog::info("executing {} commandBuffers", commandBuffers.size());
+                spdlog::info("executing {} commandBuffers", commandBuffers.size());
                 execute(commandBuffers);
                 while(!completedTasks.empty()){
                     auto task = completedTasks.top();
@@ -348,9 +348,12 @@ namespace gltf2 {
     void Loader::workerLoop(int id) {
         auto workQueue = _workerQueue.buffer(id);
         bool running = true;
+
+        std::vector<SecondaryCommandBuffer> batch{};
         while(running) {
             _taskPending.wait( [&]{ return !workQueue->empty(); } );
 
+            batch.clear();
             while(!workQueue->empty()) {
                 auto task = workQueue->pop();
                 if (std::get_if<StopWorkerTask>(&task)) {
@@ -358,8 +361,16 @@ namespace gltf2 {
                     break;
                 }
                 auto commandBuffer = processTask(task, id);
+                batch.push_back({{commandBuffer}, task});
 
-                _commandBufferQueue.push({{commandBuffer}, task});
+                if(batch.size() >= _commandBufferBatchSize) {
+                    _commandBufferQueue.push(batch);
+                    _modelLoadPending.signal();
+                    batch.clear();
+                }
+            }
+            if(!batch.empty()){
+                _commandBufferQueue.push(batch);
                 _modelLoadPending.signal();
             }
         }
@@ -903,6 +914,10 @@ namespace gltf2 {
     void Loader::onComplete(MaterialUploadTask *materialUpload) {
         if(!materialUpload) return;
 //        spdlog::info("material{} upload complete", materialUpload->materialId);
+    }
+
+    void Loader::commandBufferBatchSize(size_t size) {
+        _commandBufferBatchSize = size;
     }
 
 
