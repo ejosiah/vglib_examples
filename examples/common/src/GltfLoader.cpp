@@ -1,10 +1,10 @@
-#include "gltf/GltfLoader2.hpp"
+#include "gltf/GltfLoader.hpp"
 #include "Vertex.h"
 #include <spdlog/spdlog.h>
 
 #include <utility>
 
-namespace gltf2 {
+namespace gltf {
 
     struct Counts {
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
@@ -918,6 +918,10 @@ namespace gltf2 {
 
     void Loader::commandBufferBatchSize(size_t size) {
         _commandBufferBatchSize = size;
+    }
+
+    VulkanDescriptorSetLayout Loader::descriptorSetLayout() const {
+        return _descriptorSetLayout;
     }
 
 

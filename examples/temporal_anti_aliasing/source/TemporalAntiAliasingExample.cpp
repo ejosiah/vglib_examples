@@ -36,10 +36,7 @@ void TemporalAntiAliasingExample::initApp() {
 }
 
 void TemporalAntiAliasingExample::initLoader() {
-    _loader = std::make_unique<gltf::Loader>( &device, &_descriptorPool, &_bindlessDescriptor);
-    _loader->start();
-
-    _loader2 = std::make_unique<gltf2::Loader>( &device, &_descriptorPool, &_bindlessDescriptor);
+    _loader2 = std::make_unique<gltf::Loader>(&device, &_descriptorPool, &_bindlessDescriptor);
     _loader2->start();
 }
 
@@ -48,12 +45,6 @@ void TemporalAntiAliasingExample::initJitter() {
 }
 
 void TemporalAntiAliasingExample::loadModel() {
-//    _model = _loader->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
-//    _model = _loader->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
-//    _model = _loader->load(resource("Sponza/glTF/Sponza.gltf"));
-//    _model = _loader->load( &_bindlessDescriptor, resource("WaterBottle/glTF/WaterBottle.gltf"));
-//    _model->transform = glm::translate(glm::mat4{1}, -_model->bounds.min);
-
 //    _model2 = _loader2->load(resource("Sponza/glTF/Sponza.gltf"));
     _model2 = _loader2->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
 //    _model2 = _loader2->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
@@ -345,8 +336,8 @@ void TemporalAntiAliasingExample::createRenderPipeline() {
                 .add()
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant())
-                    .addDescriptorSetLayout(_loader->descriptorSetLayout())
-                    .addDescriptorSetLayout(_loader->descriptorSetLayout())
+                    .addDescriptorSetLayout(_loader2->descriptorSetLayout())
+                    .addDescriptorSetLayout(_loader2->descriptorSetLayout())
                     .addDescriptorSetLayout(*_bindlessDescriptor.descriptorSetLayout)
                 .name("model_pipeline")
             .build(_render.model.layout);
@@ -585,7 +576,6 @@ void TemporalAntiAliasingExample::checkAppInputs() {
 }
 
 void TemporalAntiAliasingExample::cleanup() {
-    _loader->stop();
     _loader2->stop();
     AppContext::shutdown();
 }
