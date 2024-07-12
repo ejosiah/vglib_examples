@@ -59,3 +59,24 @@ private:
     std::set<std::shared_ptr<T>> _acquired;
     size_t _capacity{};
 };
+
+template<typename T>
+class CyclicObjectPool {
+public:
+    CyclicObjectPool() = default;
+
+    CyclicObjectPool(size_t capacity){
+        for(auto i = 0; i < capacity; ++i) {
+            _storage.push_back(std::make_shared<T>(T{}));
+        }
+    }
+
+    std::shared_ptr<T> acquire() {
+        _next %= _storage.size();
+        return _storage[_next++];
+    }
+
+private:
+    std::vector<std::shared_ptr<T>> _storage{};
+    int _next;
+};

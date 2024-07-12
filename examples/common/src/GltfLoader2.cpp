@@ -125,10 +125,10 @@ namespace gltf2 {
     , _workerQueue(numWorkers, 1024)
     , _commandBufferQueue(1024)
     , _workerCount(numWorkers)
-    , _barrierObjectPools(numWorkers, BufferMemoryBarrierPool(1024) )
-    , _imageMemoryBarrierObjectPools(numWorkers, ImageMemoryBarrierPool(1024) )
-    , _bufferCopyPool( numWorkers, BufferCopyPool(1024))
-    , _bufferImageCopyPool( numWorkers, BufferImageCopyPool(1024))
+    , _barrierObjectPools(numWorkers, BufferMemoryBarrierPool(128) )
+    , _imageMemoryBarrierObjectPools(numWorkers, ImageMemoryBarrierPool(128) )
+    , _bufferCopyPool( numWorkers, BufferCopyPool(128))
+    , _bufferImageCopyPool( numWorkers, BufferImageCopyPool(128))
     {}
 
     void Loader::start() {
@@ -389,7 +389,7 @@ namespace gltf2 {
         if(!meshUpload) return;
 //        spdlog::info("worker{} processing mesh upload", workerId);
 
-        _barrierObjectPools[workerId].releaseAll();
+//        _barrierObjectPools[workerId].releaseAll();
 
         auto pending = meshUpload->pending;
         auto model = pending->model;

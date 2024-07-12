@@ -108,10 +108,10 @@ namespace gltf2 {
         Task task;
     };
 
-    using BufferMemoryBarrierPool = ObjectPool<VkBufferMemoryBarrier>;
-    using ImageMemoryBarrierPool = ObjectPool<VkImageMemoryBarrier>;
-    using BufferCopyPool = ObjectPool<VkBufferCopy>;
-    using BufferImageCopyPool = ObjectPool<VkBufferImageCopy>;
+    using BufferMemoryBarrierPool = CyclicObjectPool<VkBufferMemoryBarrier>;
+    using ImageMemoryBarrierPool = CyclicObjectPool<VkImageMemoryBarrier>;
+    using BufferCopyPool = CyclicObjectPool<VkBufferCopy>;
+    using BufferImageCopyPool = CyclicObjectPool<VkBufferImageCopy>;
 
     class Loader {
     public:
