@@ -135,13 +135,13 @@ namespace gltf2 {
         initPlaceHolders();
         createDescriptorSetLayout();
         initCommandPools();
-        _staging.buffer = _device->createStagingBuffer(stagingBufferSize);
         _fence = _device->createFence();
         _running = true;
 
         for(auto i = 0; i < _workerCount; ++i){
             std::thread worker{ [workerId = i, this]{ workerLoop(workerId); } };
             _workers.push_back(std::move(worker));
+            _stagingBuffers.push_back(StagingBuffer{ _device, stagingBufferSize});
         }
 
         _coordinator = std::thread{ [this]{ coordinatorLoop(); } };
@@ -421,8 +421,8 @@ namespace gltf2 {
             }else {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint32_t);
             }
-            auto stagingBuffer = _device->createStagingBuffer(numVertices * sizeof(Vertex) + indicesByteSize);
-            _stagingRefs.push_back(stagingBuffer);
+            auto stagingBuffer = _stagingBuffers[workerId].allocate(numVertices * sizeof(Vertex) + indicesByteSize);
+            spdlog::info("buffer offset: {} size: {}", stagingBuffer.offset, stagingBuffer.size());
 
             auto positions = getAttributeData<glm::vec3>(*pending->gltf, primitive, "POSITION");
             auto normals = getAttributeData<glm::vec3>(*pending->gltf, primitive, "NORMAL");
@@ -439,14 +439,15 @@ namespace gltf2 {
                 vertices.push_back(vertex);
             }
 
+            regions[0].srcOffset = stagingBuffer.offset;
             regions[0].size = BYTE_SIZE(vertices);
 
             if(indexType == ComponentType::UNSIGNED_SHORT) {
                 auto pIndices = getIndices<uint16_t>(*pending->gltf, primitive);
                 std::vector<uint16_t> indices{pIndices.begin(), pIndices.end()};
-                regions[1].srcOffset = regions[0].size;
+                regions[1].srcOffset = regions[0].srcOffset + regions[0].size;
                 regions[1].size = BYTE_SIZE(indices);
-                stagingBuffer.copy(indices, regions[1].srcOffset);
+                stagingBuffer.copy(indices.data(), regions[1].size, regions[0].size);
 
                 if(tangents.empty()) {
                     calculateTangents(vertices, indices);
@@ -454,27 +455,27 @@ namespace gltf2 {
             }else {
                 auto pIndices = getIndices<uint32_t>(*pending->gltf, primitive);
                 std::vector<uint32_t> indices{pIndices.begin(), pIndices.end()};
-                regions[2].srcOffset = regions[0].size;
+                regions[2].srcOffset = regions[0].srcOffset + regions[0].size;
                 regions[2].size = BYTE_SIZE(indices);
-                stagingBuffer.copy(indices, regions[2].srcOffset);
+                stagingBuffer.copy(indices.data(), regions[2].size, regions[0].size);
 
                 if(tangents.empty()) {
                     calculateTangents(vertices, indices);
                 }
             }
 
-            stagingBuffer.copy(vertices, 0);
+            stagingBuffer.copy(vertices.data(), regions[0].size,  0);
 
 
             assert(model->vertices.size >= regions[0].dstOffset);
-            vkCmdCopyBuffer(commandBuffer, stagingBuffer, model->vertices, 1, &regions[0]);
+            vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->vertices, 1, &regions[0]);
 
             if(indexType == ComponentType::UNSIGNED_SHORT) {
                 assert(model->indices.u16.handle.size >= regions[1].dstOffset);
-                vkCmdCopyBuffer(commandBuffer, stagingBuffer, model->indices.u16.handle, 1, &regions[1]);
+                vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->indices.u16.handle, 1, &regions[1]);
             }else {
                 assert(model->indices.u32.handle.size >= regions[2].dstOffset);
-                vkCmdCopyBuffer(commandBuffer, stagingBuffer, model->indices.u32.handle, 1, &regions[2]);
+                vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->indices.u32.handle, 1, &regions[2]);
             }
 
             auto& vertexBarrier = *_barrierObjectPools[workerId].acquire();
@@ -647,17 +648,16 @@ namespace gltf2 {
             material.textures[static_cast<int>(TextureType::OCCLUSION)] = materialUpload->material.occlusionTexture.index + materialUpload->pending->textureBindingOffset;
         }
 
-        VulkanBuffer stagingBuffer = _device->createStagingBuffer(sizeof(material));
-        stagingBuffer.copy(&material, sizeof(material));
-        _stagingRefs.push_back(stagingBuffer);   // FIXME remove this hack, use memory pooling
+        auto stagingBuffer =  _stagingBuffers[workerId].allocate(sizeof(material));
+        stagingBuffer.upload(&material);
 
         auto& region = *_bufferCopyPool[workerId].acquire();
-        region.srcOffset = 0;
+        region.srcOffset = stagingBuffer.offset;
         region.dstOffset = materialUpload->materialId * sizeof(MaterialData);
-        region.size = stagingBuffer.size;
+        region.size = stagingBuffer.size();
 
         const auto model = materialUpload->pending->model;
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer, model->materials, 1, &region);
+        vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->materials, 1, &region);
 
         auto& barrier = *_barrierObjectPools[workerId].acquire();
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -777,34 +777,30 @@ namespace gltf2 {
         drawOffset.u32 = instanceUpload->pending->drawOffset.u32.fetch_add(drawCommands.u32.size());
 
         if(!drawCommands.u16.empty()) {
-            spdlog::info("offset: {}, meshInstances: {}", drawOffset.u16, meshInstances);
+//            spdlog::info("offset: {}, meshInstances: {}", drawOffset.u16, meshInstances);
         }
 
 
         Buffer drawCmdStaging{};
-        drawCmdStaging.u16.handle = _device->createStagingBuffer(BYTE_SIZE(drawCommands.u16) + sizeof(VkDrawIndexedIndirectCommand));
-        drawCmdStaging.u32.handle = _device->createStagingBuffer(BYTE_SIZE(drawCommands.u32) + sizeof(VkDrawIndexedIndirectCommand));
+        drawCmdStaging.u16.rHandle =  _stagingBuffers[workerId].allocate(BYTE_SIZE(drawCommands.u16) + sizeof(VkDrawIndexedIndirectCommand));
+        drawCmdStaging.u32.rHandle = _stagingBuffers[workerId].allocate(BYTE_SIZE(drawCommands.u32) + sizeof(VkDrawIndexedIndirectCommand));
 
         Buffer meshStaging{};
-        meshStaging.u16.handle = _device->createStagingBuffer(BYTE_SIZE(meshData.u16) + sizeof(MeshData));
-        meshStaging.u32.handle = _device->createStagingBuffer(BYTE_SIZE(meshData.u32) + sizeof(MeshData));
+        meshStaging.u16.rHandle = _stagingBuffers[workerId].allocate(BYTE_SIZE(meshData.u16) + sizeof(MeshData));
+        meshStaging.u32.rHandle = _stagingBuffers[workerId].allocate(BYTE_SIZE(meshData.u32) + sizeof(MeshData));
 
-        _stagingRefs.push_back(meshStaging.u16.handle);
-        _stagingRefs.push_back(meshStaging.u32.handle);
-        _stagingRefs.push_back(drawCmdStaging.u32.handle);
-        _stagingRefs.push_back(drawCmdStaging.u32.handle);
 
         const auto model = instanceUpload->pending->model;
         if(!drawCommands.u16.empty()) {
-            meshStaging.u16.handle.copy(meshData.u16);
-            drawCmdStaging.u16.handle.copy(drawCommands.u16);
-            transferMeshInstance(commandBuffer, drawCmdStaging.u16.handle, model->draw.u16.handle, meshStaging.u16.handle, model->meshes.u16.handle, drawOffset.u16, workerId);
+            meshStaging.u16.rHandle.upload(meshData.u16.data());
+            drawCmdStaging.u16.rHandle.upload(drawCommands.u16.data());
+            transferMeshInstance(commandBuffer, drawCmdStaging.u16.rHandle, model->draw.u16.handle, meshStaging.u16.rHandle, model->meshes.u16.handle, drawOffset.u16, workerId);
         }
 
         if(!drawCommands.u32.empty()) {
-            meshStaging.u32.handle.copy(meshData.u32);
-            drawCmdStaging.u32.handle.copy(drawCommands.u32);
-            transferMeshInstance(commandBuffer, drawCmdStaging.u32.handle, model->draw.u32.handle, meshStaging.u32.handle, model->meshes.u32.handle, drawOffset.u32, workerId);
+            meshStaging.u32.rHandle.upload(meshData.u32.data());
+            drawCmdStaging.u32.rHandle.upload(drawCommands.u32.data());
+            transferMeshInstance(commandBuffer, drawCmdStaging.u32.rHandle, model->draw.u32.handle, meshStaging.u32.rHandle, model->meshes.u32.handle, drawOffset.u32, workerId);
 
         }
 
@@ -812,28 +808,28 @@ namespace gltf2 {
         instanceUpload->drawCounts.u32 = drawCommands.u32.size();
     }
 
-    void Loader::transferMeshInstance(VkCommandBuffer commandBuffer, VulkanBuffer &drawCmdSrc, VulkanBuffer &drawCmdDst, VulkanBuffer &meshDataSrc, VulkanBuffer &meshDataDst, uint32_t drawOffset, int workerId) {
+    void Loader::transferMeshInstance(VkCommandBuffer commandBuffer, BufferRegion &drawCmdSrc, VulkanBuffer &drawCmdDst, BufferRegion &meshDataSrc, VulkanBuffer &meshDataDst, uint32_t drawOffset, int workerId) {
         VkDeviceSize meshOffset = drawOffset * sizeof(MeshData);
         VkDeviceSize drawCmdOffset = drawOffset * sizeof(VkDrawIndexedIndirectCommand);
 
-        assert(drawCmdSrc.size + drawCmdOffset <= drawCmdDst.size);
-        assert(meshDataSrc.size + meshOffset <= meshDataDst.size);
+        assert(drawCmdSrc.size() + drawCmdOffset <= drawCmdDst.size);
+        assert(meshDataSrc.size() + meshOffset <= meshDataDst.size);
 
         VkBufferCopy& meshRegion = *_bufferCopyPool[workerId].acquire();
-        meshRegion.srcOffset = 0;
+        meshRegion.srcOffset = meshDataSrc.offset;
         meshRegion.dstOffset = meshOffset;
-        meshRegion.size = meshDataSrc.size - sizeof(MeshData);
+        meshRegion.size = meshDataSrc.size() - sizeof(MeshData);
 
 
-        vkCmdCopyBuffer(commandBuffer, meshDataSrc, meshDataDst, 1, &meshRegion);
+        vkCmdCopyBuffer(commandBuffer, *meshDataSrc.buffer, meshDataDst, 1, &meshRegion);
 
         VkBufferCopy& drawRegion = *_bufferCopyPool[workerId].acquire();
-        drawRegion.srcOffset = 0;
+        drawRegion.srcOffset = drawCmdSrc.offset;
         drawRegion.dstOffset = drawCmdOffset;
-        drawRegion.size = drawCmdSrc.size - sizeof(VkDrawIndexedIndirectCommand);
+        drawRegion.size = drawCmdSrc.size() - sizeof(VkDrawIndexedIndirectCommand);
 
 
-        vkCmdCopyBuffer(commandBuffer, drawCmdSrc, drawCmdDst, 1, &drawRegion);
+        vkCmdCopyBuffer(commandBuffer, *drawCmdSrc.buffer, drawCmdDst, 1, &drawRegion);
 
         auto& meshBarrier = *_barrierObjectPools[workerId].acquire();
         meshBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -861,15 +857,6 @@ namespace gltf2 {
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, VK_NULL_HANDLE, 1, &drawCmdBarrier, 0, VK_NULL_HANDLE);
     }
 
-    BufferRegion Loader::allocate(VkDeviceSize size) {
-        if(_staging.offset + size > _staging.buffer.size) {
-            throw std::runtime_error{ "ran out of staging memory" };
-        }
-        const auto start = _staging.offset;
-        const auto end = start + size;
-        _staging.offset += size;
-        return _staging.buffer.region(start, end);
-    }
 
     void Loader::stop() {
         _running = false;

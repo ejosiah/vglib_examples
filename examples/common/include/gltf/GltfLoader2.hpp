@@ -5,6 +5,8 @@
 #include "RingBuffer.hpp"
 #include "Condition.hpp"
 #include "ObjectPool.hpp"
+#include "StagingBuffer.hpp"
+
 #include <variant>
 
 namespace gltf2 {
@@ -140,7 +142,7 @@ namespace gltf2 {
 
          void process(VkCommandBuffer, InstanceUploadTask* instanceUpload, int workerId);
 
-         void transferMeshInstance(VkCommandBuffer commandBuffer, VulkanBuffer& drawCmdSrc, VulkanBuffer& drawCmdDst, VulkanBuffer& meshDataSrc, VulkanBuffer& meshDataDst, uint32_t drawOffset, int workerId);
+         void transferMeshInstance(VkCommandBuffer commandBuffer, BufferRegion& drawCmdSrc, VulkanBuffer& drawCmdDst, BufferRegion& meshDataSrc, VulkanBuffer& meshDataDst, uint32_t drawOffset, int workerId);
 
          void onComplete(Task& task);
 
@@ -158,10 +160,6 @@ namespace gltf2 {
 
         void initCommandPools();
 
-        BufferRegion allocate(VkDeviceSize size);
-
-        void release(BufferRegion region);
-
     private:
         VulkanDevice* _device{};
         VulkanDescriptorPool* _descriptorPool{};
@@ -173,10 +171,7 @@ namespace gltf2 {
         std::vector<VulkanCommandPool> _workerCommandPools;
         std::vector<VkCommandBuffer> _commandBuffers;
 
-        struct {
-            VulkanBuffer buffer;
-            VkDeviceSize offset{};
-        } _staging;
+        std::vector<StagingBuffer> _stagingBuffers;
 
         std::thread _coordinator;
         std::vector<std::thread> _workers;
@@ -194,8 +189,7 @@ namespace gltf2 {
         uint32_t _modelId{};
 
         static constexpr uint32_t MegaBytes =  1024 * 1024;
-        static constexpr VkDeviceSize stagingBufferSize = 128 * MegaBytes;
-        std::vector<VulkanBuffer> _stagingRefs; // FIXME remove this indefinite buffer lifetime hack
+        static constexpr VkDeviceSize stagingBufferSize = 1024 * MegaBytes;
     };
 
 }

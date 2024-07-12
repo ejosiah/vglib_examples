@@ -49,9 +49,11 @@ namespace gltf2 {
     struct Buffer {
         struct {
             VulkanBuffer handle;
+            BufferRegion rHandle;
         } u16;
         struct {
             VulkanBuffer handle;
+            BufferRegion rHandle;
         } u32;
     };
 
