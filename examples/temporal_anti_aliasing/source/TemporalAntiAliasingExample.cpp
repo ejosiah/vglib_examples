@@ -36,8 +36,8 @@ void TemporalAntiAliasingExample::initApp() {
 }
 
 void TemporalAntiAliasingExample::initLoader() {
-    _loader2 = std::make_unique<gltf::Loader>(&device, &_descriptorPool, &_bindlessDescriptor);
-    _loader2->start();
+    _loader = std::make_unique<gltf::Loader>(&device, &_descriptorPool, &_bindlessDescriptor);
+    _loader->start();
 }
 
 void TemporalAntiAliasingExample::initJitter() {
@@ -45,10 +45,10 @@ void TemporalAntiAliasingExample::initJitter() {
 }
 
 void TemporalAntiAliasingExample::loadModel() {
-//    _model2 = _loader2->load(resource("Sponza/glTF/Sponza.gltf"));
-    _model2 = _loader2->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
-//    _model2 = _loader2->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
-    _model2->transform = glm::translate(glm::mat4{1}, -_model2->bounds.min);
+//    _model = _loader->load(resource("Sponza/glTF/Sponza.gltf"));
+    _model = _loader->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
+//    _model = _loader->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
+    _model->transform = glm::translate(glm::mat4{1}, -_model->bounds.min);
 //    _model2->sync();
 }
 
@@ -61,7 +61,7 @@ void TemporalAntiAliasingExample::initCamera() {
 
     _camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 
-    auto target = (_model2->bounds.min + _model2->bounds.max) * 0.5f;
+    auto target = (_model->bounds.min + _model->bounds.max) * 0.5f;
     auto position = target - glm::vec3(0, 0, -1);
 
     _camera->lookAt(position, target, {0, 1, 0});
@@ -336,8 +336,8 @@ void TemporalAntiAliasingExample::createRenderPipeline() {
                 .add()
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant())
-                    .addDescriptorSetLayout(_loader2->descriptorSetLayout())
-                    .addDescriptorSetLayout(_loader2->descriptorSetLayout())
+                    .addDescriptorSetLayout(_loader->descriptorSetLayout())
+                    .addDescriptorSetLayout(_loader->descriptorSetLayout())
                     .addDescriptorSetLayout(*_bindlessDescriptor.descriptorSetLayout)
                 .name("model_pipeline")
             .build(_render.model.layout);
@@ -483,23 +483,23 @@ void TemporalAntiAliasingExample::renderScene(VkCommandBuffer commandBuffer) {
 //    vkCmdBindIndexBuffer(commandBuffer, _model->indexBufferUint32, 0, VK_INDEX_TYPE_UINT32);
 //    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw_32.gpu, 0, _model->draw_32.count, sizeof(VkDrawIndexedIndirectCommand));
 
-    sets[0] = _model2->meshDescriptorSet.u16.handle;
-    sets[1] = _model2->materialDescriptorSet;
+    sets[0] = _model->meshDescriptorSet.u16.handle;
+    sets[1] = _model->materialDescriptorSet;
     sets[2] = _bindlessDescriptor.descriptorSet;
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     _camera->push(commandBuffer, _render.model.layout);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, _model2->vertices, &offset);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, _model->vertices, &offset);
 
-    vkCmdBindIndexBuffer(commandBuffer, _model2->indices.u16.handle, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexedIndirect(commandBuffer, _model2->draw.u16.handle, 0, _model2->draw.u16.count, sizeof(VkDrawIndexedIndirectCommand));
+    vkCmdBindIndexBuffer(commandBuffer, _model->indices.u16.handle, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw.u16.handle, 0, _model->draw.u16.count, sizeof(VkDrawIndexedIndirectCommand));
 
-    sets[0] = _model2->meshDescriptorSet.u32.handle;
+    sets[0] = _model->meshDescriptorSet.u32.handle;
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdBindIndexBuffer(commandBuffer, _model2->indices.u32.handle, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexedIndirect(commandBuffer, _model2->draw.u32.handle, 0, _model2->draw.u32.count, sizeof(VkDrawIndexedIndirectCommand));
+    vkCmdBindIndexBuffer(commandBuffer, _model->indices.u32.handle, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw.u32.handle, 0, _model->draw.u32.count, sizeof(VkDrawIndexedIndirectCommand));
 
 }
 
@@ -510,7 +510,7 @@ void TemporalAntiAliasingExample::renderPlaceHolders(VkCommandBuffer commandBuff
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.placeHolder.pipeline.handle);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, _modelPlaceHolder, &offset);
 
-    for(auto& transform : _model2->placeHolders) {
+    for(auto& transform : _model->placeHolders) {
         model = transform;
         _camera->push(commandBuffer, _render.placeHolder.layout, model);
         vkCmdDraw(commandBuffer, _modelPlaceHolder.sizeAs<Vertex>(), 1, 0, 0);
@@ -576,7 +576,7 @@ void TemporalAntiAliasingExample::checkAppInputs() {
 }
 
 void TemporalAntiAliasingExample::cleanup() {
-    _loader2->stop();
+    _loader->stop();
     AppContext::shutdown();
 }
 
@@ -653,15 +653,7 @@ void TemporalAntiAliasingExample::newFrame() {
 }
 
 void TemporalAntiAliasingExample::endFrame() {
-//    static bool once = true;
-//    if(_model->texturesLoaded() && once) {
-//        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-//           for(auto& texture : _model->textures) {
-//               textures::generateLOD(device, texture, texture.levels);
-//           }
-//        });
-//        once = false;
-//    }
+    _loader->finalizeTextureTransfer();
 
     jitter.sampler.type = static_cast<SamplerType>(options.samplerType);
     jitter.period(options.jitterPeriod);
@@ -718,6 +710,7 @@ int main(){
         Settings settings;
         settings.width = 1440;
         settings.height = 1280;
+        settings.numGraphicsQueues = 2;
         settings.vSync = true;
         settings.enabledFeatures.wideLines = true;
         settings.depthTest = true;

@@ -129,6 +129,7 @@ namespace gltf {
     , _imageMemoryBarrierObjectPools(numWorkers, ImageMemoryBarrierPool(128) )
     , _bufferCopyPool( numWorkers, BufferCopyPool(128))
     , _bufferImageCopyPool( numWorkers, BufferImageCopyPool(128))
+    , _readyTextures(128)
     {}
 
     void Loader::start() {
@@ -684,8 +685,6 @@ namespace gltf {
     void Loader::process(VkCommandBuffer commandBuffer, InstanceUploadTask* instanceUpload, int workerId) {
         if(!instanceUpload) return;
 
-//        _barrierObjectPools[workerId].releaseAll();
-//        _bufferCopyPool[workerId].releaseAll();
 
 //        spdlog::info("worker{} processing Instance upload", workerId);
 
@@ -905,10 +904,7 @@ namespace gltf {
 
     void Loader::onComplete(TextureUploadTask *textureUpload) {
         if(!textureUpload) return;
-//        spdlog::info("texture upload complete..");
-        auto& texture = textureUpload->pending->textures[textureUpload->textureId];
-        _bindlessDescriptor->update({ &texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureUpload->bindingId });
-        textureUpload->pending->model->textures.push_back(std::move(texture));
+        _readyTextures.push(*textureUpload);
     }
 
     void Loader::onComplete(MaterialUploadTask *materialUpload) {
@@ -922,6 +918,43 @@ namespace gltf {
 
     VulkanDescriptorSetLayout Loader::descriptorSetLayout() const {
         return _descriptorSetLayout;
+    }
+
+    void Loader::finalizeTextureTransfer() {
+
+        if(!_readyTextures.empty()) {
+            std::vector<TextureUploadTask> textureUploads;
+            _device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+
+                while (!_readyTextures.empty()) {
+                    auto textureUpload = _readyTextures.pop();
+                    auto &texture = textureUpload.pending->textures[textureUpload.textureId];
+
+                    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+                    barrier.image = texture.image.image;
+                    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, texture.levels, 0, 1};
+                    barrier.srcAccessMask = VK_ACCESS_NONE;
+                    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    barrier.srcQueueFamilyIndex = *_device->queueFamilyIndex.transfer;
+                    barrier.dstQueueFamilyIndex = *_device->queueFamilyIndex.graphics;
+                    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+                    textures::generateLOD(commandBuffer, texture.image, texture.width, texture.height, texture.levels);
+                    textureUploads.push_back(std::move(textureUpload));
+                }
+            });
+
+            for (auto &textureUpload: textureUploads) {
+                auto &texture = textureUpload.pending->textures[textureUpload.textureId];
+                _bindlessDescriptor->update(
+                        {&texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureUpload.bindingId});
+                textureUpload.pending->model->textures.push_back(std::move(texture));
+            }
+        }
+
     }
 
 

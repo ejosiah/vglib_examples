@@ -200,8 +200,8 @@ protected:
     VkDescriptorSet _displaySet{};
     VkDescriptorSet _colorDisplaySet{};
     std::array<VkDescriptorSet, 2> _historyDisplaySet;
-    std::shared_ptr<gltf::Model> _model2;
-    std::unique_ptr<gltf::Loader> _loader2;
+    std::shared_ptr<gltf::Model> _model;
+    std::unique_ptr<gltf::Loader> _loader;
     VulkanDescriptorSetLayout _modelDescriptorSetLayout;
     VkDescriptorSet _modelDescriptorSet;
     VulkanBuffer _modelPlaceHolder;

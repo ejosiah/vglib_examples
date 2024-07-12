@@ -129,6 +129,8 @@ namespace gltf {
 
         VulkanDescriptorSetLayout descriptorSetLayout() const;
 
+        void finalizeTextureTransfer();
+
     private:
         void coordinatorLoop();
 
@@ -176,6 +178,7 @@ namespace gltf {
         std::vector<VkCommandBuffer> _commandBuffers;
 
         std::vector<StagingBuffer> _stagingBuffers;
+        RingBuffer<TextureUploadTask> _readyTextures;
 
         std::thread _coordinator;
         std::vector<std::thread> _workers;
