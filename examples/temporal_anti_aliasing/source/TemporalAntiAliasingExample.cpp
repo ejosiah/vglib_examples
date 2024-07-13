@@ -653,8 +653,6 @@ void TemporalAntiAliasingExample::newFrame() {
 }
 
 void TemporalAntiAliasingExample::endFrame() {
-    _loader->finalizeTextureTransfer();
-
     jitter.sampler.type = static_cast<SamplerType>(options.samplerType);
     jitter.period(options.jitterPeriod);
 

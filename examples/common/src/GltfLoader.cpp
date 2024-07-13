@@ -379,7 +379,7 @@ namespace gltf {
     }
 
     VkCommandBuffer Loader::processTask(Task& task, int workerId) {
-        auto commandBuffer = _workerCommandPools[workerId].allocate(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+        auto commandBuffer = _workerCommandPools[workerId].transferPool.allocate(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
         auto beginInfo = initializers::commandBufferBeginInfo();
         static VkCommandBufferInheritanceInfo inheritanceInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO };
@@ -872,8 +872,20 @@ namespace gltf {
     }
 
     void Loader::initCommandPools() {
+        _graphicsCommandPool = _device->createCommandPool(*_device->queueFamilyIndex.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, 1);
+
         for(auto i = 0; i < _workerCount; ++i) {
-            _workerCommandPools.push_back(_device->createCommandPool(*_device->queueFamilyIndex.transfer, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT));
+            WorkerCommandPools commandPools{};
+            // TODO check if transfer and compute queues are unique, if not use second queue, i.e. queue index 1
+            commandPools.transferPool = std::move(_device->createCommandPool(*_device->queueFamilyIndex.transfer, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT));
+            commandPools.graphicsPool = std::move(_device->createCommandPool(*_device->queueFamilyIndex.graphics, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT, 1));
+
+            if(_device->queueFamilyIndex.compute.has_value()) {
+                commandPools.computePool = std::move(_device->createCommandPool(*_device->queueFamilyIndex.compute,VK_COMMAND_POOL_CREATE_TRANSIENT_BIT, 1));
+            }else {
+               spdlog::warn("Loader: no compute queue available");
+            }
+            _workerCommandPools.push_back(std::move(commandPools));
         }
     }
 
@@ -905,6 +917,7 @@ namespace gltf {
     void Loader::onComplete(TextureUploadTask *textureUpload) {
         if(!textureUpload) return;
         _readyTextures.push(*textureUpload);
+        finalizeTextureTransfer();
     }
 
     void Loader::onComplete(MaterialUploadTask *materialUpload) {
@@ -924,7 +937,7 @@ namespace gltf {
 
         if(!_readyTextures.empty()) {
             std::vector<TextureUploadTask> textureUploads;
-            _device->graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+            _graphicsCommandPool.oneTimeCommand([&](auto commandBuffer) {
 
                 while (!_readyTextures.empty()) {
                     auto textureUpload = _readyTextures.pop();

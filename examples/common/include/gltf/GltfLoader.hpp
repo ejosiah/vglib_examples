@@ -113,6 +113,12 @@ namespace gltf {
     using BufferCopyPool = CyclicObjectPool<VkBufferCopy>;
     using BufferImageCopyPool = CyclicObjectPool<VkBufferImageCopy>;
 
+    struct WorkerCommandPools{
+        VulkanCommandPool transferPool;
+        VulkanCommandPool graphicsPool;
+        VulkanCommandPool computePool;
+    };
+
     class Loader {
     public:
         Loader() = default;
@@ -174,8 +180,9 @@ namespace gltf {
         SingleWriterManyReadersQueue<Task> _workerQueue;
         ManyWritersSingleReaderQueue<SecondaryCommandBuffer> _commandBufferQueue;
         size_t _workerCount{};
-        std::vector<VulkanCommandPool> _workerCommandPools;
+        std::vector<WorkerCommandPools> _workerCommandPools;
         std::vector<VkCommandBuffer> _commandBuffers;
+        VulkanCommandPool _graphicsCommandPool;
 
         std::vector<StagingBuffer> _stagingBuffers;
         RingBuffer<TextureUploadTask> _readyTextures;
