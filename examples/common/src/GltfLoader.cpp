@@ -253,7 +253,7 @@ namespace gltf {
 
     }
 
-    void Loader::loadTexture(const std::filesystem::path &path, Texture &texture) {
+    std::shared_ptr<TextureUploadStatus> Loader::loadTexture(const std::filesystem::path &path, Texture &texture) {
 
         int width, height, channels;
         stbi_info(path.string().c_str(), &width, &height, &channels);
@@ -310,8 +310,12 @@ namespace gltf {
             _bindlessDescriptor->update({ &_placeHolderTexture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texture.bindingId});
         }
 
-        _pendingTextureUploads.push({ path.string(), channels, &texture});
+        auto status = std::make_shared<TextureUploadStatus>();
+        status->texture = &texture;
+        _pendingTextureUploads.push({ path.string(), channels, status});
         _coordinatorWorkAvailable.notify();
+
+        return status;
     }
 
     void Loader::initPlaceHolders() {
@@ -921,7 +925,7 @@ namespace gltf {
             return;
         }
 
-        auto& texture = *textureUpload->texture;
+        auto& texture = *textureUpload->status->texture;
 
         VkDeviceSize alignment = textures::byteSize(texture.format) * textureUpload->desiredChannels;
         auto stagingBuffer = _stagingBuffers[workerId].allocate(texture.image.size, alignment);
@@ -1077,12 +1081,12 @@ namespace gltf {
 
     void Loader::finalizeRegularTextureTransfer() {
         if(!_uploadedTextures.empty()) {
-            std::vector<Texture*> uploadedTextures;
+            std::vector<std::shared_ptr<TextureUploadStatus>> uploadedTextures;
 
             _graphicsCommandPool.oneTimeCommand([&](auto commandBuffer){
                 while(!_uploadedTextures.empty()){
                     auto uploadedTexture = _uploadedTextures.pop();
-                    auto &texture = uploadedTexture.texture;
+                    auto texture = uploadedTexture.status->texture;
 
                     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
                     barrier.image = texture->image.image;
@@ -1096,17 +1100,20 @@ namespace gltf {
                     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                                          0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-                    if(uploadedTexture.texture->lod) {
+                    if(texture->lod) {
                         textures::generateLOD(commandBuffer, texture->image, texture->width, texture->height, texture->levels);
                     }
-                    uploadedTextures.push_back(uploadedTexture.texture);
+                    uploadedTextures.push_back(uploadedTexture.status);
                 }
             });
 
-            for(auto texture : uploadedTextures) {
+            for(auto status : uploadedTextures) {
+                auto texture = status->texture;
                 if(texture->bindingId != std::numeric_limits<uint32_t>::max()) {
                     _bindlessDescriptor->update({texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(texture->bindingId)});
                 }
+                status->ready = true;
+                status->_ready.notifyAll();
                 spdlog::info("{} successfully uploaded and ready to use", std::filesystem::path{texture->path}.filename().string());
             }
         }

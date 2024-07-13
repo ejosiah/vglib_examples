@@ -80,10 +80,24 @@ namespace gltf {
         uint32_t textureId;
     };
 
+    struct TextureUploadStatus{
+        friend class Loader;
+
+        Texture* texture{};
+        std::atomic_bool ready{};
+
+        void sync() {
+            _ready.wait();
+        }
+
+    private:
+        Condition _ready{};
+    };
+
     struct TextureUploadTask {
         std::string path;
         int desiredChannels{};
-        Texture* texture{};
+        std::shared_ptr<TextureUploadStatus> status;
     };
 
     struct MaterialUploadTask {
@@ -135,7 +149,7 @@ namespace gltf {
 
         std::shared_ptr<Model> loadGltf(const std::filesystem::path& path);
 
-        void loadTexture(const std::filesystem::path& path, Texture& texture);
+        std::shared_ptr<TextureUploadStatus> loadTexture(const std::filesystem::path& path, Texture& texture);
 
         void stop();
 
