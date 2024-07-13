@@ -4,16 +4,16 @@
 #include "ImGuiPlugin.hpp"
 
 PbrDemo::PbrDemo(const Settings& settings) : VulkanBaseApp("Physically based rendering", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/pbr");
-    fileManager.addSearchPath("../../examples/pbr/spv");
-    fileManager.addSearchPath("../../examples/pbr/models");
-    fileManager.addSearchPath("../../examples/pbr/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/shaders/pbr"); // TODO recursive paths
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("../../examples/pbr");
+    fileManager().addSearchPath("../../examples/pbr/spv");
+    fileManager().addSearchPath("../../examples/pbr/models");
+    fileManager().addSearchPath("../../examples/pbr/textures");
+    fileManager().addSearchPath("../../data/shaders");
+    fileManager().addSearchPath("../../data/shaders/pbr"); // TODO recursive paths
+    fileManager().addSearchPath("../../data/models");
+    fileManager().addSearchPath("../../data/textures");
+    fileManager().addSearchPath("../../data");
 
     atomicFloatFeatures = VkPhysicalDeviceShaderAtomicFloatFeaturesEXT{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT};
     atomicFloatFeatures.shaderBufferFloat32Atomics = VK_TRUE;
