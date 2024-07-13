@@ -130,6 +130,8 @@ namespace gltf {
     , _bufferCopyPool( numWorkers, BufferCopyPool(128))
     , _bufferImageCopyPool( numWorkers, BufferImageCopyPool(128))
     , _readyTextures(128)
+    , _pendingTextureUploads(128)
+    , _uploadedTextures(128)
     {}
 
     void Loader::start() {
@@ -149,7 +151,7 @@ namespace gltf {
         spdlog::info("GLTF model loader started");
     }
 
-    std::shared_ptr<Model> Loader::load(const std::filesystem::path &path) {
+    std::shared_ptr<Model> Loader::loadGltf(const std::filesystem::path &path) {
         if(_pendingModels.full()) {
             spdlog::warn("loader at capacity");
             return {};
@@ -245,10 +247,71 @@ namespace gltf {
         pendingModel->textureBindingOffset = textureBindingOffset;
 
         _pendingModels.push(pendingModel);
-        _modelLoadPending.signal();
+        _coordinatorWorkAvailable.notify();
 
         return model;
 
+    }
+
+    void Loader::loadTexture(const std::filesystem::path &path, Texture &texture) {
+
+        int width, height, channels;
+        stbi_info(path.string().c_str(), &width, &height, &channels);
+
+        channels = channels == 3 ? STBI_rgb_alpha : channels;
+        auto format = channelFormatMap.at(channels);
+        VkDeviceSize imageSize = width * height * channels * textures::byteSize(format);
+
+        auto& imageCreateInfo = texture.spec;
+        imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageCreateInfo.format = format;
+        imageCreateInfo.extent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+        imageCreateInfo.mipLevels = !texture.lod ? 1 : static_cast<uint32_t>(std::log2(std::max(texture.width, texture.height))) + 1;
+        imageCreateInfo.arrayLayers = texture.layers;
+        imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+        imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        texture.image = _device->createImage(imageCreateInfo, VMA_MEMORY_USAGE_GPU_ONLY);
+        texture.image.size = imageSize;
+        texture.width = width;
+        texture.height = width;
+        texture.depth = 1;
+        texture.path = path.string();
+        texture.format = format;
+
+        VkImageSubresourceRange subresourceRange;
+        subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresourceRange.baseMipLevel = 0;
+        subresourceRange.levelCount = imageCreateInfo.mipLevels;
+        subresourceRange.baseArrayLayer = 0;
+        subresourceRange.layerCount = 1;
+
+        texture.imageView = texture.image.createView(format, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
+
+        if(!texture.sampler.handle) {
+            VkSamplerCreateInfo samplerInfo{};
+            samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+            samplerInfo.magFilter = VK_FILTER_LINEAR;
+            samplerInfo.minFilter = VK_FILTER_LINEAR;
+            samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+            samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+            texture.sampler = _device->createSampler(samplerInfo);
+        }
+
+        if(texture.bindingId != std::numeric_limits<uint32_t>::max()) {
+            _bindlessDescriptor->update({ &_placeHolderTexture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texture.bindingId});
+        }
+
+        _pendingTextureUploads.push({ path.string(), channels, &texture});
+        _coordinatorWorkAvailable.notify();
     }
 
     void Loader::initPlaceHolders() {
@@ -272,11 +335,15 @@ namespace gltf {
         std::vector<VkCommandBuffer> commandBuffers;
 
         while(_running) {
-            _modelLoadPending.wait([&]{ return !_pendingModels.empty() || !_commandBufferQueue.empty() || !_running; });
+            _coordinatorWorkAvailable.wait([&]{
+                return !_pendingModels.empty()
+                || !_commandBufferQueue.empty()
+                || !_pendingTextureUploads.empty()
+                || !_running; });
 
             if(!_running) {
                 _workerQueue.broadcast(StopWorkerTask{});
-                _taskPending.signalAll();
+                _taskPending.notifyAll();
                 for(auto& worker : _workers) {
                     worker.join();
                 }
@@ -296,7 +363,7 @@ namespace gltf {
                     onComplete(task);
                     completedTasks.pop();
                 }
-                _taskPending.signalAll();
+                _taskPending.notifyAll();
             }
 
             commandBuffers.clear();
@@ -321,7 +388,12 @@ namespace gltf {
                     auto& material = pending->gltf->materials[materialId];
                     _workerQueue.push(MaterialUploadTask{ pending, material, materialId});
                 }
-                _taskPending.signalAll();
+                _taskPending.notifyAll();
+            }
+
+            while(!_pendingTextureUploads.empty()) {
+                _workerQueue.push(_pendingTextureUploads.pop());
+                _taskPending.notifyAll();
             }
         }
         spdlog::info("GLTF async loader offline");
@@ -366,13 +438,13 @@ namespace gltf {
 
                 if(batch.size() >= _commandBufferBatchSize) {
                     _commandBufferQueue.push(batch);
-                    _modelLoadPending.signal();
+                    _coordinatorWorkAvailable.notify();
                     batch.clear();
                 }
             }
             if(!batch.empty()){
                 _commandBufferQueue.push(batch);
-                _modelLoadPending.signal();
+                _coordinatorWorkAvailable.notify();
             }
         }
         spdlog::info("GLTF worker[{}] going offline", id);
@@ -390,6 +462,7 @@ namespace gltf {
         process(commandBuffer, std::get_if<GltfTextureUploadTask>(&task), workerId);
         process(commandBuffer, std::get_if<MaterialUploadTask>(&task), workerId);
         process(commandBuffer, std::get_if<InstanceUploadTask>(&task), workerId);
+        process(commandBuffer, std::get_if<TextureUploadTask>(&task), workerId);
 
         vkEndCommandBuffer(commandBuffer);
 
@@ -749,32 +822,6 @@ namespace gltf {
             }
         }
 
-//        for(auto nodeId = 0; nodeId < instanceUpload->pending->gltf->nodes.size(); ++nodeId) {
-//            const auto& node = instanceUpload->pending->gltf->nodes[nodeId];
-//            for(const auto& primitive : instanceUpload->primitives) {
-//                if(node.mesh == primitive.meshId) {
-//                    VkDrawIndexedIndirectCommand drawCommand{};
-//                    drawCommand.indexCount = primitive.indexCount;
-//                    drawCommand.instanceCount = 1;
-//                    drawCommand.firstIndex = primitive.firstIndex;
-//                    drawCommand.vertexOffset = primitive.vertexOffset;
-//                    drawCommand.firstInstance = primitive.firstInstance;
-//
-//                    MeshData data{.materialId = static_cast<int>(primitive.materialId)};
-//                    data.model = transforms[nodeId];
-//                    data.ModelInverse = glm::inverse(data.model);
-//
-//                    if(primitive.indexType == ComponentType::UNSIGNED_SHORT) {
-//                        drawCommands.u16.push_back(drawCommand);
-//                        meshData.u16.push_back(data);
-//                    }else {
-//                        drawCommands.u32.push_back(drawCommand);
-//                        meshData.u32.push_back(data);
-//                    }
-//                }
-//            }
-//        }
-
         struct {
             uint32_t u16{};
             uint32_t u32{};
@@ -864,10 +911,62 @@ namespace gltf {
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, VK_NULL_HANDLE, 1, &drawCmdBarrier, 0, VK_NULL_HANDLE);
     }
 
+    void Loader::process(VkCommandBuffer commandBuffer, TextureUploadTask* textureUpload, int workerId) {
+        if(!textureUpload) return;
+
+        int width, height, channel;
+        stbi_uc* pixels = stbi_load(textureUpload->path.data(), &width, &height, &channel, textureUpload->desiredChannels);
+        if(!pixels){
+            spdlog::error("failed to load texture image {}!", textureUpload->path);
+            return;
+        }
+
+        auto& texture = *textureUpload->texture;
+
+        VkDeviceSize alignment = textures::byteSize(texture.format) * textureUpload->desiredChannels;
+        auto stagingBuffer = _stagingBuffers[workerId].allocate(texture.image.size, alignment);
+        stagingBuffer.upload(pixels);
+
+        auto& prepTransferBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
+        auto& prepReadBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
+
+        auto& region = *_bufferImageCopyPool[workerId].acquire();
+
+        VkImageSubresourceRange subresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, texture.levels, 0, 1};
+        prepTransferBarrier.image = texture.image.image;
+        prepTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        prepTransferBarrier.subresourceRange = subresourceRange;
+        prepTransferBarrier.srcAccessMask = VK_ACCESS_NONE;
+        prepTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        prepTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        prepTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &prepTransferBarrier);
+
+        region.bufferOffset = stagingBuffer.offset;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = { texture.width, texture.height, 1 };
+        vkCmdCopyBufferToImage(commandBuffer, *stagingBuffer.buffer, texture.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        prepReadBarrier.image = texture.image.image;
+        prepReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        prepReadBarrier.subresourceRange = subresourceRange;
+        prepReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        prepReadBarrier.dstAccessMask = VK_ACCESS_NONE;
+        prepReadBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        prepReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        prepReadBarrier.srcQueueFamilyIndex = *_device->queueFamilyIndex.transfer;
+        prepReadBarrier.dstQueueFamilyIndex = *_device->queueFamilyIndex.graphics;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_NONE, 0, 0, nullptr, 0, nullptr, 1, &prepReadBarrier);
+    }
+
 
     void Loader::stop() {
         _running = false;
-        _modelLoadPending.signal();
+        _coordinatorWorkAvailable.notify();
         _coordinator.join();
     }
 
@@ -894,6 +993,7 @@ namespace gltf {
         onComplete(std::get_if<InstanceUploadTask>(&task));
         onComplete(std::get_if<GltfTextureUploadTask>(&task));
         onComplete(std::get_if<MaterialUploadTask>(&task));
+        onComplete(std::get_if<TextureUploadTask>(&task));
     }
 
     void Loader::onComplete(MeshUploadTask *meshUpload) {
@@ -908,7 +1008,7 @@ namespace gltf {
         model->draw.u32.count += instanceUpload->drawCounts.u32;
 
         if((model->draw.u16.count + model->draw.u32.count) == model->numMeshes) {
-            model->_loaded.signal();
+            model->_loaded.notify();
         }
 
 //        spdlog::info("i32: {}, 116: {}", instanceUpload->pending->model->draw.u32.count, instanceUpload->pending->model->draw.u16.count);
@@ -917,7 +1017,13 @@ namespace gltf {
     void Loader::onComplete(GltfTextureUploadTask *textureUpload) {
         if(!textureUpload) return;
         _readyTextures.push(*textureUpload);
-        finalizeTextureTransfer();
+        finalizeGltfTextureTransfer();
+    }
+
+    void Loader::onComplete(TextureUploadTask *textureUpload) {
+        if(!textureUpload) return;
+        _uploadedTextures.push(*textureUpload);
+        finalizeRegularTextureTransfer();
     }
 
     void Loader::onComplete(MaterialUploadTask *materialUpload) {
@@ -933,8 +1039,8 @@ namespace gltf {
         return _descriptorSetLayout;
     }
 
-    void Loader::finalizeTextureTransfer() {
 
+    void Loader::finalizeGltfTextureTransfer() {
         if(!_readyTextures.empty()) {
             std::vector<GltfTextureUploadTask> textureUploads;
             _graphicsCommandPool.oneTimeCommand([&](auto commandBuffer) {
@@ -967,7 +1073,43 @@ namespace gltf {
                 textureUpload.pending->model->textures.push_back(std::move(texture));
             }
         }
+    }
 
+    void Loader::finalizeRegularTextureTransfer() {
+        if(!_uploadedTextures.empty()) {
+            std::vector<Texture*> uploadedTextures;
+
+            _graphicsCommandPool.oneTimeCommand([&](auto commandBuffer){
+                while(!_uploadedTextures.empty()){
+                    auto uploadedTexture = _uploadedTextures.pop();
+                    auto &texture = uploadedTexture.texture;
+
+                    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+                    barrier.image = texture->image.image;
+                    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, texture->levels, 0, 1};
+                    barrier.srcAccessMask = VK_ACCESS_NONE;
+                    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    barrier.srcQueueFamilyIndex = *_device->queueFamilyIndex.transfer;
+                    barrier.dstQueueFamilyIndex = *_device->queueFamilyIndex.graphics;
+                    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+                    if(uploadedTexture.texture->lod) {
+                        textures::generateLOD(commandBuffer, texture->image, texture->width, texture->height, texture->levels);
+                    }
+                    uploadedTextures.push_back(uploadedTexture.texture);
+                }
+            });
+
+            for(auto texture : uploadedTextures) {
+                if(texture->bindingId != std::numeric_limits<uint32_t>::max()) {
+                    _bindlessDescriptor->update({texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(texture->bindingId)});
+                }
+                spdlog::info("{} successfully uploaded and ready to use", std::filesystem::path{texture->path}.filename().string());
+            }
+        }
     }
 
 
@@ -1237,4 +1379,10 @@ namespace gltf {
         }
     }
 
+    const std::map<int, VkFormat> Loader::channelFormatMap{
+            {1, VK_FORMAT_R8_UNORM},
+            {2, VK_FORMAT_R8G8_UNORM},
+            {3, VK_FORMAT_R8G8B8_UNORM},
+            {4, VK_FORMAT_R8G8B8A8_UNORM},
+    };
 }

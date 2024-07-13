@@ -18,11 +18,11 @@ struct Condition {
         _cv.wait(lck, predicate);
     }
 
-    void signal() {
+    void notify() {
         _cv.notify_one();
     }
 
-    void signalAll() {
+    void notifyAll() {
         _cv.notify_all();
     }
 private:

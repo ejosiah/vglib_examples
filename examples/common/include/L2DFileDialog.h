@@ -116,19 +116,24 @@ namespace FileDialog {
                 }
             }
             for (int i = 0; i < folders.size(); ++i) {
-                if (ImGui::Selectable(folders[i].path().stem().string().c_str(), i == file_dialog_folder_select_index, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(ImGui::GetWindowContentRegionWidth(), 0))) {
-                    file_dialog_current_file = "";
-                    if (ImGui::IsMouseDoubleClicked(0)) {
-                        file_dialog_current_path = folders[i].path().string();
-                        file_dialog_folder_select_index = 0;
-                        file_dialog_file_select_index = 0;
-                        ImGui::SetScrollHereY(0.0f);
-                        file_dialog_current_folder = "";
+                try {
+                    if (ImGui::Selectable(folders[i].path().stem().string().c_str(),
+                                          i == file_dialog_folder_select_index, ImGuiSelectableFlags_AllowDoubleClick,
+                                          ImVec2(ImGui::GetWindowContentRegionWidth(), 0))) {
+                        file_dialog_current_file = "";
+                        if (ImGui::IsMouseDoubleClicked(0)) {
+                            file_dialog_current_path = folders[i].path().string();
+                            file_dialog_folder_select_index = 0;
+                            file_dialog_file_select_index = 0;
+                            ImGui::SetScrollHereY(0.0f);
+                            file_dialog_current_folder = "";
+                        } else {
+                            file_dialog_folder_select_index = i;
+                            file_dialog_current_folder = folders[i].path().stem().string();
+                        }
                     }
-                    else {
-                        file_dialog_folder_select_index = i;
-                        file_dialog_current_folder = folders[i].path().stem().string();
-                    }
+                }catch(...) {
+                    // Skipping this folder[i], probably contains unicode characters
                 }
             }
             ImGui::EndChild();

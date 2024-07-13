@@ -80,6 +80,12 @@ namespace gltf {
         uint32_t textureId;
     };
 
+    struct TextureUploadTask {
+        std::string path;
+        int desiredChannels{};
+        Texture* texture{};
+    };
+
     struct MaterialUploadTask {
         std::shared_ptr<PendingModel> pending;
         tinygltf::Material material;
@@ -97,7 +103,7 @@ namespace gltf {
 
     struct StopWorkerTask {};
 
-    using Task = std::variant<MeshUploadTask, GltfTextureUploadTask, MaterialUploadTask, InstanceUploadTask, StopWorkerTask>;
+    using Task = std::variant<MeshUploadTask, GltfTextureUploadTask, MaterialUploadTask, InstanceUploadTask, TextureUploadTask, StopWorkerTask>;
 
     struct SecondaryCommandBuffer {
         std::vector<VkCommandBuffer> commandBuffers;
@@ -127,7 +133,9 @@ namespace gltf {
 
         void start();
 
-        std::shared_ptr<Model> load(const std::filesystem::path& path);
+        std::shared_ptr<Model> loadGltf(const std::filesystem::path& path);
+
+        void loadTexture(const std::filesystem::path& path, Texture& texture);
 
         void stop();
 
@@ -135,7 +143,10 @@ namespace gltf {
 
         VulkanDescriptorSetLayout descriptorSetLayout() const;
 
-        void finalizeTextureTransfer();
+        void finalizeGltfTextureTransfer();
+
+        void finalizeRegularTextureTransfer();
+
 
     private:
         void coordinatorLoop();
@@ -154,6 +165,8 @@ namespace gltf {
 
          void process(VkCommandBuffer, InstanceUploadTask* instanceUpload, int workerId);
 
+         void process(VkCommandBuffer commandBuffer, TextureUploadTask* textureUpload, int workerId);
+
          void transferMeshInstance(VkCommandBuffer commandBuffer, BufferRegion& drawCmdSrc, VulkanBuffer& drawCmdDst, BufferRegion& meshDataSrc, VulkanBuffer& meshDataDst, uint32_t drawOffset, int workerId);
 
          void onComplete(Task& task);
@@ -166,6 +179,8 @@ namespace gltf {
 
          void onComplete(MaterialUploadTask* materialUpload);
 
+         void onComplete(TextureUploadTask* textureUpload);
+
         void createDescriptorSetLayout();
 
         void initPlaceHolders();
@@ -177,6 +192,7 @@ namespace gltf {
         VulkanDescriptorPool* _descriptorPool{};
         BindlessDescriptor* _bindlessDescriptor{};
         RingBuffer<std::shared_ptr<PendingModel>> _pendingModels;
+        RingBuffer<TextureUploadTask> _pendingTextureUploads;
         SingleWriterManyReadersQueue<Task> _workerQueue;
         ManyWritersSingleReaderQueue<SecondaryCommandBuffer> _commandBufferQueue;
         size_t _workerCount{};
@@ -186,11 +202,12 @@ namespace gltf {
 
         std::vector<StagingBuffer> _stagingBuffers;
         RingBuffer<GltfTextureUploadTask> _readyTextures;
+        RingBuffer<TextureUploadTask> _uploadedTextures;
 
         std::thread _coordinator;
         std::vector<std::thread> _workers;
         VulkanFence _fence;
-        Condition _modelLoadPending{};
+        Condition _coordinatorWorkAvailable{};
         Condition _taskPending{};
         std::atomic_bool _running{};
         Texture _placeHolderTexture;
@@ -204,6 +221,7 @@ namespace gltf {
         uint32_t _commandBufferBatchSize{1};
         static constexpr uint32_t MegaBytes =  1024 * 1024;
         static constexpr VkDeviceSize stagingBufferSize = 1024 * MegaBytes;
+        static const std::map<int, VkFormat> channelFormatMap;
     };
 
 }
