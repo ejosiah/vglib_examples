@@ -1,3 +1,4 @@
+#include "gltf/GltfLoader.hpp"
 $if(raytracing.truthy)$
 #include "VulkanRayTraceModel.hpp"
 #include "VulkanRayTraceBaseApp.hpp"
@@ -17,6 +18,10 @@ protected:
 
     void initCamera();
 
+    void initBindlessDescriptor();
+
+    void beforeDeviceCreation() override;
+
     void createDescriptorPool();
 
     void createDescriptorSetLayouts();
@@ -26,6 +31,8 @@ protected:
     void createCommandPool();
 
     void createPipelineCache();
+
+    void initLoader();
 
     $if(raytracing.truthy)$
     void initCanvas();
@@ -102,4 +109,7 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
+    std::unique_ptr<gltf::Loader> loader;
+    BindlessDescriptor bindlessDescriptor;
+
 };

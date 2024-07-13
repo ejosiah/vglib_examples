@@ -2,6 +2,8 @@
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
+#include "AppContext.hpp"
+#include "ExtensionChain.hpp"
 
 $if(raytracing.truthy)$
 $classname$::$classname$(const Settings& settings) : VulkanRayTraceBaseApp("$title$", settings) {
@@ -23,6 +25,8 @@ void $classname$::initApp() {
     createInverseCam();
     $endif$
     createDescriptorPool();
+    AppContext::init(device, descriptorPool, swapChain, renderPass);
+    initLoader();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     createCommandPool();
@@ -51,27 +55,46 @@ void $classname$::initCamera() {
     camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 }
 
+void $classname$::initBindlessDescriptor() {
+    bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0);
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
+}
+
+void $classname$::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    if(devFeatures13.has_value()) {
+        devFeatures13.value()->synchronization2 = VK_TRUE;
+        devFeatures13.value()->dynamicRendering = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        devFeatures13.synchronization2 = VK_TRUE;
+        devFeatures13.dynamicRendering = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
+    };
+
+    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
+    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
+    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+}
 
 void $classname$::createDescriptorPool() {
     constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 13> poolSizes{
+    std::array<VkDescriptorPoolSize, 4> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
-                    { VK_DESCRIPTOR_TYPE_SAMPLER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets }
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
+}
+
+
+void $classname$::initLoader() {
+    loader = std::make_unique<gltf::Loader>(&device, &descriptorPool, &bindlessDescriptor);
+    loader->start();
 }
 
 void $classname$::createDescriptorSetLayouts() {
@@ -360,7 +383,8 @@ void $classname$::checkAppInputs() {
 }
 
 void $classname$::cleanup() {
-    VulkanBaseApp::cleanup();
+    loader->stop();
+    AppContext::shutdown();
 }
 
 void $classname$::onPause() {
@@ -372,10 +396,18 @@ int main(){
     try{
 
         Settings settings;
+        settings.width = 1440;
+        settings.height = 1280;
         settings.depthTest = true;
-        settings.enableBindlessDescriptors = false;
-        std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
+        settings.enabledFeatures.wideLines = true;
+        settings.enableBindlessDescriptors = true;
+        settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+        settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
+        settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
+        settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
 
+        std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
         auto app = $classname${ settings };
         app.addPlugin(imGui);
         app.run();
