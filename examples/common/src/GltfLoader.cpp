@@ -314,7 +314,7 @@ namespace gltf {
                 for(auto i = 0; i < pending->gltf->textures.size(); ++i) {
                     uint32_t bindingId = i + pending->textureBindingOffset;
                     auto& texture = pending->gltf->textures[i];
-                    _workerQueue.push(TextureUploadTask{ pending, texture, bindingId });
+                    _workerQueue.push(GltfTextureUploadTask{pending, texture, bindingId });
                 }
 
                 for(auto materialId = 0u; materialId < pending->gltf->materials.size(); ++materialId) {
@@ -387,7 +387,7 @@ namespace gltf {
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
         process(commandBuffer, std::get_if<MeshUploadTask>(&task), workerId);
-        process(commandBuffer, std::get_if<TextureUploadTask>(&task), workerId);
+        process(commandBuffer, std::get_if<GltfTextureUploadTask>(&task), workerId);
         process(commandBuffer, std::get_if<MaterialUploadTask>(&task), workerId);
         process(commandBuffer, std::get_if<InstanceUploadTask>(&task), workerId);
 
@@ -554,7 +554,7 @@ namespace gltf {
         }
     }
 
-    void Loader::process(VkCommandBuffer commandBuffer, TextureUploadTask* textureUpload, int workerId) {
+    void Loader::process(VkCommandBuffer commandBuffer, GltfTextureUploadTask* textureUpload, int workerId) {
         if(!textureUpload) return;
 
         VkImageCreateInfo createInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
@@ -892,7 +892,7 @@ namespace gltf {
     void Loader::onComplete(Task& task) {
         onComplete(std::get_if<MeshUploadTask>(&task));
         onComplete(std::get_if<InstanceUploadTask>(&task));
-        onComplete(std::get_if<TextureUploadTask>(&task));
+        onComplete(std::get_if<GltfTextureUploadTask>(&task));
         onComplete(std::get_if<MaterialUploadTask>(&task));
     }
 
@@ -914,7 +914,7 @@ namespace gltf {
 //        spdlog::info("i32: {}, 116: {}", instanceUpload->pending->model->draw.u32.count, instanceUpload->pending->model->draw.u16.count);
     }
 
-    void Loader::onComplete(TextureUploadTask *textureUpload) {
+    void Loader::onComplete(GltfTextureUploadTask *textureUpload) {
         if(!textureUpload) return;
         _readyTextures.push(*textureUpload);
         finalizeTextureTransfer();
@@ -936,7 +936,7 @@ namespace gltf {
     void Loader::finalizeTextureTransfer() {
 
         if(!_readyTextures.empty()) {
-            std::vector<TextureUploadTask> textureUploads;
+            std::vector<GltfTextureUploadTask> textureUploads;
             _graphicsCommandPool.oneTimeCommand([&](auto commandBuffer) {
 
                 while (!_readyTextures.empty()) {

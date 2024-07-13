@@ -73,7 +73,7 @@ namespace gltf {
         std::vector<Mesh> primitives;
     };
 
-    struct TextureUploadTask {
+    struct GltfTextureUploadTask {
         std::shared_ptr<PendingModel> pending;
         tinygltf::Texture texture;
         uint32_t bindingId{};
@@ -97,7 +97,7 @@ namespace gltf {
 
     struct StopWorkerTask {};
 
-    using Task = std::variant<MeshUploadTask, TextureUploadTask, MaterialUploadTask, InstanceUploadTask, StopWorkerTask>;
+    using Task = std::variant<MeshUploadTask, GltfTextureUploadTask, MaterialUploadTask, InstanceUploadTask, StopWorkerTask>;
 
     struct SecondaryCommandBuffer {
         std::vector<VkCommandBuffer> commandBuffers;
@@ -148,7 +148,7 @@ namespace gltf {
 
          void process(VkCommandBuffer, MeshUploadTask* meshUpload, int workerId);
 
-         void process(VkCommandBuffer, TextureUploadTask* textureUpload, int workerId);
+         void process(VkCommandBuffer, GltfTextureUploadTask* textureUpload, int workerId);
 
          void process(VkCommandBuffer, MaterialUploadTask* materialUpload, int workerId);
 
@@ -162,7 +162,7 @@ namespace gltf {
 
          void onComplete(InstanceUploadTask* instanceUpload);
 
-         void onComplete(TextureUploadTask* textureUpload);
+         void onComplete(GltfTextureUploadTask* textureUpload);
 
          void onComplete(MaterialUploadTask* materialUpload);
 
@@ -185,7 +185,7 @@ namespace gltf {
         VulkanCommandPool _graphicsCommandPool;
 
         std::vector<StagingBuffer> _stagingBuffers;
-        RingBuffer<TextureUploadTask> _readyTextures;
+        RingBuffer<GltfTextureUploadTask> _readyTextures;
 
         std::thread _coordinator;
         std::vector<std::thread> _workers;
