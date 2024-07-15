@@ -4,12 +4,12 @@
 #include "ImGuiPlugin.hpp"
 
 MeshShading::MeshShading(const Settings& settings) : VulkanBaseApp("Mesh Shading", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/mesh_shading");
-    fileManager.addSearchPathFront("../../examples/mesh_shading/data");
-    fileManager.addSearchPathFront("../../examples/mesh_shading/spv");
-    fileManager.addSearchPathFront("../../examples/mesh_shading/models");
-    fileManager.addSearchPathFront("../../examples/mesh_shading/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/mesh_shading");
+    fileManager().addSearchPathFront("../../examples/mesh_shading/data");
+    fileManager().addSearchPathFront("../../examples/mesh_shading/spv");
+    fileManager().addSearchPathFront("../../examples/mesh_shading/models");
+    fileManager().addSearchPathFront("../../examples/mesh_shading/textures");
 }
 
 void MeshShading::initApp() {
