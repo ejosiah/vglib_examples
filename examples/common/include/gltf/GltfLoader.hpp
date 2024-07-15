@@ -84,7 +84,7 @@ namespace gltf {
         friend class Loader;
 
         Texture* texture{};
-        std::atomic_bool ready{};
+        std::atomic_bool success{};
 
         void sync() {
             _ready.wait();
@@ -161,6 +161,8 @@ namespace gltf {
 
         void finalizeRegularTextureTransfer();
 
+        std::shared_ptr<Model> dummyModel();
+
 
     private:
         void coordinatorLoop();
@@ -195,11 +197,19 @@ namespace gltf {
 
          void onComplete(TextureUploadTask* textureUpload);
 
+         void handleError(Task& task, const std::exception& exception);
+
+         void handleError(TextureUploadTask* textureUpload, const std::exception& exception);
+
         void createDescriptorSetLayout();
 
         void initPlaceHolders();
 
         void initCommandPools();
+
+        VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);
+
+        friend bool isFloat(VkFormat format);
 
     private:
         VulkanDevice* _device{};
@@ -236,6 +246,7 @@ namespace gltf {
         static constexpr uint32_t MegaBytes =  1024 * 1024;
         static constexpr VkDeviceSize stagingBufferSize = 1024 * MegaBytes;
         static const std::map<int, VkFormat> channelFormatMap;
+        static const std::vector<VkFormat> floatFormats;
     };
 
 }

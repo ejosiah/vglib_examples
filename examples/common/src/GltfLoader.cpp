@@ -40,6 +40,11 @@ namespace gltf {
 
     void computeOffsets(const std::shared_ptr<PendingModel>& pending);
 
+    bool isFloat(VkFormat format) {
+        auto itr = std::find_if(Loader::floatFormats.begin(), Loader::floatFormats.end(), [&](auto aFormat){ return format == aFormat; });
+        return itr != Loader::floatFormats.end();
+    }
+
     template<typename T>
     std::span<const T> getAttributeData(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const std::string& attribute) {
         if(!primitive.attributes.contains(attribute)){
@@ -259,7 +264,7 @@ namespace gltf {
         stbi_info(path.string().c_str(), &width, &height, &channels);
 
         channels = channels == 3 ? STBI_rgb_alpha : channels;
-        auto format = channelFormatMap.at(channels);
+        auto format = texture.format == VK_FORMAT_UNDEFINED ? channelFormatMap.at(channels) : texture.format;
         VkDeviceSize imageSize = width * height * channels * textures::byteSize(format);
 
         auto& imageCreateInfo = texture.spec;
@@ -278,9 +283,9 @@ namespace gltf {
         texture.image = _device->createImage(imageCreateInfo, VMA_MEMORY_USAGE_GPU_ONLY);
         texture.image.size = imageSize;
         texture.width = width;
-        texture.height = width;
+        texture.height = height;
         texture.depth = 1;
-        texture.path = path.string();
+        texture.path = path.filename().string();
         texture.format = format;
 
         VkImageSubresourceRange subresourceRange;
@@ -297,12 +302,11 @@ namespace gltf {
             samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
             samplerInfo.magFilter = VK_FILTER_LINEAR;
             samplerInfo.minFilter = VK_FILTER_LINEAR;
-            samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+            samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
             samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-
+            samplerInfo.maxLod = imageCreateInfo.mipLevels - 1;
             texture.sampler = _device->createSampler(samplerInfo);
         }
 
@@ -385,7 +389,7 @@ namespace gltf {
                 for(auto i = 0; i < pending->gltf->textures.size(); ++i) {
                     uint32_t bindingId = i + pending->textureBindingOffset;
                     auto& texture = pending->gltf->textures[i];
-                    _workerQueue.push(GltfTextureUploadTask{pending, texture, bindingId });
+                    _workerQueue.push(GltfTextureUploadTask{pending, texture, bindingId, static_cast<uint32_t>(i) });
                 }
 
                 for(auto materialId = 0u; materialId < pending->gltf->materials.size(); ++materialId) {
@@ -431,20 +435,31 @@ namespace gltf {
             _taskPending.wait( [&]{ return !workQueue->empty(); } );
 
             batch.clear();
-            while(!workQueue->empty()) {
+            auto availableTasks = workQueue->size();
+            spdlog::info("available work: {}", availableTasks);
+            while(availableTasks > 0) {
                 auto task = workQueue->pop();
+                --availableTasks;
                 if (std::get_if<StopWorkerTask>(&task)) {
                     running = false;
                     break;
                 }
-                auto commandBuffer = processTask(task, id);
-                batch.push_back({{commandBuffer}, task});
+
+                VkCommandBuffer commandBuffer{};
+                try {
+                    commandBuffer = processTask(task, id);
+                    batch.push_back({{commandBuffer}, task});
+                }catch(const std::exception& exception) {
+                    handleError(task, exception);
+                    continue;
+                }
 
                 if(batch.size() >= _commandBufferBatchSize) {
                     _commandBufferQueue.push(batch);
                     _coordinatorWorkAvailable.notify();
                     batch.clear();
                 }
+                spdlog::info("available work left: {}", availableTasks);
             }
             if(!batch.empty()){
                 _commandBufferQueue.push(batch);
@@ -649,7 +664,7 @@ namespace gltf {
 
         auto& region = *_bufferImageCopyPool[workerId].acquire();
 
-        auto textureId = textureUpload->pending->textureId.fetch_add(1);
+        auto textureId = textureUpload->textureId;
         auto& texture = textureUpload->pending->textures[textureId];
         const auto& image = textureUpload->pending->gltf->images[textureUpload->texture.source];
         texture.width = static_cast<uint32_t>(image.width);
@@ -664,6 +679,8 @@ namespace gltf {
 
         VkImageSubresourceRange subresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, texture.levels, 0, 1};
         texture.imageView = texture.image.createView(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
+
+        texture.sampler = createSampler(*textureUpload->pending->gltf, textureUpload->texture.sampler, texture.levels);
 
         constexpr VkDeviceSize alignment = 4; // buffer offset should be multiple of VK_FORMAT_R8G8B8A8_UNORM (4 bytes)
         auto stagingBuffer = _stagingBuffers[workerId].allocate(image.image.size(), alignment);
@@ -918,18 +935,29 @@ namespace gltf {
     void Loader::process(VkCommandBuffer commandBuffer, TextureUploadTask* textureUpload, int workerId) {
         if(!textureUpload) return;
 
+        auto& texture = *textureUpload->status->texture;
+
         int width, height, channel;
-        stbi_uc* pixels = stbi_load(textureUpload->path.data(), &width, &height, &channel, textureUpload->desiredChannels);
-        if(!pixels){
-            spdlog::error("failed to load texture image {}!", textureUpload->path);
-            return;
+        std::variant<stbi_uc*, float*> pixels;
+
+        stbi_set_flip_vertically_on_load(int(texture.flipped));
+        if(isFloat(texture.format)){
+            pixels = stbi_loadf(textureUpload->path.data(), &width, &height, &channel, textureUpload->desiredChannels);
+        }else {
+            pixels = stbi_load(textureUpload->path.data(), &width, &height, &channel, textureUpload->desiredChannels);
         }
 
-        auto& texture = *textureUpload->status->texture;
+
+        std::visit([&](auto data){
+            if(!data){
+                throw std::runtime_error(fmt::format("failed to load texture image {}!", textureUpload->path));
+            }
+        }, pixels);
+
 
         VkDeviceSize alignment = textures::byteSize(texture.format) * textureUpload->desiredChannels;
         auto stagingBuffer = _stagingBuffers[workerId].allocate(texture.image.size, alignment);
-        stagingBuffer.upload(pixels);
+        std::visit([&](auto data){ stagingBuffer.upload(data); }, pixels);
 
         auto& prepTransferBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
         auto& prepReadBarrier = *_imageMemoryBarrierObjectPools[workerId].acquire();
@@ -1112,9 +1140,9 @@ namespace gltf {
                 if(texture->bindingId != std::numeric_limits<uint32_t>::max()) {
                     _bindlessDescriptor->update({texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(texture->bindingId)});
                 }
-                status->ready = true;
+                status->success = true;
                 status->_ready.notifyAll();
-                spdlog::info("{} successfully uploaded and ready to use", std::filesystem::path{texture->path}.filename().string());
+                spdlog::info("{} successfully uploaded and ready to use", texture->path);
             }
         }
     }
@@ -1125,7 +1153,7 @@ namespace gltf {
         std::string warn;
 
         tinygltf::TinyGLTF loader;
-
+        stbi_set_flip_vertically_on_load(0);
         auto successLoad = loader.LoadASCIIFromFile(&model, &err, &warn, path);
 
         if(!warn.empty()) {
@@ -1279,6 +1307,10 @@ namespace gltf {
                 bmin = (transforms[i] * glm::vec4(bmin, 1)).xyz();
                 bmax = (transforms[i] * glm::vec4(bmax, 1)).xyz();
 
+                auto temp = bmin;
+                bmin = glm::min(bmin, bmax);
+                bmax = glm::max(temp, bmax);
+
                 min = glm::min(min, bmin);
                 max = glm::max(max, bmax);
             }
@@ -1386,10 +1418,105 @@ namespace gltf {
         }
     }
 
-    const std::map<int, VkFormat> Loader::channelFormatMap{
+    const std::map<int, VkFormat> Loader::channelFormatMap {
             {1, VK_FORMAT_R8_UNORM},
             {2, VK_FORMAT_R8G8_UNORM},
             {3, VK_FORMAT_R8G8B8_UNORM},
             {4, VK_FORMAT_R8G8B8A8_UNORM},
     };
+
+    const std::vector<VkFormat> Loader::floatFormats {
+        VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT
+    };
+
+    void Loader::handleError(Task &task, const std::exception& exception) {
+        handleError(std::get_if<TextureUploadTask>(&task), exception);
+    }
+
+    void Loader::handleError(TextureUploadTask* textureUpload, const std::exception& exception) {
+        if(!textureUpload) return;
+        textureUpload->status->success = false;
+        textureUpload->status->_ready.notifyAll();
+        spdlog::error("Error uploading file {}, reason: {}", textureUpload->path, exception.what());
+    }
+
+    std::shared_ptr<Model> Loader::dummyModel() {
+        auto dummyModel = std::make_shared<gltf::Model>();
+        dummyModel->vertices = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->indices.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint16_t));
+        dummyModel->indices.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t));
+        dummyModel->materials = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->meshes.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->meshes.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->draw.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->draw.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->meshDescriptorSet.u16.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
+        dummyModel->meshDescriptorSet.u32.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
+        dummyModel->materialDescriptorSet = _descriptorPool->allocate({ _descriptorSetLayout }).front();
+
+
+        auto writes = initializers::writeDescriptorSets<3>();
+        writes[0].dstSet = dummyModel->meshDescriptorSet.u16.handle;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[0].descriptorCount = 1;
+        VkDescriptorBufferInfo meshBuffer16Info{ dummyModel->meshes.u16.handle, 0, VK_WHOLE_SIZE };
+        writes[0].pBufferInfo = &meshBuffer16Info;
+
+        writes[1].dstSet = dummyModel->meshDescriptorSet.u32.handle;
+        writes[1].dstBinding = 0;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[1].descriptorCount = 1;
+        VkDescriptorBufferInfo meshBufferInfo{ dummyModel->meshes.u32.handle, 0, VK_WHOLE_SIZE };
+        writes[1].pBufferInfo = &meshBufferInfo;
+
+        writes[2].dstSet = dummyModel->materialDescriptorSet;
+        writes[2].dstBinding = 0;
+        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[2].descriptorCount = 1;
+        VkDescriptorBufferInfo materialBufferInfo{ dummyModel->materials, 0, VK_WHOLE_SIZE };
+        writes[2].pBufferInfo = &materialBufferInfo;
+
+        _device->updateDescriptorSets(writes);
+
+
+        return dummyModel;
+    }
+
+    VulkanSampler Loader::createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels) {
+
+        auto getFilter = [](int filterId) {
+            if(filterId == 9729) return VK_FILTER_LINEAR;
+            return VK_FILTER_NEAREST;
+        };
+
+        auto getWrappingMode = [](int wrapId) {
+            if(wrapId == 33071) return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            if(wrapId == 33648) return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        };
+
+        VkSamplerCreateInfo samplerCreateInfo{};
+        samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+        samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+        samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerCreateInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerCreateInfo.minLod = 0;
+        samplerCreateInfo.maxLod = static_cast<float>(mipLevels - 1);
+
+        if(sampler != -1) {
+            const auto samplerInfo = model.samplers[sampler];
+            samplerCreateInfo.magFilter = getFilter(samplerInfo.magFilter);
+            samplerCreateInfo.minFilter = getFilter(samplerInfo.minFilter);
+            samplerCreateInfo.addressModeU = getWrappingMode(samplerInfo.wrapS);
+            samplerCreateInfo.addressModeV = getWrappingMode(samplerInfo.wrapT);
+            samplerCreateInfo.addressModeW = getWrappingMode(samplerInfo.wrapS);
+        }
+
+        return _device->createSampler(samplerCreateInfo);
+    }
 }
