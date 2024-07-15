@@ -3,15 +3,15 @@
 #include "DescriptorSetBuilder.hpp"
 
 StereographicProjection::StereographicProjection(const Settings& settings) : VulkanBaseApp("Stereographic projection", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/stereographic_projection");
-    fileManager.addSearchPath("../../examples/stereographic_projection/spv");
-    fileManager.addSearchPath("../../examples/stereographic_projection/models");
-    fileManager.addSearchPath("../../examples/stereographic_projection/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("../../examples/stereographic_projection");
+    fileManager().addSearchPath("../../examples/stereographic_projection/spv");
+    fileManager().addSearchPath("../../examples/stereographic_projection/models");
+    fileManager().addSearchPath("../../examples/stereographic_projection/textures");
+    fileManager().addSearchPath("../../data/shaders");
+    fileManager().addSearchPath("../../data/models");
+    fileManager().addSearchPath("../../data/textures");
+    fileManager().addSearchPath("../../data");
 }
 
 void StereographicProjection::initApp() {
