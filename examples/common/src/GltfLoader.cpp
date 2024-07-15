@@ -6,6 +6,8 @@
 
 namespace gltf {
 
+    static constexpr const char* KHR_materials_transmission = "KHR_materials_transmission";
+
     struct Counts {
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} indices;
@@ -730,6 +732,10 @@ namespace gltf {
         material.alphaCutOff = static_cast<float>(materialUpload->material.alphaCutoff);
         material.doubleSided = materialUpload->material.doubleSided;
         material.textures.fill(-1);
+
+        if(materialUpload->material.extensions.contains(KHR_materials_transmission)){
+            material.transmission = materialUpload->material.extensions.at(KHR_materials_transmission).Get("transmissionFactor").GetNumberAsDouble();
+        }
 
         if(materialUpload->material.pbrMetallicRoughness.baseColorTexture.index != -1) {
             material.textures[static_cast<int>(TextureType::BASE_COLOR)] = materialUpload->material.pbrMetallicRoughness.baseColorTexture.index + materialUpload->pending->textureBindingOffset;

@@ -7,10 +7,15 @@ layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
 };
 
-layout(push_constant) uniform MVP {
+layout(push_constant) uniform Constants {
     mat4 model;
     mat4 view;
     mat4 projection;
+    int brdf_lut_texture_id;
+    int irradiance_texture_id;
+    int specular_texture_id;
+    int framebuffer_texture_id;
+    int discard_transmissive;
 };
 
 layout(location = 0) in vec4 position;
@@ -21,6 +26,7 @@ layout(location = 4) in vec3 color;
 layout(location = 5) in vec2 uv;
 
 layout(location = 0) out struct {
+    vec3 localPos;
     vec3 position;
     vec3 normal;
     vec3 tangent;
@@ -30,7 +36,7 @@ layout(location = 0) out struct {
     vec2 uv;
 } vs_out;
 
-layout(location = 7) out flat int drawId;
+layout(location = 8) out flat int drawId;
 
 void main(){
     drawId = gl_DrawID;
@@ -38,6 +44,7 @@ void main(){
     mat3 nModel = mat3(meshModel);
 
     vec4 worldPos = meshModel * position;
+    vs_out.localPos = position.xyz;
     vs_out.position = worldPos.xyz;
     vs_out.normal = nModel * normal;
     vs_out.tangent = nModel * tanget;

@@ -29,14 +29,21 @@
 #define u_GGXLUT global_textures[brdf_lut_texture_id]
 #define u_GGXEnvSampler global_textures[nonuniformEXT(specular_texture_id)]
 #define u_LambertianEnvSampler global_textures[nonuniformEXT(irradiance_texture_id)]
+#define u_TransmissionFramebufferSampler global_textures[nonuniformEXT(framebuffer_texture_id)]
+#define MODEL_MATRIX (meshes[nonuniformEXT(drawId)].model)
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
+
 layout(push_constant) uniform Constants {
-    layout(offset=192)
+    mat4 model;
+    mat4 view;
+    mat4 projection;
     int brdf_lut_texture_id;
     int irradiance_texture_id;
     int specular_texture_id;
+    int framebuffer_texture_id;
+    int discard_transmissive;
 };
 
 #include "gltf.glsl"
@@ -53,6 +60,7 @@ layout(set = 1, binding = 0) buffer GLTF_MATERIAL {
 
 
 layout(location = 0) in struct {
+    vec3 localPos;
     vec3 position;
     vec3 normal;
     vec3 tangent;
@@ -62,7 +70,7 @@ layout(location = 0) in struct {
     vec2 uv;
 } fs_in;
 
-layout(location = 7) in flat int drawId;
+layout(location = 8) in flat int drawId;
 
 float saturate(float x);
 vec4 getBaseColor();
@@ -70,6 +78,7 @@ vec3 getNormal();
 vec3 getMRO();
 bool noTangets();
 vec3 getEmission();
+float getTransmissionFactor();
 
 layout(location = 0) out vec4 fragColor;
 
@@ -80,6 +89,7 @@ const float u_OcclusionStrength = 1;
 
 void main() {
 
+
     vec4 baseColor = getBaseColor();
 
     if(MATERIAL.alphaMode == ALPHA_MODE_MASK)  {
@@ -89,6 +99,11 @@ void main() {
         baseColor.a = 1;
     }
 
+    const float transmissionFactor = getTransmissionFactor();
+
+    if((MATERIAL.alphaMode == ALPHA_MODE_BLEND || transmissionFactor > 0) && discard_transmissive == 1){
+        discard;
+    }
 
     const vec3 mro = getMRO();
     const float metalness = mro.r;
@@ -98,7 +113,8 @@ void main() {
     const vec3 f0 = mix(F0, baseColor.rgb, metalness);
     const vec3 f90 = vec3(1);
     const vec3 c_diff = mix(baseColor.rgb, vec3(0), metalness);
-    float specularWeight = 1;
+    const float ior = IOR;
+    const float specularWeight = 1;
 
     vec3 f_specular = vec3(0.0);
     vec3 f_diffuse = vec3(0.0);
@@ -107,6 +123,10 @@ void main() {
     vec3 f_sheen = vec3(0.0);
     vec3 f_transmission = vec3(0.0);
     float albedoSheenScaling = 1.0;
+    float thickness = 1;
+    vec3 attenuationColor = vec3(1);
+    float attenuationDistance = 0;
+    float dispersion = 0;
 
     vec3 N = getNormal();
     vec3 V = normalize(fs_in.eyes - fs_in.position);
@@ -115,6 +135,9 @@ void main() {
 
     f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
     f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
+
+    f_transmission += getIBLVolumeRefraction(N, V, roughness, c_diff, f0, f90, fs_in.localPos, MODEL_MATRIX, view, projection
+                                             ,ior, thickness, attenuationColor, attenuationDistance, dispersion);
 
     vec3 f_diffuse_ibl = f_diffuse;
     vec3 f_specular_ibl = f_specular;
@@ -125,6 +148,8 @@ void main() {
     diffuse = f_diffuse + mix(f_diffuse_ibl, f_diffuse_ibl * ao, u_OcclusionStrength) * albedoSheenScaling;
     // apply ambient occlusion to all lighting that is not punctual
     specular = f_specular + mix(f_specular_ibl, f_specular_ibl * ao, u_OcclusionStrength) * albedoSheenScaling;
+
+    diffuse = mix(diffuse, f_transmission, transmissionFactor);
 
     vec3 color = vec3(0);
     color = f_emissive + diffuse + specular;
@@ -194,4 +219,8 @@ vec3 getEmission(){
         emission *= texture(EMISSION_TEXTURE, fs_in.uv).rgb;
     }
     return emission;
+}
+
+float getTransmissionFactor() {
+    return MATERIAL.transmission;
 }

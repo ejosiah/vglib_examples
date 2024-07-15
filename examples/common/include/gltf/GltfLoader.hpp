@@ -31,6 +31,8 @@ namespace gltf {
     };
 
     struct MaterialData {
+        std::array<int, 8> textures{};
+
         glm::vec4 baseColor{1.0};
 
         glm::vec3 emission{0};
@@ -41,7 +43,9 @@ namespace gltf {
         int alphaMode{AlphaMode::OPAQUE_};
         int doubleSided{0};
 
-        std::array<int, 8> textures{};
+        float transmission{0};
+        float ior{1.5};
+        glm::vec2 padding;
     };
 
     struct PendingModel {

@@ -1,5 +1,6 @@
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
+#include "Offscreen.hpp"
 
 class GltfViewer : public VulkanBaseApp{
 public:
@@ -9,6 +10,8 @@ protected:
     void initApp() override;
 
     void initCamera();
+
+    void createFrameBufferTexture();
 
     void createSkyBox();
 
@@ -56,11 +59,14 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
-    void renderEnvironmentMap(VkCommandBuffer commandBuffer);
+    void renderToFrameBuffer(VkCommandBuffer commandBuffer);
+
+    void renderEnvironmentMap(VkCommandBuffer commandBuffer, VulkanPipeline* pipeline = nullptr, VulkanPipelineLayout* layout = nullptr);
+
 
     void renderUI(VkCommandBuffer commandBuffer);
 
-    void renderModel(VkCommandBuffer commandBuffer);
+    void renderModel(VkCommandBuffer commandBuffer, VulkanPipeline* pipeline = nullptr, VulkanPipelineLayout* layout = nullptr);
 
     void update(float time) override;
 
@@ -77,16 +83,28 @@ protected:
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
+            struct {
+                VulkanPipelineLayout layout;
+                VulkanPipeline pipeline;
+            } dynamic;
         } environmentMap;
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
             struct {
+                VulkanPipelineLayout layout;
+                VulkanPipeline pipeline;
+            } dynamic;
+            struct {
+                Camera camera;
                 int brdf_lut_texture_id{};
                 int irradiance_texture_id{};
                 int specular_texture_id{};
+                int framebuffer_texture_id{};
+                int discard_transmissive{0};
             } constants;
         } pbr;
+
     } render;
 
     struct {
@@ -141,8 +159,16 @@ protected:
         VulkanSampler sampler;
     } convolution;
 
+    struct {
+        Offscreen renderer{};
+        Offscreen::RenderInfo info{};
+    } offscreen;
+    struct  {
+        Texture color;
+        Texture depth;
+    } transmissionFramebuffer;
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
-    int bindingOffset{1};
+    int bindingOffset{2};   // 1 * framebuffer, 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
 };

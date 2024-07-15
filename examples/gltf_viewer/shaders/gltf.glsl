@@ -14,6 +14,9 @@ struct Mesh {
 };
 
 struct Material {
+    ivec4 textures0;
+    ivec4 textures1;
+    
     vec4 baseColor;
 
     vec3 emission;
@@ -24,7 +27,8 @@ struct Material {
     int alphaMode;
     int doubleSided;
 
-    ivec4 textures0;
-    ivec4 textures1;
+    float transmission;
+    float ior;
+    vec2 padding;
 };
 #endif // GLTF_GLSL
