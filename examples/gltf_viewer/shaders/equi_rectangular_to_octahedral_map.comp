@@ -1,0 +1,36 @@
+#version 460
+
+#include "octahedral.glsl"
+
+#ifndef PI
+#define PI 3.1415926535897932384626
+#endif
+#define TWO_PI (PI * 2.0)
+#define HALF_PI (PI * 0.5)
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D equirectangularMap;
+layout(set = 1, binding = 0, rgba32f) uniform image2D octahedralMap;
+
+vec2 sampleSphere(vec3 v);
+
+void main(){
+    vec2 dimensions = vec2(gl_NumWorkGroups * gl_WorkGroupSize);
+
+    vec2 uv = (vec2(gl_GlobalInvocationID) + 0.5)/dimensions;
+
+    uv = sampleSphere(octDecode(2 * uv - 1));
+    vec3 color = texture(equirectangularMap, uv).rgb;
+
+    imageStore(octahedralMap, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1));
+}
+
+const vec2 invAtan = vec2(0.1591, 0.3183);
+
+vec2 sampleSphere(vec3 v){
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv *= invAtan;
+    uv += 0.5;
+    return uv;
+}
