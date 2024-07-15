@@ -69,6 +69,7 @@ vec4 getBaseColor();
 vec3 getNormal();
 vec3 getMRO();
 bool noTangets();
+vec3 getEmission();
 
 layout(location = 0) out vec4 fragColor;
 
@@ -109,6 +110,7 @@ void main() {
 
     vec3 N = getNormal();
     vec3 V = normalize(fs_in.eyes - fs_in.position);
+    f_emissive = getEmission();
 
 
     f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
@@ -184,4 +186,12 @@ vec3 getNormal() {
 
 bool noTangets() {
     return all(equal(fs_in.tangent, vec3(0)));
+}
+
+vec3 getEmission(){
+    vec3 emission = MATERIAL.emission;
+    if(EMISSION_TEX_ID != -1) {
+        emission *= texture(EMISSION_TEXTURE, fs_in.uv).rgb;
+    }
+    return emission;
 }
