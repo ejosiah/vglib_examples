@@ -36,17 +36,25 @@ public:
 
     [[nodiscard]]
     bool empty() const {
-        return _writeIndex < _readIndex;
+        const auto writeIndex = _writeIndex.load();
+        const auto readIndex = _readIndex.load();
+
+        return writeIndex < readIndex;
     }
 
     [[nodiscard]]
     bool full() const {
-        auto size = (_writeIndex - _readIndex) + 1;
+        const auto writeIndex = _writeIndex.load();
+        const auto readIndex = _readIndex.load();
+
+        auto size = (writeIndex - readIndex) + 1;
         return size == _capacity;
     }
 
     size_t size() const {
-        return (_writeIndex - _readIndex) + 1;
+        const auto writeIndex = _writeIndex.load();
+        const auto readIndex = _readIndex.load();
+        return (writeIndex - readIndex) + 1;
     }
 
     void ensureCapacity() {
