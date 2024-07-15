@@ -45,9 +45,9 @@ void TemporalAntiAliasingExample::initJitter() {
 }
 
 void TemporalAntiAliasingExample::loadModel() {
-//    _model = _loader->load(resource("Sponza/glTF/Sponza.gltf"));
-    _model = _loader->load(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
-//    _model = _loader->load(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
+//    _model = _loader->loadGltf(resource("Sponza/glTF/Sponza.gltf"));
+    _model = _loader->loadGltf(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
+//    _model = _loader->loadGltf(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
     _model->transform = glm::translate(glm::mat4{1}, -_model->bounds.min);
 //    _model2->sync();
 }
