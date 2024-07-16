@@ -8,7 +8,7 @@ struct UniformData {
     int irradiance_texture_id{};
     int specular_texture_id{};
     int framebuffer_texture_id{};
-    int discard_transmissive{0};
+    int discard_transmissive{};
     int environment{};
     int tone_map{1};
 };
@@ -79,12 +79,12 @@ protected:
 
     void renderToFrameBuffer(VkCommandBuffer commandBuffer);
 
-    void renderEnvironmentMap(VkCommandBuffer commandBuffer, VulkanPipeline* pipeline = nullptr, VulkanPipelineLayout* layout = nullptr);
+    void renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout);
 
 
     void renderUI(VkCommandBuffer commandBuffer);
 
-    void renderModel(VkCommandBuffer commandBuffer, VulkanPipeline* pipeline = nullptr, VulkanPipelineLayout* layout = nullptr);
+    void renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout);
 
     void update(float time) override;
 
@@ -173,15 +173,19 @@ protected:
 
     struct {
         Offscreen renderer{};
-        Offscreen::RenderInfo info{};
+        std::array<Offscreen::RenderInfo, 2> info{};
     } offscreen;
     struct  {
-        Texture color;
-        Texture depth;
+        std::array<Texture, 2> color;
+        std::array<Texture, 2> depth;
+        std::array<VulkanBuffer, 2> uniforms;
+        std::array<VkDescriptorSet, 2> UniformsDescriptorSet{};
+        int front{0};
+        int back{1};
     } transmissionFramebuffer;
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
-    int bindingOffset{2};   // 1 * framebuffer, 1 brdf_LUT
+    int bindingOffset{static_cast<int>(transmissionFramebuffer.color.size() + 1) };   // + 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
     Uniforms uniforms;
 };

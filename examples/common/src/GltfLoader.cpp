@@ -742,7 +742,7 @@ namespace gltf {
         }
 
         if(materialUpload->material.extensions.contains(KHR_materials_ior)){
-            material.ior = materialUpload->material.extensions.at(KHR_materials_transmission).Get("ior").GetNumberAsDouble();
+            material.ior = materialUpload->material.extensions.at(KHR_materials_ior).Get("ior").GetNumberAsDouble();
         }
 
         if(materialUpload->material.extensions.contains(KHR_materials_volume)) {

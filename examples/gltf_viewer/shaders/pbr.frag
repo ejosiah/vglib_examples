@@ -165,8 +165,11 @@ void main() {
     vec3 color = vec3(0);
     color = f_emissive + diffuse + specular;
 
-    color /= 1 + color;
-    color = pow(color, vec3(0.4545));
+    if(tone_map == 1 ){
+        color /= 1 + color;
+        color = pow(color, vec3(0.4545));
+    }
+
     fragColor = vec4(color, baseColor.a);
 }
 
@@ -194,7 +197,7 @@ vec3 getMRO() {
         mro.r *= res.b;
         mro.g *= res.g;
 
-        if(OCCLUSION_TEX_ID != 1) {
+        if(OCCLUSION_TEX_ID != -1) {
             if(OCCLUSION_TEX_ID == METAL_ROUGHNESS_TEX_ID) {
                 mro.b = res.r;
             }else {
