@@ -150,19 +150,6 @@ void GltfViewer::loadTextures() {
 
             textures::createNoTransition(device, environments[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {2048, 2048, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             convertToOctahedralMap(*status->texture, environments[i]);
-
-//            Texture irradianceTexture;
-//            irradianceTexture.bindingId = environments[i].bindingId + bindingOffset;
-//            textures::createNoTransition(device, irradianceTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {512, 512, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-//            createIrradianceMap(environments[i], irradianceTexture);
-//            irradianceMaps.push_back(std::move(irradianceTexture));
-//
-//            Texture specularTexture;
-//            specularTexture.bindingId = environments[i].bindingId + 2;
-//            specularTexture.levels = 5;
-//            textures::createNoTransition(device, specularTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {1024, 1024, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-//            createSpecularMap(environments[i], specularTexture);
-//            specularMaps.push_back(std::move(specularTexture));
         }
 
         for(auto i = 0; i < environments.size(); ++i) {
