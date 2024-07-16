@@ -7,6 +7,7 @@
 namespace gltf {
 
     static constexpr const char* KHR_materials_transmission = "KHR_materials_transmission";
+    static constexpr const char* KHR_materials_volume = "KHR_materials_volume";
 
     struct Counts {
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
@@ -359,10 +360,12 @@ namespace gltf {
                 }
             }
 
-            while(!_commandBufferQueue.empty()) {
+            auto availableCommands = _commandBufferQueue.size();
+            while(availableCommands > 0) {
                 auto result = _commandBufferQueue.pop();
                 commandBuffers.insert( commandBuffers.end(), result.commandBuffers.begin(), result.commandBuffers.end());
                 completedTasks.push(std::move(result.task));
+                --availableCommands;
             }
 
             if(!commandBuffers.empty()){
@@ -735,6 +738,30 @@ namespace gltf {
 
         if(materialUpload->material.extensions.contains(KHR_materials_transmission)){
             material.transmission = materialUpload->material.extensions.at(KHR_materials_transmission).Get("transmissionFactor").GetNumberAsDouble();
+        }
+
+        if(materialUpload->material.extensions.contains(KHR_materials_volume)) {
+
+            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("thicknessFactor")) {
+                material.thickness = materialUpload->material.extensions.at(KHR_materials_volume).Get( "thicknessFactor").GetNumberAsDouble();
+            }
+
+            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("attenuationDistance")) {
+                material.attenuationDistance = materialUpload->material.extensions.at(KHR_materials_volume).Get( "attenuationDistance").GetNumberAsDouble();
+            }
+
+            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("attenuationColor")) {
+                material.attenuationColor.r = materialUpload->material.extensions.at(KHR_materials_volume).Get("attenuationColor").Get(0).GetNumberAsDouble();
+                material.attenuationColor.g = materialUpload->material.extensions.at(KHR_materials_volume).Get( "attenuationColor").Get(1).GetNumberAsDouble();
+                material.attenuationColor.b = materialUpload->material.extensions.at(KHR_materials_volume).Get( "attenuationColor").Get(2).GetNumberAsDouble();
+            }
+
+            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("thicknessTexture")){
+                auto textureIndex = materialUpload->material.extensions.at(KHR_materials_volume).Get("thicknessTexture").Get("index").GetNumberAsInt();
+                if(textureIndex != -1) {
+                    material.textures[static_cast<int>(TextureType::THICKNESS)] = textureIndex + materialUpload->pending->textureBindingOffset;
+                }
+            }
         }
 
         if(materialUpload->material.pbrMetallicRoughness.baseColorTexture.index != -1) {

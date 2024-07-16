@@ -16,7 +16,7 @@ struct Mesh {
 struct Material {
     ivec4 textures0;
     ivec4 textures1;
-    
+
     vec4 baseColor;
 
     vec3 emission;
@@ -29,6 +29,10 @@ struct Material {
 
     float transmission;
     float ior;
-    vec2 padding;
+    float thickness;
+    float attenuationDistance;
+
+    vec3 attenuationColor;
+    int padding;
 };
 #endif // GLTF_GLSL

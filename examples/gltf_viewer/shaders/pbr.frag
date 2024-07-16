@@ -9,6 +9,7 @@
 #define OCCLUSION_INDEX 3
 
 #define EMISSION_INDEX 0
+#define THICKNESS_INDEX 1
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
 #define MATERIAL materials[MATERIAL_ID]
@@ -19,18 +20,20 @@
 #define NORMAL_TEX_ID MATERIAL.textures0[NORMAL_INDEX]
 
 #define EMISSION_TEX_ID MATERIAL.textures1[EMISSION_INDEX]
+#define THICKNESS_TEX_ID MATERIAL.textures1[THICKNESS_INDEX]
 
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_ID)]
 #define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_ID)]
 #define OCCLUSION_TEXTURE global_textures[nonuniformEXT(OCCLUSION_TEX_ID)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_ID)]
 #define EMISSION_TEXTURE global_textures[nonuniformEXT(EMISSION_TEX_ID)]
+#define THICKNESS_TEXTURE global_textures[nonuniformEXT(THICKNESS_TEX_ID)]
 
 #define u_GGXLUT global_textures[brdf_lut_texture_id]
 #define u_GGXEnvSampler global_textures[nonuniformEXT(specular_texture_id)]
 #define u_LambertianEnvSampler global_textures[nonuniformEXT(irradiance_texture_id)]
 #define u_TransmissionFramebufferSampler global_textures[nonuniformEXT(framebuffer_texture_id)]
-#define MODEL_MATRIX (meshes[nonuniformEXT(drawId)].model)
+#define MODEL_MATRIX (model * meshes[nonuniformEXT(drawId)].model)
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
@@ -60,6 +63,7 @@ layout(set = 1, binding = 0) buffer GLTF_MATERIAL {
 
 
 layout(location = 0) in struct {
+    mat4 localToWorld;
     vec3 localPos;
     vec3 position;
     vec3 normal;
@@ -70,7 +74,7 @@ layout(location = 0) in struct {
     vec2 uv;
 } fs_in;
 
-layout(location = 8) in flat int drawId;
+layout(location = 12) in flat int drawId;
 
 float saturate(float x);
 vec4 getBaseColor();
@@ -79,6 +83,7 @@ vec3 getMRO();
 bool noTangets();
 vec3 getEmission();
 float getTransmissionFactor();
+float getThickness();
 
 layout(location = 0) out vec4 fragColor;
 
@@ -115,6 +120,9 @@ void main() {
     const vec3 c_diff = mix(baseColor.rgb, vec3(0), metalness);
     const float ior = IOR;
     const float specularWeight = 1;
+    const float thickness = getThickness();
+    vec3 attenuationColor = MATERIAL.attenuationColor;
+    float attenuationDistance = MATERIAL.attenuationDistance;
 
     vec3 f_specular = vec3(0.0);
     vec3 f_diffuse = vec3(0.0);
@@ -123,9 +131,7 @@ void main() {
     vec3 f_sheen = vec3(0.0);
     vec3 f_transmission = vec3(0.0);
     float albedoSheenScaling = 1.0;
-    float thickness = 1;
-    vec3 attenuationColor = vec3(1);
-    float attenuationDistance = 0;
+
     float dispersion = 0;
 
     vec3 N = getNormal();
@@ -136,7 +142,7 @@ void main() {
     f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
     f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
 
-    f_transmission += getIBLVolumeRefraction(N, V, roughness, c_diff, f0, f90, fs_in.localPos, MODEL_MATRIX, view, projection
+    f_transmission += getIBLVolumeRefraction(N, V, roughness, c_diff, f0, f90, fs_in.position, MODEL_MATRIX, view, projection
                                              ,ior, thickness, attenuationColor, attenuationDistance, dispersion);
 
     vec3 f_diffuse_ibl = f_diffuse;
@@ -223,4 +229,12 @@ vec3 getEmission(){
 
 float getTransmissionFactor() {
     return MATERIAL.transmission;
+}
+
+float getThickness() {
+    float thickness = MATERIAL.thickness;
+    if(THICKNESS_TEX_ID != -1){
+        thickness *= texture(THICKNESS_TEXTURE, fs_in.uv).r;
+    }
+    return thickness;
 }

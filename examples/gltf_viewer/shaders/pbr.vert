@@ -26,6 +26,7 @@ layout(location = 4) in vec3 color;
 layout(location = 5) in vec2 uv;
 
 layout(location = 0) out struct {
+    mat4 localToWorld;
     vec3 localPos;
     vec3 position;
     vec3 normal;
@@ -36,7 +37,7 @@ layout(location = 0) out struct {
     vec2 uv;
 } vs_out;
 
-layout(location = 8) out flat int drawId;
+layout(location = 12) out flat int drawId;
 
 void main(){
     drawId = gl_DrawID;
@@ -44,6 +45,8 @@ void main(){
     mat3 nModel = mat3(meshModel);
 
     vec4 worldPos = meshModel * position;
+
+    vs_out.localToWorld = meshModel;
     vs_out.localPos = position.xyz;
     vs_out.position = worldPos.xyz;
     vs_out.normal = nModel * normal;

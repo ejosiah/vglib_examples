@@ -45,7 +45,11 @@ namespace gltf {
 
         float transmission{0};
         float ior{1.5};
-        glm::vec2 padding;
+        float thickness{0};
+        float attenuationDistance{0};
+
+        glm::vec3 attenuationColor{1};
+        int padding;
     };
 
     struct PendingModel {

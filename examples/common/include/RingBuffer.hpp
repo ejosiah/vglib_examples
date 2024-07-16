@@ -144,6 +144,12 @@ public:
         return _buffer.pop();
     }
 
+
+    [[nodiscard]]
+    size_t size() const {
+        return _buffer.size();
+    }
+
 private:
     RingBuffer<T> _buffer;
     std::mutex _mutex;

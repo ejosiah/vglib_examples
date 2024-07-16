@@ -38,7 +38,6 @@ void GltfViewer::initApp() {
 
 void GltfViewer::initCamera() {
     OrbitingCameraSettings cameraSettings;
-//    FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.orbitMinZoom = 0.1;
     cameraSettings.orbitMaxZoom = 512.0f;
     cameraSettings.offsetDistance = 1.0f;
@@ -55,10 +54,10 @@ void GltfViewer::createFrameBufferTexture() {
         transmissionFramebuffer.color.bindingId = 0;
         render.pbr.constants.framebuffer_texture_id = transmissionFramebuffer.color.bindingId;
 
-        textures::create(device, transmissionFramebuffer.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, { 1024, 1024, 1});
+        textures::create(device, transmissionFramebuffer.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, { swapChain.width(), swapChain.height(), 1});
         bindlessDescriptor.update({ &transmissionFramebuffer.color, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, transmissionFramebuffer.color.bindingId});
 
-        textures::create(device, transmissionFramebuffer.depth, VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {1024, 1024, 1});
+        textures::create(device, transmissionFramebuffer.depth, VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {swapChain.width(), swapChain.height(), 1});
 
         offscreen.info = Offscreen::RenderInfo{
             .colorAttachments = {{ &transmissionFramebuffer.color, VK_FORMAT_R32G32B32A32_SFLOAT}},
@@ -168,7 +167,7 @@ void GltfViewer::loadTextures() {
 
         for(auto i = 0; i < environments.size(); ++i) {
             Texture irradianceTexture;
-            irradianceTexture.bindingId = environments.size() + i + 1;
+            irradianceTexture.bindingId = environments.size() + i + bindingOffset;
             textures::createNoTransition(device, irradianceTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {512, 512, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             createIrradianceMap(environments[i], irradianceTexture);
             irradianceMaps.push_back(std::move(irradianceTexture));
@@ -176,7 +175,7 @@ void GltfViewer::loadTextures() {
 
         for(auto i = 0; i < environments.size(); ++i) {
             Texture specularTexture;
-            specularTexture.bindingId = environments.size() * 2 + i + 1;
+            specularTexture.bindingId = environments.size() * 2 + i + bindingOffset;
             specularTexture.levels = 5;
             textures::createNoTransition(device, specularTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {1024, 1024, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             createSpecularMap(environments[i], specularTexture);
@@ -372,7 +371,7 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     vkCmdEndRenderPass(commandBuffer);
 
-//    renderToFrameBuffer(commandBuffer);
+    renderToFrameBuffer(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -380,13 +379,12 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 }
 
 void GltfViewer::renderToFrameBuffer(VkCommandBuffer commandBuffer) {
+    render.pbr.constants.discard_transmissive = 1;
     offscreen.renderer.render(commandBuffer, offscreen.info, [&]{
         renderEnvironmentMap(commandBuffer, &render.environmentMap.dynamic.pipeline, &render.environmentMap.dynamic.layout);
-
-        render.pbr.constants.discard_transmissive = 1;
         renderModel(commandBuffer, &render.pbr.dynamic.pipeline, &render.pbr.dynamic.layout);
-        render.pbr.constants.discard_transmissive = 0;
     });
+    render.pbr.constants.discard_transmissive = 0;
     textures::generateLOD(commandBuffer, transmissionFramebuffer.color.image, transmissionFramebuffer.color.width
                           , transmissionFramebuffer.color.height, transmissionFramebuffer.color.levels);
 }
@@ -729,10 +727,7 @@ void GltfViewer::endFrame() {
         previousEnvironment = options.environment;
     }
     render.pbr.constants.camera = camera->cam();
-
-    device.graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
-        renderToFrameBuffer(commandBuffer);
-    });
+    render.pbr.constants.camera.model = camera->getModel();
 }
 
 int main(){
