@@ -150,6 +150,9 @@ void main() {
     vec3 f_diffuse_ibl = f_diffuse;
     vec3 f_specular_ibl = f_specular;
 
+    f_diffuse = vec3(0);
+    f_specular = vec3(0);
+
     vec3 diffuse;
     vec3 specular;
 
