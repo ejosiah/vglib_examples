@@ -2,6 +2,22 @@
 #include "VulkanBaseApp.h"
 #include "Offscreen.hpp"
 
+struct UniformData {
+    Camera camera;
+    int brdf_lut_texture_id{};
+    int irradiance_texture_id{};
+    int specular_texture_id{};
+    int framebuffer_texture_id{};
+    int discard_transmissive{0};
+    int environment{};
+    int tone_map{1};
+};
+
+struct Uniforms {
+    VulkanBuffer gpu;
+    UniformData* data{};
+};
+
 class GltfViewer : public VulkanBaseApp{
 public:
     explicit GltfViewer(const Settings& settings = {});
@@ -10,6 +26,8 @@ protected:
     void initApp() override;
 
     void initCamera();
+
+    void initUniforms();
 
     void createFrameBufferTexture();
 
@@ -95,14 +113,6 @@ protected:
                 VulkanPipelineLayout layout;
                 VulkanPipeline pipeline;
             } dynamic;
-            struct {
-                Camera camera;
-                int brdf_lut_texture_id{};
-                int irradiance_texture_id{};
-                int specular_texture_id{};
-                int framebuffer_texture_id{};
-                int discard_transmissive{0};
-            } constants;
         } pbr;
 
     } render;
@@ -131,6 +141,8 @@ protected:
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
     std::optional<std::filesystem::path> gltfPath;
+    VulkanDescriptorSetLayout uniformsDescriptorSetLayout;
+    VkDescriptorSet uniformsDescriptorSet{};
     Texture brdfTexture;
     std::vector<Texture> environments;
     std::vector<Texture> stagingTextures;
@@ -171,4 +183,5 @@ protected:
     int currentModel{0};
     int bindingOffset{2};   // 1 * framebuffer, 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
+    Uniforms uniforms;
 };

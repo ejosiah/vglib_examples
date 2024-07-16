@@ -7,7 +7,7 @@ layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
 };
 
-layout(push_constant) uniform Constants {
+layout(set = 3, binding = 0) uniform Constants {
     mat4 model;
     mat4 view;
     mat4 projection;
@@ -16,6 +16,8 @@ layout(push_constant) uniform Constants {
     int specular_texture_id;
     int framebuffer_texture_id;
     int discard_transmissive;
+    int environment;
+    int tone_map;
 };
 
 layout(location = 0) in vec4 position;

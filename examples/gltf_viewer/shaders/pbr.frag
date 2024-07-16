@@ -38,7 +38,7 @@
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
 
-layout(push_constant) uniform Constants {
+layout(set = 3, binding = 0) uniform Constants {
     mat4 model;
     mat4 view;
     mat4 projection;
@@ -47,6 +47,8 @@ layout(push_constant) uniform Constants {
     int specular_texture_id;
     int framebuffer_texture_id;
     int discard_transmissive;
+    int environment;
+    int tone_map;
 };
 
 #include "gltf.glsl"
@@ -118,7 +120,7 @@ void main() {
     const vec3 f0 = mix(F0, baseColor.rgb, metalness);
     const vec3 f90 = vec3(1);
     const vec3 c_diff = mix(baseColor.rgb, vec3(0), metalness);
-    const float ior = IOR;
+    const float ior = MATERIAL.ior;
     const float specularWeight = 1;
     const float thickness = getThickness();
     vec3 attenuationColor = MATERIAL.attenuationColor;

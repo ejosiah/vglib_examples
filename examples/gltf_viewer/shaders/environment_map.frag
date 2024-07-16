@@ -5,9 +5,17 @@
 
 layout(set = 0, binding = 10) uniform sampler2D global_textures[];
 
-layout(push_constant) uniform Constants {
-    layout(offset=192)
-    int environmentId;
+layout(set = 1, binding = 0) uniform Constants {
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+    int brdf_lut_texture_id;
+    int irradiance_texture_id;
+    int specular_texture_id;
+    int framebuffer_texture_id;
+    int discard_transmissive;
+    int environment;
+    int tone_map;
 };
 
 const vec2 invAtan = vec2(0.1591, 0.3183);
@@ -25,7 +33,7 @@ layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec2 uv = 0.5 + 0.5 * octEncode(normalize(texCord));
-    vec3 color = texture(global_textures[environmentId], uv).rgb;
+    vec3 color = texture(global_textures[environment], uv).rgb;
     color /= color + 1;
     color = pow(color, vec3(0.454545));
 

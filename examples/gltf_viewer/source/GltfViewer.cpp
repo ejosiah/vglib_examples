@@ -20,6 +20,7 @@ GltfViewer::GltfViewer(const Settings& settings) : VulkanBaseApp("Gltf Viewer", 
 void GltfViewer::initApp() {
     initBindlessDescriptor();
     initCamera();
+    initUniforms();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     createFrameBufferTexture();
@@ -48,11 +49,17 @@ void GltfViewer::initCamera() {
     camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 }
 
+void GltfViewer::initUniforms() {
+    UniformData defaults{};
+    uniforms.gpu = device.createCpuVisibleBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    uniforms.data = reinterpret_cast<UniformData*>(uniforms.gpu.map());
+}
+
 void GltfViewer::createFrameBufferTexture() {
         transmissionFramebuffer.color.levels = static_cast<uint32_t>(std::log2(1024)) + 1;
         transmissionFramebuffer.color.format = VK_FORMAT_R32G32B32A32_SFLOAT;
         transmissionFramebuffer.color.bindingId = 0;
-        render.pbr.constants.framebuffer_texture_id = transmissionFramebuffer.color.bindingId;
+        uniforms.data->framebuffer_texture_id = transmissionFramebuffer.color.bindingId;
 
         textures::create(device, transmissionFramebuffer.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, { swapChain.width(), swapChain.height(), 1});
         bindlessDescriptor.update({ &transmissionFramebuffer.color, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, transmissionFramebuffer.color.bindingId});
@@ -125,7 +132,7 @@ void GltfViewer::createConvolutionSampler() {
 
 void GltfViewer::loadTextures() {
     brdfTexture.bindingId = 1;
-    render.pbr.constants.brdf_lut_texture_id = brdfTexture.bindingId;
+    uniforms.data->brdf_lut_texture_id = brdfTexture.bindingId;
     loader->loadTexture(resource("brdf.png"), brdfTexture);
 
     environments.resize(environmentPaths.size());
@@ -169,8 +176,8 @@ void GltfViewer::loadTextures() {
             specularMaps.push_back(std::move(specularTexture));
         }
 
-        render.pbr.constants.irradiance_texture_id = irradianceMaps[options.environment].bindingId;
-        render.pbr.constants.specular_texture_id = specularMaps[options.environment].bindingId;
+        uniforms.data->irradiance_texture_id = irradianceMaps[options.environment].bindingId;
+        uniforms.data->specular_texture_id = specularMaps[options.environment].bindingId;
     });
 
 }
@@ -193,9 +200,32 @@ void GltfViewer::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
+
+    uniformsDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("uniforms_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
 }
 
 void GltfViewer::updateDescriptorSets(){
+    auto sets = descriptorPool.allocate({ uniformsDescriptorSetLayout });
+    uniformsDescriptorSet = sets[0];
+    
+    auto writes = initializers::writeDescriptorSets();
+    
+    writes[0].dstSet = uniformsDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    VkDescriptorBufferInfo uniformsInfo{ uniforms.gpu, 0, VK_WHOLE_SIZE };
+    writes[0].pBufferInfo = &uniformsInfo;
+    
+    device.updateDescriptorSets(writes);
+    
 }
 
 void GltfViewer::createCommandPool() {
@@ -225,9 +255,9 @@ void GltfViewer::createRenderPipeline() {
                     .cullFrontFace()
                 .depthStencilState()
                     .compareOpLessOrEqual()
-                .layout()
+                .layout().clear()
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
-                    .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(int))
+                    .addDescriptorSetLayout(uniformsDescriptorSetLayout)
                 .name("environment")
                 .build(render.environmentMap.layout);
 
@@ -256,10 +286,10 @@ void GltfViewer::createRenderPipeline() {
                     .dstAlphaBlendFactor().one()
                     .add()
                 .layout().clear()
-                    .addPushConstantRange(VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(render.pbr.constants))
                     .addDescriptorSetLayout(loader->descriptorSetLayout())
                     .addDescriptorSetLayout(loader->descriptorSetLayout())
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
+                    .addDescriptorSetLayout(uniformsDescriptorSetLayout)
                 .name("pbr_renderer")
                 .build(render.pbr.layout);
 
@@ -366,32 +396,28 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 }
 
 void GltfViewer::renderToFrameBuffer(VkCommandBuffer commandBuffer) {
-    render.pbr.constants.discard_transmissive = 1;
+    uniforms.data->discard_transmissive = 1;
     offscreen.renderer.render(commandBuffer, offscreen.info, [&]{
         renderEnvironmentMap(commandBuffer, &render.environmentMap.dynamic.pipeline, &render.environmentMap.dynamic.layout);
         renderModel(commandBuffer, &render.pbr.dynamic.pipeline, &render.pbr.dynamic.layout);
     });
-    render.pbr.constants.discard_transmissive = 0;
+    uniforms.data->discard_transmissive = 0;
     textures::generateLOD(commandBuffer, transmissionFramebuffer.color.image, transmissionFramebuffer.color.width
                           , transmissionFramebuffer.color.height, transmissionFramebuffer.color.levels);
 }
 
 void GltfViewer::renderEnvironmentMap(VkCommandBuffer commandBuffer, VulkanPipeline* pipeline, VulkanPipelineLayout* layout) {
-    VkDeviceSize offset = 0;
 
     pipeline = !pipeline ? &render.environmentMap.pipeline : pipeline;
     layout = !layout ? &render.environmentMap.layout : layout;
 
-    int environment = environments[options.environment].bindingId;
-
-    if(options.envMapType == 1) {
-        environment = irradianceMaps[options.environment].bindingId;
-    }
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = bindlessDescriptor.descriptorSet;
+    sets[1] = uniformsDescriptorSet;
+    VkDeviceSize offset = 0;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout->handle, 0,  1, &bindlessDescriptor.descriptorSet, 0, VK_NULL_HANDLE);
-    camera->push(commandBuffer, *layout);
-    vkCmdPushConstants(commandBuffer, layout->handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(int), &environment);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout->handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, skyBox.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, skyBox.indices, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, skyBox.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
@@ -403,15 +429,15 @@ void GltfViewer::renderModel(VkCommandBuffer commandBuffer, VulkanPipeline* pipe
 
 
     auto model = models[currentModel];
-    static std::array<VkDescriptorSet, 3> sets;
+    static std::array<VkDescriptorSet, 4> sets;
     sets[0] = model->meshDescriptorSet.u16.handle;
     sets[1] = model->materialDescriptorSet;
     sets[2] = bindlessDescriptor.descriptorSet;
+    sets[3] = uniformsDescriptorSet;
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout->handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, layout->handle, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(render.pbr.constants), &render.pbr.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, model->vertices, &offset);
 
     vkCmdBindIndexBuffer(commandBuffer, model->indices.u16.handle, 0, VK_INDEX_TYPE_UINT16);
@@ -709,12 +735,18 @@ void GltfViewer::endFrame() {
     static int previousEnvironment = options.environment;
 
     if(previousEnvironment != options.environment){
-        render.pbr.constants.irradiance_texture_id = irradianceMaps[options.environment].bindingId;
-        render.pbr.constants.specular_texture_id = specularMaps[options.environment].bindingId;
+        uniforms.data->irradiance_texture_id = irradianceMaps[options.environment].bindingId;
+        uniforms.data->specular_texture_id = specularMaps[options.environment].bindingId;
         previousEnvironment = options.environment;
     }
-    render.pbr.constants.camera = camera->cam();
-    render.pbr.constants.camera.model = camera->getModel();
+    uniforms.data->camera = camera->cam();
+    uniforms.data->camera.model = camera->getModel();
+    uniforms.data->environment = environments[options.environment].bindingId;
+
+    if(options.envMapType == 1) {
+        uniforms.data->environment = irradianceMaps[options.environment].bindingId;
+    }
+
 }
 
 int main(){
