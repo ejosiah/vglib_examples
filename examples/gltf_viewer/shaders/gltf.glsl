@@ -33,6 +33,6 @@ struct Material {
     float attenuationDistance;
 
     vec3 attenuationColor;
-    int padding;
+    float dispersion;
 };
 #endif // GLTF_GLSL

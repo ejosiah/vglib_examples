@@ -96,17 +96,31 @@ vec3 getTransmissionSample(vec2 fragCoord, float roughness, float ior)
 vec3 getIBLVolumeRefraction(vec3 n, vec3 v, float perceptualRoughness, vec3 baseColor, vec3 f0, vec3 f90,
 vec3 position, mat4 modelMatrix, mat4 viewMatrix, mat4 projMatrix, float ior, float thickness, vec3 attenuationColor, float attenuationDistance, float dispersion)
 {
-    #ifdef MATERIAL_DISPERSION
-    // Dispersion will spread out the ior values for each r,g,b channel
-    float halfSpread = (ior - 1.0) * 0.025 * dispersion;
-    vec3 iors = vec3(ior - halfSpread, ior, ior + halfSpread);
-
     vec3 transmittedLight;
     float transmissionRayLength;
-    for (int i = 0; i < 3; i++)
-    {
-        vec3 transmissionRay = getVolumeTransmissionRay(n, v, thickness, iors[i], modelMatrix);
-        // TODO: taking length of blue ray, ideally we would take the length of the green ray. For now overwriting seems ok
+
+    if(dispersion != 0){
+        float halfSpread = (ior - 1.0) * 0.025 * dispersion;
+        vec3 iors = vec3(ior - halfSpread, ior, ior + halfSpread);
+
+        for (int i = 0; i < 3; i++)
+        {
+            vec3 transmissionRay = getVolumeTransmissionRay(n, v, thickness, iors[i], modelMatrix);
+            // TODO: taking length of blue ray, ideally we would take the length of the green ray. For now overwriting seems ok
+            transmissionRayLength = length(transmissionRay);
+            vec3 refractedRayExit = position + transmissionRay;
+
+            // Project refracted vector on the framebuffer, while mapping to normalized device coordinates.
+            vec4 ndcPos = projMatrix * viewMatrix * vec4(refractedRayExit, 1.0);
+            vec2 refractionCoords = ndcPos.xy / ndcPos.w;
+            refractionCoords += 1.0;
+            refractionCoords /= 2.0;
+
+            // Sample framebuffer to get pixel the refracted ray hits for this color channel.
+            transmittedLight[i] = getTransmissionSample(refractionCoords, perceptualRoughness, iors[i])[i];
+        }
+    } else {
+        vec3 transmissionRay = getVolumeTransmissionRay(n, v, thickness, ior, modelMatrix);
         transmissionRayLength = length(transmissionRay);
         vec3 refractedRayExit = position + transmissionRay;
 
@@ -116,24 +130,11 @@ vec3 position, mat4 modelMatrix, mat4 viewMatrix, mat4 projMatrix, float ior, fl
         refractionCoords += 1.0;
         refractionCoords /= 2.0;
 
-        // Sample framebuffer to get pixel the refracted ray hits for this color channel.
-        transmittedLight[i] = getTransmissionSample(refractionCoords, perceptualRoughness, iors[i])[i];
-    }
-    #else
-    vec3 transmissionRay = getVolumeTransmissionRay(n, v, thickness, ior, modelMatrix);
-    float transmissionRayLength = length(transmissionRay);
-    vec3 refractedRayExit = position + transmissionRay;
+        // Sample framebuffer to get pixel the refracted ray hits.
+        transmittedLight = getTransmissionSample(refractionCoords, perceptualRoughness, ior);
 
-    // Project refracted vector on the framebuffer, while mapping to normalized device coordinates.
-    vec4 ndcPos = projMatrix * viewMatrix * vec4(refractedRayExit, 1.0);
-    vec2 refractionCoords = ndcPos.xy / ndcPos.w;
-    refractionCoords += 1.0;
-    refractionCoords /= 2.0;
+    } // MATERIAL_DISPERSION
 
-    // Sample framebuffer to get pixel the refracted ray hits.
-    vec3 transmittedLight = getTransmissionSample(refractionCoords, perceptualRoughness, ior);
-
-    #endif // MATERIAL_DISPERSION
     vec3 attenuatedColor = applyVolumeAttenuation(transmittedLight, transmissionRayLength, attenuationColor, attenuationDistance);
 
     // Sample GGX LUT to get the specular component.

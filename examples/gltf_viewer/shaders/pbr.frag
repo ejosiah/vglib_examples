@@ -123,8 +123,10 @@ void main() {
     const float ior = MATERIAL.ior;
     const float specularWeight = 1;
     const float thickness = getThickness();
-    vec3 attenuationColor = MATERIAL.attenuationColor;
-    float attenuationDistance = MATERIAL.attenuationDistance;
+    const vec3 attenuationColor = MATERIAL.attenuationColor;
+    const float attenuationDistance = MATERIAL.attenuationDistance;
+    const float dispersion = MATERIAL.dispersion;
+
 
     vec3 f_specular = vec3(0.0);
     vec3 f_diffuse = vec3(0.0);
@@ -134,7 +136,6 @@ void main() {
     vec3 f_transmission = vec3(0.0);
     float albedoSheenScaling = 1.0;
 
-    float dispersion = 0;
 
     vec3 N = getNormal();
     vec3 V = normalize(fs_in.eyes - fs_in.position);

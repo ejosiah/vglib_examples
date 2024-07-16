@@ -49,7 +49,7 @@ namespace gltf {
         float attenuationDistance{0};
 
         glm::vec3 attenuationColor{1};
-        int padding;
+        float dispersion{0};
     };
 
     struct PendingModel {

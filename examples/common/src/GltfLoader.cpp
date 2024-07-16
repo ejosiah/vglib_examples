@@ -9,6 +9,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_transmission = "KHR_materials_transmission";
     static constexpr const char* KHR_materials_volume = "KHR_materials_volume";
     static constexpr const char* KHR_materials_ior = "KHR_materials_ior";
+    static constexpr const char* KHR_materials_dispersion = "KHR_materials_dispersion";
 
     struct Counts {
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
@@ -741,6 +742,10 @@ namespace gltf {
             material.transmission = materialUpload->material.extensions.at(KHR_materials_transmission).Get("transmissionFactor").GetNumberAsDouble();
         }
 
+        if(materialUpload->material.extensions.contains(KHR_materials_dispersion)){
+            material.dispersion = materialUpload->material.extensions.at(KHR_materials_dispersion).Get("dispersion").GetNumberAsDouble();
+        }
+
         if(materialUpload->material.extensions.contains(KHR_materials_ior)){
             material.ior = materialUpload->material.extensions.at(KHR_materials_ior).Get("ior").GetNumberAsDouble();
         }
@@ -752,7 +757,7 @@ namespace gltf {
             }
 
             if(materialUpload->material.extensions.at(KHR_materials_volume).Has("attenuationDistance")) {
-                material.attenuationDistance = materialUpload->material.extensions.at(KHR_materials_volume).Get( "attenuationDistance").GetNumberAsDouble();
+                material.attenuationDistance = materialUpload->material.extensions.at(KHR_materials_volume).Get("attenuationDistance").GetNumberAsDouble();
             }
 
             if(materialUpload->material.extensions.at(KHR_materials_volume).Has("attenuationColor")) {
