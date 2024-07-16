@@ -1266,7 +1266,14 @@ namespace gltf {
     glm::mat4 getTransformation(const tinygltf::Node &node) {
         glm::mat4 transform{glm::vec4{}, glm::vec4{}, glm::vec4{}, glm::vec4{}};
         if(!node.matrix.empty()) {
-            assert(false || "node matrix extraction not yet implemented!");
+            const auto m = node.matrix;
+            transform = glm::mat4{
+                m[0],  m[1],  m[2],  m[3],
+                m[4],  m[5],  m[6],  m[7],
+                m[8],  m[9],  m[10], m[11],
+                m[12], m[13], m[14], m[15],
+            };
+            return transform;
         }
 
         glm::vec3 translation{0};
