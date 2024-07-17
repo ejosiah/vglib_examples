@@ -55,7 +55,6 @@ void GltfViewer::initUniforms() {
     uniforms.gpu = device.createCpuVisibleBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     uniforms.data = reinterpret_cast<UniformData*>(uniforms.gpu.map());
     transmissionFramebuffer.uniforms[0] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    transmissionFramebuffer.uniforms[1] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 }
 
 void GltfViewer::createFrameBufferTexture() {
@@ -135,7 +134,7 @@ void GltfViewer::createConvolutionSampler() {
 }
 
 void GltfViewer::loadTextures() {
-    brdfTexture.bindingId = transmissionFramebuffer.color.back().bindingId + 1;
+    brdfTexture.bindingId = transmissionFramebuffer.color.size();
     uniforms.data->brdf_lut_texture_id = brdfTexture.bindingId;
     loader->loadTexture(resource("brdf.png"), brdfTexture);
 
@@ -216,12 +215,11 @@ void GltfViewer::createDescriptorSetLayouts() {
 }
 
 void GltfViewer::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ uniformsDescriptorSetLayout, uniformsDescriptorSetLayout, uniformsDescriptorSetLayout });
+    auto sets = descriptorPool.allocate({ uniformsDescriptorSetLayout, uniformsDescriptorSetLayout });
     uniformsDescriptorSet = sets[0];
     transmissionFramebuffer.UniformsDescriptorSet[0] = sets[1];
-    transmissionFramebuffer.UniformsDescriptorSet[1] = sets[2];
 
-    auto writes = initializers::writeDescriptorSets<3>();
+    auto writes = initializers::writeDescriptorSets<2>();
     
     writes[0].dstSet = uniformsDescriptorSet;
     writes[0].dstBinding = 0;
@@ -237,12 +235,6 @@ void GltfViewer::updateDescriptorSets(){
     VkDescriptorBufferInfo uniformsInfo1{ transmissionFramebuffer.uniforms[0], 0, VK_WHOLE_SIZE };
     writes[1].pBufferInfo = &uniformsInfo1;
 
-    writes[2].dstSet = transmissionFramebuffer.UniformsDescriptorSet[1];
-    writes[2].dstBinding = 0;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[2].descriptorCount = 1;
-    VkDescriptorBufferInfo uniformsInfo2{ transmissionFramebuffer.uniforms[1], 0, VK_WHOLE_SIZE };
-    writes[2].pBufferInfo = &uniformsInfo1;
     
     device.updateDescriptorSets(writes);
     
@@ -387,6 +379,8 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+    renderToFrameBuffer(commandBuffer);
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -796,9 +790,9 @@ void GltfViewer::initModels() {
 
 void GltfViewer::endFrame() {
 
-    device.graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
-        renderToFrameBuffer(commandBuffer);
-    });
+//    device.graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
+//        renderToFrameBuffer(commandBuffer);
+//    });
 
     if(gltfPath.has_value()) {
         currentModel = (currentModel + 1) % static_cast<int>(models.size());

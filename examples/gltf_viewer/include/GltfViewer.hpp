@@ -185,12 +185,12 @@ protected:
         std::array<Offscreen::RenderInfo, 2> info{};
     } offscreen;
     struct  {
-        std::array<Texture, 2> color;
-        std::array<Texture, 2> depth;
-        std::array<VulkanBuffer, 2> uniforms;
-        std::array<VkDescriptorSet, 2> UniformsDescriptorSet{};
+        std::array<Texture, 1> color;
+        std::array<Texture, 1> depth;
+        std::array<VulkanBuffer, 1> uniforms;
+        std::array<VkDescriptorSet, 1> UniformsDescriptorSet{};
         int front{0};
-        int back{1};
+        int back{0};
     } transmissionFramebuffer;
     std::array<const char*, 11> toString{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
