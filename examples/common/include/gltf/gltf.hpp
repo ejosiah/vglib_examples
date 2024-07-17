@@ -14,7 +14,6 @@
 #include <string>
 #include <memory>
 
-#define INT_VALUE(Enum)
 
 namespace gltf {
 

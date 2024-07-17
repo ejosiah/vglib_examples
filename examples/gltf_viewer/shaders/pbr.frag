@@ -153,9 +153,9 @@ void main() {
     f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
 
     if(transmissionFactor > 0){
-        f_transmission +=
-        getIBLVolumeRefraction(N, V, roughness, c_diff, f0, f90, fs_in.position, MODEL_MATRIX, view, projection
-                                            , ior, thickness, attenuationColor, attenuationDistance, dispersion);
+        baseColor.a = 1;
+        f_transmission += getIBLVolumeRefraction(N, V, roughness, c_diff, f0, f90, fs_in.position, MODEL_MATRIX, view, projection
+        , ior, thickness, attenuationColor, attenuationDistance, dispersion);
     }
 
     vec3 f_diffuse_ibl = f_diffuse;
