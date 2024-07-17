@@ -6,6 +6,8 @@
 #include "ExtensionChain.hpp"
 #include "L2DFileDialog.h"
 
+#include <cstring>
+
 GltfViewer::GltfViewer(const Settings& settings) : VulkanBaseApp("Gltf Viewer", settings) {
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../../examples/gltf_viewer");
@@ -13,11 +15,13 @@ GltfViewer::GltfViewer(const Settings& settings) : VulkanBaseApp("Gltf Viewer", 
     fileManager().addSearchPathFront("../../examples/gltf_viewer/spv");
     fileManager().addSearchPathFront("../../examples/gltf_viewer/models");
     fileManager().addSearchPathFront("../../examples/gltf_viewer/textures");
+    fileManager().addSearchPathFront("../../dependencies/glTF-Sample-Assets");
     fileManager().addSearchPathFront("../../dependencies/glTF-Sample-Assets/Models");
     fileManager().addSearchPathFront("../../examples/common/data");
 }
 
 void GltfViewer::initApp() {
+    constructModelPaths();
     initBindlessDescriptor();
     initCamera();
     initUniforms();
@@ -487,6 +491,12 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Begin("Settings");
     ImGui::SetWindowSize({0, 0});
 
+    ImGui::Text("Sample Models");
+    ImGui::PushID("model_selection");
+    options.modelSelected = ImGui::Combo("", &options.selectedModel, options.models.data(), options.models.size());
+    ImGui::PopID();
+
+
     ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
     ImGui::Text("Environments");
     ImGui::Combo("", &options.environment, environmentPaths.data(), environmentPaths.size());
@@ -535,7 +545,7 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
 }
 
 void GltfViewer::update(float time) {
-    if(!ImGui::IsAnyItemActive() && !FileDialog::file_dialog_open && options.camera == 0) {
+    if(!(ImGui::IsAnyItemActive() || ImGui::IsAnyItemHovered()) && !FileDialog::file_dialog_open && options.camera == 0) {
         camera->update(time);
     }
     auto cam = camera->cam();
@@ -791,9 +801,10 @@ void GltfViewer::initModels() {
 
 void GltfViewer::endFrame() {
 
-//    device.graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
-//        renderToFrameBuffer(commandBuffer);
-//    });
+    if(options.modelSelected) {
+        gltfPath = modelPaths[options.models[options.selectedModel]];
+        options.modelSelected = false;
+    }
 
     if(gltfPath.has_value()) {
         currentModel = (currentModel + 1) % static_cast<int>(models.size());
@@ -805,7 +816,7 @@ void GltfViewer::endFrame() {
             options.cameras.clear();
             options.cameras.push_back("Default");
             for(auto i = 0; i < models[currentModel]->cameras.size(); ++i){
-                options.cameras.push_back(toString[i]);
+                options.cameras.push_back(_strdup(std::to_string(i).c_str()));
             }
             options.camera = 0;
         }
@@ -833,6 +844,29 @@ void GltfViewer::endFrame() {
 
     std::swap(transmissionFramebuffer.front, transmissionFramebuffer.back);
     uniforms.data->framebuffer_texture_id = transmissionFramebuffer.color[transmissionFramebuffer.front].bindingId;
+}
+
+void GltfViewer::constructModelPaths() {
+    std::set<std::string> seen;
+    for(auto const& entry : fs::recursive_directory_iterator{ resource("Models") }) {
+        if(!fs::is_directory(entry.path())) {
+            try {
+                const auto extension = entry.path().extension().string();
+                if (extension == ".gltf") {
+                    std::string name = entry.path().filename().string();
+                    name = name.substr(0, name.size() - extension.size());
+
+                    if(seen.contains(name)) continue;
+                    seen.insert(name);
+
+                    modelPaths.insert(std::make_pair(name, entry.path().string()));
+                    options.models.push_back(_strdup(name.c_str()));
+                }
+            }catch(...) {
+                // UTF-8 characters cause exception, maybe look at wide strings
+            }
+        }
+    }
 }
 
 int main(){

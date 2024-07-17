@@ -14,9 +14,10 @@
 - KHR_materials_volume
 
 ## TODO
+- fix - thickness texture is not being used when available
 - split HDR from Tone mapping
 - implement more robust Tone mapping
 - implement bloom
-- add combo box for selected sample models
 - Allow users to use their own environment maps
 - add support for other glTF extensions
+- remove file dialog when path selected and display loading screen

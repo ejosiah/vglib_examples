@@ -34,6 +34,8 @@ protected:
 
     void initUniforms();
 
+    void constructModelPaths();
+
     void createFrameBufferTexture();
 
     void createSkyBox();
@@ -172,6 +174,9 @@ protected:
         bool directLighting{true};
         bool imageBasedLighting{true};
         float iblIntensity{1};
+        int selectedModel;
+        bool modelSelected{false};
+        std::vector<const char*> models;
         std::vector<const char*> cameras{"Default"};
     } options;
     struct {
@@ -194,11 +199,11 @@ protected:
         int front{0};
         int back{0};
     } transmissionFramebuffer;
-    std::array<const char*, 11> toString{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
     int bindingOffset{static_cast<int>(transmissionFramebuffer.color.size() + 1) };   // + 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
+    std::map<std::string, fs::path> modelPaths;
     Uniforms uniforms;
     struct {
         bool error{};
