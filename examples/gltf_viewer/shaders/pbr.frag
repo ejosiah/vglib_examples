@@ -296,7 +296,7 @@ vec3 getEmission(){
     if(EMISSION_TEX_ID != -1) {
         emission *= texture(EMISSION_TEXTURE, fs_in.uv).rgb;
     }
-    return emission;
+    return pow(emission, vec3(2.2)); // sRGB to Linear;
 }
 
 float getTransmissionFactor() {
