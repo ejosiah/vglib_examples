@@ -192,4 +192,8 @@ protected:
     int bindingOffset{static_cast<int>(transmissionFramebuffer.color.size() + 1) };   // + 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
     Uniforms uniforms;
+    struct {
+        bool error{};
+        std::string message;
+    } fileOpen;
 };

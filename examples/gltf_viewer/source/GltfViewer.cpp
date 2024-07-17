@@ -507,6 +507,18 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::End();
 
+    if(fileOpen.error) {
+        ImGui::Begin("Error");
+        ImGui::SetWindowSize({300, 100});
+        ImGui::Text("%s", fileOpen.message.c_str());
+
+        if(ImGui::Button("Close")) {
+            fileOpen.error = false;
+            fileOpen.message.clear();
+        }
+        ImGui::End();
+    }
+
     openFileDialog();
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
@@ -547,6 +559,16 @@ void GltfViewer::openFileDialog() {
 
     if(closed) {
         gltfPath = std::filesystem::path{file_dialog_buffer};
+        if(std::filesystem::is_directory(*gltfPath)){
+            fileOpen.error = true;
+            fileOpen.message = "you tried to open a directory";
+            gltfPath.reset();
+        }else if(gltfPath->extension().string() != ".gltf"){
+            fileOpen.error = true;
+            fileOpen.message = "selected file is not a supported gltf format";
+            gltfPath.reset();
+        }
+        FileDialog::file_dialog_open = fileOpen.error;
         closed = false;
     }
 }
