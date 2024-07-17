@@ -505,6 +505,13 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Combo("", &options.camera, options.cameras.data(), options.cameras.size());
     ImGui::PopID();
 
+    ImGui::Text("Debug");
+    ImGui::RadioButton("Off", &options.debug, 0); ImGui::SameLine();
+    ImGui::RadioButton("Color", &options.debug, 1); ImGui::SameLine();
+    ImGui::RadioButton("Normal", &options.debug, 2); ImGui::SameLine();
+    ImGui::RadioButton("Metalness", &options.debug, 3); ImGui::SameLine();
+    ImGui::RadioButton("Roughness", &options.debug, 4); ImGui::SameLine();
+
     ImGui::End();
 
     if(fileOpen.error) {
@@ -812,6 +819,7 @@ void GltfViewer::endFrame() {
     uniforms.data->camera = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];
     uniforms.data->camera.model = options.camera == 0 ? camera->getModel() : glm::mat4{1};
     uniforms.data->environment = environments[options.environment].bindingId;
+    uniforms.data->debug = options.debug;
 
     if(options.envMapType == 1) {
         uniforms.data->environment = irradianceMaps[options.environment].bindingId;

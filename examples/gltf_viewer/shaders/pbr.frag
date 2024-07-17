@@ -55,6 +55,7 @@ layout(set = 3, binding = 0) uniform Constants {
     int environment;
     int tone_map;
     int num_lights;
+    int debug;
 };
 
 #include "punctual_lights.glsl"
@@ -230,6 +231,19 @@ void main() {
     }
 
     fragColor = vec4(color, baseColor.a);
+
+    if(debug == 1) {
+        fragColor = vec4(baseColor.rgb, 1);
+    }
+    if(debug == 2) {
+        fragColor = vec4(normal, 1);
+    }
+    if(debug == 3) {
+        fragColor = vec4(vec3(roughness), 1);
+    }
+    if(debug == 4) {
+        fragColor = vec4(vec3(metalness), 1);
+    }
 }
 
 float saturate(float x) {

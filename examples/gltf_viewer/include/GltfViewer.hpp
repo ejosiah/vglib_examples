@@ -12,6 +12,7 @@ struct UniformData {
     int environment{};
     int tone_map{1};
     int num_lights{1};
+    int debug{0};
 };
 
 struct Uniforms {
@@ -164,6 +165,7 @@ protected:
         int environment{0};
         int envMapType{0};
         int camera{0};
+        int debug{0};
         std::vector<const char*> cameras{"Default"};
     } options;
     struct {
