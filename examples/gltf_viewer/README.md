@@ -14,7 +14,7 @@
 - KHR_materials_volume
 
 ## TODO
-- fix - thickness texture is not being used when available
+- fix - app fails on exit during async loads
 - split HDR from Tone mapping
 - implement more robust Tone mapping
 - implement bloom

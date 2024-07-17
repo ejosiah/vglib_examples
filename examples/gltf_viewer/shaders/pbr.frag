@@ -306,7 +306,7 @@ float getTransmissionFactor() {
 float getThickness() {
     float thickness = MATERIAL.thickness;
     if(THICKNESS_TEX_ID != -1){
-        thickness *= texture(THICKNESS_TEXTURE, fs_in.uv).r;
+        thickness *= texture(THICKNESS_TEXTURE, fs_in.uv).g;
     }
     return thickness;
 }
