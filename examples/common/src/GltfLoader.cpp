@@ -1,8 +1,9 @@
 #include "gltf/GltfLoader.hpp"
 #include "Vertex.h"
 #include <spdlog/spdlog.h>
-
+#include <AbstractCamera.hpp>
 #include <utility>
+#include <xforms.h>
 
 namespace gltf {
 
@@ -46,6 +47,8 @@ namespace gltf {
     std::tuple<glm::vec3, glm::vec3> computeBounds(const tinygltf::Model& model, const tinygltf::Mesh& mesh);
 
     std::tuple<glm::vec3, glm::vec3> computeBounds(const tinygltf::Model& model, const std::vector<glm::mat4>& transforms);
+
+    std::vector<Camera> getCameras(const tinygltf::Model& model);
 
     void computeOffsets(const std::shared_ptr<PendingModel>& pending);
 
@@ -226,6 +229,7 @@ namespace gltf {
         model->materialDescriptorSet = sets[2];
         model->placeHolders =  computePlaceHolders(*gltf, transforms);
         model->numLights = counts.numLightInstances;
+        model->cameras = getCameras(*gltf);
 
         auto writes = initializers::writeDescriptorSets<5>();
         writes[0].dstSet = model->meshDescriptorSet.u16.handle;
@@ -1630,6 +1634,27 @@ namespace gltf {
                 }
             }
         }
+    }
+
+    std::vector<Camera> getCameras(const tinygltf::Model &model) {
+        std::vector<Camera> cameras{};
+
+        for(const auto& node : model.nodes) {
+            if(node.camera != -1){
+                const auto& gltfCamera = model.cameras[node.camera];
+                Camera camera{};
+                if(gltfCamera.type == "perspective") {
+                    const auto& p = gltfCamera.perspective;
+                    camera.proj =  vkn::perspectiveVFov(p.yfov, p.aspectRatio, p.znear, p.zfar);
+                }else { // orthographic
+                    const auto& o = gltfCamera.orthographic;
+                    camera.proj = vkn::ortho(-o.xmag, o.xmag, -o.ymag, o.ymag, o.znear, o.zfar);
+                }
+                camera.view = glm::inverse(getTransformation(node));
+                cameras.push_back(camera);
+            }
+        }
+        return cameras;
     }
 
     const std::map<int, VkFormat> Loader::channelFormatMap {

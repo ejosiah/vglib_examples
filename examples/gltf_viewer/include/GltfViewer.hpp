@@ -163,6 +163,8 @@ protected:
     struct {
         int environment{0};
         int envMapType{0};
+        int camera{0};
+        std::vector<const char*> cameras{"Default"};
     } options;
     struct {
         VulkanDescriptorSetLayout inDescriptorSetLayout;
@@ -184,6 +186,7 @@ protected:
         int front{0};
         int back{1};
     } transmissionFramebuffer;
+    std::array<const char*, 11> toString{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
     int bindingOffset{static_cast<int>(transmissionFramebuffer.color.size() + 1) };   // + 1 brdf_LUT

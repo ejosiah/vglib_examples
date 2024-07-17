@@ -99,6 +99,7 @@ namespace gltf {
 
         glm::mat4 transform{1};
         std::vector<Texture> textures{};
+        std::vector<Camera> cameras;
         Indices indices{};
         VulkanBuffer vertices{};
         VulkanBuffer materials;

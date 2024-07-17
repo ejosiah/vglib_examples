@@ -490,13 +490,20 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::EndMainMenuBar();
     }
 
-    ImGui::Begin("Environment");
-    ImGui::SetWindowSize({260, 250});
-    ImGui::Combo("", &options.environment, environmentPaths.data(), environmentPaths.size());
+    ImGui::Begin("Settings");
+    ImGui::SetWindowSize({0, 0});
 
-    ImGui::SetWindowSize("Environment", {260, 250});
-    ImGui::RadioButton("Environment", &options.envMapType, 0);
-    ImGui::RadioButton("Irradiance", &options.envMapType, 1);
+    ImGui::Text("Environments");
+    ImGui::Combo("", &options.environment, environmentPaths.data(), environmentPaths.size());
+    static bool showEnv = true;
+    ImGui::SameLine();
+    ImGui::Checkbox("Show", &showEnv);
+    options.envMapType = showEnv ? 0 : 1;
+
+    ImGui::Text("Cameras");
+    ImGui::PushID("camera");
+    ImGui::Combo("", &options.camera, options.cameras.data(), options.cameras.size());
+    ImGui::PopID();
 
     ImGui::End();
 
@@ -505,14 +512,14 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
 }
 
 void GltfViewer::update(float time) {
-    if(!ImGui::IsAnyItemActive() && !FileDialog::file_dialog_open) {
+    if(!ImGui::IsAnyItemActive() && !FileDialog::file_dialog_open && options.camera == 0) {
         camera->update(time);
     }
     auto cam = camera->cam();
 }
 
 void GltfViewer::checkAppInputs() {
-    if(!ImGui::IsAnyItemActive() && !FileDialog::file_dialog_open) {
+    if(!ImGui::IsAnyItemActive() && !FileDialog::file_dialog_open && options.camera == 0) {
         camera->processInput();
     }
 }
@@ -760,6 +767,16 @@ void GltfViewer::endFrame() {
         models[currentModel] = loader->loadGltf(*gltfPath);
         uniforms.data->num_lights = models[currentModel]->numLights;
         camera->updateModel(models[currentModel]->bounds.min, models[currentModel]->bounds.max);
+
+        if(!models[currentModel]->cameras.empty()) {
+            options.cameras.clear();
+            options.cameras.push_back("Default");
+            for(auto i = 0; i < models[currentModel]->cameras.size(); ++i){
+                options.cameras.push_back(toString[i]);
+            }
+            options.camera = 0;
+        }
+
         gltfPath.reset();
     }
 
@@ -770,8 +787,8 @@ void GltfViewer::endFrame() {
         uniforms.data->specular_texture_id = specularMaps[options.environment].bindingId;
         previousEnvironment = options.environment;
     }
-    uniforms.data->camera = camera->cam();
-    uniforms.data->camera.model = camera->getModel();
+    uniforms.data->camera = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];
+    uniforms.data->camera.model = options.camera == 0 ? camera->getModel() : glm::mat4{1};
     uniforms.data->environment = environments[options.environment].bindingId;
 
     if(options.envMapType == 1) {
