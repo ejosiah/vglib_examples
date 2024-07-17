@@ -3,6 +3,11 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#define MATERIAL_SET 1
+#define MATERIAL_BINDING_POINT 0
+#define LIGHT_BINDING_POINT 1
+#define LIGHT_INSTANCE_BINDING_POINT 2
+
 #define BASE_COLOR_INDEX 0
 #define NORMAL_INDEX 1
 #define METALLIC_ROUGHNESS_INDEX 2
@@ -49,8 +54,10 @@ layout(set = 3, binding = 0) uniform Constants {
     int discard_transmissive;
     int environment;
     int tone_map;
+    int num_lights;
 };
 
+#include "punctual_lights.glsl"
 #include "gltf.glsl"
 #include "octahedral.glsl"
 #include "ibl.glsl"
@@ -59,7 +66,7 @@ layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
 };
 
-layout(set = 1, binding = 0) buffer GLTF_MATERIAL {
+layout(set = MATERIAL_SET, binding = MATERIAL_BINDING_POINT) buffer GLTF_MATERIAL {
     Material materials[];
 };
 
@@ -96,7 +103,6 @@ const float u_OcclusionStrength = 1;
 
 void main() {
 
-
     vec4 baseColor = getBaseColor();
 
     if(MATERIAL.alphaMode == ALPHA_MODE_MASK)  {
@@ -113,8 +119,8 @@ void main() {
     }
 
     const vec3 mro = getMRO();
-    const float metalness = mro.r;
-    const float roughness = mro.g;
+    const float metalness = clamp(mro.r, 0, 1);
+    const float roughness = clamp(mro.g, 0, 1);
     const float ao = mro.b;
     const float alphaRoughness = roughness * roughness;
     const vec3 f0 = mix(F0, baseColor.rgb, metalness);
@@ -137,7 +143,8 @@ void main() {
     float albedoSheenScaling = 1.0;
 
 
-    vec3 N = getNormal();
+    vec3 normal = getNormal();
+    vec3 N = normalize(normal);
     vec3 V = normalize(fs_in.eyes - fs_in.position);
     f_emissive = getEmission();
 
@@ -145,14 +152,65 @@ void main() {
     f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
     f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
 
-    f_transmission += getIBLVolumeRefraction(N, V, roughness, c_diff, f0, f90, fs_in.position, MODEL_MATRIX, view, projection
-                                             ,ior, thickness, attenuationColor, attenuationDistance, dispersion);
+    if(transmissionFactor > 0){
+        f_transmission +=
+        getIBLVolumeRefraction(N, V, roughness, c_diff, f0, f90, fs_in.position, MODEL_MATRIX, view, projection
+                                            , ior, thickness, attenuationColor, attenuationDistance, dispersion);
+    }
 
     vec3 f_diffuse_ibl = f_diffuse;
     vec3 f_specular_ibl = f_specular;
 
     f_diffuse = vec3(0);
     f_specular = vec3(0);
+
+    vec3 debbugLight;
+    for(int i = 0; i < num_lights; ++i){
+        Light light = lightAt(i);
+
+        vec3 pointToLight;
+        if (light.type != LightType_Directional){
+            pointToLight = light.position - fs_in.position;
+        }
+        else {
+            pointToLight = -light.direction;
+        }
+
+        // BSTF
+        vec3 L = normalize(pointToLight);// Direction from surface point to light
+        vec3 H = normalize(L + V);// Direction of the vector between L and V, called halfway vector
+        float NdotL = clampedDot(N, L);
+        float NdotV = clampedDot(N, V);
+        float NdotH = clampedDot(N, H);
+        float LdotH = clampedDot(L, H);
+        float VdotH = clampedDot(V, H);
+
+        if (NdotL > 0.0 || NdotV > 0.0){
+            vec3 intensity = getLighIntensity(light, pointToLight);
+            vec3 l_diffuse = vec3(0.0);
+            vec3 l_specular = vec3(0.0);
+
+            l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
+            l_specular += intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
+
+            f_diffuse += l_diffuse;
+            f_specular += l_specular;
+            debbugLight = vec3(NdotH);
+        }
+        // If the light ray travels through the geometry, use the point it exits the geometry again.
+        // That will change the angle to the light source, if the material refracts the light ray.
+
+        if (transmissionFactor > 0){
+            vec3 transmissionRay = getVolumeTransmissionRay(N, V, thickness, ior, MODEL_MATRIX);
+            pointToLight -= transmissionRay;
+            L = normalize(pointToLight);
+
+            vec3 intensity = getLighIntensity(light, pointToLight);
+            vec3 transmittedLight = intensity * getPunctualRadianceTransmission(N, V, L, alphaRoughness, f0, f90, c_diff, ior);
+            transmittedLight = applyVolumeAttenuation(transmittedLight, length(transmissionRay), attenuationColor, attenuationDistance);
+        }
+
+    }
 
     vec3 diffuse;
     vec3 specular;

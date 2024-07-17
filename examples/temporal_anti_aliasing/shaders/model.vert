@@ -1,14 +1,24 @@
 #version 460
 
-#include "gltf.glsl"
+struct Light{
+    vec3 direction;
+    float range;
 
-layout(set = 0, binding = 0) buffer MeshData {
-    Mesh meshes[];
+    vec3 color;
+    float intensity;
+
+    vec3 position;
+    float innerConeCos;
+
+    float outerConeCos;
+    int type;
 };
 
-layout(set = 0, binding = 1) buffer GLTF_MATERIAL {
-    Material materials[];
+
+layout(set = 0, binding = 0) buffer PunctualLights {
+    Light lights[];
 };
+
 
 void main() {
 

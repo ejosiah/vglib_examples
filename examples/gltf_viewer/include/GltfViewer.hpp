@@ -11,6 +11,7 @@ struct UniformData {
     int discard_transmissive{};
     int environment{};
     int tone_map{1};
+    int num_lights{1};
 };
 
 struct Uniforms {

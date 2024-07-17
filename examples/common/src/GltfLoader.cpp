@@ -10,16 +10,20 @@ namespace gltf {
     static constexpr const char* KHR_materials_volume = "KHR_materials_volume";
     static constexpr const char* KHR_materials_ior = "KHR_materials_ior";
     static constexpr const char* KHR_materials_dispersion = "KHR_materials_dispersion";
+    static constexpr const char* KHR_lights_punctual = "KHR_lights_punctual";
 
     struct Counts {
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} indices;
         size_t primitives{};
         size_t vertices{};
+        size_t numLights{};
+        size_t numLightInstances{};
     };
 
     glm::vec2 vec2From(const std::vector<double>& v);
     glm::vec3 vec3From(const std::vector<double>& v);
+    glm::vec3 vec3From(const tinygltf::Value& value);
     glm::vec4 vec4From(const std::vector<double>& v);
     glm::quat quaternionFrom(const std::vector<double>& q);
     glm::mat4 getTransformation(const tinygltf::Node& node);
@@ -199,6 +203,11 @@ namespace gltf {
         byteSize = sizeof(MeshData) * counts.instances.u32 + sizeof(MeshData);
         model->meshes.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u32", _modelId));
 
+        byteSize = sizeof(Light) + sizeof(Light) * counts.numLights;
+        model->lights = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_lights", _modelId));
+
+        byteSize = sizeof(LightInstance) + sizeof(LightInstance) * counts.numLightInstances;
+        model->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_light_instances", _modelId));
 
         std::vector<MaterialData> materials(gltf->materials.size());
         for(auto& material : materials) {
@@ -209,15 +218,16 @@ namespace gltf {
 
         auto transforms = computeTransforms(*gltf);
         auto [bMin, bMax] = computeBounds(*gltf, transforms);
-        auto sets = _descriptorPool->allocate({_descriptorSetLayout, _descriptorSetLayout, _descriptorSetLayout });
+        auto sets = _descriptorPool->allocate({_descriptorSetLayout, _descriptorSetLayout, _materialDescriptorSetLayout });
         model->bounds.min = bMin;
         model->bounds.max = bMax;
         model->meshDescriptorSet.u16.handle = sets[0];
         model->meshDescriptorSet.u32.handle = sets[1];
         model->materialDescriptorSet = sets[2];
         model->placeHolders =  computePlaceHolders(*gltf, transforms);
+        model->numLights = counts.numLightInstances;
 
-        auto writes = initializers::writeDescriptorSets<3>();
+        auto writes = initializers::writeDescriptorSets<5>();
         writes[0].dstSet = model->meshDescriptorSet.u16.handle;
         writes[0].dstBinding = 0;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -239,6 +249,20 @@ namespace gltf {
         VkDescriptorBufferInfo materialBufferInfo{ model->materials, 0, VK_WHOLE_SIZE };
         writes[2].pBufferInfo = &materialBufferInfo;
 
+        writes[3].dstSet = model->materialDescriptorSet;
+        writes[3].dstBinding = 1;
+        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[3].descriptorCount = 1;
+        VkDescriptorBufferInfo lightBufferInfo{ model->lights, 0, VK_WHOLE_SIZE };
+        writes[3].pBufferInfo = &lightBufferInfo;
+
+        writes[4].dstSet = model->materialDescriptorSet;
+        writes[4].dstBinding = 2;
+        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[4].descriptorCount = 1;
+        VkDescriptorBufferInfo lightInstanceBufferInfo{ model->lightInstances, 0, VK_WHOLE_SIZE };
+        writes[4].pBufferInfo = &lightInstanceBufferInfo;
+
         _device->updateDescriptorSets(writes);
 
         const auto textureBindingOffset = _bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, gltf->textures.size());
@@ -255,6 +279,7 @@ namespace gltf {
         pendingModel->model = model;
         pendingModel->transforms = transforms;
         pendingModel->textureBindingOffset = textureBindingOffset;
+        pendingModel->numLights = counts.numLights;
 
         _pendingModels.push(pendingModel);
         _coordinatorWorkAvailable.notify();
@@ -341,6 +366,23 @@ namespace gltf {
                     .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
                 .createLayout();
+
+        _materialDescriptorSetLayout =
+            _device->descriptorSetLayoutBuilder()
+                .name("gltf_material_set_layout")
+                .binding(0) // Materials
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
+                    .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
+                .binding(1) // Lights
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
+                    .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
+                .binding(2) // Light instances
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
+                    .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
+                .createLayout();
     }
 
     void Loader::coordinatorLoop() {
@@ -403,6 +445,25 @@ namespace gltf {
                     auto& material = pending->gltf->materials[materialId];
                     _workerQueue.push(MaterialUploadTask{ pending, material, materialId});
                 }
+
+                for(auto lightId = 0u; lightId < pending->numLights; ++lightId) {
+                    _workerQueue.push(LightUploadTask{ pending, lightId});
+                }
+
+                std::vector<uint32_t> lightInstances{};
+                for(auto i = 0u; i < pending->gltf->nodes.size(); ++i) {
+                    const auto& node = pending->gltf->nodes[i];
+                    if(node.extensions.contains(KHR_lights_punctual)){
+                        lightInstances.push_back(i);
+                    }
+                }
+
+                for(auto instanceId = 0u; instanceId < lightInstances.size(); ++instanceId) {
+                    const auto nodeId = lightInstances[instanceId];
+                    auto node = pending->gltf->nodes[nodeId];
+                    _workerQueue.push(LightInstanceUploadTask{ pending, node, nodeId, instanceId});
+                }
+
                 _taskPending.notifyAll();
             }
 
@@ -489,6 +550,8 @@ namespace gltf {
         process(commandBuffer, std::get_if<MaterialUploadTask>(&task), workerId);
         process(commandBuffer, std::get_if<InstanceUploadTask>(&task), workerId);
         process(commandBuffer, std::get_if<TextureUploadTask>(&task), workerId);
+        process(commandBuffer, std::get_if<LightUploadTask>(&task), workerId);
+        process(commandBuffer, std::get_if<LightInstanceUploadTask>(&task), workerId);
 
         vkEndCommandBuffer(commandBuffer);
 
@@ -499,8 +562,6 @@ namespace gltf {
     void Loader::process(VkCommandBuffer commandBuffer, MeshUploadTask* meshUpload, int workerId) {
         if(!meshUpload) return;
 //        spdlog::info("worker{} processing mesh upload", workerId);
-
-//        _barrierObjectPools[workerId].releaseAll();
 
         auto pending = meshUpload->pending;
         auto model = pending->model;
@@ -1038,6 +1099,91 @@ namespace gltf {
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_NONE, 0, 0, nullptr, 0, nullptr, 1, &prepReadBarrier);
     }
 
+    void Loader::process(VkCommandBuffer commandBuffer, LightUploadTask *lightUpload, int workerId) {
+        if(!lightUpload) return;
+
+        const auto& lightExt = lightUpload->pending->gltf->extensions.at(KHR_lights_punctual).Get("lights").Get(lightUpload->LightId);
+        Light light{};
+        light.type = lightExt.Get("type").GetNumberAsInt();
+
+        if(lightExt.Has("color")) {
+            light.color = vec3From(lightExt.Get("color"));
+        }
+
+        if(lightExt.Has("intensity")) {
+            light.intensity = lightExt.Get("intensity").GetNumberAsDouble();
+        }
+
+        if(lightExt.Has("range")) {
+            light.range = lightExt.Get("range").GetNumberAsDouble();
+        }
+
+        if( LightTypes::valueOf(light.type) == LightType::SPOT ) {
+            const auto& spot = lightExt.Get("spot");
+            light.outerConeCos = spot.Has("outerConeAngle") ? spot.Get("outerConeAngle").GetNumberAsDouble() : glm::quarter_pi<double>();
+            light.outerConeCos = spot.Has("outerConeAngle") ?  spot.Get("outerConeAngle").GetNumberAsDouble() : glm::quarter_pi<double>();
+        }
+
+        auto stagingBuffer =  _stagingBuffers[workerId].allocate(sizeof(light));
+        stagingBuffer.upload(&light);
+
+        auto& region = *_bufferCopyPool[workerId].acquire();
+        region.srcOffset = stagingBuffer.offset;
+        region.dstOffset = lightUpload->LightId * sizeof(Light);
+        region.size = stagingBuffer.size();
+
+        const auto model = lightUpload->pending->model;
+        vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->lights, 1, &region);
+
+        auto& barrier = *_barrierObjectPools[workerId].acquire();
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        barrier.srcQueueFamilyIndex = _device->queueFamilyIndex.transfer.value();
+        barrier.dstQueueFamilyIndex = _device->queueFamilyIndex.graphics.value();
+        barrier.offset = region.dstOffset;
+        barrier.buffer = model->lights;
+        barrier.size = region.size;
+
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0,
+                             VK_NULL_HANDLE, 1, &barrier, 0, VK_NULL_HANDLE);
+
+    }
+
+
+    void Loader::process(VkCommandBuffer commandBuffer, LightInstanceUploadTask *lightInstanceUpload, int workerId) {
+        if(!lightInstanceUpload) return;
+
+        LightInstance lightInstance{};
+        lightInstance.lightId = lightInstanceUpload->node.extensions.at(KHR_lights_punctual).Get("light").GetNumberAsInt();
+
+        lightInstance.model = lightInstanceUpload->pending->transforms[lightInstanceUpload->nodeId];
+        lightInstance.ModelInverse = glm::inverse(lightInstance.model);
+
+        auto stagingBuffer =  _stagingBuffers[workerId].allocate(sizeof(lightInstance));
+        stagingBuffer.upload(&lightInstance);
+
+        auto& region = *_bufferCopyPool[workerId].acquire();
+        region.srcOffset = stagingBuffer.offset;
+        region.dstOffset = lightInstanceUpload->instanceId * sizeof(LightInstance);
+        region.size = stagingBuffer.size();
+
+        const auto model = lightInstanceUpload->pending->model;
+        vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->lightInstances, 1, &region);
+
+        auto& barrier = *_barrierObjectPools[workerId].acquire();
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        barrier.srcQueueFamilyIndex = _device->queueFamilyIndex.transfer.value();
+        barrier.dstQueueFamilyIndex = _device->queueFamilyIndex.graphics.value();
+        barrier.offset = region.dstOffset;
+        barrier.buffer = model->lightInstances;
+        barrier.size = region.size;
+
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0,
+                             VK_NULL_HANDLE, 1, &barrier, 0, VK_NULL_HANDLE);
+    }
 
     void Loader::stop() {
         _running = false;
@@ -1069,6 +1215,8 @@ namespace gltf {
         onComplete(std::get_if<GltfTextureUploadTask>(&task));
         onComplete(std::get_if<MaterialUploadTask>(&task));
         onComplete(std::get_if<TextureUploadTask>(&task));
+        onComplete(std::get_if<LightUploadTask>(&task));
+        onComplete(std::get_if<LightInstanceUploadTask>(&task));
     }
 
     void Loader::onComplete(MeshUploadTask *meshUpload) {
@@ -1112,6 +1260,10 @@ namespace gltf {
 
     VulkanDescriptorSetLayout Loader::descriptorSetLayout() const {
         return _descriptorSetLayout;
+    }
+
+    VulkanDescriptorSetLayout Loader::materialDescriptorSetLayout() const {
+        return _materialDescriptorSetLayout;
     }
 
 
@@ -1238,6 +1390,13 @@ namespace gltf {
                     }
                 }
             }
+            if(node.extensions.contains(KHR_lights_punctual)) {
+                ++counts.numLightInstances;
+            }
+        }
+
+        if(model.extensions.contains(KHR_lights_punctual)) {
+            counts.numLights = model.extensions.at(KHR_lights_punctual).Get("lights").Size();
         }
 
         return counts;
@@ -1316,6 +1475,11 @@ namespace gltf {
         if(v.size() >= 3) res.z = v[2];
 
         return res;
+    }
+
+    glm::vec3 vec3From(const tinygltf::Value& v) {
+        assert(v.IsArray());
+        return glm::vec3{ v.Get(0).GetNumberAsDouble(), v.Get(0).GetNumberAsDouble(), v.Get(0).GetNumberAsDouble() };
     }
 
     glm::vec4 vec4From(const std::vector<double>& v) {
@@ -1496,16 +1660,18 @@ namespace gltf {
         dummyModel->indices.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint16_t));
         dummyModel->indices.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t));
         dummyModel->materials = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->lights = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->meshes.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->meshes.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->draw.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->draw.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->meshDescriptorSet.u16.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
         dummyModel->meshDescriptorSet.u32.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
-        dummyModel->materialDescriptorSet = _descriptorPool->allocate({ _descriptorSetLayout }).front();
+        dummyModel->materialDescriptorSet = _descriptorPool->allocate({ _materialDescriptorSetLayout }).front();
 
 
-        auto writes = initializers::writeDescriptorSets<3>();
+        auto writes = initializers::writeDescriptorSets<5>();
         writes[0].dstSet = dummyModel->meshDescriptorSet.u16.handle;
         writes[0].dstBinding = 0;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1526,6 +1692,20 @@ namespace gltf {
         writes[2].descriptorCount = 1;
         VkDescriptorBufferInfo materialBufferInfo{ dummyModel->materials, 0, VK_WHOLE_SIZE };
         writes[2].pBufferInfo = &materialBufferInfo;
+
+        writes[3].dstSet = dummyModel->materialDescriptorSet;
+        writes[3].dstBinding = 1;
+        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[3].descriptorCount = 1;
+        VkDescriptorBufferInfo lightBufferInfo{ dummyModel->lights, 0, VK_WHOLE_SIZE };
+        writes[3].pBufferInfo = &lightBufferInfo;
+
+        writes[4].dstSet = dummyModel->materialDescriptorSet;
+        writes[4].dstBinding = 2;
+        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[4].descriptorCount = 1;
+        VkDescriptorBufferInfo lightInstanceBufferInfo{ dummyModel->lightInstances, 0, VK_WHOLE_SIZE };
+        writes[4].pBufferInfo = &lightInstanceBufferInfo;
 
         _device->updateDescriptorSets(writes);
 
@@ -1568,5 +1748,15 @@ namespace gltf {
         }
 
         return _device->createSampler(samplerCreateInfo);
+    }
+
+    void Loader::onComplete(LightUploadTask* lightUpload) {
+        if(!lightUpload) return;
+        spdlog::info("light{} uploaded to gpu", lightUpload->LightId);
+    }
+
+    void Loader::onComplete(LightInstanceUploadTask* lightInstanceUpload) {
+        if(!lightInstanceUpload) return;
+        spdlog::info("lightInstance{} uploaded to gpu", lightInstanceUpload->instanceId);
     }
 }

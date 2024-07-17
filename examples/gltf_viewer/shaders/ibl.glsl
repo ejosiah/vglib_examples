@@ -2,7 +2,7 @@
 #define IBL_GLSL
 
 #include "octahedral.glsl"
-#include "punctual.glsl"
+#include "punctual_lights.glsl"
 #include "functions.glsl"
 
 const float u_EnvIntensity = 1;

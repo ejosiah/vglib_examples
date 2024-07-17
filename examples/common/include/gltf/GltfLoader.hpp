@@ -52,6 +52,13 @@ namespace gltf {
         float dispersion{0};
     };
 
+    struct LightInstance {
+        glm::mat4 model{1};
+        glm::mat4 ModelInverse{1};
+        int lightId{0};
+        char padding[12]{};
+    };
+
     struct PendingModel {
         VulkanDevice* device;
         BindlessDescriptor* bindlessDescriptor{};
@@ -63,6 +70,7 @@ namespace gltf {
         std::atomic_uint32_t meshID{};
         std::vector<Texture> textures;
         std::atomic_uint32_t textureId;
+        uint32_t numLights{};
         struct {
             std::atomic_uint32_t u16{};
             std::atomic_uint32_t u32{};
@@ -123,9 +131,22 @@ namespace gltf {
         } drawCounts;
     };
 
+    struct LightUploadTask {
+        std::shared_ptr<PendingModel> pending;
+        uint32_t LightId{};
+    };
+
+    struct LightInstanceUploadTask {
+        std::shared_ptr<PendingModel> pending;
+        tinygltf::Node node;
+        uint32_t nodeId{};
+        uint32_t instanceId{};
+    };
+
     struct StopWorkerTask {};
 
-    using Task = std::variant<MeshUploadTask, GltfTextureUploadTask, MaterialUploadTask, InstanceUploadTask, TextureUploadTask, StopWorkerTask>;
+    using Task = std::variant<MeshUploadTask, GltfTextureUploadTask, MaterialUploadTask, InstanceUploadTask, TextureUploadTask
+                            , LightUploadTask, LightInstanceUploadTask, StopWorkerTask>;
 
     struct SecondaryCommandBuffer {
         std::vector<VkCommandBuffer> commandBuffers;
@@ -165,6 +186,8 @@ namespace gltf {
 
         VulkanDescriptorSetLayout descriptorSetLayout() const;
 
+        VulkanDescriptorSetLayout materialDescriptorSetLayout() const;
+
         void finalizeGltfTextureTransfer();
 
         void finalizeRegularTextureTransfer();
@@ -191,6 +214,10 @@ namespace gltf {
 
          void process(VkCommandBuffer commandBuffer, TextureUploadTask* textureUpload, int workerId);
 
+         void process(VkCommandBuffer commandBuffer, LightUploadTask* lightUpload, int workerId);
+
+         void process(VkCommandBuffer commandBuffer, LightInstanceUploadTask* lightInstanceUpload, int workerId);
+
          void transferMeshInstance(VkCommandBuffer commandBuffer, BufferRegion& drawCmdSrc, VulkanBuffer& drawCmdDst, BufferRegion& meshDataSrc, VulkanBuffer& meshDataDst, uint32_t drawOffset, int workerId);
 
          void onComplete(Task& task);
@@ -204,6 +231,10 @@ namespace gltf {
          void onComplete(MaterialUploadTask* materialUpload);
 
          void onComplete(TextureUploadTask* textureUpload);
+
+         void onComplete(LightUploadTask* lightUpload);
+
+         void onComplete(LightInstanceUploadTask* lightInstanceUpload);
 
          void handleError(Task& task, const std::exception& exception);
 
@@ -245,6 +276,7 @@ namespace gltf {
         Texture _placeHolderTexture;
         Texture _placeHolderNormalTexture;
         VulkanDescriptorSetLayout _descriptorSetLayout;
+        VulkanDescriptorSetLayout _materialDescriptorSetLayout;
         std::vector<BufferMemoryBarrierPool> _barrierObjectPools;
         std::vector<ImageMemoryBarrierPool> _imageMemoryBarrierObjectPools;
         std::vector<BufferCopyPool> _bufferCopyPool;

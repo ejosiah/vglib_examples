@@ -18,6 +18,7 @@ layout(set = 3, binding = 0) uniform Constants {
     int discard_transmissive;
     int environment;
     int tone_map;
+    int num_lights;
 };
 
 layout(location = 0) in vec4 position;

@@ -47,6 +47,7 @@ void GltfViewer::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera->zoomDelta = 0.05;
 }
 
 void GltfViewer::initUniforms() {
@@ -306,7 +307,7 @@ void GltfViewer::createRenderPipeline() {
                     .add()
                 .layout().clear()
                     .addDescriptorSetLayout(loader->descriptorSetLayout())
-                    .addDescriptorSetLayout(loader->descriptorSetLayout())
+                    .addDescriptorSetLayout(loader->materialDescriptorSetLayout())
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                     .addDescriptorSetLayout(uniformsDescriptorSetLayout)
                 .name("pbr_renderer")
@@ -757,6 +758,7 @@ void GltfViewer::endFrame() {
     if(gltfPath.has_value()) {
         currentModel = (currentModel + 1) % static_cast<int>(models.size());
         models[currentModel] = loader->loadGltf(*gltfPath);
+        uniforms.data->num_lights = models[currentModel]->numLights;
         camera->updateModel(models[currentModel]->bounds.min, models[currentModel]->bounds.max);
         gltfPath.reset();
     }
