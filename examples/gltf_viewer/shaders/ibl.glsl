@@ -1,11 +1,11 @@
 #ifndef IBL_GLSL
 #define IBL_GLSL
 
+#include "uniforms.glsl"
 #include "octahedral.glsl"
 #include "punctual_lights.glsl"
 #include "functions.glsl"
 
-const float u_EnvIntensity = 1;
 const mat3 u_EnvRotation = mat3(1);
 const int u_MipCount = 5;
 

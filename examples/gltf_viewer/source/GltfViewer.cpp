@@ -499,7 +499,8 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Text("Lighting");
     ImGui::Checkbox("Direct", &options.directLighting);
     ImGui::SameLine();
-    ImGui::Checkbox("image Based Lighting", &options.imageBasedLighting);
+    ImGui::Checkbox("IBL", &options.imageBasedLighting);
+    ImGui::SliderFloat("IBL intensity", &options.iblIntensity, 1, 1000, "%.0f", ImGuiSliderFlags_Logarithmic);
 
     ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
     ImGui::Text("Cameras");
@@ -824,6 +825,7 @@ void GltfViewer::endFrame() {
     uniforms.data->debug = options.debug;
     uniforms.data->direct_on = int(options.directLighting);
     uniforms.data->ibl_on = int(options.imageBasedLighting);
+    uniforms.data->ibl_intensity = options.iblIntensity;
 
     if(options.envMapType == 1) {
         uniforms.data->environment = irradianceMaps[options.environment].bindingId;

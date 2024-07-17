@@ -1,28 +1,16 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#define UNIFORMS_SET 3
+#define UNIFORMS_BINDING_POINT 0
+
+#include "uniforms.glsl"
 #include "gltf.glsl"
 
 layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
 };
 
-layout(set = 3, binding = 0) uniform Constants {
-    mat4 model;
-    mat4 view;
-    mat4 projection;
-    int brdf_lut_texture_id;
-    int irradiance_texture_id;
-    int specular_texture_id;
-    int framebuffer_texture_id;
-    int discard_transmissive;
-    int environment;
-    int tone_map;
-    int num_lights;
-    int debug;
-    int ibl_on;
-    int direct_on;
-};
 
 layout(location = 0) in vec4 position;
 layout(location = 1) in vec3 normal;

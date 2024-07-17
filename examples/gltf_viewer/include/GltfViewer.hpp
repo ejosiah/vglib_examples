@@ -15,6 +15,7 @@ struct UniformData {
     int debug{0};
     int ibl_on{1};
     int direct_on{1};
+    float ibl_intensity{1};
 };
 
 struct Uniforms {
@@ -170,6 +171,7 @@ protected:
         int debug{0};
         bool directLighting{true};
         bool imageBasedLighting{true};
+        float iblIntensity{1};
         std::vector<const char*> cameras{"Default"};
     } options;
     struct {

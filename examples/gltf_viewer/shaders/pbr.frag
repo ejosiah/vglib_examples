@@ -40,25 +40,12 @@
 #define u_TransmissionFramebufferSampler global_textures[nonuniformEXT(framebuffer_texture_id)]
 #define MODEL_MATRIX (model * meshes[nonuniformEXT(drawId)].model)
 
+#define UNIFORMS_SET 3
+#define UNIFORMS_BINDING_POINT 0
+
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
-
-layout(set = 3, binding = 0) uniform Constants {
-    mat4 model;
-    mat4 view;
-    mat4 projection;
-    int brdf_lut_texture_id;
-    int irradiance_texture_id;
-    int specular_texture_id;
-    int framebuffer_texture_id;
-    int discard_transmissive;
-    int environment;
-    int tone_map;
-    int num_lights;
-    int debug;
-    int ibl_on;
-    int direct_on;
-};
+#include "uniforms.glsl"
 
 #include "punctual_lights.glsl"
 #include "gltf.glsl"
