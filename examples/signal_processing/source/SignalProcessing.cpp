@@ -7,12 +7,12 @@
 #include "vulkan_image_ops.h"
 
 SignalProcessing::SignalProcessing(const Settings& settings) : VulkanBaseApp("signal processing", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/signal_processing");
-    fileManager.addSearchPathFront("../../examples/signal_processing/data");
-    fileManager.addSearchPathFront("../../examples/signal_processing/spv");
-    fileManager.addSearchPathFront("../../examples/signal_processing/models");
-    fileManager.addSearchPathFront("../../examples/signal_processing/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/signal_processing");
+    fileManager().addSearchPathFront("../../examples/signal_processing/data");
+    fileManager().addSearchPathFront("../../examples/signal_processing/spv");
+    fileManager().addSearchPathFront("../../examples/signal_processing/models");
+    fileManager().addSearchPathFront("../../examples/signal_processing/textures");
 
     syncFeatures = VkPhysicalDeviceSynchronization2Features{
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
@@ -210,9 +210,9 @@ void SignalProcessing::computeFFTGPU() {
         sets[1] = fftData.signalDescriptorSets[1];
         sets[2] = fftData.lookupDescriptorSet;
         for(auto pass = 0; pass < passes; ++pass){
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.pipeline_vertical);
-            vkCmdPushConstants(commandBuffer, compute_fft.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.pipeline_vertical.handle);
+            vkCmdPushConstants(commandBuffer, compute_fft.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
             vkCmdDispatch(commandBuffer, 1, N, 1);
 
             if(pass < passes - 1){
@@ -253,8 +253,8 @@ void SignalProcessing::applyMask(VkCommandBuffer commandBuffer) {
     sets[0] = fftData.signalDescriptorSets[0];
     sets[1] = compute_mask.descriptorSet;
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, apply_mask.layout, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, apply_mask.pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, apply_mask.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, apply_mask.pipeline.handle);
     vkCmdDispatch(commandBuffer, N, N, 1);
 }
 
@@ -264,9 +264,9 @@ void SignalProcessing::compute2DFFT(VkCommandBuffer commandBuffer, std::array<Vk
     // fft along x-axis
     for(auto pass = 0; pass < passes; ++pass){
 
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.pipeline_horizontal);
-        vkCmdPushConstants(commandBuffer, compute_fft.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.pipeline_horizontal.handle);
+        vkCmdPushConstants(commandBuffer, compute_fft.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
         vkCmdDispatch(commandBuffer, N, N, 1);
 
         auto output = 1 - (pass % 2);
@@ -276,9 +276,9 @@ void SignalProcessing::compute2DFFT(VkCommandBuffer commandBuffer, std::array<Vk
 
     // fft along y-axis
     for(auto pass = 0; pass < passes; ++pass){
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.pipeline_vertical);
-        vkCmdPushConstants(commandBuffer, compute_fft.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_fft.pipeline_vertical.handle);
+        vkCmdPushConstants(commandBuffer, compute_fft.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
         vkCmdDispatch(commandBuffer, N, N, 1);
         auto output = (pass % 2);
         addImageMemoryBarriers(commandBuffer, { signal_real[output].image, signal_imaginary[output].image});
@@ -292,8 +292,8 @@ void SignalProcessing::computeLuminance(VkCommandBuffer commandBuffer) {
     grayscaleTexture.image.transitionLayout(commandBuffer, VK_IMAGE_LAYOUT_GENERAL, DEFAULT_SUB_RANGE,
                                        VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT,
                                        VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_luminance.layout, 0, 1, &compute_luminance.descriptorSet, 0, VK_NULL_HANDLE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_luminance.pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_luminance.layout.handle, 0, 1, &compute_luminance.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_luminance.pipeline.handle);
     vkCmdDispatch(commandBuffer, N, N, 1);
 
     grayscaleTexture.image.transitionLayout(commandBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -333,10 +333,10 @@ void SignalProcessing::prepFFTForRender(VkCommandBuffer commandBuffer, const std
             vkCmdFillBuffer(commandBuffer, fft_prep_render.maxMagnitudeBuffer, 0, sizeof(int), 0);
         }
 
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, fft_prep_render.layout, 0,
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, fft_prep_render.layout.handle, 0,
                                 COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdPushConstants(commandBuffer, fft_prep_render.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, BYTE_SIZE(constants), constants.data());
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, fft_prep_render.pipeline);
+        vkCmdPushConstants(commandBuffer, fft_prep_render.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, BYTE_SIZE(constants), constants.data());
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, fft_prep_render.pipeline.handle);
         vkCmdDispatch(commandBuffer, N, N, 1);
 
         image.transitionLayout(commandBuffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -353,9 +353,9 @@ void SignalProcessing::prepFFTForRender(VkCommandBuffer commandBuffer, const std
 void SignalProcessing::computeMask(VkCommandBuffer commandBuffer) {
 
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_mask.layout, 0, 1, &compute_mask.descriptorSet, 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, compute_mask.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute_mask.constants), &compute_mask.constants);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_mask.pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_mask.layout.handle, 0, 1, &compute_mask.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, compute_mask.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute_mask.constants), &compute_mask.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_mask.pipeline.handle);
     vkCmdDispatch(commandBuffer, N, N, 1);
 
 
@@ -540,20 +540,20 @@ void SignalProcessing::createComputeFFTPipeline() {
 
     auto createInfo = initializers::computePipelineCreateInfo();
     createInfo.stage = stage;
-    createInfo.layout = compute_fft.layout;
+    createInfo.layout = compute_fft.layout.handle;
     compute_fft.pipeline_horizontal = device.createComputePipeline(createInfo);
 
     module = device.createShaderModule(resource("fft_butterfly_vertical.comp.spv"));
     stage = initializers::shaderStage({module, VK_SHADER_STAGE_COMPUTE_BIT});
     createInfo.stage = stage;
-    createInfo.layout = compute_fft.layout;
+    createInfo.layout = compute_fft.layout.handle;
     compute_fft.pipeline_vertical = device.createComputePipeline(createInfo);
 
     compute_luminance.layout = device.createPipelineLayout({ compute_luminance.setLayout });
     module = device.createShaderModule(resource("luminance.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     createInfo.stage = stage;
-    createInfo.layout = compute_luminance.layout;
+    createInfo.layout = compute_luminance.layout.handle;
     compute_luminance.pipeline = device.createComputePipeline(createInfo);
 
     fft_prep_render.layout = device.createPipelineLayout(
@@ -563,7 +563,7 @@ void SignalProcessing::createComputeFFTPipeline() {
     module = device.createShaderModule(resource("fft_render.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     createInfo.stage = stage;
-    createInfo.layout = fft_prep_render.layout;
+    createInfo.layout = fft_prep_render.layout.handle;
     fft_prep_render.pipeline = device.createComputePipeline(createInfo);
 
     compute_mask.layout = device.createPipelineLayout(
@@ -573,7 +573,7 @@ void SignalProcessing::createComputeFFTPipeline() {
     module = device.createShaderModule(resource("mask.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     createInfo.stage = stage;
-    createInfo.layout = compute_mask.layout;
+    createInfo.layout = compute_mask.layout.handle;
     compute_mask.pipeline = device.createComputePipeline(createInfo);
 
     apply_mask.layout = device.createPipelineLayout(
@@ -582,7 +582,7 @@ void SignalProcessing::createComputeFFTPipeline() {
     module = device.createShaderModule(resource("apply_mask.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
     createInfo.stage = stage;
-    createInfo.layout = apply_mask.layout;
+    createInfo.layout = apply_mask.layout.handle;
     apply_mask.pipeline = device.createComputePipeline(createInfo);
 
 }
@@ -594,70 +594,70 @@ void SignalProcessing::updateDescriptorSets(){
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo realImgInInfo{ VK_NULL_HANDLE, fftData.signal_real[0].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo realImgInInfo{ VK_NULL_HANDLE, fftData.signal_real[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[0].pImageInfo = &realImgInInfo;
 
     writes[1].dstSet = fftData.signalDescriptorSets[0];
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo imaginaryImgInInfo{ VK_NULL_HANDLE, fftData.signal_imaginary[0].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo imaginaryImgInInfo{ VK_NULL_HANDLE, fftData.signal_imaginary[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[1].pImageInfo = &imaginaryImgInInfo;
 
     writes[2].dstSet = fftData.signalDescriptorSets[1];
     writes[2].dstBinding = 0;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo realImgOutInfo{ VK_NULL_HANDLE, fftData.signal_real[1].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo realImgOutInfo{ VK_NULL_HANDLE, fftData.signal_real[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &realImgOutInfo;
 
     writes[3].dstSet = fftData.signalDescriptorSets[1];
     writes[3].dstBinding = 1;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo imaginaryImgOutInInfo{ VK_NULL_HANDLE, fftData.signal_imaginary[1].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo imaginaryImgOutInInfo{ VK_NULL_HANDLE, fftData.signal_imaginary[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[3].pImageInfo = &imaginaryImgOutInInfo;
 
     writes[4].dstSet = fftData.lookupDescriptorSet;
     writes[4].dstBinding = 0;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
-    VkDescriptorImageInfo lookupIndexInfo{ fftData.butterfly.index.sampler, fftData.butterfly.index.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo lookupIndexInfo{ fftData.butterfly.index.sampler.handle, fftData.butterfly.index.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[4].pImageInfo = &lookupIndexInfo;
 
     writes[5].dstSet = fftData.lookupDescriptorSet;
     writes[5].dstBinding = 1;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[5].descriptorCount = 1;
-    VkDescriptorImageInfo butterflyLookupInfo{ fftData.butterfly.lut.sampler, fftData.butterfly.lut.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo butterflyLookupInfo{ fftData.butterfly.lut.sampler.handle, fftData.butterfly.lut.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[5].pImageInfo = &butterflyLookupInfo;
 
     writes[6].dstSet = compute_luminance.descriptorSet;
     writes[6].dstBinding = 0;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[6].descriptorCount = 1;
-    VkDescriptorImageInfo srcImageInfo{ imageSignal.sampler, imageSignal.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo srcImageInfo{ imageSignal.sampler.handle, imageSignal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[6].pImageInfo = &srcImageInfo;
 
     writes[7].dstSet = compute_luminance.descriptorSet;
     writes[7].dstBinding = 1;
     writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[7].descriptorCount = 1;
-    VkDescriptorImageInfo dstImageInfo{ VK_NULL_HANDLE, fftData.signal_real[0].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo dstImageInfo{ VK_NULL_HANDLE, fftData.signal_real[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[7].pImageInfo = &dstImageInfo;
 
     writes[8].dstSet = compute_luminance.descriptorSet;
     writes[8].dstBinding = 2;
     writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[8].descriptorCount = 1;
-    VkDescriptorImageInfo grayScaleImageInfo{ VK_NULL_HANDLE, grayscaleTexture.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo grayScaleImageInfo{ VK_NULL_HANDLE, grayscaleTexture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[8].pImageInfo = &grayScaleImageInfo;
 
     writes[9].dstSet = fftDisplayDescriptorSet;
     writes[9].dstBinding = 0;
     writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[9].descriptorCount = 1;
-    VkDescriptorImageInfo fftPrepImageInfo{ VK_NULL_HANDLE, fourierRenderImage.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo fftPrepImageInfo{ VK_NULL_HANDLE, fourierRenderImage.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[9].pImageInfo = &fftPrepImageInfo;
     
     writes[10].dstSet = fftDisplayDescriptorSet;
@@ -671,56 +671,56 @@ void SignalProcessing::updateDescriptorSets(){
     writes[11].dstBinding = 0;
     writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[11].descriptorCount = 1;
-    VkDescriptorImageInfo maskInfo{ VK_NULL_HANDLE, maskTexture.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo maskInfo{ VK_NULL_HANDLE, maskTexture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[11].pImageInfo = &maskInfo;
 
     writes[12].dstSet = inverseFFTData.signalDescriptorSets[0];
     writes[12].dstBinding = 0;
     writes[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[12].descriptorCount = 1;
-    VkDescriptorImageInfo inverseRealImgInInfo{ VK_NULL_HANDLE, inverseFFTData.signal_real[0].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo inverseRealImgInInfo{ VK_NULL_HANDLE, inverseFFTData.signal_real[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[12].pImageInfo = &inverseRealImgInInfo;
 
     writes[13].dstSet = inverseFFTData.signalDescriptorSets[0];
     writes[13].dstBinding = 1;
     writes[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[13].descriptorCount = 1;
-    VkDescriptorImageInfo inverseImaginaryImgInInfo{ VK_NULL_HANDLE, inverseFFTData.signal_imaginary[0].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo inverseImaginaryImgInInfo{ VK_NULL_HANDLE, inverseFFTData.signal_imaginary[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[13].pImageInfo = &inverseImaginaryImgInInfo;
 
     writes[14].dstSet = inverseFFTData.signalDescriptorSets[1];
     writes[14].dstBinding = 0;
     writes[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[14].descriptorCount = 1;
-    VkDescriptorImageInfo inverseRealImgOutInfo{ VK_NULL_HANDLE, inverseFFTData.signal_real[1].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo inverseRealImgOutInfo{ VK_NULL_HANDLE, inverseFFTData.signal_real[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[14].pImageInfo = &inverseRealImgOutInfo;
 
     writes[15].dstSet = inverseFFTData.signalDescriptorSets[1];
     writes[15].dstBinding = 1;
     writes[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[15].descriptorCount = 1;
-    VkDescriptorImageInfo inverseImaginaryImgOutInInfo{ VK_NULL_HANDLE, inverseFFTData.signal_imaginary[1].imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo inverseImaginaryImgOutInInfo{ VK_NULL_HANDLE, inverseFFTData.signal_imaginary[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[15].pImageInfo = &inverseImaginaryImgOutInInfo;
 
     writes[16].dstSet = inverseFFTData.lookupDescriptorSet;
     writes[16].dstBinding = 0;
     writes[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[16].descriptorCount = 1;
-    VkDescriptorImageInfo inverseLookupIndexInfo{ inverseFFTData.butterfly.index.sampler, inverseFFTData.butterfly.index.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo inverseLookupIndexInfo{ inverseFFTData.butterfly.index.sampler.handle, inverseFFTData.butterfly.index.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[16].pImageInfo = &inverseLookupIndexInfo;
 
     writes[17].dstSet = inverseFFTData.lookupDescriptorSet;
     writes[17].dstBinding = 1;
     writes[17].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[17].descriptorCount = 1;
-    VkDescriptorImageInfo inverseButterflyLookupInfo{ inverseFFTData.butterfly.lut.sampler, inverseFFTData.butterfly.lut.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo inverseButterflyLookupInfo{ inverseFFTData.butterfly.lut.sampler.handle, inverseFFTData.butterfly.lut.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[17].pImageInfo = &inverseButterflyLookupInfo;
 
     writes[18].dstSet = inverseDisplayDescriptorSet;
     writes[18].dstBinding = 0;
     writes[18].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[18].descriptorCount = 1;
-    VkDescriptorImageInfo invFFTPrepImageInfo{ VK_NULL_HANDLE, inverseFFTTexture.imageView, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo invFFTPrepImageInfo{ VK_NULL_HANDLE, inverseFFTTexture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[18].pImageInfo = &invFFTPrepImageInfo;
 
     writes[19].dstSet = inverseDisplayDescriptorSet;
