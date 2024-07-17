@@ -493,6 +493,7 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Begin("Settings");
     ImGui::SetWindowSize({0, 0});
 
+    ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
     ImGui::Text("Environments");
     ImGui::Combo("", &options.environment, environmentPaths.data(), environmentPaths.size());
     static bool showEnv = true;
@@ -500,16 +501,19 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Checkbox("Show", &showEnv);
     options.envMapType = showEnv ? 0 : 1;
 
+    ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
     ImGui::Text("Lighting");
     ImGui::Checkbox("Direct", &options.directLighting);
     ImGui::SameLine();
     ImGui::Checkbox("image Based Lighting", &options.imageBasedLighting);
 
+    ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
     ImGui::Text("Cameras");
     ImGui::PushID("camera");
     ImGui::Combo("", &options.camera, options.cameras.data(), options.cameras.size());
     ImGui::PopID();
 
+    ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
     ImGui::Text("Debug");
     ImGui::RadioButton("Off", &options.debug, 0); ImGui::SameLine();
     ImGui::RadioButton("Color", &options.debug, 1); ImGui::SameLine();
