@@ -826,7 +826,6 @@ void GltfViewer::endFrame() {
         previousEnvironment = options.environment;
     }
     uniforms.data->camera = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];
-    uniforms.data->camera.model = options.camera == 0 ? camera->getModel() : glm::mat4{1};
     uniforms.data->environment = environments[options.environment].bindingId;
     uniforms.data->debug = options.debug;
     uniforms.data->direct_on = int(options.directLighting);
