@@ -20,6 +20,8 @@ layout(set = 3, binding = 0) uniform Constants {
     int tone_map;
     int num_lights;
     int debug;
+    int ibl_on;
+    int direct_on;
 };
 
 layout(location = 0) in vec4 position;

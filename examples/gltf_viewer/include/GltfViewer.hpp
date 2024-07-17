@@ -13,6 +13,8 @@ struct UniformData {
     int tone_map{1};
     int num_lights{1};
     int debug{0};
+    int ibl_on{1};
+    int direct_on{1};
 };
 
 struct Uniforms {
@@ -166,6 +168,8 @@ protected:
         int envMapType{0};
         int camera{0};
         int debug{0};
+        bool directLighting{true};
+        bool imageBasedLighting{true};
         std::vector<const char*> cameras{"Default"};
     } options;
     struct {

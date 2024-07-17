@@ -56,6 +56,8 @@ layout(set = 3, binding = 0) uniform Constants {
     int tone_map;
     int num_lights;
     int debug;
+    int ibl_on;
+    int direct_on;
 };
 
 #include "punctual_lights.glsl"
@@ -150,8 +152,10 @@ void main() {
     f_emissive = getEmission();
 
 
-    f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
-    f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
+    if(ibl_on == 1){
+        f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
+        f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
+    }
 
     if(transmissionFactor > 0){
         baseColor.a = 1;
@@ -165,52 +169,52 @@ void main() {
     f_diffuse = vec3(0);
     f_specular = vec3(0);
 
-    vec3 debbugLight;
-    for(int i = 0; i < num_lights; ++i){
-        Light light = lightAt(i);
+    if(direct_on == 1){
+        for (int i = 0; i < num_lights; ++i){
+            Light light = lightAt(i);
 
-        vec3 pointToLight;
-        if (light.type != LightType_Directional){
-            pointToLight = light.position - fs_in.position;
+            vec3 pointToLight;
+            if (light.type != LightType_Directional){
+                pointToLight = light.position - fs_in.position;
+            }
+            else {
+                pointToLight = -light.direction;
+            }
+
+            // BSTF
+            vec3 L = normalize(pointToLight);// Direction from surface point to light
+            vec3 H = normalize(L + V);// Direction of the vector between L and V, called halfway vector
+            float NdotL = clampedDot(N, L);
+            float NdotV = clampedDot(N, V);
+            float NdotH = clampedDot(N, H);
+            float LdotH = clampedDot(L, H);
+            float VdotH = clampedDot(V, H);
+
+            if (NdotL > 0.0 || NdotV > 0.0){
+                vec3 intensity = getLighIntensity(light, pointToLight);
+                vec3 l_diffuse = vec3(0.0);
+                vec3 l_specular = vec3(0.0);
+
+                l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
+                l_specular += intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
+
+                f_diffuse += l_diffuse;
+                f_specular += l_specular;
+            }
+            // If the light ray travels through the geometry, use the point it exits the geometry again.
+            // That will change the angle to the light source, if the material refracts the light ray.
+
+            if (transmissionFactor > 0){
+                vec3 transmissionRay = getVolumeTransmissionRay(N, V, thickness, ior, MODEL_MATRIX);
+                pointToLight -= transmissionRay;
+                L = normalize(pointToLight);
+
+                vec3 intensity = getLighIntensity(light, pointToLight);
+                vec3 transmittedLight = intensity * getPunctualRadianceTransmission(N, V, L, alphaRoughness, f0, f90, c_diff, ior);
+                transmittedLight = applyVolumeAttenuation(transmittedLight, length(transmissionRay), attenuationColor, attenuationDistance);
+            }
+
         }
-        else {
-            pointToLight = -light.direction;
-        }
-
-        // BSTF
-        vec3 L = normalize(pointToLight);// Direction from surface point to light
-        vec3 H = normalize(L + V);// Direction of the vector between L and V, called halfway vector
-        float NdotL = clampedDot(N, L);
-        float NdotV = clampedDot(N, V);
-        float NdotH = clampedDot(N, H);
-        float LdotH = clampedDot(L, H);
-        float VdotH = clampedDot(V, H);
-
-        if (NdotL > 0.0 || NdotV > 0.0){
-            vec3 intensity = getLighIntensity(light, pointToLight);
-            vec3 l_diffuse = vec3(0.0);
-            vec3 l_specular = vec3(0.0);
-
-            l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
-            l_specular += intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
-
-            f_diffuse += l_diffuse;
-            f_specular += l_specular;
-            debbugLight = vec3(NdotH);
-        }
-        // If the light ray travels through the geometry, use the point it exits the geometry again.
-        // That will change the angle to the light source, if the material refracts the light ray.
-
-        if (transmissionFactor > 0){
-            vec3 transmissionRay = getVolumeTransmissionRay(N, V, thickness, ior, MODEL_MATRIX);
-            pointToLight -= transmissionRay;
-            L = normalize(pointToLight);
-
-            vec3 intensity = getLighIntensity(light, pointToLight);
-            vec3 transmittedLight = intensity * getPunctualRadianceTransmission(N, V, L, alphaRoughness, f0, f90, c_diff, ior);
-            transmittedLight = applyVolumeAttenuation(transmittedLight, length(transmissionRay), attenuationColor, attenuationDistance);
-        }
-
     }
 
     vec3 diffuse;

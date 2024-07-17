@@ -500,6 +500,11 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Checkbox("Show", &showEnv);
     options.envMapType = showEnv ? 0 : 1;
 
+    ImGui::Text("Lighting");
+    ImGui::Checkbox("Direct", &options.directLighting);
+    ImGui::SameLine();
+    ImGui::Checkbox("image Based Lighting", &options.imageBasedLighting);
+
     ImGui::Text("Cameras");
     ImGui::PushID("camera");
     ImGui::Combo("", &options.camera, options.cameras.data(), options.cameras.size());
@@ -820,6 +825,8 @@ void GltfViewer::endFrame() {
     uniforms.data->camera.model = options.camera == 0 ? camera->getModel() : glm::mat4{1};
     uniforms.data->environment = environments[options.environment].bindingId;
     uniforms.data->debug = options.debug;
+    uniforms.data->direct_on = int(options.directLighting);
+    uniforms.data->ibl_on = int(options.imageBasedLighting);
 
     if(options.envMapType == 1) {
         uniforms.data->environment = irradianceMaps[options.environment].bindingId;
