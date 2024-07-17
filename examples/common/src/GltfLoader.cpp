@@ -212,7 +212,7 @@ namespace gltf {
         byteSize = sizeof(LightInstance) + sizeof(LightInstance) * counts.numLightInstances;
         model->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_light_instances", _modelId));
 
-        std::vector<MaterialData> materials(gltf->materials.size());
+        std::vector<MaterialData> materials(gltf->materials.size() + 1);
         for(auto& material : materials) {
             material.textures.fill(-1);
         }
@@ -608,7 +608,7 @@ namespace gltf {
             for(auto i = 0; i < numVertices; ++i) {
                 Vertex vertex{};
                 vertex.position = glm::vec4(positions[i], 1);
-                vertex.normal = normals[i];
+                vertex.normal = normals.empty() ? glm::vec3(0, 0, 1) : normals[i];
                 vertex.tangent = tangents.empty() ? glm::vec3(0) : tangents[i].xyz();
                 vertex.bitangent = tangents.empty() ? glm::vec3(0) : glm::cross(normals[i], tangents[i].xyz()) * tangents[i].w;
                 vertex.uv = uvs.empty() ? glm::vec2(0) : uvs[i];
