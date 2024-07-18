@@ -16,11 +16,11 @@ layout(location = 0) in vec4 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 tanget;
 layout(location = 3) in vec3 bitangent;
-layout(location = 4) in vec3 color;
+layout(location = 4) in vec4 color;
 layout(location = 5) in vec2 uv;
 
 layout(location = 0) out struct {
-    mat4 localToWorld;
+    vec4 color;
     vec3 localPos;
     vec3 position;
     vec3 normal;
@@ -40,7 +40,7 @@ void main(){
 
     vec4 worldPos = meshModel * position;
 
-    vs_out.localToWorld = meshModel;
+    vs_out.color = color;
     vs_out.localPos = position.xyz;
     vs_out.position = worldPos.xyz;
     vs_out.normal = nModel * normal;

@@ -21,3 +21,4 @@
 - Allow users to use their own environment maps
 - add support for other glTF extensions
 - remove file dialog when path selected and display loading screen
+- implement drawing modes (currently on default drawing mode (Triangles) supported)

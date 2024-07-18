@@ -13,6 +13,11 @@ namespace gltf {
     static constexpr const char* KHR_materials_dispersion = "KHR_materials_dispersion";
     static constexpr const char* KHR_lights_punctual = "KHR_lights_punctual";
 
+    static const MaterialData NullMaterial{
+            .textures{-1, -1, -1, -1, -1, -1, -1, -1},
+            .baseColor{std::numeric_limits<float>::quiet_NaN()}
+    };
+
     struct Counts {
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} indices;
@@ -49,6 +54,8 @@ namespace gltf {
     std::tuple<glm::vec3, glm::vec3> computeBounds(const tinygltf::Model& model, const std::vector<glm::mat4>& transforms);
 
     std::vector<Camera> getCameras(const tinygltf::Model& model);
+
+    ComponentType getComponentType(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const std::string& attributeName);
 
     void computeOffsets(const std::shared_ptr<PendingModel>& pending);
 
@@ -216,6 +223,7 @@ namespace gltf {
         for(auto& material : materials) {
             material.textures.fill(-1);
         }
+        materials[materials.size() - 1] = NullMaterial;
         model->materials = _device->createDeviceLocalBuffer(materials.data(), BYTE_SIZE(materials), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         _device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("mode{}_materials", _modelId), model->materials.buffer);
 
@@ -604,6 +612,8 @@ namespace gltf {
             auto normals = getAttributeData<glm::vec3>(*pending->gltf, primitive, "NORMAL");
             auto tangents = getAttributeData<glm::vec4>(*pending->gltf, primitive, "TANGENT");
             auto uvs = getAttributeData<glm::vec2>(*pending->gltf, primitive, "TEXCOORD_0");
+            auto colors3 = getAttributeData<glm::vec3>(*pending->gltf, primitive, "COLOR_0");
+            auto colors4 = getAttributeData<glm::vec4>(*pending->gltf, primitive, "COLOR_0");
 
             for(auto i = 0; i < numVertices; ++i) {
                 Vertex vertex{};
@@ -612,6 +622,7 @@ namespace gltf {
                 vertex.tangent = tangents.empty() ? glm::vec3(0) : tangents[i].xyz();
                 vertex.bitangent = tangents.empty() ? glm::vec3(0) : glm::cross(normals[i], tangents[i].xyz()) * tangents[i].w;
                 vertex.uv = uvs.empty() ? glm::vec2(0) : uvs[i];
+                vertex.color = !colors3.empty() ? glm::vec4(colors3[i], 1) : (!colors4.empty() ? colors4[i] : glm::vec4(0));
                 vertices.push_back(vertex);
             }
 
@@ -1655,6 +1666,13 @@ namespace gltf {
             }
         }
         return cameras;
+    }
+
+    ComponentType getComponentType(const tinygltf::Model &model, const tinygltf::Primitive &primitive, const std::string& attributeName) {
+        if(!primitive.attributes.contains(attributeName)){
+            return ComponentType::UNDEFINED;
+        }
+        return ComponentTypes::valueOf(model.accessors[primitive.attributes.at(attributeName)].componentType);
     }
 
     const std::map<int, VkFormat> Loader::channelFormatMap {

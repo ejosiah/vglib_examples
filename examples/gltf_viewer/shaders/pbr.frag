@@ -62,7 +62,7 @@ layout(set = MATERIAL_SET, binding = MATERIAL_BINDING_POINT) buffer GLTF_MATERIA
 
 
 layout(location = 0) in struct {
-    mat4 localToWorld;
+    vec4 color;
     vec3 localPos;
     vec3 position;
     vec3 normal;
@@ -83,6 +83,7 @@ bool noTangets();
 vec3 getEmission();
 float getTransmissionFactor();
 float getThickness();
+bool isNull(Material material);
 
 layout(location = 0) out vec4 fragColor;
 
@@ -243,7 +244,7 @@ float saturate(float x) {
 
 vec4 getBaseColor() {
     if(BASE_COLOR_TEX_ID == -1){
-        return vec4(MATERIAL.baseColor);
+        return isNull(MATERIAL) ? fs_in.color : vec4(MATERIAL.baseColor);
     }
     vec4 color = texture(BASE_COLOR_TEXTURE, fs_in.uv);
     color.rgb = pow(color.rgb, vec3(2.2));
@@ -309,4 +310,8 @@ float getThickness() {
         thickness *= texture(THICKNESS_TEXTURE, fs_in.uv).g;
     }
     return thickness;
+}
+
+bool isNull(Material material) {
+    return any(isnan(material.baseColor));
 }
