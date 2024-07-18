@@ -14,11 +14,14 @@
 - KHR_materials_volume
 
 ## TODO
-- fix - app fails on exit during async loads
+- use unique resource each unique swapchain image
 - split HDR from Tone mapping
 - implement more robust Tone mapping
 - implement bloom
 - Allow users to use their own environment maps
 - add support for other glTF extensions
 - remove file dialog when path selected and display loading screen
-- implement drawing modes (currently on default drawing mode (Triangles) supported)
+- add support for other drawing modes (currently on default drawing mode (Triangles) supported)
+- add support for multi uvs
+- add support for multi scenes
+- fix - app fails on exit during async loads
