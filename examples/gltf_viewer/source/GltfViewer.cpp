@@ -68,7 +68,7 @@ void GltfViewer::createFrameBufferTexture() {
         transmissionFramebuffer.color.resize(swapChainImageCount);
         transmissionFramebuffer.depth.resize(swapChainImageCount);
         transmissionFramebuffer.UniformsDescriptorSet.resize(swapChainImageCount);
-        offscreen.info.resize(swapChainImageCount);
+    transmissionFramebuffer.info.resize(swapChainImageCount);
         const auto size = transmissionFramebuffer.color.size();
         for(auto i = 0; i < size; ++i) {
             transmissionFramebuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
@@ -80,7 +80,7 @@ void GltfViewer::createFrameBufferTexture() {
 
             textures::create(device, transmissionFramebuffer.depth[i], VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {swapChain.width(), swapChain.height(), 1});
 
-            offscreen.info[i] = Offscreen::RenderInfo{
+            transmissionFramebuffer.info[i] = Offscreen::RenderInfo{
                     .colorAttachments = {{&transmissionFramebuffer.color[i], VK_FORMAT_R32G32B32A32_SFLOAT}},
                     .depthAttachment = {{&transmissionFramebuffer.depth[i], VK_FORMAT_D16_UNORM}},
                     .renderArea = {transmissionFramebuffer.color[i].width, transmissionFramebuffer.color[i].height}
@@ -441,7 +441,7 @@ void GltfViewer::renderToFrameBuffer(VkCommandBuffer commandBuffer) {
     barrier.size = VK_WHOLE_SIZE;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, 0, 1, &barrier, 0, 0);
 
-    offscreen.renderer.render(commandBuffer, offscreen.info[currentImageIndex], [&]{
+    offscreen.render(commandBuffer, transmissionFramebuffer.info[currentImageIndex], [&]{
         renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.dynamic.pipeline, &render.environmentMap.dynamic.layout);
         renderModel(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.dynamic.pipeline, &render.pbr.dynamic.layout);
     });

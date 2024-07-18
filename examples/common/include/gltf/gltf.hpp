@@ -126,6 +126,8 @@ namespace gltf {
     private:
         Condition _loaded;
         VulkanDescriptorPool* _sourceDescriptorPool{};
+        BindlessDescriptor* _bindlessDescriptor{};
+        uint32_t _textureBindingOffset{std::numeric_limits<uint32_t>::max()};
     };
 
 }

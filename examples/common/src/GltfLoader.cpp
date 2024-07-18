@@ -185,6 +185,9 @@ namespace gltf {
         tinyGltfLoad(*gltf, path.string());
         const auto counts = getCounts(*gltf);
 
+        const auto textureBindingOffset = _bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, gltf->textures.size());
+
+
         auto model = std::make_shared<Model>();
         model->numMeshes = counts.instances.count();
         model->numTextures = gltf->textures.size();
@@ -238,6 +241,8 @@ namespace gltf {
         model->numLights = counts.numLightInstances;
         model->cameras = getCameras(*gltf);
         model->_sourceDescriptorPool = _descriptorPool;
+        model->_bindlessDescriptor = _bindlessDescriptor;
+        model->_textureBindingOffset = textureBindingOffset;
 
         auto writes = initializers::writeDescriptorSets<5>();
         writes[0].dstSet = model->meshDescriptorSet.u16.handle;
@@ -277,7 +282,6 @@ namespace gltf {
 
         _device->updateDescriptorSets(writes);
 
-        const auto textureBindingOffset = _bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, gltf->textures.size());
         for(auto i = 0; i < gltf->textures.size(); ++i) {
             const auto bindingId = static_cast<uint32_t>(i + textureBindingOffset);
             _bindlessDescriptor->update({ &_placeHolderTexture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, bindingId});

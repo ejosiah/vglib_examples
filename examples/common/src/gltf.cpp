@@ -8,11 +8,13 @@ namespace gltf {
     }
 
     Model::~Model() {
-        std::vector<VkDescriptorSet> sets{
-                meshDescriptorSet.u16.handle,
-                meshDescriptorSet.u32.handle,
-                materialDescriptorSet
-        };
-        _sourceDescriptorPool->free(sets);
+        if(_sourceDescriptorPool) {
+            std::vector<VkDescriptorSet> sets{
+                    meshDescriptorSet.u16.handle,
+                    meshDescriptorSet.u32.handle,
+                    materialDescriptorSet
+            };
+            _sourceDescriptorPool->free(sets);
+        }
     }
 }

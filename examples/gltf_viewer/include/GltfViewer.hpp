@@ -191,15 +191,14 @@ protected:
         VulkanSampler sampler;
     } convolution;
 
-    struct {
-        Offscreen renderer{};
-        std::vector<Offscreen::RenderInfo> info{};
-    } offscreen;
+    Offscreen offscreen{};
+
     struct  {
         std::vector<Texture> color;
         std::vector<Texture> depth;
         std::vector<VulkanBuffer> uniforms;
         std::vector<VkDescriptorSet> UniformsDescriptorSet{};
+        std::vector<Offscreen::RenderInfo> info{};
     } transmissionFramebuffer;
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
