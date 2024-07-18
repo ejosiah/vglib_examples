@@ -8,6 +8,7 @@ struct UniformData {
     int irradiance_texture_id{};
     int specular_texture_id{};
     int framebuffer_texture_id{};
+    int g_buffer_texture_id{};
     int discard_transmissive{};
     int environment{};
     int tone_map{1};
@@ -31,6 +32,8 @@ protected:
     void initUniforms();
 
     void constructModelPaths();
+
+    void createGBuffer();
 
     void createFrameBufferTexture();
 
@@ -82,7 +85,7 @@ protected:
 
     void updateUniforms(VkCommandBuffer commandBuffer, VulkanBuffer& uniformBuffer, const UniformData& data);
 
-    void renderToFrameBuffer(VkCommandBuffer commandBuffer);
+    void renderToTransmissionFrameBuffer(VkCommandBuffer commandBuffer);
 
     void renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout);
 
@@ -148,7 +151,6 @@ protected:
     BindlessDescriptor bindlessDescriptor;
     std::optional<std::filesystem::path> gltfPath;
     VulkanDescriptorSetLayout uniformsDescriptorSetLayout;
-    VkDescriptorSet uniformsDescriptorSet{};
     Texture brdfTexture;
     std::vector<Texture> environments;
     std::vector<Texture> stagingTextures;
@@ -190,6 +192,14 @@ protected:
 
     Offscreen offscreen{};
 
+    struct {
+        std::vector<Texture> color;
+        std::vector<Texture> depth;
+        std::vector<VulkanBuffer> uniforms;
+        std::vector<VkDescriptorSet> UniformsDescriptorSet{};
+        std::vector<Offscreen::RenderInfo> info{};
+    } gBuffer;
+
     struct  {
         std::vector<Texture> color;
         std::vector<Texture> depth;
@@ -202,7 +212,6 @@ protected:
     int bindingOffset{1};   // 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
     std::map<std::string, fs::path> modelPaths;
-    std::vector<VulkanBuffer> uniformsBuffer;
     UniformData uniforms{};
     struct {
         bool error{};

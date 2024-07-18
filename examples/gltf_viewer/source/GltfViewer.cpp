@@ -27,6 +27,7 @@ void GltfViewer::initApp() {
     initUniforms();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    createGBuffer();
     createFrameBufferTexture();
     initLoader();
     createSkyBox();
@@ -56,14 +57,38 @@ void GltfViewer::initCamera() {
 
 void GltfViewer::initUniforms() {
     UniformData defaults{};
-    uniformsBuffer.resize(swapChainImageCount);
+    gBuffer.uniforms.resize(swapChainImageCount);
     for(auto i = 0; i < swapChainImageCount; ++i) {
-        uniformsBuffer[i] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT );
+        gBuffer.uniforms[i] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT );
     }
     
     transmissionFramebuffer.uniforms.resize(swapChainImageCount);
     for(auto i = 0; i < swapChainImageCount; ++i) {
         transmissionFramebuffer.uniforms[i] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    }
+}
+
+void GltfViewer::createGBuffer() {
+    gBuffer.color.resize(swapChainImageCount);
+    gBuffer.depth.resize(swapChainImageCount);
+    gBuffer.UniformsDescriptorSet.resize(swapChainImageCount);
+    gBuffer.info.resize(swapChainImageCount);
+    const auto size = gBuffer.color.size();
+    for(auto i = 0; i < size; ++i) {
+        gBuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
+        gBuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        gBuffer.color[i].bindingId = i;
+
+        textures::create(device, gBuffer.color[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {swapChain.width(), swapChain.height(), 1});
+        bindlessDescriptor.update({&gBuffer.color[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  gBuffer.color[i].bindingId});
+
+        textures::create(device, gBuffer.depth[i], VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {swapChain.width(), swapChain.height(), 1});
+
+        gBuffer.info[i] = Offscreen::RenderInfo{
+                .colorAttachments = {{&gBuffer.color[i], VK_FORMAT_R32G32B32A32_SFLOAT}},
+                .depthAttachment = {{&gBuffer.depth[i], VK_FORMAT_D16_UNORM}},
+                .renderArea = {gBuffer.color[i].width, gBuffer.color[i].height}
+        };
     }
 }
 
@@ -92,7 +117,7 @@ void GltfViewer::createFrameBufferTexture() {
 }
 
 void GltfViewer::initBindlessDescriptor() {
-    bindingOffset += swapChainImageCount;
+    bindingOffset += swapChainImageCount * 2;
     int reservation = environmentPaths.size() * textureSetWidth + bindingOffset;
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, reservation);
@@ -230,29 +255,31 @@ void GltfViewer::createDescriptorSetLayouts() {
 }
 
 void GltfViewer::updateDescriptorSets(){
-    std::vector<VulkanDescriptorSetLayout> setLayouts(1 + swapChainImageCount, uniformsDescriptorSetLayout);
-    std::vector<VkDescriptorBufferInfo> infos(1 + swapChainImageCount);
+    const uint32_t numDescriptorSets = swapChainImageCount * 2;
+    std::vector<VulkanDescriptorSetLayout> setLayouts(numDescriptorSets, uniformsDescriptorSetLayout);
+    std::vector<VkDescriptorBufferInfo> infos(numDescriptorSets);
     auto sets = descriptorPool.allocate({ setLayouts });
-    uniformsDescriptorSet = sets[0];
-    transmissionFramebuffer.UniformsDescriptorSet[0] = sets[1];
 
-    std::vector<VkWriteDescriptorSet> writes(1 + swapChainImageCount, { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET });
-
-    writes[0].dstSet = uniformsDescriptorSet;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    infos[0] =  VkDescriptorBufferInfo{uniformsBuffer[currentImageIndex], 0, VK_WHOLE_SIZE };
-    writes[0].pBufferInfo = &infos[0];
+    std::vector<VkWriteDescriptorSet> writes(numDescriptorSets, { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET });
 
     for(auto i = 0; i < swapChainImageCount; ++i) {
-        transmissionFramebuffer.UniformsDescriptorSet[i] = sets[i+1];
-        writes[i + 1].dstSet = transmissionFramebuffer.UniformsDescriptorSet[i];
-        writes[i + 1].dstBinding = 0;
-        writes[i + 1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[i + 1].descriptorCount = 1;
-        infos[i + 1] = VkDescriptorBufferInfo{transmissionFramebuffer.uniforms[i], 0, VK_WHOLE_SIZE};
-        writes[i + 1].pBufferInfo = &infos[i + 1];
+        gBuffer.UniformsDescriptorSet[i] = sets[i];
+        writes[i].dstSet = gBuffer.UniformsDescriptorSet[i];
+        writes[i].dstBinding = 0;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[i].descriptorCount = 1;
+        infos[i] = VkDescriptorBufferInfo{gBuffer.uniforms[i], 0, VK_WHOLE_SIZE};
+        writes[i].pBufferInfo = &infos[i];
+    }
+
+    for(auto i = 0; i < swapChainImageCount; ++i) {
+        transmissionFramebuffer.UniformsDescriptorSet[i] = sets[i + swapChainImageCount];
+        writes[i + swapChainImageCount].dstSet = transmissionFramebuffer.UniformsDescriptorSet[i];
+        writes[i + swapChainImageCount].dstBinding = 0;
+        writes[i + swapChainImageCount].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[i + swapChainImageCount].descriptorCount = 1;
+        infos[i + swapChainImageCount] = VkDescriptorBufferInfo{transmissionFramebuffer.uniforms[i], 0, VK_WHOLE_SIZE};
+        writes[i + swapChainImageCount].pBufferInfo = &infos[i + swapChainImageCount];
     }
 
     device.updateDescriptorSets(writes);
@@ -394,6 +421,7 @@ void GltfViewer::onSwapChainRecreation() {
 
 void GltfViewer::newFrame() {
     uniforms.framebuffer_texture_id = transmissionFramebuffer.color[currentImageIndex].bindingId;
+    uniforms.g_buffer_texture_id = gBuffer.color[currentImageIndex].bindingId;
 }
 
 VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -403,8 +431,8 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    renderToFrameBuffer(commandBuffer);
-    updateUniforms(commandBuffer, uniformsBuffer[currentImageIndex], uniforms);
+    renderToTransmissionFrameBuffer(commandBuffer);
+    updateUniforms(commandBuffer, gBuffer.uniforms[currentImageIndex], uniforms);
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -420,8 +448,8 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    renderEnvironmentMap(commandBuffer, uniformsDescriptorSet, &render.environmentMap.pipeline, &render.environmentMap.layout);
-    renderModel(commandBuffer, uniformsDescriptorSet, &render.pbr.pipeline, &render.pbr.layout);
+    renderEnvironmentMap(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.pipeline, &render.environmentMap.layout);
+    renderModel(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.pipeline, &render.pbr.layout);
     renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -443,7 +471,7 @@ void GltfViewer::updateUniforms(VkCommandBuffer commandBuffer, VulkanBuffer& uni
 
 }
 
-void GltfViewer::renderToFrameBuffer(VkCommandBuffer commandBuffer) {
+void GltfViewer::renderToTransmissionFrameBuffer(VkCommandBuffer commandBuffer) {
     static UniformData uniformData;
     uniformData = uniforms;
     uniformData.discard_transmissive = 1;
