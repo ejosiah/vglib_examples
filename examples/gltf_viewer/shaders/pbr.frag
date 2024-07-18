@@ -217,11 +217,6 @@ void main() {
     vec3 color = vec3(0);
     color = f_emissive + diffuse + specular;
 
-    if(tone_map == 1 ){
-        color /= 1 + color;
-        color = pow(color, vec3(0.4545));
-    }
-
     fragColor = vec4(color, baseColor.a);
 
     if(debug == 1) {

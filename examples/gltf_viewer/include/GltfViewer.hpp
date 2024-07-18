@@ -29,6 +29,8 @@ protected:
 
     void initCamera();
 
+    void initScreenQuad();
+
     void initUniforms();
 
     void constructModelPaths();
@@ -87,11 +89,15 @@ protected:
 
     void renderToTransmissionFrameBuffer(VkCommandBuffer commandBuffer);
 
+    void renderToGBuffer(VkCommandBuffer commandBuffer);
+
     void renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout);
 
     void renderUI(VkCommandBuffer commandBuffer);
 
-    void renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout);
+    void renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout, VkBool32 blendingEnabled);
+
+    void toneMap(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -110,19 +116,19 @@ protected:
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
-            struct {
-                VulkanPipelineLayout layout;
-                VulkanPipeline pipeline;
-            } dynamic;
         } environmentMap;
+
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
-            struct {
-                VulkanPipelineLayout layout;
-                VulkanPipeline pipeline;
-            } dynamic;
         } pbr;
+
+
+
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } toneMapper;
 
     } render;
 
@@ -213,6 +219,7 @@ protected:
     int textureSetWidth{3}; // environment + irradiance + specular
     std::map<std::string, fs::path> modelPaths;
     UniformData uniforms{};
+    VulkanBuffer screenQuad;
     struct {
         bool error{};
         std::string message;

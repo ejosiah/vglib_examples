@@ -14,10 +14,7 @@
 - KHR_materials_volume
 
 ## TODO
-- fix - free descriptorSets when model is disposed of
 - fix - free up texture binding points used by a model when its disposed
-- use unique resource each unique swapchain image
-- split HDR from Tone mapping
 - implement more robust Tone mapping
 - implement bloom
 - Allow users to use their own environment maps

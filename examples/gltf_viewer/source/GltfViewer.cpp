@@ -23,6 +23,7 @@ GltfViewer::GltfViewer(const Settings& settings) : VulkanBaseApp("Gltf Viewer", 
 void GltfViewer::initApp() {
     constructModelPaths();
     initBindlessDescriptor();
+    initScreenQuad();
     initCamera();
     initUniforms();
     createDescriptorPool();
@@ -40,6 +41,11 @@ void GltfViewer::initApp() {
     createConvolutionSampler();
     loadTextures();
     initModels();
+}
+
+void GltfViewer::initScreenQuad() {
+    auto vertices = ClipSpace::Quad::positions;
+    screenQuad  = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
 void GltfViewer::initCamera() {
@@ -75,7 +81,6 @@ void GltfViewer::createGBuffer() {
     gBuffer.info.resize(swapChainImageCount);
     const auto size = gBuffer.color.size();
     for(auto i = 0; i < size; ++i) {
-        gBuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
         gBuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
         gBuffer.color[i].bindingId = i;
 
@@ -101,7 +106,7 @@ void GltfViewer::createFrameBufferTexture() {
         for(auto i = 0; i < size; ++i) {
             transmissionFramebuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
             transmissionFramebuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            transmissionFramebuffer.color[i].bindingId = i;
+            transmissionFramebuffer.color[i].bindingId = i + gBuffer.color.size();
 
             textures::create(device, transmissionFramebuffer.color[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {swapChain.width(), swapChain.height(), 1});
             bindlessDescriptor.update({&transmissionFramebuffer.color[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  transmissionFramebuffer.color[i].bindingId});
@@ -138,6 +143,7 @@ void GltfViewer::beforeDeviceCreation() {
 
     static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
     dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
+    dsFeatures.extendedDynamicState3ColorBlendEnable = VK_TRUE;
     deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
 }
 
@@ -175,7 +181,7 @@ void GltfViewer::createConvolutionSampler() {
 }
 
 void GltfViewer::loadTextures() {
-    brdfTexture.bindingId = transmissionFramebuffer.color.size();
+    brdfTexture.bindingId = transmissionFramebuffer.color.size() + gBuffer.color.size();
     uniforms.brdf_lut_texture_id = brdfTexture.bindingId;
     loader->loadTexture(resource("brdf.png"), brdfTexture);
 
@@ -313,19 +319,14 @@ void GltfViewer::createRenderPipeline() {
                     .cullFrontFace()
                 .depthStencilState()
                     .compareOpLessOrEqual()
+                .dynamicRenderPass()
+                    .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                    .depthAttachment(VK_FORMAT_D16_UNORM)
                 .layout().clear()
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                     .addDescriptorSetLayout(uniformsDescriptorSetLayout)
                 .name("environment")
                 .build(render.environmentMap.layout);
-
-        render.environmentMap.dynamic.pipeline =
-            builder
-                .dynamicRenderPass()
-                    .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
-                    .depthAttachment(VK_FORMAT_D16_UNORM)
-                .name("environment_transmission")
-            .build(render.environmentMap.dynamic.layout);
 
         auto builder1 = prototypes->cloneGraphicsPipeline();
         render.pbr.pipeline =
@@ -335,14 +336,19 @@ void GltfViewer::createRenderPipeline() {
                     .fragmentShader(resource("pbr.frag.spv"))
                 .colorBlendState()
                     .attachment().clear()
-                    .enableBlend()
-                    .colorBlendOp().add()
-                    .alphaBlendOp().add()
-                    .srcColorBlendFactor().srcAlpha()
-                    .dstColorBlendFactor().oneMinusSrcAlpha()
-                    .srcAlphaBlendFactor().zero()
-                    .dstAlphaBlendFactor().one()
+                        .enableBlend()
+                        .colorBlendOp().add()
+                        .alphaBlendOp().add()
+                        .srcColorBlendFactor().srcAlpha()
+                        .dstColorBlendFactor().oneMinusSrcAlpha()
+                        .srcAlphaBlendFactor().zero()
+                        .dstAlphaBlendFactor().one()
                     .add()
+                .dynamicState()
+                    .colorBlendEnable()
+                .dynamicRenderPass()
+                    .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                    .depthAttachment(VK_FORMAT_D16_UNORM)
                 .layout().clear()
                     .addDescriptorSetLayout(loader->descriptorSetLayout())
                     .addDescriptorSetLayout(loader->materialDescriptorSetLayout())
@@ -351,17 +357,28 @@ void GltfViewer::createRenderPipeline() {
                 .name("pbr_renderer")
                 .build(render.pbr.layout);
 
-        render.pbr.dynamic.pipeline =
-            builder1
-                .colorBlendState()
-                    .attachment().clear()
-                    .disableBlend()
-                    .add()
-                .dynamicRenderPass()
-                    .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
-                    .depthAttachment(VK_FORMAT_D16_UNORM)
-                .name("pbr_renderer_transmission")
-            .build(render.pbr.dynamic.layout);
+        auto builder2 = prototypes->cloneGraphicsPipeline();
+        render.toneMapper.pipeline =
+            builder2
+                .shaderStage()
+                    .vertexShader(resource("tone_mapper.vert.spv"))
+                    .fragmentShader(resource("tone_mapper.frag.spv"))
+                .vertexInputState().clear()
+                    .addVertexBindingDescriptions(ClipSpace::bindingDescription())
+                    .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())
+                .inputAssemblyState()
+                    .triangleStrip()
+                .rasterizationState()
+                    .cullNone()
+                .depthStencilState()
+                    .disableDepthWrite()
+                    .disableDepthTest()
+                .layout().clear()
+                    .addDescriptorSetLayout(uniformsDescriptorSetLayout)
+                    .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
+                .name("tone_mapper")
+                .build(render.toneMapper.layout);
+
         //    @formatter:on
 }
 
@@ -432,7 +449,7 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     renderToTransmissionFrameBuffer(commandBuffer);
-    updateUniforms(commandBuffer, gBuffer.uniforms[currentImageIndex], uniforms);
+    renderToGBuffer(commandBuffer);
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -448,8 +465,7 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    renderEnvironmentMap(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.pipeline, &render.environmentMap.layout);
-    renderModel(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.pipeline, &render.pbr.layout);
+    toneMap(commandBuffer);
     renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -479,11 +495,40 @@ void GltfViewer::renderToTransmissionFrameBuffer(VkCommandBuffer commandBuffer) 
     updateUniforms(commandBuffer, transmissionFramebuffer.uniforms[currentImageIndex], uniformData);
 
     offscreen.render(commandBuffer, transmissionFramebuffer.info[currentImageIndex], [&]{
-        renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.dynamic.pipeline, &render.environmentMap.dynamic.layout);
-        renderModel(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.dynamic.pipeline, &render.pbr.dynamic.layout);
+        renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.pipeline, &render.environmentMap.layout);
+        renderModel(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.pipeline, &render.pbr.layout, VK_FALSE);
     });
     textures::generateLOD(commandBuffer, transmissionFramebuffer.color[currentImageIndex].image, transmissionFramebuffer.color[currentImageIndex].width
                           , transmissionFramebuffer.color[currentImageIndex].height, transmissionFramebuffer.color[currentImageIndex].levels);
+}
+
+void GltfViewer::renderToGBuffer(VkCommandBuffer commandBuffer) {
+    updateUniforms(commandBuffer, gBuffer.uniforms[currentImageIndex], uniforms);
+
+    offscreen.render(commandBuffer, gBuffer.info[currentImageIndex], [&]{
+        renderEnvironmentMap(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.pipeline, &render.environmentMap.layout);
+        renderModel(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.pipeline, &render.pbr.layout, VK_TRUE);
+    });
+    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier.image = gBuffer.color[currentImageIndex].image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.subresourceRange = DEFAULT_SUB_RANGE;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, 0, 0, 0, 1, &barrier);
+
+}
+
+void GltfViewer::toneMap(VkCommandBuffer commandBuffer){
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = gBuffer.UniformsDescriptorSet[currentImageIndex];
+    sets[1] = bindlessDescriptor.descriptorSet;
+    VkDeviceSize offset = 0;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.toneMapper.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.toneMapper.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
+    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
 
 void GltfViewer::renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout) {
@@ -503,7 +548,7 @@ void GltfViewer::renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescripto
     vkCmdDrawIndexed(commandBuffer, skyBox.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
 }
 
-void GltfViewer::renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout) {
+void GltfViewer::renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout, VkBool32 blendingEnabled) {
     auto model = models[currentModel];
     static std::array<VkDescriptorSet, 4> sets;
     sets[0] = model->meshDescriptorSet.u16.handle;
@@ -516,6 +561,7 @@ void GltfViewer::renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet desc
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout->handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, model->vertices, &offset);
 
+    vkCmdSetColorBlendEnableEXT(commandBuffer, 0, 1, &blendingEnabled);
     vkCmdBindIndexBuffer(commandBuffer, model->indices.u16.handle, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexedIndirect(commandBuffer, model->draw.u16.handle, 0, model->draw.u16.count, sizeof(VkDrawIndexedIndirectCommand));
 
