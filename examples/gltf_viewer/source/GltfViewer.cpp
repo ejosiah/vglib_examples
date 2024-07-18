@@ -56,9 +56,12 @@ void GltfViewer::initCamera() {
 
 void GltfViewer::initUniforms() {
     UniformData defaults{};
-    uniforms.gpu = device.createCpuVisibleBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    uniformsBuffer.resize(swapChainImageCount);
+    for(auto i = 0; i < swapChainImageCount; ++i) {
+        uniformsBuffer[i] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT );
+    }
+    
     transmissionFramebuffer.uniforms.resize(swapChainImageCount);
-    uniforms.data = reinterpret_cast<UniformData*>(uniforms.gpu.map());
     for(auto i = 0; i < swapChainImageCount; ++i) {
         transmissionFramebuffer.uniforms[i] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     }
@@ -148,7 +151,7 @@ void GltfViewer::createConvolutionSampler() {
 
 void GltfViewer::loadTextures() {
     brdfTexture.bindingId = transmissionFramebuffer.color.size();
-    uniforms.data->brdf_lut_texture_id = brdfTexture.bindingId;
+    uniforms.brdf_lut_texture_id = brdfTexture.bindingId;
     loader->loadTexture(resource("brdf.png"), brdfTexture);
 
     environments.resize(environmentPaths.size());
@@ -191,8 +194,8 @@ void GltfViewer::loadTextures() {
             specularMaps.push_back(std::move(specularTexture));
         }
 
-        uniforms.data->irradiance_texture_id = irradianceMaps[options.environment].bindingId;
-        uniforms.data->specular_texture_id = specularMaps[options.environment].bindingId;
+        uniforms.irradiance_texture_id = irradianceMaps[options.environment].bindingId;
+        uniforms.specular_texture_id = specularMaps[options.environment].bindingId;
     });
 
 }
@@ -239,7 +242,7 @@ void GltfViewer::updateDescriptorSets(){
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[0].descriptorCount = 1;
-    infos[0] =  VkDescriptorBufferInfo{ uniforms.gpu, 0, VK_WHOLE_SIZE };
+    infos[0] =  VkDescriptorBufferInfo{uniformsBuffer[currentImageIndex], 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &infos[0];
 
     for(auto i = 0; i < swapChainImageCount; ++i) {
@@ -390,7 +393,7 @@ void GltfViewer::onSwapChainRecreation() {
 }
 
 void GltfViewer::newFrame() {
-    uniforms.data->framebuffer_texture_id = transmissionFramebuffer.color[currentImageIndex].bindingId;
+    uniforms.framebuffer_texture_id = transmissionFramebuffer.color[currentImageIndex].bindingId;
 }
 
 VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -401,6 +404,7 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     renderToFrameBuffer(commandBuffer);
+    updateUniforms(commandBuffer, uniformsBuffer[currentImageIndex], uniforms);
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -427,19 +431,24 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     return &commandBuffer;
 }
 
-void GltfViewer::renderToFrameBuffer(VkCommandBuffer commandBuffer) {
-    static UniformData uniformData{};
-    uniformData = *uniforms.data;
-    uniformData.discard_transmissive = 1;
-    uniformData.tone_map = 0;
-    vkCmdUpdateBuffer(commandBuffer, transmissionFramebuffer.uniforms[currentImageIndex], 0, sizeof(uniformData), &uniformData);
+void GltfViewer::updateUniforms(VkCommandBuffer commandBuffer, VulkanBuffer& uniformBuffer, const UniformData& data) {
+    vkCmdUpdateBuffer(commandBuffer, uniformBuffer, 0, sizeof(UniformData), &data);
     VkBufferMemoryBarrier barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.buffer = transmissionFramebuffer.uniforms[currentImageIndex];
+    barrier.buffer = uniformBuffer;
     barrier.offset = 0;
     barrier.size = VK_WHOLE_SIZE;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, 0, 1, &barrier, 0, 0);
+
+}
+
+void GltfViewer::renderToFrameBuffer(VkCommandBuffer commandBuffer) {
+    static UniformData uniformData;
+    uniformData = uniforms;
+    uniformData.discard_transmissive = 1;
+    uniformData.tone_map = 0;
+    updateUniforms(commandBuffer, transmissionFramebuffer.uniforms[currentImageIndex], uniformData);
 
     offscreen.render(commandBuffer, transmissionFramebuffer.info[currentImageIndex], [&]{
         renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.dynamic.pipeline, &render.environmentMap.dynamic.layout);
@@ -825,7 +834,7 @@ void GltfViewer::endFrame() {
     if(gltfPath.has_value()) {
         currentModel = (currentModel + 1) % static_cast<int>(models.size());
         models[currentModel] = loader->loadGltf(*gltfPath);
-        uniforms.data->num_lights = models[currentModel]->numLights;
+        uniforms.num_lights = models[currentModel]->numLights;
         camera->updateModel(models[currentModel]->bounds.min, models[currentModel]->bounds.max);
 
         if(!models[currentModel]->cameras.empty()) {
@@ -843,19 +852,19 @@ void GltfViewer::endFrame() {
     static int previousEnvironment = options.environment;
 
     if(previousEnvironment != options.environment){
-        uniforms.data->irradiance_texture_id = irradianceMaps[options.environment].bindingId;
-        uniforms.data->specular_texture_id = specularMaps[options.environment].bindingId;
+        uniforms.irradiance_texture_id = irradianceMaps[options.environment].bindingId;
+        uniforms.specular_texture_id = specularMaps[options.environment].bindingId;
         previousEnvironment = options.environment;
     }
-    uniforms.data->camera = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];
-    uniforms.data->environment = environments[options.environment].bindingId;
-    uniforms.data->debug = options.debug;
-    uniforms.data->direct_on = int(options.directLighting);
-    uniforms.data->ibl_on = int(options.imageBasedLighting);
-    uniforms.data->ibl_intensity = options.iblIntensity;
+    uniforms.camera = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];
+    uniforms.environment = environments[options.environment].bindingId;
+    uniforms.debug = options.debug;
+    uniforms.direct_on = int(options.directLighting);
+    uniforms.ibl_on = int(options.imageBasedLighting);
+    uniforms.ibl_intensity = options.iblIntensity;
 
     if(options.envMapType == 1) {
-        uniforms.data->environment = irradianceMaps[options.environment].bindingId;
+        uniforms.environment = irradianceMaps[options.environment].bindingId;
     }
 }
 

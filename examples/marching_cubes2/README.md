@@ -10,7 +10,7 @@ and then copied into a Vulkan VK_IMAGE_TYPE_3D image
 
 ### Marching cube
 The marching cube algorithm is implemented in a compute shader, 2 lookup tables are used, an edgeTable which maps vertices under the isosurface to intersection edges and a TriangleTable which is used to lookup isosurface triangulation configurations.
-These lookup tables are bound to the shaders as uniforms. The volume containing the scalar field is bound as a 3d texture to the shader along with worldToVoxel / voxelToWorld transformations
+These lookup tables are bound to the shaders as uniformsBuffer. The volume containing the scalar field is bound as a 3d texture to the shader along with worldToVoxel / voxelToWorld transformations
 
 Each compute shader invocation is centered at a marching cube instance with a cube size which is a factor of the voxel size (smaller means more details), the cube is then offset from the lower corner of world space bounds of the volume, the rest of the compute
 shader implementation follows the description detailed here [Polygonising a scalar field](https://paulbourke.net/geometry/polygonise/)

@@ -18,10 +18,6 @@ struct UniformData {
     float ibl_intensity{1};
 };
 
-struct Uniforms {
-    VulkanBuffer gpu;
-    UniformData* data{};
-};
 
 class GltfViewer : public VulkanBaseApp{
 public:
@@ -84,10 +80,11 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void updateUniforms(VkCommandBuffer commandBuffer, VulkanBuffer& uniformBuffer, const UniformData& data);
+
     void renderToFrameBuffer(VkCommandBuffer commandBuffer);
 
     void renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout);
-
 
     void renderUI(VkCommandBuffer commandBuffer);
 
@@ -205,7 +202,8 @@ protected:
     int bindingOffset{1};   // 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
     std::map<std::string, fs::path> modelPaths;
-    Uniforms uniforms;
+    std::vector<VulkanBuffer> uniformsBuffer;
+    UniformData uniforms{};
     struct {
         bool error{};
         std::string message;
