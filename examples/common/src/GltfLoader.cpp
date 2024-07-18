@@ -626,7 +626,7 @@ namespace gltf {
                 vertex.tangent = tangents.empty() ? glm::vec3(0) : tangents[i].xyz();
                 vertex.bitangent = tangents.empty() ? glm::vec3(0) : glm::cross(normals[i], tangents[i].xyz()) * tangents[i].w;
                 vertex.uv = uvs.empty() ? glm::vec2(0) : uvs[i];
-                vertex.color = !colors3.empty() ? glm::vec4(colors3[i], 1) : (!colors4.empty() ? colors4[i] : glm::vec4(0));
+                vertex.color = !colors3.empty() ? glm::vec4(colors3[i], 1) : (!colors4.empty() ? colors4[i] : glm::vec4(1));
                 vertices.push_back(vertex);
             }
 
