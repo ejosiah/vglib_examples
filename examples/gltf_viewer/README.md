@@ -15,6 +15,7 @@
 
 ## TODO
 - fix - free descriptorSets when model is disposed of
+- fix - free up texture binding points used by a model when its disposed
 - use unique resource each unique swapchain image
 - split HDR from Tone mapping
 - implement more robust Tone mapping
@@ -26,6 +27,7 @@
 - add support for multi uvs
 - add support for multi scenes
 - fix - app fails on exit during async loads
+-  use a different concurrent data structure for task queues
 - make loading of meshes preserve their ordering
   - gltf meshes may be ordered, with transparent meshes last for easy blending
   - order is preserved with one worker thread

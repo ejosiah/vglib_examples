@@ -185,7 +185,6 @@ namespace gltf {
         tinyGltfLoad(*gltf, path.string());
         const auto counts = getCounts(*gltf);
 
-
         auto model = std::make_shared<Model>();
         model->numMeshes = counts.instances.count();
         model->numTextures = gltf->textures.size();
@@ -238,6 +237,7 @@ namespace gltf {
         model->placeHolders =  computePlaceHolders(*gltf, transforms);
         model->numLights = counts.numLightInstances;
         model->cameras = getCameras(*gltf);
+        model->_sourceDescriptorPool = _descriptorPool;
 
         auto writes = initializers::writeDescriptorSets<5>();
         writes[0].dstSet = model->meshDescriptorSet.u16.handle;
@@ -1712,6 +1712,7 @@ namespace gltf {
         dummyModel->meshDescriptorSet.u16.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
         dummyModel->meshDescriptorSet.u32.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
         dummyModel->materialDescriptorSet = _descriptorPool->allocate({ _materialDescriptorSetLayout }).front();
+        dummyModel->_sourceDescriptorPool = _descriptorPool;
 
 
         auto writes = initializers::writeDescriptorSets<5>();

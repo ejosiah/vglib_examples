@@ -6,4 +6,13 @@ namespace gltf {
     void sync(std::shared_ptr<Model> model) {
         model->_loaded.wait();
     }
+
+    Model::~Model() {
+        std::vector<VkDescriptorSet> sets{
+                meshDescriptorSet.u16.handle,
+                meshDescriptorSet.u32.handle,
+                materialDescriptorSet
+        };
+        _sourceDescriptorPool->free(sets);
+    }
 }

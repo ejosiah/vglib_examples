@@ -121,8 +121,11 @@ namespace gltf {
             _loaded.wait();
         }
 
+        ~Model();
+
     private:
         Condition _loaded;
+        VulkanDescriptorPool* _sourceDescriptorPool{};
     };
 
 }
