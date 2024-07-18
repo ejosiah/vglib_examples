@@ -25,3 +25,8 @@
 - add support for multi uvs
 - add support for multi scenes
 - fix - app fails on exit during async loads
+- make loading of meshes preserve their ordering
+  - gltf meshes may be ordered, with transparent meshes last for easy blending
+  - order is preserved with one worker thread
+  - ond the order hand multiple worker threads do not preserve this order
+  - pass in meshId when processing, use to determine position in GPU mesh buffer 
