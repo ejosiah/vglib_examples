@@ -101,6 +101,8 @@ protected:
 
     void onPause() override;
 
+    void newFrame() override;
+
     void endFrame() override;
 
 protected:
@@ -198,12 +200,10 @@ protected:
         std::vector<Texture> depth;
         std::vector<VulkanBuffer> uniforms;
         std::vector<VkDescriptorSet> UniformsDescriptorSet{};
-        int front{0};
-        int back{0};
     } transmissionFramebuffer;
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
-    int bindingOffset{2};   // 1 transmission buffer  + 1 brdf_LUT
+    int bindingOffset{1};   // 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
     std::map<std::string, fs::path> modelPaths;
     Uniforms uniforms;

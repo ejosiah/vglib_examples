@@ -14,6 +14,7 @@
 - KHR_materials_volume
 
 ## TODO
+- fix - free descriptorSets when model is disposed of
 - use unique resource each unique swapchain image
 - split HDR from Tone mapping
 - implement more robust Tone mapping

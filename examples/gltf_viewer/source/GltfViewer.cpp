@@ -57,17 +57,19 @@ void GltfViewer::initCamera() {
 void GltfViewer::initUniforms() {
     UniformData defaults{};
     uniforms.gpu = device.createCpuVisibleBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    transmissionFramebuffer.uniforms.resize(swapChain.imageCount());
+    transmissionFramebuffer.uniforms.resize(swapChainImageCount);
     uniforms.data = reinterpret_cast<UniformData*>(uniforms.gpu.map());
-    transmissionFramebuffer.uniforms[0] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    for(auto i = 0; i < swapChainImageCount; ++i) {
+        transmissionFramebuffer.uniforms[i] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    }
 }
 
 void GltfViewer::createFrameBufferTexture() {
-        transmissionFramebuffer.color.resize(swapChain.imageCount());
-        transmissionFramebuffer.depth.resize(swapChain.imageCount());
-        transmissionFramebuffer.UniformsDescriptorSet.resize(swapChain.imageCount());
-        offscreen.info.resize(swapChain.imageCount());
-        const auto size = 1u;   // transmissionFramebuffer.color.size();
+        transmissionFramebuffer.color.resize(swapChainImageCount);
+        transmissionFramebuffer.depth.resize(swapChainImageCount);
+        transmissionFramebuffer.UniformsDescriptorSet.resize(swapChainImageCount);
+        offscreen.info.resize(swapChainImageCount);
+        const auto size = transmissionFramebuffer.color.size();
         for(auto i = 0; i < size; ++i) {
             transmissionFramebuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
             transmissionFramebuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -87,6 +89,7 @@ void GltfViewer::createFrameBufferTexture() {
 }
 
 void GltfViewer::initBindlessDescriptor() {
+    bindingOffset += swapChainImageCount;
     int reservation = environmentPaths.size() * textureSetWidth + bindingOffset;
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, reservation);
@@ -144,7 +147,7 @@ void GltfViewer::createConvolutionSampler() {
 }
 
 void GltfViewer::loadTextures() {
-    brdfTexture.bindingId = 1; // transmissionFramebuffer.color.size();
+    brdfTexture.bindingId = transmissionFramebuffer.color.size();
     uniforms.data->brdf_lut_texture_id = brdfTexture.bindingId;
     loader->loadTexture(resource("brdf.png"), brdfTexture);
 
@@ -153,7 +156,6 @@ void GltfViewer::loadTextures() {
 
     std::vector<std::shared_ptr<gltf::TextureUploadStatus>> uploadStatuses;
     for(auto i = 0; i < environments.size(); ++i) {
-//        environments[i].bindingId = (i  * textureSetWidth) + bindingOffset;
         environments[i].bindingId = i  + bindingOffset;
 
         stagingTextures[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -225,27 +227,31 @@ void GltfViewer::createDescriptorSetLayouts() {
 }
 
 void GltfViewer::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ uniformsDescriptorSetLayout, uniformsDescriptorSetLayout });
+    std::vector<VulkanDescriptorSetLayout> setLayouts(1 + swapChainImageCount, uniformsDescriptorSetLayout);
+    std::vector<VkDescriptorBufferInfo> infos(1 + swapChainImageCount);
+    auto sets = descriptorPool.allocate({ setLayouts });
     uniformsDescriptorSet = sets[0];
     transmissionFramebuffer.UniformsDescriptorSet[0] = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<2>();
-    
+    std::vector<VkWriteDescriptorSet> writes(1 + swapChainImageCount, { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET });
+
     writes[0].dstSet = uniformsDescriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[0].descriptorCount = 1;
-    VkDescriptorBufferInfo uniformsInfo{ uniforms.gpu, 0, VK_WHOLE_SIZE };
-    writes[0].pBufferInfo = &uniformsInfo;
+    infos[0] =  VkDescriptorBufferInfo{ uniforms.gpu, 0, VK_WHOLE_SIZE };
+    writes[0].pBufferInfo = &infos[0];
 
-    writes[1].dstSet = transmissionFramebuffer.UniformsDescriptorSet[0];
-    writes[1].dstBinding = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo uniformsInfo1{ transmissionFramebuffer.uniforms[0], 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &uniformsInfo1;
+    for(auto i = 0; i < swapChainImageCount; ++i) {
+        transmissionFramebuffer.UniformsDescriptorSet[i] = sets[i+1];
+        writes[i + 1].dstSet = transmissionFramebuffer.UniformsDescriptorSet[i];
+        writes[i + 1].dstBinding = 0;
+        writes[i + 1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[i + 1].descriptorCount = 1;
+        infos[i + 1] = VkDescriptorBufferInfo{transmissionFramebuffer.uniforms[i], 0, VK_WHOLE_SIZE};
+        writes[i + 1].pBufferInfo = &infos[i + 1];
+    }
 
-    
     device.updateDescriptorSets(writes);
     
 }
@@ -383,6 +389,10 @@ void GltfViewer::onSwapChainRecreation() {
     createRenderPipeline();
 }
 
+void GltfViewer::newFrame() {
+    uniforms.data->framebuffer_texture_id = transmissionFramebuffer.color[currentImageIndex].bindingId;
+}
+
 VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
     numCommandBuffers = 1;
     auto& commandBuffer = commandBuffers[imageIndex];
@@ -422,21 +432,21 @@ void GltfViewer::renderToFrameBuffer(VkCommandBuffer commandBuffer) {
     uniformData = *uniforms.data;
     uniformData.discard_transmissive = 1;
     uniformData.tone_map = 0;
-    vkCmdUpdateBuffer(commandBuffer, transmissionFramebuffer.uniforms[transmissionFramebuffer.back], 0, sizeof(uniformData), &uniformData);
+    vkCmdUpdateBuffer(commandBuffer, transmissionFramebuffer.uniforms[currentImageIndex], 0, sizeof(uniformData), &uniformData);
     VkBufferMemoryBarrier barrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.buffer = transmissionFramebuffer.uniforms[transmissionFramebuffer.back];
+    barrier.buffer = transmissionFramebuffer.uniforms[currentImageIndex];
     barrier.offset = 0;
     barrier.size = VK_WHOLE_SIZE;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, 0, 1, &barrier, 0, 0);
 
-    offscreen.renderer.render(commandBuffer, offscreen.info[transmissionFramebuffer.back], [&]{
-        renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[transmissionFramebuffer.back], &render.environmentMap.dynamic.pipeline, &render.environmentMap.dynamic.layout);
-        renderModel(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[transmissionFramebuffer.back], &render.pbr.dynamic.pipeline, &render.pbr.dynamic.layout);
+    offscreen.renderer.render(commandBuffer, offscreen.info[currentImageIndex], [&]{
+        renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.dynamic.pipeline, &render.environmentMap.dynamic.layout);
+        renderModel(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.dynamic.pipeline, &render.pbr.dynamic.layout);
     });
-    textures::generateLOD(commandBuffer, transmissionFramebuffer.color[transmissionFramebuffer.back].image, transmissionFramebuffer.color[transmissionFramebuffer.back].width
-                          , transmissionFramebuffer.color[transmissionFramebuffer.back].height, transmissionFramebuffer.color[transmissionFramebuffer.back].levels);
+    textures::generateLOD(commandBuffer, transmissionFramebuffer.color[currentImageIndex].image, transmissionFramebuffer.color[currentImageIndex].width
+                          , transmissionFramebuffer.color[currentImageIndex].height, transmissionFramebuffer.color[currentImageIndex].levels);
 }
 
 void GltfViewer::renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout) {
@@ -847,9 +857,6 @@ void GltfViewer::endFrame() {
     if(options.envMapType == 1) {
         uniforms.data->environment = irradianceMaps[options.environment].bindingId;
     }
-
-    std::swap(transmissionFramebuffer.front, transmissionFramebuffer.back);
-    uniforms.data->framebuffer_texture_id = transmissionFramebuffer.color[transmissionFramebuffer.front].bindingId;
 }
 
 void GltfViewer::constructModelPaths() {
