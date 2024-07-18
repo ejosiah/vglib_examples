@@ -191,19 +191,19 @@ protected:
 
     struct {
         Offscreen renderer{};
-        std::array<Offscreen::RenderInfo, 2> info{};
+        std::vector<Offscreen::RenderInfo> info{};
     } offscreen;
     struct  {
-        std::array<Texture, 1> color;
-        std::array<Texture, 1> depth;
-        std::array<VulkanBuffer, 1> uniforms;
-        std::array<VkDescriptorSet, 1> UniformsDescriptorSet{};
+        std::vector<Texture> color;
+        std::vector<Texture> depth;
+        std::vector<VulkanBuffer> uniforms;
+        std::vector<VkDescriptorSet> UniformsDescriptorSet{};
         int front{0};
         int back{0};
     } transmissionFramebuffer;
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
-    int bindingOffset{static_cast<int>(transmissionFramebuffer.color.size() + 1) };   // + 1 brdf_LUT
+    int bindingOffset{2};   // 1 transmission buffer  + 1 brdf_LUT
     int textureSetWidth{3}; // environment + irradiance + specular
     std::map<std::string, fs::path> modelPaths;
     Uniforms uniforms;

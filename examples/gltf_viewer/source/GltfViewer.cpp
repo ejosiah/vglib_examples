@@ -57,12 +57,18 @@ void GltfViewer::initCamera() {
 void GltfViewer::initUniforms() {
     UniformData defaults{};
     uniforms.gpu = device.createCpuVisibleBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    transmissionFramebuffer.uniforms.resize(swapChain.imageCount());
     uniforms.data = reinterpret_cast<UniformData*>(uniforms.gpu.map());
     transmissionFramebuffer.uniforms[0] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 }
 
 void GltfViewer::createFrameBufferTexture() {
-        for(auto i = 0; i < transmissionFramebuffer.color.size(); ++i) {
+        transmissionFramebuffer.color.resize(swapChain.imageCount());
+        transmissionFramebuffer.depth.resize(swapChain.imageCount());
+        transmissionFramebuffer.UniformsDescriptorSet.resize(swapChain.imageCount());
+        offscreen.info.resize(swapChain.imageCount());
+        const auto size = 1u;   // transmissionFramebuffer.color.size();
+        for(auto i = 0; i < size; ++i) {
             transmissionFramebuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
             transmissionFramebuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
             transmissionFramebuffer.color[i].bindingId = i;
@@ -138,7 +144,7 @@ void GltfViewer::createConvolutionSampler() {
 }
 
 void GltfViewer::loadTextures() {
-    brdfTexture.bindingId = transmissionFramebuffer.color.size();
+    brdfTexture.bindingId = 1; // transmissionFramebuffer.color.size();
     uniforms.data->brdf_lut_texture_id = brdfTexture.bindingId;
     loader->loadTexture(resource("brdf.png"), brdfTexture);
 
