@@ -9,6 +9,7 @@
 
 - KHR_lights_punctual
 - KHR_materials_dispersion
+- KHR_materials_emissive_strength
 - KHR_materials_ior
 - KHR_materials_transmission
 - KHR_materials_volume

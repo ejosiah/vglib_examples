@@ -34,5 +34,7 @@ struct Material {
 
     vec3 attenuationColor;
     float dispersion;
+
+    float emissiveStrength;
 };
 #endif // GLTF_GLSL

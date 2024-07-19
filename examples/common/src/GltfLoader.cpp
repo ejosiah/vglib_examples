@@ -12,6 +12,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_ior = "KHR_materials_ior";
     static constexpr const char* KHR_materials_dispersion = "KHR_materials_dispersion";
     static constexpr const char* KHR_lights_punctual = "KHR_lights_punctual";
+    static constexpr const char* KHR_materials_emissive_strength = "KHR_materials_emissive_strength";
 
     static const MaterialData NullMaterial{
             .textures{-1, -1, -1, -1, -1, -1, -1, -1},
@@ -820,6 +821,10 @@ namespace gltf {
 
         if(materialUpload->material.extensions.contains(KHR_materials_transmission)){
             material.transmission = materialUpload->material.extensions.at(KHR_materials_transmission).Get("transmissionFactor").GetNumberAsDouble();
+        }
+
+        if(materialUpload->material.extensions.contains(KHR_materials_emissive_strength)){
+            material.emissiveStrength = materialUpload->material.extensions.at(KHR_materials_emissive_strength).Get("emissiveStrength").GetNumberAsDouble();
         }
 
         if(materialUpload->material.extensions.contains(KHR_materials_dispersion)){

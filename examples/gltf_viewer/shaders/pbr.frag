@@ -288,11 +288,11 @@ bool noTangets() {
 }
 
 vec3 getEmission(){
-    vec3 emission = MATERIAL.emission;
+    vec3 emission = MATERIAL.emission * MATERIAL.emissiveStrength;
     if(EMISSION_TEX_ID != -1) {
-        emission *= texture(EMISSION_TEXTURE, fs_in.uv).rgb;
+        emission *= pow(texture(EMISSION_TEXTURE, fs_in.uv).rgb, vec3(2.2));
     }
-    return pow(emission, vec3(2.2)); // sRGB to Linear;
+    return emission;
 }
 
 float getTransmissionFactor() {

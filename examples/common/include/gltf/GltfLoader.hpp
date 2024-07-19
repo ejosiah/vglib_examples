@@ -50,6 +50,9 @@ namespace gltf {
 
         glm::vec3 attenuationColor{1};
         float dispersion{0};
+
+        float emissiveStrength{1.0};
+        glm::vec3 padding{0};
     };
 
     struct LightInstance {
