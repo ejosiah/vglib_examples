@@ -31,6 +31,7 @@ void GltfViewer::initApp() {
     createGBuffer();
     createFrameBufferTexture();
     initLoader();
+    createConstantTextures();
     createSkyBox();
     createDescriptorSetLayouts();
     createCommandPool();
@@ -82,7 +83,7 @@ void GltfViewer::createGBuffer() {
     const auto size = gBuffer.color.size();
     for(auto i = 0; i < size; ++i) {
         gBuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        gBuffer.color[i].bindingId = i;
+        gBuffer.color[i].bindingId = i + TextureConstants::COUNT;
 
         textures::create(device, gBuffer.color[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {swapChain.width(), swapChain.height(), 1});
         bindlessDescriptor.update({&gBuffer.color[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  gBuffer.color[i].bindingId});
@@ -106,7 +107,7 @@ void GltfViewer::createFrameBufferTexture() {
         for(auto i = 0; i < size; ++i) {
             transmissionFramebuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
             transmissionFramebuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            transmissionFramebuffer.color[i].bindingId = i + gBuffer.color.size();
+            transmissionFramebuffer.color[i].bindingId = gBuffer.color.back().bindingId + i + 1;
 
             textures::create(device, transmissionFramebuffer.color[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {swapChain.width(), swapChain.height(), 1});
             bindlessDescriptor.update({&transmissionFramebuffer.color[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  transmissionFramebuffer.color[i].bindingId});
@@ -127,6 +128,25 @@ void GltfViewer::initBindlessDescriptor() {
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, reservation);
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
+}
+
+void GltfViewer::createConstantTextures() {
+    textures::color(device, constantTextures[TextureConstants::ZERO], glm::vec3(1), {32, 32});
+    textures::color(device, constantTextures[TextureConstants::IDENTITY], glm::vec3(1), {32, 32});
+    textures::normalMap(device, constantTextures[TextureConstants::NORMAL], {32, 32});
+
+    constantTextures[TextureConstants::ZERO].bindingId = TextureConstants::ZERO;
+    constantTextures[TextureConstants::IDENTITY].bindingId = TextureConstants::IDENTITY;
+    constantTextures[TextureConstants::NORMAL].bindingId = TextureConstants::NORMAL;
+
+    bindlessDescriptor.update(constantTextures[TextureConstants::ZERO], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    bindlessDescriptor.update(constantTextures[TextureConstants::IDENTITY], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    bindlessDescriptor.update(constantTextures[TextureConstants::NORMAL], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+    constantTextures[TextureConstants::BRDF_LUT].bindingId = TextureConstants::BRDF_LUT;
+    loader->loadTexture(resource("brdf.png"), constantTextures[TextureConstants::BRDF_LUT]);
+
+    uniforms.brdf_lut_texture_id = constantTextures[TextureConstants::BRDF_LUT].bindingId;
 }
 
 void GltfViewer::beforeDeviceCreation() {
@@ -181,10 +201,6 @@ void GltfViewer::createConvolutionSampler() {
 }
 
 void GltfViewer::loadTextures() {
-    brdfTexture.bindingId = transmissionFramebuffer.color.size() + gBuffer.color.size();
-    uniforms.brdf_lut_texture_id = brdfTexture.bindingId;
-    loader->loadTexture(resource("brdf.png"), brdfTexture);
-
     environments.resize(environmentPaths.size());
     stagingTextures.resize(environmentPaths.size());
 

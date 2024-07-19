@@ -19,6 +19,7 @@ struct UniformData {
     float ibl_intensity{1};
 };
 
+enum TextureConstants{ ZERO, IDENTITY, NORMAL, BRDF_LUT, COUNT};
 
 class GltfViewer : public VulkanBaseApp{
 public:
@@ -42,6 +43,8 @@ protected:
     void createSkyBox();
 
     void initBindlessDescriptor();
+
+    void createConstantTextures();
 
     void initModels();
 
@@ -157,7 +160,6 @@ protected:
     BindlessDescriptor bindlessDescriptor;
     std::optional<std::filesystem::path> gltfPath;
     VulkanDescriptorSetLayout uniformsDescriptorSetLayout;
-    Texture brdfTexture;
     std::vector<Texture> environments;
     std::vector<Texture> stagingTextures;
     std::vector<Texture> irradianceMaps;
@@ -215,9 +217,10 @@ protected:
     } transmissionFramebuffer;
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
-    int bindingOffset{1};   // 1 brdf_LUT
+    int bindingOffset{TextureConstants::COUNT};
     int textureSetWidth{3}; // environment + irradiance + specular
     std::map<std::string, fs::path> modelPaths;
+    std::array<Texture, TextureConstants::COUNT> constantTextures;
     UniformData uniforms{};
     VulkanBuffer screenQuad;
     struct {
