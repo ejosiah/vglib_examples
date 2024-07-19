@@ -13,6 +13,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_dispersion = "KHR_materials_dispersion";
     static constexpr const char* KHR_lights_punctual = "KHR_lights_punctual";
     static constexpr const char* KHR_materials_emissive_strength = "KHR_materials_emissive_strength";
+    static constexpr const char* KHR_materials_clearcoat = "KHR_materials_clearcoat";
 
     static const MaterialData NullMaterial{
             .textures{-1, -1, -1, -1, -1, -1, -1, -1},
@@ -856,6 +857,33 @@ namespace gltf {
                 if(textureIndex != -1) {
                     material.textures[static_cast<int>(TextureType::THICKNESS)] = textureIndex + materialUpload->pending->textureBindingOffset;
                 }
+            }
+        }
+
+        if(materialUpload->material.extensions.contains(KHR_materials_clearcoat)){
+            const auto& clearCoat = materialUpload->material.extensions.at(KHR_materials_clearcoat);
+
+            if(clearCoat.Has("clearcoatFactor")){
+                material.clearCoatFactor = clearCoat.Get("clearcoatFactor").GetNumberAsDouble();
+            }
+
+            if(clearCoat.Has("clearcoatRoughnessFactor")){
+                material.clearCoatRoughnessFactor = clearCoat.Get("clearcoatRoughnessFactor").GetNumberAsDouble();
+            }
+
+            if(clearCoat.Has("clearcoatTexture")){
+                auto textureIndex = clearCoat.Get("clearcoatTexture").Get("index").GetNumberAsInt();
+                material.textures[static_cast<int>(TextureType::CLEAR_COAT_COLOR)] = textureIndex + materialUpload->pending->textureBindingOffset;
+            }
+
+            if(clearCoat.Has("clearcoatRoughnessTexture")){
+                auto textureIndex = clearCoat.Get("clearcoatRoughnessTexture").Get("index").GetNumberAsInt();
+                material.textures[static_cast<int>(TextureType::CLEAR_COAT_ROUGHNESS)] = textureIndex + materialUpload->pending->textureBindingOffset;
+            }
+
+            if(clearCoat.Has("clearcoatNormalTexture")){
+                auto textureIndex = clearCoat.Get("clearcoatNormalTexture").Get("index").GetNumberAsInt();
+                material.textures[static_cast<int>(TextureType::CLEAR_COAT_NORMAL)] = textureIndex + materialUpload->pending->textureBindingOffset;
             }
         }
 

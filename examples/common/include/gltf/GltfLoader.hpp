@@ -31,7 +31,7 @@ namespace gltf {
     };
 
     struct MaterialData {
-        std::array<int, 8> textures{};
+        std::array<int, NUM_TEXTURE_MAPPING> textures{};
 
         glm::vec4 baseColor{1.0};
 
@@ -52,7 +52,9 @@ namespace gltf {
         float dispersion{0};
 
         float emissiveStrength{1.0};
-        glm::vec3 padding{0};
+        float clearCoatFactor{0};
+        float clearCoatRoughnessFactor{0};
+        int padding{0};
     };
 
     struct LightInstance {

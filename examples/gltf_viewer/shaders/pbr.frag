@@ -15,6 +15,10 @@
 
 #define EMISSION_INDEX 0
 #define THICKNESS_INDEX 1
+#define CLEAR_COAT_INDEX 2
+#define CLEAR_COAT_ROUGHNESS_INDEX 3
+
+#define CLEAR_COAT_NORMAL_INDEX 0
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
 #define MATERIAL materials[MATERIAL_ID]
@@ -27,12 +31,21 @@
 #define EMISSION_TEX_ID MATERIAL.textures1[EMISSION_INDEX]
 #define THICKNESS_TEX_ID MATERIAL.textures1[THICKNESS_INDEX]
 
+#define CLEAR_COAT_TEX_ID MATERIAL.textures1[CLEAR_COAT_INDEX]
+#define CLEAR_COAT_ROUGHNESS_TEX_ID MATERIAL.textures1[CLEAR_COAT_ROUGHNESS_INDEX]
+#define CLEAR_COAT_NORMAL_TEX_ID MATERIAL.textures2[CLEAR_COAT_NORMAL_INDEX]
+
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_ID)]
 #define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_ID)]
 #define OCCLUSION_TEXTURE global_textures[nonuniformEXT(OCCLUSION_TEX_ID)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_ID)]
+
 #define EMISSION_TEXTURE global_textures[nonuniformEXT(EMISSION_TEX_ID)]
 #define THICKNESS_TEXTURE global_textures[nonuniformEXT(THICKNESS_TEX_ID)]
+
+#define CLEAR_COAT_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_TEX_ID)]
+#define CLEAR_COAT_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_ROUGHNESS_TEX_ID)]
+#define CLEAR_COAT_NORMAL_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_NORMAL_TEX_ID)]
 
 #define u_GGXLUT global_textures[brdf_lut_texture_id]
 #define u_GGXEnvSampler global_textures[nonuniformEXT(specular_texture_id)]
@@ -84,6 +97,7 @@ vec3 getEmission();
 float getTransmissionFactor();
 float getThickness();
 bool isNull(Material material);
+ClearCoat getClearCoat();
 
 layout(location = 0) out vec4 fragColor;
 
@@ -91,6 +105,9 @@ const vec3 F0 = vec3(0.04);
 const vec3 F90 = vec3(1);
 const float IOR = 1.5;
 const float u_OcclusionStrength = 1;
+
+NormalInfo ni = NormalInfo(fs_in.tangent, fs_in.bitangent, fs_in.normal);
+vec2 uv = fs_in.uv;
 
 void main() {
 
@@ -123,6 +140,7 @@ void main() {
     const vec3 attenuationColor = MATERIAL.attenuationColor;
     const float attenuationDistance = MATERIAL.attenuationDistance;
     const float dispersion = MATERIAL.dispersion;
+    const ClearCoat cc = getClearCoat();
 
 
     vec3 f_specular = vec3(0.0);
@@ -143,6 +161,7 @@ void main() {
     if(ibl_on == 1){
         f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
         f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
+        f_clearcoat += cc.factor != 0 ? getIBLRadianceGGX(cc.normal, V, cc.roughness, cc.f0, 1.0) : vec3(0);
     }
 
     if(transmissionFactor > 0){
@@ -153,9 +172,11 @@ void main() {
 
     vec3 f_diffuse_ibl = f_diffuse;
     vec3 f_specular_ibl = f_specular;
+    vec3 f_clearcoat_ibl = f_clearcoat;
 
     f_diffuse = vec3(0);
     f_specular = vec3(0);
+    f_clearcoat = vec3(0);
 
     if(direct_on == 1){
         for (int i = 0; i < num_lights; ++i){
@@ -188,6 +209,8 @@ void main() {
 
                 f_diffuse += l_diffuse;
                 f_specular += l_specular;
+
+                f_clearcoat += cc.factor > 0 ? intensity * getPunctualRadianceClearCoat(cc.normal, V, L, H, VdotH, cc.f0, cc.f90, cc.roughness) : vec3(0);
             }
             // If the light ray travels through the geometry, use the point it exits the geometry again.
             // That will change the angle to the light source, if the material refracts the light ray.
@@ -205,17 +228,25 @@ void main() {
         }
     }
 
+    float clearcoatFactor = 0.0;
+    vec3 clearcoatFresnel = vec3(0);
     vec3 diffuse;
     vec3 specular;
+    vec3 clearcoat;
 
     diffuse = f_diffuse + mix(f_diffuse_ibl, f_diffuse_ibl * ao, u_OcclusionStrength) * albedoSheenScaling;
-    // apply ambient occlusion to all lighting that is not punctual
     specular = f_specular + mix(f_specular_ibl, f_specular_ibl * ao, u_OcclusionStrength) * albedoSheenScaling;
+    clearcoat = f_clearcoat + mix(f_clearcoat_ibl, f_clearcoat_ibl * ao, u_OcclusionStrength);
+
+    clearcoatFactor = cc.factor;
+    clearcoatFresnel = F_Schlick(cc.f0, cc.f90, clampedDot(cc.normal, V));
+    clearcoat *= clearcoatFactor;
 
     diffuse = mix(diffuse, f_transmission, transmissionFactor);
 
     vec3 color = vec3(0);
     color = f_emissive + diffuse + specular;
+    color = color * (1.0 - clearcoatFactor * clearcoatFresnel) + clearcoat;
 
     fragColor = vec4(color, baseColor.a);
 
@@ -309,4 +340,36 @@ float getThickness() {
 
 bool isNull(Material material) {
     return any(isnan(material.baseColor));
+}
+
+ClearCoat getClearCoat() {
+    ClearCoat cc = newClearCoatInstance();
+
+    if(MATERIAL.clearCoatFactor == 0) return cc;
+    cc.factor = MATERIAL.clearCoatFactor;
+    cc.roughness = MATERIAL.clearCoatRoughnessFactor;
+    cc.f0 = vec3(pow((MATERIAL.ior - 1.0) / (MATERIAL.ior + 1.0), 2.0));
+    cc.f90 = vec3(1);
+    cc.normal = ni.N;
+
+    if(CLEAR_COAT_TEX_ID != -1) {
+        cc.factor *= texture(CLEAR_COAT_TEXTURE, uv).r;
+    }
+
+    if(CLEAR_COAT_ROUGHNESS_TEX_ID != -1) {
+        cc.roughness *= texture(CLEAR_COAT_ROUGHNESS_TEXTURE, uv).g;
+    }
+
+
+    if(CLEAR_COAT_NORMAL_TEX_ID != -1) {
+        mat3 TBN = mat3(ni.T, ni.B, ni.N);
+        cc.normal = 2 * texture(CLEAR_COAT_NORMAL_TEXTURE, uv).xyz - 1;
+        cc.normal.y *= -1;
+        cc.normal = normalize(TBN * cc.normal);
+    }
+
+    cc.normal = normalize(cc.normal);
+    cc.roughness = clamp(cc.roughness, 0, 1);
+
+    return cc;
 }

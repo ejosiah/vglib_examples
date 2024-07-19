@@ -16,6 +16,7 @@ struct Mesh {
 struct Material {
     ivec4 textures0;
     ivec4 textures1;
+    ivec4 textures2;
 
     vec4 baseColor;
 
@@ -36,5 +37,33 @@ struct Material {
     float dispersion;
 
     float emissiveStrength;
+    float clearCoatFactor;
+    float clearCoatRoughnessFactor;
 };
+
+struct ClearCoat {
+    vec3 normal;
+    vec3 f0;
+    vec3 f90;
+    float factor;
+    float roughness;
+};
+
+struct NormalInfo {
+    vec3 T;
+    vec3 B;
+    vec3 N;
+};
+
+ClearCoat newClearCoatInstance() {
+    ClearCoat cc;
+    cc.factor = 0;
+    cc.roughness = 0;
+    cc.f0 = vec3(0);
+    cc.f90 = vec3(1);
+    cc.normal = vec3(0);
+
+    return cc;
+}
+
 #endif // GLTF_GLSL

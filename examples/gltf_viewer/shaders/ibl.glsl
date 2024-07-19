@@ -2,19 +2,11 @@
 #define IBL_GLSL
 
 #include "uniforms.glsl"
-#include "octahedral.glsl"
 #include "punctual_lights.glsl"
 #include "functions.glsl"
 
 const mat3 u_EnvRotation = mat3(1);
 const int u_MipCount = 5;
-
-vec2 dirToUV(vec3 dir) {
-    return 0.5 + 0.5 * octEncode(normalize(dir));
-}
-float clampedDot(vec3 a, vec3 b) {
-    return clamp(dot(a, b), 0, 1);
-}
 
 
 vec3 getDiffuseLight(vec3 n)
