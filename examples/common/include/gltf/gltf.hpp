@@ -107,6 +107,7 @@ namespace gltf {
         Indices indices{};
         VulkanBuffer vertices{};
         VulkanBuffer materials;
+        VulkanBuffer textureInfos;
         VulkanBuffer lights;
         VulkanBuffer lightInstances;
         std::vector<glm::mat4> placeHolders;

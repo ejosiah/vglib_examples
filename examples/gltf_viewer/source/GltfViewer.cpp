@@ -447,6 +447,7 @@ void GltfViewer::onSwapChainDispose() {
 }
 
 void GltfViewer::onSwapChainRecreation() {
+    createGBuffer();
     createFrameBufferTexture();
     updateDescriptorSets();
     createRenderPipeline();
@@ -639,7 +640,9 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::RadioButton("Color", &options.debug, 1); ImGui::SameLine();
     ImGui::RadioButton("Normal", &options.debug, 2); ImGui::SameLine();
     ImGui::RadioButton("Metalness", &options.debug, 3); ImGui::SameLine();
-    ImGui::RadioButton("Roughness", &options.debug, 4); ImGui::SameLine();
+    ImGui::RadioButton("Roughness", &options.debug, 4);
+    ImGui::RadioButton("AmbientOcclusion", &options.debug, 5); ImGui::SameLine();
+    ImGui::RadioButton("Emission", &options.debug, 6); ImGui::SameLine();
 
     ImGui::End();
 

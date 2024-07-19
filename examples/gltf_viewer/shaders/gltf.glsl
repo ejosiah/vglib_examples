@@ -14,10 +14,6 @@ struct Mesh {
 };
 
 struct Material {
-    ivec4 textures0;
-    ivec4 textures1;
-    ivec4 textures2;
-
     vec4 baseColor;
 
     vec3 emission;
@@ -39,6 +35,12 @@ struct Material {
     float emissiveStrength;
     float clearCoatFactor;
     float clearCoatRoughnessFactor;
+    int textureInfoOffset;
+};
+
+struct TextureInfo {
+    int index;
+    int texCoord;
 };
 
 struct ClearCoat {

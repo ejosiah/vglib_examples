@@ -7,45 +7,48 @@
 #define MATERIAL_BINDING_POINT 0
 #define LIGHT_BINDING_POINT 1
 #define LIGHT_INSTANCE_BINDING_POINT 2
+#define TEXTURE_INFO_BINDING_POINT 3
 
 #define BASE_COLOR_INDEX 0
 #define NORMAL_INDEX 1
 #define METALLIC_ROUGHNESS_INDEX 2
 #define OCCLUSION_INDEX 3
-
-#define EMISSION_INDEX 0
-#define THICKNESS_INDEX 1
-#define CLEAR_COAT_INDEX 2
-#define CLEAR_COAT_ROUGHNESS_INDEX 3
-
-#define CLEAR_COAT_NORMAL_INDEX 0
+#define EMISSION_INDEX 4
+#define THICKNESS_INDEX 5
+#define CLEAR_COAT_INDEX 6
+#define CLEAR_COAT_ROUGHNESS_INDEX 7
+#define CLEAR_COAT_NORMAL_INDEX 8
+#define TEXTURE_INFO_PER_MATERIAL 12
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
 #define MATERIAL materials[MATERIAL_ID]
 
-#define BASE_COLOR_TEX_ID MATERIAL.textures0[BASE_COLOR_INDEX]
-#define METAL_ROUGHNESS_TEX_ID MATERIAL.textures0[METALLIC_ROUGHNESS_INDEX]
-#define OCCLUSION_TEX_ID MATERIAL.textures0[OCCLUSION_INDEX]
-#define NORMAL_TEX_ID MATERIAL.textures0[NORMAL_INDEX]
+#define TEXTURE_OFFSET (MATERIAL.textureInfoOffset * TEXTURE_INFO_PER_MATERIAL)
 
-#define EMISSION_TEX_ID MATERIAL.textures1[EMISSION_INDEX]
-#define THICKNESS_TEX_ID MATERIAL.textures1[THICKNESS_INDEX]
+#define BASE_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + BASE_COLOR_INDEX]
+#define NORMAL_TEX_INFO textureInfos[TEXTURE_OFFSET + NORMAL_INDEX]
+#define METAL_ROUGHNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + METALLIC_ROUGHNESS_INDEX]
+#define OCCLUSION_TEX_INFO textureInfos[TEXTURE_OFFSET + OCCLUSION_INDEX]
 
-#define CLEAR_COAT_TEX_ID MATERIAL.textures1[CLEAR_COAT_INDEX]
-#define CLEAR_COAT_ROUGHNESS_TEX_ID MATERIAL.textures1[CLEAR_COAT_ROUGHNESS_INDEX]
-#define CLEAR_COAT_NORMAL_TEX_ID MATERIAL.textures2[CLEAR_COAT_NORMAL_INDEX]
 
-#define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_ID)]
-#define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_ID)]
-#define OCCLUSION_TEXTURE global_textures[nonuniformEXT(OCCLUSION_TEX_ID)]
-#define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_ID)]
+#define EMISSION_TEX_INFO textureInfos[TEXTURE_OFFSET + EMISSION_INDEX]
+#define THICKNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + THICKNESS_INDEX]
 
-#define EMISSION_TEXTURE global_textures[nonuniformEXT(EMISSION_TEX_ID)]
-#define THICKNESS_TEXTURE global_textures[nonuniformEXT(THICKNESS_TEX_ID)]
+#define CLEAR_COAT_TEX_INFO textureInfos[TEXTURE_OFFSET + CLEAR_COAT_INDEX]
+#define CLEAR_COAT_ROUGHNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + CLEAR_COAT_ROUGHNESS_INDEX]
+#define CLEAR_COAT_NORMAL_TEX_INFO textureInfos[TEXTURE_OFFSET + CLEAR_COAT_NORMAL_INDEX]
 
-#define CLEAR_COAT_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_TEX_ID)]
-#define CLEAR_COAT_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_ROUGHNESS_TEX_ID)]
-#define CLEAR_COAT_NORMAL_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_NORMAL_TEX_ID)]
+#define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
+#define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
+#define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_INFO.index)]
+#define OCCLUSION_TEXTURE global_textures[nonuniformEXT(OCCLUSION_TEX_INFO.index)]
+
+#define EMISSION_TEXTURE global_textures[nonuniformEXT(EMISSION_TEX_INFO.index)]
+#define THICKNESS_TEXTURE global_textures[nonuniformEXT(THICKNESS_TEX_INFO.index)]
+
+#define CLEAR_COAT_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_TEX_INFO.index)]
+#define CLEAR_COAT_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_ROUGHNESS_TEX_INFO.index)]
+#define CLEAR_COAT_NORMAL_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_NORMAL_TEX_INFO.index)]
 
 #define u_GGXLUT global_textures[brdf_lut_texture_id]
 #define u_GGXEnvSampler global_textures[nonuniformEXT(specular_texture_id)]
@@ -71,6 +74,10 @@ layout(set = 0, binding = 0) buffer MeshData {
 
 layout(set = MATERIAL_SET, binding = MATERIAL_BINDING_POINT) buffer GLTF_MATERIAL {
     Material materials[];
+};
+
+layout(set = MATERIAL_SET, binding = TEXTURE_INFO_BINDING_POINT) buffer TextureInfos {
+    TextureInfo textureInfos[];
 };
 
 
@@ -140,6 +147,7 @@ void main() {
     const vec3 attenuationColor = MATERIAL.attenuationColor;
     const float attenuationDistance = MATERIAL.attenuationDistance;
     const float dispersion = MATERIAL.dispersion;
+    const vec3 emission = getEmission();
     const ClearCoat cc = getClearCoat();
 
 
@@ -155,7 +163,7 @@ void main() {
     vec3 normal = getNormal();
     vec3 N = normalize(normal);
     vec3 V = normalize(fs_in.eyes - fs_in.position);
-    f_emissive = getEmission();
+    f_emissive = emission;
 
 
     if(ibl_on == 1){
@@ -262,6 +270,14 @@ void main() {
     if(debug == 4) {
         fragColor = vec4(vec3(metalness), 1);
     }
+
+    if(debug == 5) {
+        fragColor = vec4(vec3(ao), 1);
+    }
+
+    if(debug == 6) {
+        fragColor = vec4(emission, 1);
+    }
 }
 
 float saturate(float x) {
@@ -269,7 +285,7 @@ float saturate(float x) {
 }
 
 vec4 getBaseColor() {
-    if(BASE_COLOR_TEX_ID == -1){
+    if(BASE_COLOR_TEX_INFO.index == -1){
         return isNull(MATERIAL) ? fs_in.color : vec4(MATERIAL.baseColor);
     }
     vec4 color = texture(BASE_COLOR_TEXTURE, fs_in.uv);
@@ -283,13 +299,13 @@ vec3 getMRO() {
     mro.g = MATERIAL.roughness;
     mro.b = 1;
 
-    if(METAL_ROUGHNESS_TEX_ID != -1) {
+    if(METAL_ROUGHNESS_TEX_INFO.index != -1) {
         vec3 res = texture(METAL_ROUGHNESS_TEXTURE, fs_in.uv).rgb;
         mro.r *= res.b;
         mro.g *= res.g;
 
-        if(OCCLUSION_TEX_ID != -1) {
-            if(OCCLUSION_TEX_ID == METAL_ROUGHNESS_TEX_ID) {
+        if(OCCLUSION_TEX_INFO.index != -1) {
+            if(OCCLUSION_TEX_INFO.index == METAL_ROUGHNESS_TEX_INFO.index) {
                 mro.b = res.r;
             }else {
                 mro.b = texture(OCCLUSION_TEXTURE, fs_in.uv).r;
@@ -300,7 +316,7 @@ vec3 getMRO() {
 }
 
 vec3 getNormal() {
-    if(NORMAL_TEX_ID == -1 || noTangets()) {
+    if(NORMAL_TEX_INFO.index == -1 || noTangets()) {
         return fs_in.normal;
     }
     mat3 TBN = mat3(fs_in.tangent, fs_in.bitangent, fs_in.normal);
@@ -320,7 +336,7 @@ bool noTangets() {
 
 vec3 getEmission(){
     vec3 emission = MATERIAL.emission * MATERIAL.emissiveStrength;
-    if(EMISSION_TEX_ID != -1) {
+    if(EMISSION_TEX_INFO.index != -1) {
         emission *= pow(texture(EMISSION_TEXTURE, fs_in.uv).rgb, vec3(2.2));
     }
     return emission;
@@ -332,7 +348,7 @@ float getTransmissionFactor() {
 
 float getThickness() {
     float thickness = MATERIAL.thickness;
-    if(THICKNESS_TEX_ID != -1){
+    if(THICKNESS_TEX_INFO.index != -1){
         thickness *= texture(THICKNESS_TEXTURE, fs_in.uv).g;
     }
     return thickness;
@@ -352,16 +368,16 @@ ClearCoat getClearCoat() {
     cc.f90 = vec3(1);
     cc.normal = ni.N;
 
-    if(CLEAR_COAT_TEX_ID != -1) {
+    if(CLEAR_COAT_TEX_INFO.index != -1) {
         cc.factor *= texture(CLEAR_COAT_TEXTURE, uv).r;
     }
 
-    if(CLEAR_COAT_ROUGHNESS_TEX_ID != -1) {
+    if(CLEAR_COAT_ROUGHNESS_TEX_INFO.index != -1) {
         cc.roughness *= texture(CLEAR_COAT_ROUGHNESS_TEXTURE, uv).g;
     }
 
 
-    if(CLEAR_COAT_NORMAL_TEX_ID != -1) {
+    if(CLEAR_COAT_NORMAL_TEX_INFO.index != -1) {
         mat3 TBN = mat3(ni.T, ni.B, ni.N);
         cc.normal = 2 * texture(CLEAR_COAT_NORMAL_TEXTURE, uv).xyz - 1;
         cc.normal.y *= -1;

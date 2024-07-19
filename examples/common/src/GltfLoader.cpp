@@ -15,10 +15,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_emissive_strength = "KHR_materials_emissive_strength";
     static constexpr const char* KHR_materials_clearcoat = "KHR_materials_clearcoat";
 
-    static const MaterialData NullMaterial{
-            .textures{-1, -1, -1, -1, -1, -1, -1, -1},
-            .baseColor{std::numeric_limits<float>::quiet_NaN()}
-    };
+    static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
     struct Counts {
         struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
@@ -224,12 +221,16 @@ namespace gltf {
         model->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_light_instances", _modelId));
 
         std::vector<MaterialData> materials(gltf->materials.size() + 1);
-        for(auto& material : materials) {
-            material.textures.fill(-1);
-        }
-        materials[materials.size() - 1] = NullMaterial;
+        std::vector<TextureInfo> textureInfos(materials.size() * NUM_TEXTURE_MAPPING, TextureInfo{ });
+        
+        auto back = materials.size() - 1; 
+        materials[back] = NullMaterial;
+        materials[back].textureInfoOffset = back;
         model->materials = _device->createDeviceLocalBuffer(materials.data(), BYTE_SIZE(materials), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         _device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("mode{}_materials", _modelId), model->materials.buffer);
+        
+        model->textureInfos = _device->createDeviceLocalBuffer(textureInfos.data(), BYTE_SIZE(textureInfos), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        _device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("mode{}_texture_infos", _modelId), model->textureInfos.buffer);
 
         auto transforms = computeTransforms(*gltf);
         auto [bMin, bMax] = computeBounds(*gltf, transforms);
@@ -246,7 +247,7 @@ namespace gltf {
         model->_bindlessDescriptor = _bindlessDescriptor;
         model->_textureBindingOffset = textureBindingOffset;
 
-        auto writes = initializers::writeDescriptorSets<5>();
+        auto writes = initializers::writeDescriptorSets<6>();
         writes[0].dstSet = model->meshDescriptorSet.u16.handle;
         writes[0].dstBinding = 0;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -281,6 +282,13 @@ namespace gltf {
         writes[4].descriptorCount = 1;
         VkDescriptorBufferInfo lightInstanceBufferInfo{ model->lightInstances, 0, VK_WHOLE_SIZE };
         writes[4].pBufferInfo = &lightInstanceBufferInfo;
+
+        writes[5].dstSet = model->materialDescriptorSet;
+        writes[5].dstBinding = 3;
+        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[5].descriptorCount = 1;
+        VkDescriptorBufferInfo textureInfoBufferInfo{ model->textureInfos, 0, VK_WHOLE_SIZE };
+        writes[5].pBufferInfo = &textureInfoBufferInfo;
 
         _device->updateDescriptorSets(writes);
 
@@ -397,6 +405,10 @@ namespace gltf {
                     .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
                 .binding(2) // Light instances
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
+                    .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
+                .binding(3) // texture infos
                     .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
@@ -818,7 +830,29 @@ namespace gltf {
         material.alphaMode = alphaModeToIndex(materialUpload->material.alphaMode);
         material.alphaCutOff = static_cast<float>(materialUpload->material.alphaCutoff);
         material.doubleSided = materialUpload->material.doubleSided;
-        material.textures.fill(-1);
+        material.textureInfoOffset = materialUpload->materialId;
+        
+        std::array<TextureInfo, NUM_TEXTURE_MAPPING> textureInfos{};
+
+        if(materialUpload->material.pbrMetallicRoughness.baseColorTexture.index != -1) {
+            textureInfos[static_cast<int>(TextureType::BASE_COLOR)].index = materialUpload->material.pbrMetallicRoughness.baseColorTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.normalTexture.index != -1 ) {
+            textureInfos[static_cast<int>(TextureType::NORMAL)].index = materialUpload->material.normalTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index != -1) {
+            textureInfos[static_cast<int>(TextureType::METALLIC_ROUGHNESS)].index = materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.emissiveTexture.index != -1) {
+            textureInfos[static_cast<int>(TextureType::EMISSION)].index = materialUpload->material.emissiveTexture.index + materialUpload->pending->textureBindingOffset;
+        }
+
+        if(materialUpload->material.occlusionTexture.index != -1) {
+            textureInfos[static_cast<int>(TextureType::OCCLUSION)].index = materialUpload->material.occlusionTexture.index + materialUpload->pending->textureBindingOffset;
+        }
 
         if(materialUpload->material.extensions.contains(KHR_materials_transmission)){
             material.transmission = materialUpload->material.extensions.at(KHR_materials_transmission).Get("transmissionFactor").GetNumberAsDouble();
@@ -855,7 +889,7 @@ namespace gltf {
             if(materialUpload->material.extensions.at(KHR_materials_volume).Has("thicknessTexture")){
                 auto textureIndex = materialUpload->material.extensions.at(KHR_materials_volume).Get("thicknessTexture").Get("index").GetNumberAsInt();
                 if(textureIndex != -1) {
-                    material.textures[static_cast<int>(TextureType::THICKNESS)] = textureIndex + materialUpload->pending->textureBindingOffset;
+                    textureInfos[static_cast<int>(TextureType::THICKNESS)].index = textureIndex + materialUpload->pending->textureBindingOffset;
                 }
             }
         }
@@ -873,38 +907,18 @@ namespace gltf {
 
             if(clearCoat.Has("clearcoatTexture")){
                 auto textureIndex = clearCoat.Get("clearcoatTexture").Get("index").GetNumberAsInt();
-                material.textures[static_cast<int>(TextureType::CLEAR_COAT_COLOR)] = textureIndex + materialUpload->pending->textureBindingOffset;
+                textureInfos[static_cast<int>(TextureType::CLEAR_COAT_COLOR)].index = textureIndex + materialUpload->pending->textureBindingOffset;
             }
 
             if(clearCoat.Has("clearcoatRoughnessTexture")){
                 auto textureIndex = clearCoat.Get("clearcoatRoughnessTexture").Get("index").GetNumberAsInt();
-                material.textures[static_cast<int>(TextureType::CLEAR_COAT_ROUGHNESS)] = textureIndex + materialUpload->pending->textureBindingOffset;
+                textureInfos[static_cast<int>(TextureType::CLEAR_COAT_ROUGHNESS)].index = textureIndex + materialUpload->pending->textureBindingOffset;
             }
 
             if(clearCoat.Has("clearcoatNormalTexture")){
                 auto textureIndex = clearCoat.Get("clearcoatNormalTexture").Get("index").GetNumberAsInt();
-                material.textures[static_cast<int>(TextureType::CLEAR_COAT_NORMAL)] = textureIndex + materialUpload->pending->textureBindingOffset;
+                textureInfos[static_cast<int>(TextureType::CLEAR_COAT_NORMAL)].index = textureIndex + materialUpload->pending->textureBindingOffset;
             }
-        }
-
-        if(materialUpload->material.pbrMetallicRoughness.baseColorTexture.index != -1) {
-            material.textures[static_cast<int>(TextureType::BASE_COLOR)] = materialUpload->material.pbrMetallicRoughness.baseColorTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index != -1) {
-            material.textures[static_cast<int>(TextureType::METALLIC_ROUGHNESS)] = materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.normalTexture.index != -1 ) {
-            material.textures[static_cast<int>(TextureType::NORMAL)] = materialUpload->material.normalTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.emissiveTexture.index != -1) {
-            material.textures[static_cast<int>(TextureType::EMISSION)] = materialUpload->material.emissiveTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.occlusionTexture.index != -1) {
-            material.textures[static_cast<int>(TextureType::OCCLUSION)] = materialUpload->material.occlusionTexture.index + materialUpload->pending->textureBindingOffset;
         }
 
         auto stagingBuffer =  _stagingBuffers[workerId].allocate(sizeof(material));
@@ -918,6 +932,15 @@ namespace gltf {
         const auto model = materialUpload->pending->model;
         vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->materials, 1, &region);
 
+        auto tiStagingBuffer = _stagingBuffers[workerId].allocate(BYTE_SIZE(textureInfos));
+        tiStagingBuffer.upload(textureInfos.data());
+
+        auto& tiRegion = *_bufferCopyPool[workerId].acquire();
+        tiRegion.srcOffset = tiStagingBuffer.offset;
+        tiRegion.dstOffset = material.textureInfoOffset * sizeof(TextureInfo) * NUM_TEXTURE_MAPPING;
+        tiRegion.size = tiStagingBuffer.size();
+        vkCmdCopyBuffer(commandBuffer, *tiStagingBuffer.buffer, model->textureInfos, 1, &tiRegion);
+
         auto& barrier = *_barrierObjectPools[workerId].acquire();
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -930,6 +953,19 @@ namespace gltf {
 
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0,
                              VK_NULL_HANDLE, 1, &barrier, 0, VK_NULL_HANDLE);
+
+        auto& tiBarrier = *_barrierObjectPools[workerId].acquire();
+        tiBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        tiBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        tiBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        tiBarrier.srcQueueFamilyIndex = _device->queueFamilyIndex.transfer.value();
+        tiBarrier.dstQueueFamilyIndex = _device->queueFamilyIndex.graphics.value();
+        tiBarrier.offset = tiRegion.dstOffset;
+        tiBarrier.buffer = model->textureInfos;
+        tiBarrier.size = tiRegion.size;
+
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0,
+                             VK_NULL_HANDLE, 1, &tiBarrier, 0, VK_NULL_HANDLE);
     }
 
     void Loader::process(VkCommandBuffer commandBuffer, InstanceUploadTask* instanceUpload, int workerId) {
@@ -1740,6 +1776,7 @@ namespace gltf {
         dummyModel->indices.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint16_t));
         dummyModel->indices.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t));
         dummyModel->materials = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->textureInfos = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->lights = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->meshes.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
@@ -1752,7 +1789,7 @@ namespace gltf {
         dummyModel->_sourceDescriptorPool = _descriptorPool;
 
 
-        auto writes = initializers::writeDescriptorSets<5>();
+        auto writes = initializers::writeDescriptorSets<6>();
         writes[0].dstSet = dummyModel->meshDescriptorSet.u16.handle;
         writes[0].dstBinding = 0;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1787,6 +1824,13 @@ namespace gltf {
         writes[4].descriptorCount = 1;
         VkDescriptorBufferInfo lightInstanceBufferInfo{ dummyModel->lightInstances, 0, VK_WHOLE_SIZE };
         writes[4].pBufferInfo = &lightInstanceBufferInfo;
+
+        writes[5].dstSet = dummyModel->materialDescriptorSet;
+        writes[5].dstBinding = 3;
+        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[5].descriptorCount = 1;
+        VkDescriptorBufferInfo textureInfoBufferInfo{ dummyModel->textureInfos, 0, VK_WHOLE_SIZE };
+        writes[5].pBufferInfo = &textureInfoBufferInfo;
 
         _device->updateDescriptorSets(writes);
 
