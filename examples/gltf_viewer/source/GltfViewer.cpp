@@ -131,16 +131,16 @@ void GltfViewer::initBindlessDescriptor() {
 }
 
 void GltfViewer::createConstantTextures() {
-    textures::color(device, constantTextures[TextureConstants::ZERO], glm::vec3(1), {32, 32});
-    textures::color(device, constantTextures[TextureConstants::IDENTITY], glm::vec3(1), {32, 32});
+    textures::color(device, constantTextures[TextureConstants::BLACK], glm::vec3(0), {32, 32});
+    textures::color(device, constantTextures[TextureConstants::WHITE], glm::vec3(1), {32, 32});
     textures::normalMap(device, constantTextures[TextureConstants::NORMAL], {32, 32});
 
-    constantTextures[TextureConstants::ZERO].bindingId = TextureConstants::ZERO;
-    constantTextures[TextureConstants::IDENTITY].bindingId = TextureConstants::IDENTITY;
+    constantTextures[TextureConstants::BLACK].bindingId = TextureConstants::BLACK;
+    constantTextures[TextureConstants::WHITE].bindingId = TextureConstants::WHITE;
     constantTextures[TextureConstants::NORMAL].bindingId = TextureConstants::NORMAL;
 
-    bindlessDescriptor.update(constantTextures[TextureConstants::ZERO], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    bindlessDescriptor.update(constantTextures[TextureConstants::IDENTITY], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    bindlessDescriptor.update(constantTextures[TextureConstants::BLACK], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    bindlessDescriptor.update(constantTextures[TextureConstants::WHITE], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     bindlessDescriptor.update(constantTextures[TextureConstants::NORMAL], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     constantTextures[TextureConstants::BRDF_LUT].bindingId = TextureConstants::BRDF_LUT;

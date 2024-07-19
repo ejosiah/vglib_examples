@@ -19,7 +19,7 @@ struct UniformData {
     float ibl_intensity{1};
 };
 
-enum TextureConstants{ ZERO, IDENTITY, NORMAL, BRDF_LUT, COUNT};
+enum TextureConstants{ BLACK, WHITE, NORMAL, BRDF_LUT, COUNT};
 
 class GltfViewer : public VulkanBaseApp{
 public:
