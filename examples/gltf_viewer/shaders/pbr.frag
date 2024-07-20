@@ -90,10 +90,10 @@ layout(location = 0) in struct {
     vec3 bitangent;
     vec3 eyes;
     vec3 lightPos;
-    vec2 uv;
+    vec2 uv[2];
 } fs_in;
 
-layout(location = 12) in flat int drawId;
+layout(location = 13) in flat int drawId;
 
 float saturate(float x);
 vec4 getBaseColor();
@@ -414,5 +414,5 @@ vec2 transformUV(TextureInfo ti) {
     mat3 scale = mat3(ti.scale.x,0,0, 0,ti.scale.y,0, 0,0,1);
 
     mat3 matrix = translation * rotation * scale;
-    return ( matrix * vec3(fs_in.uv, 1) ).xy;
+    return ( matrix * vec3(fs_in.uv[ti.texCoord], 1) ).xy;
 }

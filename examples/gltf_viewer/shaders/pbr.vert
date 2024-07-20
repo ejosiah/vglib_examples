@@ -16,8 +16,8 @@ layout(location = 0) in vec4 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 tanget;
 layout(location = 3) in vec3 bitangent;
-layout(location = 4) in vec4 color;
-layout(location = 5) in vec2 uv;
+layout(location = 4) in vec4 color[2];
+layout(location = 6) in vec2 uv[2];
 
 layout(location = 0) out struct {
     vec4 color;
@@ -28,10 +28,10 @@ layout(location = 0) out struct {
     vec3 bitangent;
     vec3 eyes;
     vec3 lightPos;
-    vec2 uv;
+    vec2 uv[2];
 } vs_out;
 
-layout(location = 12) out flat int drawId;
+layout(location = 13) out flat int drawId;
 
 void main(){
     drawId = gl_DrawID;
@@ -40,7 +40,7 @@ void main(){
 
     vec4 worldPos = meshModel * position;
 
-    vs_out.color = color;
+    vs_out.color = color[0];
     vs_out.localPos = position.xyz;
     vs_out.position = worldPos.xyz;
     vs_out.normal = nModel * normal;
@@ -48,7 +48,8 @@ void main(){
     vs_out.bitangent = nModel * bitangent;
     vs_out.eyes = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
     vs_out.lightPos = vs_out.eyes;
-    vs_out.uv = uv;
+    vs_out.uv[0] = uv[0];
+    vs_out.uv[1] = uv[1];
     gl_PointSize = 5.0;
     gl_Position = projection * view * worldPos;
 }

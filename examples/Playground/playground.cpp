@@ -326,29 +326,6 @@ void asioTimer() {
     std::cout << "Hello, world!" << std::endl;
 }
 
-void evalGLTF() {
-    ContextCreateInfo createInfo{};
-    createInfo.applicationInfo.sType  = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    createInfo.applicationInfo.applicationVersion = VK_MAKE_VERSION(0, 0, 0);
-    createInfo.applicationInfo.pApplicationName = "Vulkan Performance Test";
-    createInfo.applicationInfo.apiVersion = VK_API_VERSION_1_3;
-    createInfo.applicationInfo.pEngineName = "";
-    createInfo.settings.uniqueQueueFlags = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-    createInfo.deviceExtAndLayers.extensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
-
-    VulkanContext context{ createInfo };
-    context.init();
-
-    gltf::Loader loader{ &context.device, nullptr};
-    loader.start();
-
-    auto model = loader.load(nullptr, R"(C:\Users\Josiah Ebhomenye\source\repos\glTF-Sample-Assets\Models\FlightHelmet\glTF\FlightHelmet.gltf)");
-
-//    using namespace std::chrono_literals;
-//    std::this_thread::sleep_for(10s);
-    loader.stop();
-}
-
 
 int main(int argc, char** argv){
 
@@ -415,5 +392,11 @@ int main(int argc, char** argv){
 //    for(const auto& m : meshes) {
 //        fmt::print("{}\n", m.name);
 //    }
-    evalGLTF();
+    fmt::print("{} => {}\n", "position", (uint32_t)offsetof(VertexMultiAttributes, position));
+    fmt::print("{} => {}\n", "color", (uint32_t)offsetof(VertexMultiAttributes, color));
+    fmt::print("{} => {}\n", "normal", (uint32_t)offsetof(VertexMultiAttributes, normal));
+    fmt::print("{} => {}\n", "tangent", (uint32_t)offsetof(VertexMultiAttributes, tangent));
+    fmt::print("{} => {}\n", "bitangent", (uint32_t)offsetof(VertexMultiAttributes, bitangent));
+    fmt::print("{} => {}\n", "uv", (uint32_t)offsetof(VertexMultiAttributes, uv));
+    fmt::print("size: {}\n", sizeof(VertexMultiAttributes));
 }

@@ -168,7 +168,7 @@ void GltfViewer::beforeDeviceCreation() {
 }
 
 void GltfViewer::createDescriptorPool() {
-    constexpr uint32_t maxSets = 100;
+    constexpr uint32_t maxSets = 1000;
     std::array<VkDescriptorPoolSize, 4> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
@@ -350,6 +350,11 @@ void GltfViewer::createRenderPipeline() {
                 .shaderStage()
                     .vertexShader(resource("pbr.vert.spv"))
                     .fragmentShader(resource("pbr.frag.spv"))
+                .vertexInputState().clear()
+                    .addVertexBindingDescription(VertexMultiAttributes::bindingDescription())
+                    .addVertexAttributeDescriptions(VertexMultiAttributes::attributeDescription())
+                .rasterizationState()
+                    .cullNone()
                 .colorBlendState()
                     .attachment().clear()
                         .enableBlend()

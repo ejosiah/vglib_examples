@@ -105,7 +105,7 @@ namespace gltf {
     }
 
     template<typename indexType>
-    void calculateTangents(std::vector<Vertex>& vertices, std::vector<indexType> indices) {
+    void calculateTangents(std::vector<VertexMultiAttributes>& vertices, std::vector<indexType> indices) {
         for(int i = 0; i < indices.size(); i+= 3){
             auto& v0 = vertices[indices[i]];
             auto& v1 = vertices[indices[i+1]];
@@ -114,10 +114,10 @@ namespace gltf {
             auto e1 = v1.position.xyz() - v0.position.xyz();
             auto e2 = v2.position.xyz() - v0.position.xyz();
 
-            auto du1 = v1.uv.x - v0.uv.x;
-            auto dv1 = v1.uv.y - v0.uv.y;
-            auto du2 = v2.uv.x - v0.uv.x;
-            auto dv2 = v2.uv.y - v0.uv.y;
+            auto du1 = v1.uv[0].x - v0.uv[0].x;
+            auto dv1 = v1.uv[0].y - v0.uv[0].y;
+            auto du2 = v2.uv[0].x - v0.uv[0].x;
+            auto dv2 = v2.uv[0].y - v0.uv[0].y;
 
             auto d = 1.f/(du1 * dv2 - dv1 * du2);
 
@@ -193,7 +193,7 @@ namespace gltf {
         model->numMeshes = counts.instances.count();
         model->numTextures = gltf->textures.size();
 
-        VkDeviceSize byteSize = sizeof(Vertex) * counts.vertices;
+        VkDeviceSize byteSize = sizeof(VertexMultiAttributes) * counts.vertices;
         model->vertices = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_vertices", _modelId));
 
         byteSize =  sizeof(uint16_t) + sizeof(uint16_t) * counts.indices.u16;
@@ -608,7 +608,7 @@ namespace gltf {
 //        spdlog::info("worker{}, {}, {}, {}", workerId, vertexOffset, firstIndex16, firstIndex32);
 
         std::array<VkBufferCopy, 3> regions{};
-        regions[0].dstOffset = vertexOffset * sizeof(Vertex);
+        regions[0].dstOffset = vertexOffset * sizeof(VertexMultiAttributes);
         regions[1].dstOffset = firstIndex16 * sizeof(uint16_t);
         regions[2].dstOffset = firstIndex32 * sizeof(uint32_t);
 
@@ -616,7 +616,7 @@ namespace gltf {
         for(const auto& primitive : meshUpload->mesh.primitives) {
             auto indexType = ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType);
             const auto numVertices = getNumVertices(*pending->gltf, primitive);
-            std::vector<Vertex> vertices;
+            std::vector<VertexMultiAttributes> vertices;
             vertices.reserve(numVertices);
 
             VkDeviceSize indicesByteSize = 0;
@@ -625,25 +625,36 @@ namespace gltf {
             }else {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint32_t);
             }
-            auto stagingBuffer = _stagingBuffers[workerId].allocate(numVertices * sizeof(Vertex) + indicesByteSize);
+            auto stagingBuffer = _stagingBuffers[workerId].allocate(numVertices * sizeof(VertexMultiAttributes) + indicesByteSize);
 //            spdlog::info("buffer offset: {} size: {}", stagingBuffer.offset, stagingBuffer.size());
 
             auto positions = getAttributeData<glm::vec3>(*pending->gltf, primitive, "POSITION");
             auto normals = getAttributeData<glm::vec3>(*pending->gltf, primitive, "NORMAL");
             auto tangents = getAttributeData<glm::vec4>(*pending->gltf, primitive, "TANGENT");
-            auto uvs = getAttributeData<glm::vec2>(*pending->gltf, primitive, "TEXCOORD_0");
-            auto colors3 = getAttributeData<glm::vec3>(*pending->gltf, primitive, "COLOR_0");
-            auto colors4 = getAttributeData<glm::vec4>(*pending->gltf, primitive, "COLOR_0");
 
             for(auto i = 0; i < numVertices; ++i) {
-                Vertex vertex{};
+                VertexMultiAttributes vertex{};
                 vertex.position = glm::vec4(positions[i], 1);
                 vertex.normal = normals.empty() ? glm::vec3(0, 0, 1) : normals[i];
                 vertex.tangent = tangents.empty() ? glm::vec3(0) : tangents[i].xyz();
                 vertex.bitangent = tangents.empty() ? glm::vec3(0) : glm::cross(normals[i], tangents[i].xyz()) * tangents[i].w;
-                vertex.uv = uvs.empty() ? glm::vec2(0) : uvs[i];
-                vertex.color = !colors3.empty() ? glm::vec4(colors3[i], 1) : (!colors4.empty() ? colors4[i] : glm::vec4(1));
                 vertices.push_back(vertex);
+            }
+
+            for(auto j = 0; j < 2; ++j) {
+                auto colors3 = getAttributeData<glm::vec3>(*pending->gltf, primitive, fmt::format("COLOR_{}", j));
+                auto colors4 = getAttributeData<glm::vec4>(*pending->gltf, primitive, fmt::format("COLOR_{}", j));
+                auto joints = getAttributeData<glm::vec4>(*pending->gltf, primitive, fmt::format("JOINTS_{}", j));
+                auto weights = getAttributeData<glm::vec4>(*pending->gltf, primitive, fmt::format("WEIGHTS_{}", j));
+                auto uvs = getAttributeData<glm::vec2>(*pending->gltf, primitive, fmt::format("TEXCOORD_{}", j));
+
+                if(!colors3.empty() || !colors4.empty() || !uvs.empty() || !joints.empty() || !weights.empty())
+                for(auto i = 0; i  < numVertices; ++i) {
+                    vertices[i].color[j] = !colors3.empty() ? glm::vec4(colors3[i], 1) : (!colors4.empty() ? colors4[i] : glm::vec4(1));
+//                    vertices[i].joint = !joints.empty() ? glm::vec4(joints[i]) : glm::vec4(0);
+//                    vertices[i].weight = !weights.empty() ? glm::vec4(weights[i]) : glm::vec4(0);
+                    vertices[i].uv[j] = uvs.empty() ? glm::vec2(0) : uvs[i];
+                }
             }
 
             regions[0].srcOffset = stagingBuffer.offset;

@@ -32,6 +32,6 @@
   - ond the order hand multiple worker threads do not preserve this order
   - pass in meshId when processing, use to determine position in GPU mesh buffer 
 ### Fixes
-- fix - descriptorPool allocation failure
+- fix - descriptorPool memory leak (descriptorSet not freed after use)
 - fix - free up texture binding points used by a model when its disposed
 - fix - app fails on exit during async loads

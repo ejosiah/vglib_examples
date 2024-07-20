@@ -7,8 +7,8 @@
 #include  <stb_image.h>
 
 VulkanCube::VulkanCube(const Settings& settings): VulkanBaseApp("VulkanCube", settings, {}){
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/data");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/data");
 }
 
 void VulkanCube::initApp() {
@@ -25,7 +25,7 @@ void VulkanCube::initApp() {
     createDescriptorSet();
 
     OrbitingCameraSettings settings{};
-    settings.offsetDistance = 2.0f;
+    settings.offsetDistance = 4.0f;
     settings.rotationSpeed = 0.1f;
     settings.zNear = 0.1f;
     settings.zFar = 10.0f;
@@ -49,6 +49,7 @@ void VulkanCube::onSwapChainDispose() {
 }
 
 void VulkanCube::onSwapChainRecreation() {
+//    spdlog::info("swapchain recreated");
     createDescriptorSetLayout();
     createDescriptorPool();
     createDescriptorSet();
