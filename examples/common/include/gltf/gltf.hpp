@@ -19,6 +19,8 @@ namespace gltf {
 
     enum AlphaMode { OPAQUE_ = 0, MASK, BLEND };
 
+    enum class Mode: int { POINTS = 0, LINES, LINE_LOOP, LINE_STRIP, TRIANGLES, TRIANGLE_STRIP, TRIANGLE_FAN  };
+
     enum class ComponentType : int { BYTE = 5120, UNSIGNED_BYTE = 5121, SHORT = 5122, UNSIGNED_SHORT = 5123, UNSIGNED_INT = 5125, FLOAT = 5126 , UNDEFINED };
 
     enum class TextureType : int { BASE_COLOR = 0, NORMAL, METALLIC_ROUGHNESS, OCCLUSION
@@ -26,23 +28,6 @@ namespace gltf {
                                  , CLEAR_COAT_NORMAL };
 
     enum class LightType : int { DIRECTIONAL = 0, POINT, SPOT };
-
-    struct TextureTypes final {
-
-        static int ordinal(TextureType type) { return static_cast<int>(type);  }
-        static TextureType valueOf(int v) { return static_cast<TextureType>(v); }
-
-    };
-
-    struct ComponentTypes final {
-        static int ordinal(ComponentType type) { return static_cast<int>(type);  }
-        static ComponentType valueOf(int v) { return static_cast<ComponentType>(v); }
-    };
-
-    struct LightTypes final {
-        static int ordinal(LightType type) { return static_cast<int>(type); }
-        static LightType valueOf(int v) { return static_cast<LightType>(v); }
-    };
 
     constexpr int NUM_TEXTURE_MAPPING = 12;
 
@@ -60,6 +45,7 @@ namespace gltf {
             VulkanBuffer handle;
             std::atomic_int count{};
         } u32;
+        Mode mode{Mode::TRIANGLES};
     };
 
     struct Buffer {
@@ -103,7 +89,7 @@ namespace gltf {
         float innerConeCos{0};
 
         float outerConeCos{0};
-        int type{LightTypes::ordinal(LightType::DIRECTIONAL)};
+        int type{to<int>(LightType::DIRECTIONAL)};
         glm::vec2 padding;
     };
 

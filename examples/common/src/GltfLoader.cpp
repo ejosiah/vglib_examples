@@ -634,16 +634,16 @@ namespace gltf {
 
         
         for(const auto& primitive : meshUpload->mesh.primitives) {
-            auto indexType = ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType);
+            auto indexType = to<ComponentType>(pending->gltf->accessors[primitive.indices].componentType);
             const auto numVertices = getNumVertices(*pending->gltf, primitive);
             std::vector<VertexMultiAttributes> vertices;
             vertices.reserve(numVertices);
 
             VkDeviceSize indicesByteSize = 0;
 
-            if(ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType) == ComponentType::UNSIGNED_BYTE) {
+            if(to<ComponentType>(pending->gltf->accessors[primitive.indices].componentType) == ComponentType::UNSIGNED_BYTE) {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint8_t);
-            }else if(ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType) == ComponentType::UNSIGNED_SHORT) {
+            }else if(to<ComponentType>(pending->gltf->accessors[primitive.indices].componentType) == ComponentType::UNSIGNED_SHORT) {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint16_t);
             }else {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint32_t);
@@ -1267,7 +1267,7 @@ namespace gltf {
             light.range = lightExt.Get("range").GetNumberAsDouble();
         }
 
-        if( LightTypes::valueOf(light.type) == LightType::SPOT ) {
+        if( to<LightType>(light.type) == LightType::SPOT ) {
             const auto& spot = lightExt.Get("spot");
             light.outerConeCos = spot.Has("outerConeAngle") ? spot.Get("outerConeAngle").GetNumberAsDouble() : glm::quarter_pi<double>();
             light.outerConeCos = spot.Has("outerConeAngle") ?  spot.Get("outerConeAngle").GetNumberAsDouble() : glm::quarter_pi<double>();
@@ -1746,13 +1746,13 @@ namespace gltf {
         size_t u32 = 0;
         for(const auto& primitive : mesh.primitives) {
             const auto accessor = model.accessors[primitive.indices];
-            if(ComponentTypes::valueOf(accessor.componentType) == ComponentType::UNSIGNED_BYTE) {
+            if(to<ComponentType>(accessor.componentType) == ComponentType::UNSIGNED_BYTE) {
                 u8 += accessor.count;
             }
-            if(ComponentTypes::valueOf(accessor.componentType) == ComponentType::UNSIGNED_SHORT) {
+            if(to<ComponentType>(accessor.componentType) == ComponentType::UNSIGNED_SHORT) {
                 u16 += accessor.count;
             }
-            if(ComponentTypes::valueOf(accessor.componentType) == ComponentType::UNSIGNED_INT) {
+            if(to<ComponentType>(accessor.componentType) == ComponentType::UNSIGNED_INT) {
                 u32 += accessor.count;
             }
         }
@@ -1787,7 +1787,7 @@ namespace gltf {
             for(const auto& primitive : mesh.primitives){
                 vertexOffset += getNumVertices(*pending->gltf, primitive);
 
-                auto indexType = ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType);
+                auto indexType = to<ComponentType>(pending->gltf->accessors[primitive.indices].componentType);
 
                 if(indexType == ComponentType::UNSIGNED_BYTE) {
                     firstIndex16 += pending->gltf->accessors[primitive.indices].count;
@@ -1825,7 +1825,7 @@ namespace gltf {
         if(!primitive.attributes.contains(attributeName)){
             return ComponentType::UNDEFINED;
         }
-        return ComponentTypes::valueOf(model.accessors[primitive.attributes.at(attributeName)].componentType);
+        return to<ComponentType>(model.accessors[primitive.attributes.at(attributeName)].componentType);
     }
 
     const std::map<int, VkFormat> Loader::channelFormatMap {
