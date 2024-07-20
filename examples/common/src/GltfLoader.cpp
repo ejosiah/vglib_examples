@@ -19,8 +19,8 @@ namespace gltf {
     static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
     struct Counts {
-        struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} instances;
-        struct { size_t u16{}; size_t u32{}; size_t count() const { return u16 + u32; }} indices;
+        struct { size_t u8{}; size_t u16{}; size_t u32{}; size_t count() const { return u8 + u16 + u32; }} instances;
+        struct { size_t u8{}; size_t u16{}; size_t u32{}; size_t count() const { return u8 + u16 + u32; }} indices;
         size_t primitives{};
         size_t vertices{};
         size_t numLights{};
@@ -40,7 +40,7 @@ namespace gltf {
 
     size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Mesh& mesh);
 
-    std::tuple<size_t, size_t> getNumIndices(const tinygltf::Model& model, const tinygltf::Mesh& mesh);
+    std::tuple<size_t, size_t, size_t> getNumIndices(const tinygltf::Model& model, const tinygltf::Mesh& mesh);
 
     void tinyGltfLoad(tinygltf::Model& model, const std::string& path);
 
@@ -196,11 +196,18 @@ namespace gltf {
         VkDeviceSize byteSize = sizeof(VertexMultiAttributes) * counts.vertices;
         model->vertices = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_vertices", _modelId));
 
+        byteSize =  sizeof(uint8_t) + sizeof(uint8_t) * counts.indices.u8;
+        model->indices.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u8", _modelId));
+
         byteSize =  sizeof(uint16_t) + sizeof(uint16_t) * counts.indices.u16;
         model->indices.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u16", _modelId));
 
         byteSize = sizeof(uint32_t) + sizeof(uint32_t) * counts.indices.u32;
         model->indices.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT , VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u32", _modelId));
+
+        byteSize = counts.instances.u8 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand);
+        model->draw.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u8", _modelId));
+        model->draw.u8.count = 0;
 
         byteSize = counts.instances.u16 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand);
         model->draw.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u16", _modelId));
@@ -209,6 +216,9 @@ namespace gltf {
         byteSize = counts.instances.u32 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand);
         model->draw.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u32", _modelId));
         model->draw.u32.count = 0;
+
+        byteSize = sizeof(MeshData) * counts.instances.u8 + sizeof(MeshData);
+        model->meshes.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u8", _modelId));
 
         byteSize = sizeof(MeshData) * counts.instances.u16 + sizeof(MeshData);
         model->meshes.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u16", _modelId));
@@ -236,12 +246,13 @@ namespace gltf {
 
         auto transforms = computeTransforms(*gltf);
         auto [bMin, bMax] = computeBounds(*gltf, transforms);
-        auto sets = _descriptorPool->allocate({_descriptorSetLayout, _descriptorSetLayout, _materialDescriptorSetLayout });
+        auto sets = _descriptorPool->allocate({_descriptorSetLayout, _descriptorSetLayout, _descriptorSetLayout, _materialDescriptorSetLayout });
         model->bounds.min = bMin;
         model->bounds.max = bMax;
-        model->meshDescriptorSet.u16.handle = sets[0];
-        model->meshDescriptorSet.u32.handle = sets[1];
-        model->materialDescriptorSet = sets[2];
+        model->meshDescriptorSet.u8.handle = sets[0];
+        model->meshDescriptorSet.u16.handle = sets[1];
+        model->meshDescriptorSet.u32.handle = sets[2];
+        model->materialDescriptorSet = sets[3];
         model->placeHolders =  computePlaceHolders(*gltf, transforms);
         model->numLights = counts.numLightInstances;
         model->cameras = getCameras(*gltf);
@@ -249,48 +260,55 @@ namespace gltf {
         model->_bindlessDescriptor = _bindlessDescriptor;
         model->_textureBindingOffset = textureBindingOffset;
 
-        auto writes = initializers::writeDescriptorSets<6>();
-        writes[0].dstSet = model->meshDescriptorSet.u16.handle;
+        auto writes = initializers::writeDescriptorSets<7>();
+        writes[0].dstSet = model->meshDescriptorSet.u8.handle;
         writes[0].dstBinding = 0;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[0].descriptorCount = 1;
-        VkDescriptorBufferInfo meshBuffer16Info{ model->meshes.u16.handle, 0, VK_WHOLE_SIZE };
-        writes[0].pBufferInfo = &meshBuffer16Info;
+        VkDescriptorBufferInfo meshBuffer8Info{ model->meshes.u8.handle, 0, VK_WHOLE_SIZE };
+        writes[0].pBufferInfo = &meshBuffer8Info;
 
-        writes[1].dstSet = model->meshDescriptorSet.u32.handle;
+        writes[1].dstSet = model->meshDescriptorSet.u16.handle;
         writes[1].dstBinding = 0;
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[1].descriptorCount = 1;
-        VkDescriptorBufferInfo meshBufferInfo{ model->meshes.u32.handle, 0, VK_WHOLE_SIZE };
-        writes[1].pBufferInfo = &meshBufferInfo;
+        VkDescriptorBufferInfo meshBuffer16Info{ model->meshes.u16.handle, 0, VK_WHOLE_SIZE };
+        writes[1].pBufferInfo = &meshBuffer16Info;
 
-        writes[2].dstSet = model->materialDescriptorSet;
+        writes[2].dstSet = model->meshDescriptorSet.u32.handle;
         writes[2].dstBinding = 0;
         writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[2].descriptorCount = 1;
-        VkDescriptorBufferInfo materialBufferInfo{ model->materials, 0, VK_WHOLE_SIZE };
-        writes[2].pBufferInfo = &materialBufferInfo;
+        VkDescriptorBufferInfo meshBufferInfo{ model->meshes.u32.handle, 0, VK_WHOLE_SIZE };
+        writes[2].pBufferInfo = &meshBufferInfo;
 
         writes[3].dstSet = model->materialDescriptorSet;
-        writes[3].dstBinding = 1;
+        writes[3].dstBinding = 0;
         writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[3].descriptorCount = 1;
-        VkDescriptorBufferInfo lightBufferInfo{ model->lights, 0, VK_WHOLE_SIZE };
-        writes[3].pBufferInfo = &lightBufferInfo;
+        VkDescriptorBufferInfo materialBufferInfo{ model->materials, 0, VK_WHOLE_SIZE };
+        writes[3].pBufferInfo = &materialBufferInfo;
 
         writes[4].dstSet = model->materialDescriptorSet;
-        writes[4].dstBinding = 2;
+        writes[4].dstBinding = 1;
         writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[4].descriptorCount = 1;
-        VkDescriptorBufferInfo lightInstanceBufferInfo{ model->lightInstances, 0, VK_WHOLE_SIZE };
-        writes[4].pBufferInfo = &lightInstanceBufferInfo;
+        VkDescriptorBufferInfo lightBufferInfo{ model->lights, 0, VK_WHOLE_SIZE };
+        writes[4].pBufferInfo = &lightBufferInfo;
 
         writes[5].dstSet = model->materialDescriptorSet;
-        writes[5].dstBinding = 3;
+        writes[5].dstBinding = 2;
         writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[5].descriptorCount = 1;
+        VkDescriptorBufferInfo lightInstanceBufferInfo{ model->lightInstances, 0, VK_WHOLE_SIZE };
+        writes[5].pBufferInfo = &lightInstanceBufferInfo;
+
+        writes[6].dstSet = model->materialDescriptorSet;
+        writes[6].dstBinding = 3;
+        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[6].descriptorCount = 1;
         VkDescriptorBufferInfo textureInfoBufferInfo{ model->textureInfos, 0, VK_WHOLE_SIZE };
-        writes[5].pBufferInfo = &textureInfoBufferInfo;
+        writes[6].pBufferInfo = &textureInfoBufferInfo;
 
         _device->updateDescriptorSets(writes);
 
@@ -599,18 +617,20 @@ namespace gltf {
         auto model = pending->model;
 
         auto vertexCount = getNumVertices(*pending->gltf, meshUpload->mesh);
-        auto [u32, u16] = getNumIndices(*pending->gltf, meshUpload->mesh);
+        auto [u32, u16, u8] = getNumIndices(*pending->gltf, meshUpload->mesh);
 
         uint32_t vertexOffset = pending->offsets.vertex[meshUpload->meshId];
+        uint32_t firstIndex8 = pending->offsets.u8[meshUpload->meshId];
         uint32_t firstIndex16 = pending->offsets.u16[meshUpload->meshId];
         uint32_t firstIndex32 = pending->offsets.u32[meshUpload->meshId];
 
 //        spdlog::info("worker{}, {}, {}, {}", workerId, vertexOffset, firstIndex16, firstIndex32);
 
-        std::array<VkBufferCopy, 3> regions{};
+        std::array<VkBufferCopy, 4> regions{};
         regions[0].dstOffset = vertexOffset * sizeof(VertexMultiAttributes);
-        regions[1].dstOffset = firstIndex16 * sizeof(uint16_t);
-        regions[2].dstOffset = firstIndex32 * sizeof(uint32_t);
+        regions[1].dstOffset = firstIndex8 * sizeof(uint8_t);
+        regions[2].dstOffset = firstIndex16 * sizeof(uint16_t);
+        regions[3].dstOffset = firstIndex32 * sizeof(uint32_t);
 
         
         for(const auto& primitive : meshUpload->mesh.primitives) {
@@ -620,11 +640,15 @@ namespace gltf {
             vertices.reserve(numVertices);
 
             VkDeviceSize indicesByteSize = 0;
-            if(ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType) == ComponentType::UNSIGNED_SHORT) {
+
+            if(ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType) == ComponentType::UNSIGNED_BYTE) {
+                indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint8_t);
+            }else if(ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType) == ComponentType::UNSIGNED_SHORT) {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint16_t);
             }else {
                 indicesByteSize = pending->gltf->accessors[primitive.indices].count * sizeof(uint32_t);
             }
+
             auto stagingBuffer = _stagingBuffers[workerId].allocate(numVertices * sizeof(VertexMultiAttributes) + indicesByteSize);
 //            spdlog::info("buffer offset: {} size: {}", stagingBuffer.offset, stagingBuffer.size());
 
@@ -660,9 +684,9 @@ namespace gltf {
             regions[0].srcOffset = stagingBuffer.offset;
             regions[0].size = BYTE_SIZE(vertices);
 
-            if(indexType == ComponentType::UNSIGNED_SHORT) {
-                auto pIndices = getIndices<uint16_t>(*pending->gltf, primitive);
-                std::vector<uint16_t> indices{pIndices.begin(), pIndices.end()};
+            if(indexType == ComponentType::UNSIGNED_BYTE) {
+                auto pIndices = getIndices<uint8_t>(*pending->gltf, primitive);
+                std::vector<uint8_t> indices{pIndices.begin(), pIndices.end()};
                 regions[1].srcOffset = regions[0].srcOffset + regions[0].size;
                 regions[1].size = BYTE_SIZE(indices);
                 stagingBuffer.copy(indices.data(), regions[1].size, regions[0].size);
@@ -670,12 +694,22 @@ namespace gltf {
                 if(tangents.empty()) {
                     calculateTangents(vertices, indices);
                 }
-            }else {
-                auto pIndices = getIndices<uint32_t>(*pending->gltf, primitive);
-                std::vector<uint32_t> indices{pIndices.begin(), pIndices.end()};
+            }else if(indexType == ComponentType::UNSIGNED_SHORT) {
+                auto pIndices = getIndices<uint16_t>(*pending->gltf, primitive);
+                std::vector<uint16_t> indices{pIndices.begin(), pIndices.end()};
                 regions[2].srcOffset = regions[0].srcOffset + regions[0].size;
                 regions[2].size = BYTE_SIZE(indices);
                 stagingBuffer.copy(indices.data(), regions[2].size, regions[0].size);
+
+                if(tangents.empty()) {
+                    calculateTangents(vertices, indices);
+                }
+            }else {
+                auto pIndices = getIndices<uint32_t>(*pending->gltf, primitive);
+                std::vector<uint32_t> indices{pIndices.begin(), pIndices.end()};
+                regions[3].srcOffset = regions[0].srcOffset + regions[0].size;
+                regions[3].size = BYTE_SIZE(indices);
+                stagingBuffer.copy(indices.data(), regions[3].size, regions[0].size);
 
                 if(tangents.empty()) {
                     calculateTangents(vertices, indices);
@@ -688,12 +722,15 @@ namespace gltf {
             assert(model->vertices.size >= regions[0].dstOffset);
             vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->vertices, 1, &regions[0]);
 
-            if(indexType == ComponentType::UNSIGNED_SHORT) {
-                assert(model->indices.u16.handle.size >= regions[1].dstOffset);
-                vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->indices.u16.handle, 1, &regions[1]);
+            if(indexType == ComponentType::UNSIGNED_BYTE) {
+                assert(model->indices.u8.handle.size >= regions[1].dstOffset);
+                vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->indices.u8.handle, 1, &regions[1]);
+            }else  if(indexType == ComponentType::UNSIGNED_SHORT) {
+                assert(model->indices.u16.handle.size >= regions[2].dstOffset);
+                vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->indices.u16.handle, 1, &regions[2]);
             }else {
-                assert(model->indices.u32.handle.size >= regions[2].dstOffset);
-                vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->indices.u32.handle, 1, &regions[2]);
+                assert(model->indices.u32.handle.size >= regions[3].dstOffset);
+                vkCmdCopyBuffer(commandBuffer, *stagingBuffer.buffer, model->indices.u32.handle, 1, &regions[3]);
             }
 
             auto& vertexBarrier = *_barrierObjectPools[workerId].acquire();
@@ -714,14 +751,18 @@ namespace gltf {
             indexBarrier.srcQueueFamilyIndex = _device->queueFamilyIndex.transfer.value();
             indexBarrier.dstQueueFamilyIndex = _device->queueFamilyIndex.graphics.value();
 
-            if(indexType == ComponentType::UNSIGNED_SHORT) {
+            if(indexType == ComponentType::UNSIGNED_BYTE) {
                 indexBarrier.offset = regions[1].dstOffset;
-                indexBarrier.buffer = model->indices.u16.handle;
+                indexBarrier.buffer = model->indices.u8.handle;
                 indexBarrier.size = regions[1].size;
-            }else {
+            }else if(indexType == ComponentType::UNSIGNED_SHORT) {
                 indexBarrier.offset = regions[2].dstOffset;
-                indexBarrier.buffer = model->indices.u32.handle;
+                indexBarrier.buffer = model->indices.u16.handle;
                 indexBarrier.size = regions[2].size;
+            }else {
+                indexBarrier.offset = regions[3].dstOffset;
+                indexBarrier.buffer = model->indices.u32.handle;
+                indexBarrier.size = regions[3].size;
             }
 
             vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0,
@@ -744,7 +785,9 @@ namespace gltf {
             };
             meshUpload->primitives.push_back(mesh);
 
-            if(indexType == ComponentType::UNSIGNED_SHORT) {
+            if(indexType == ComponentType::UNSIGNED_BYTE) {
+                firstIndex8 += mesh.indexCount;
+            }else if(indexType == ComponentType::UNSIGNED_SHORT) {
                 firstIndex16 += mesh.indexCount;
             }else if(indexType == ComponentType::UNSIGNED_INT){
                 firstIndex32 += mesh.indexCount;
@@ -752,10 +795,12 @@ namespace gltf {
             vertexOffset += vertices.size();
             regions[0].dstOffset += regions[0].size;
 
-            if(indexType == ComponentType::UNSIGNED_SHORT) {
+            if(indexType == ComponentType::UNSIGNED_BYTE) {
                 regions[1].dstOffset += regions[1].size;
-            }else {
+            }else if(indexType == ComponentType::UNSIGNED_SHORT) {
                 regions[2].dstOffset += regions[2].size;
+            }else {
+                regions[3].dstOffset += regions[3].size;
             }
         }
     }
@@ -997,11 +1042,13 @@ namespace gltf {
         }
 
         struct {
+            std::vector<VkDrawIndexedIndirectCommand> u8;
             std::vector<VkDrawIndexedIndirectCommand> u16;
             std::vector<VkDrawIndexedIndirectCommand> u32;
         } drawCommands;
 
         struct {
+            std::vector<MeshData> u8;
             std::vector<MeshData> u16;
             std::vector<MeshData> u32;
         } meshData;
@@ -1024,7 +1071,10 @@ namespace gltf {
                     data.model = transforms[instanceId];
                     data.ModelInverse = glm::inverse(data.model);
 
-                    if(mesh.indexType == ComponentType::UNSIGNED_SHORT) {
+                    if(mesh.indexType == ComponentType::UNSIGNED_BYTE) {
+                        drawCommands.u8.push_back(drawCommand);
+                        meshData.u8.push_back(data);
+                    }else if(mesh.indexType == ComponentType::UNSIGNED_SHORT) {
                         drawCommands.u16.push_back(drawCommand);
                         meshData.u16.push_back(data);
                     }else {
@@ -1036,10 +1086,12 @@ namespace gltf {
         }
 
         struct {
+            uint32_t u8{};
             uint32_t u16{};
             uint32_t u32{};
         } drawOffset;
 
+        drawOffset.u8 = instanceUpload->pending->drawOffset.u8.fetch_add(drawCommands.u8.size());
         drawOffset.u16 = instanceUpload->pending->drawOffset.u16.fetch_add(drawCommands.u16.size());
         drawOffset.u32 = instanceUpload->pending->drawOffset.u32.fetch_add(drawCommands.u32.size());
 
@@ -1049,15 +1101,23 @@ namespace gltf {
 
 
         Buffer drawCmdStaging{};
+        drawCmdStaging.u8.rHandle =  _stagingBuffers[workerId].allocate(BYTE_SIZE(drawCommands.u8) + sizeof(VkDrawIndexedIndirectCommand));
         drawCmdStaging.u16.rHandle =  _stagingBuffers[workerId].allocate(BYTE_SIZE(drawCommands.u16) + sizeof(VkDrawIndexedIndirectCommand));
         drawCmdStaging.u32.rHandle = _stagingBuffers[workerId].allocate(BYTE_SIZE(drawCommands.u32) + sizeof(VkDrawIndexedIndirectCommand));
 
         Buffer meshStaging{};
+        meshStaging.u8.rHandle = _stagingBuffers[workerId].allocate(BYTE_SIZE(meshData.u8) + sizeof(MeshData));
         meshStaging.u16.rHandle = _stagingBuffers[workerId].allocate(BYTE_SIZE(meshData.u16) + sizeof(MeshData));
         meshStaging.u32.rHandle = _stagingBuffers[workerId].allocate(BYTE_SIZE(meshData.u32) + sizeof(MeshData));
 
 
         const auto model = instanceUpload->pending->model;
+        if(!drawCommands.u8.empty()) {
+            meshStaging.u8.rHandle.upload(meshData.u8.data());
+            drawCmdStaging.u8.rHandle.upload(drawCommands.u8.data());
+            transferMeshInstance(commandBuffer, drawCmdStaging.u8.rHandle, model->draw.u8.handle, meshStaging.u8.rHandle, model->meshes.u8.handle, drawOffset.u8, workerId);
+        }
+
         if(!drawCommands.u16.empty()) {
             meshStaging.u16.rHandle.upload(meshData.u16.data());
             drawCmdStaging.u16.rHandle.upload(drawCommands.u16.data());
@@ -1071,6 +1131,7 @@ namespace gltf {
 
         }
 
+        instanceUpload->drawCounts.u8 = drawCommands.u8.size();
         instanceUpload->drawCounts.u16 = drawCommands.u16.size();
         instanceUpload->drawCounts.u32 = drawCommands.u32.size();
     }
@@ -1315,10 +1376,11 @@ namespace gltf {
     void Loader::onComplete(InstanceUploadTask *instanceUpload) {
         if(!instanceUpload) return;
         auto model = instanceUpload->pending->model;
+        model->draw.u8.count += instanceUpload->drawCounts.u8;
         model->draw.u16.count += instanceUpload->drawCounts.u16;
         model->draw.u32.count += instanceUpload->drawCounts.u32;
 
-        if((model->draw.u16.count + model->draw.u32.count) == model->numMeshes) {
+        if((model->draw.u8.count + model->draw.u16.count + model->draw.u32.count) == model->numMeshes) {
             model->_loaded.notify();
         }
 
@@ -1460,7 +1522,9 @@ namespace gltf {
             for(const auto& primitive : mesh.primitives) {
                 ++counts.primitives;
                 counts.vertices += model.accessors[primitive.attributes.at("POSITION")].count;
-                if (model.accessors[primitive.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_SHORT)) {
+                if (model.accessors[primitive.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_BYTE)) {
+                    counts.indices.u8 += model.accessors[primitive.indices].count;
+                }else if (model.accessors[primitive.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_SHORT)) {
                     counts.indices.u16 += model.accessors[primitive.indices].count;
                 } else if (model.accessors[primitive.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_INT)) {
                     counts.indices.u32 += model.accessors[primitive.indices].count;
@@ -1471,7 +1535,9 @@ namespace gltf {
         for(const auto& node : model.nodes) {
             if(node.mesh != -1){
                 for(const auto& prim : model.meshes[node.mesh].primitives) {
-                    if(model.accessors[prim.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_SHORT)) {
+                    if(model.accessors[prim.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_BYTE)) {
+                        counts.instances.u8++;
+                    }else if(model.accessors[prim.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_SHORT)) {
                         counts.instances.u16++;
                     }else if(model.accessors[prim.indices].componentType == static_cast<int>(ComponentType::UNSIGNED_INT)){
                         counts.instances.u32++;
@@ -1674,11 +1740,15 @@ namespace gltf {
         return numVertices;
     }
 
-    std::tuple<size_t, size_t> getNumIndices(const tinygltf::Model& model, const tinygltf::Mesh& mesh) {
+    std::tuple<size_t, size_t, size_t> getNumIndices(const tinygltf::Model& model, const tinygltf::Mesh& mesh) {
+        size_t u8  = 0;
         size_t u16 = 0;
         size_t u32 = 0;
         for(const auto& primitive : mesh.primitives) {
             const auto accessor = model.accessors[primitive.indices];
+            if(ComponentTypes::valueOf(accessor.componentType) == ComponentType::UNSIGNED_BYTE) {
+                u8 += accessor.count;
+            }
             if(ComponentTypes::valueOf(accessor.componentType) == ComponentType::UNSIGNED_SHORT) {
                 u16 += accessor.count;
             }
@@ -1687,7 +1757,7 @@ namespace gltf {
             }
         }
 
-        return std::make_tuple(u32, u16);
+        return std::make_tuple(u32, u16, u8);
     }
 
     size_t getNumVertices(const tinygltf::Model& model, const tinygltf::Primitive& primitive) {
@@ -1704,11 +1774,13 @@ namespace gltf {
 
     void computeOffsets(const std::shared_ptr<PendingModel>& pending) {
         uint32_t vertexOffset = 0;
+        uint32_t firstIndex8 = 0;
         uint32_t firstIndex16 = 0;
         uint32_t firstIndex32 = 0;
 
         for(const auto& mesh : pending->gltf->meshes) {
             pending->offsets.vertex.push_back(vertexOffset);
+            pending->offsets.u8.push_back(firstIndex8);
             pending->offsets.u16.push_back(firstIndex16);
             pending->offsets.u32.push_back(firstIndex32);
 
@@ -1716,7 +1788,10 @@ namespace gltf {
                 vertexOffset += getNumVertices(*pending->gltf, primitive);
 
                 auto indexType = ComponentTypes::valueOf(pending->gltf->accessors[primitive.indices].componentType);
-                if(indexType == ComponentType::UNSIGNED_SHORT) {
+
+                if(indexType == ComponentType::UNSIGNED_BYTE) {
+                    firstIndex16 += pending->gltf->accessors[primitive.indices].count;
+                }else if(indexType == ComponentType::UNSIGNED_SHORT) {
                     firstIndex16 += pending->gltf->accessors[primitive.indices].count;
                 }else {
                     firstIndex32 += pending->gltf->accessors[primitive.indices].count;
@@ -1778,64 +1853,75 @@ namespace gltf {
     std::shared_ptr<Model> Loader::dummyModel() {
         auto dummyModel = std::make_shared<gltf::Model>();
         dummyModel->vertices = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->indices.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint16_t));
         dummyModel->indices.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint16_t));
         dummyModel->indices.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint32_t));
         dummyModel->materials = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->textureInfos = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->lights = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->meshes.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->meshes.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->meshes.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->draw.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->draw.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
         dummyModel->draw.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int));
+        dummyModel->meshDescriptorSet.u8.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
         dummyModel->meshDescriptorSet.u16.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
         dummyModel->meshDescriptorSet.u32.handle = _descriptorPool->allocate({ _descriptorSetLayout }).front();
         dummyModel->materialDescriptorSet = _descriptorPool->allocate({ _materialDescriptorSetLayout }).front();
         dummyModel->_sourceDescriptorPool = _descriptorPool;
 
 
-        auto writes = initializers::writeDescriptorSets<6>();
-        writes[0].dstSet = dummyModel->meshDescriptorSet.u16.handle;
+        auto writes = initializers::writeDescriptorSets<7>();
+        writes[0].dstSet = dummyModel->meshDescriptorSet.u8.handle;
         writes[0].dstBinding = 0;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[0].descriptorCount = 1;
-        VkDescriptorBufferInfo meshBuffer16Info{ dummyModel->meshes.u16.handle, 0, VK_WHOLE_SIZE };
-        writes[0].pBufferInfo = &meshBuffer16Info;
+        VkDescriptorBufferInfo meshBuffer8Info{ dummyModel->meshes.u8.handle, 0, VK_WHOLE_SIZE };
+        writes[0].pBufferInfo = &meshBuffer8Info;
 
-        writes[1].dstSet = dummyModel->meshDescriptorSet.u32.handle;
+        writes[1].dstSet = dummyModel->meshDescriptorSet.u16.handle;
         writes[1].dstBinding = 0;
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[1].descriptorCount = 1;
-        VkDescriptorBufferInfo meshBufferInfo{ dummyModel->meshes.u32.handle, 0, VK_WHOLE_SIZE };
-        writes[1].pBufferInfo = &meshBufferInfo;
+        VkDescriptorBufferInfo meshBuffer16Info{ dummyModel->meshes.u16.handle, 0, VK_WHOLE_SIZE };
+        writes[1].pBufferInfo = &meshBuffer16Info;
 
-        writes[2].dstSet = dummyModel->materialDescriptorSet;
+        writes[2].dstSet = dummyModel->meshDescriptorSet.u32.handle;
         writes[2].dstBinding = 0;
         writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[2].descriptorCount = 1;
-        VkDescriptorBufferInfo materialBufferInfo{ dummyModel->materials, 0, VK_WHOLE_SIZE };
-        writes[2].pBufferInfo = &materialBufferInfo;
+        VkDescriptorBufferInfo meshBufferInfo{ dummyModel->meshes.u32.handle, 0, VK_WHOLE_SIZE };
+        writes[2].pBufferInfo = &meshBufferInfo;
 
         writes[3].dstSet = dummyModel->materialDescriptorSet;
-        writes[3].dstBinding = 1;
+        writes[3].dstBinding = 0;
         writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[3].descriptorCount = 1;
-        VkDescriptorBufferInfo lightBufferInfo{ dummyModel->lights, 0, VK_WHOLE_SIZE };
-        writes[3].pBufferInfo = &lightBufferInfo;
+        VkDescriptorBufferInfo materialBufferInfo{ dummyModel->materials, 0, VK_WHOLE_SIZE };
+        writes[3].pBufferInfo = &materialBufferInfo;
 
         writes[4].dstSet = dummyModel->materialDescriptorSet;
-        writes[4].dstBinding = 2;
+        writes[4].dstBinding = 1;
         writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[4].descriptorCount = 1;
-        VkDescriptorBufferInfo lightInstanceBufferInfo{ dummyModel->lightInstances, 0, VK_WHOLE_SIZE };
-        writes[4].pBufferInfo = &lightInstanceBufferInfo;
+        VkDescriptorBufferInfo lightBufferInfo{ dummyModel->lights, 0, VK_WHOLE_SIZE };
+        writes[4].pBufferInfo = &lightBufferInfo;
 
         writes[5].dstSet = dummyModel->materialDescriptorSet;
-        writes[5].dstBinding = 3;
+        writes[5].dstBinding = 2;
         writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[5].descriptorCount = 1;
+        VkDescriptorBufferInfo lightInstanceBufferInfo{ dummyModel->lightInstances, 0, VK_WHOLE_SIZE };
+        writes[5].pBufferInfo = &lightInstanceBufferInfo;
+
+        writes[6].dstSet = dummyModel->materialDescriptorSet;
+        writes[6].dstBinding = 3;
+        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[6].descriptorCount = 1;
         VkDescriptorBufferInfo textureInfoBufferInfo{ dummyModel->textureInfos, 0, VK_WHOLE_SIZE };
-        writes[5].pBufferInfo = &textureInfoBufferInfo;
+        writes[6].pBufferInfo = &textureInfoBufferInfo;
 
         _device->updateDescriptorSets(writes);
 

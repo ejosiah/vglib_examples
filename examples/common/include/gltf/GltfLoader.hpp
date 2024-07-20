@@ -84,11 +84,13 @@ namespace gltf {
         std::atomic_uint32_t textureId;
         uint32_t numLights{};
         struct {
+            std::atomic_uint32_t u8{};
             std::atomic_uint32_t u16{};
             std::atomic_uint32_t u32{};
         } drawOffset;
         struct {
             std::vector<uint32_t> vertex;
+            std::vector<uint32_t> u8;
             std::vector<uint32_t> u16;
             std::vector<uint32_t> u32;
         } offsets;
@@ -138,6 +140,7 @@ namespace gltf {
         std::shared_ptr<PendingModel> pending;
         std::vector<Mesh> primitives;
         struct {
+            uint32_t u8{};
             uint32_t u16{};
             uint32_t u32{};
         } drawCounts;

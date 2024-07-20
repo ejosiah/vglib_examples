@@ -51,6 +51,10 @@ namespace gltf {
         struct {
             VulkanBuffer handle;
             std::atomic_uint32_t count{};
+        } u8;
+        struct {
+            VulkanBuffer handle;
+            std::atomic_uint32_t count{};
         } u16;
         struct {
             VulkanBuffer handle;
@@ -62,6 +66,10 @@ namespace gltf {
         struct {
             VulkanBuffer handle;
             BufferRegion rHandle;
+        } u8;
+        struct {
+            VulkanBuffer handle;
+            BufferRegion rHandle;
         } u16;
         struct {
             VulkanBuffer handle;
@@ -70,6 +78,9 @@ namespace gltf {
     };
 
     struct MeshDescriptorSet {
+        struct {
+            VkDescriptorSet handle;
+        } u8;
         struct {
             VkDescriptorSet handle;
         } u16;
