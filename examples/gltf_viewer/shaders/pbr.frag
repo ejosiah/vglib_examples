@@ -105,6 +105,7 @@ float getTransmissionFactor();
 float getThickness();
 bool isNull(Material material);
 ClearCoat getClearCoat();
+vec2 transformUV(TextureInfo textureInfo);
 
 layout(location = 0) out vec4 fragColor;
 
@@ -114,7 +115,6 @@ const float IOR = 1.5;
 const float u_OcclusionStrength = 1;
 
 NormalInfo ni = NormalInfo(fs_in.tangent, fs_in.bitangent, fs_in.normal);
-vec2 uv = fs_in.uv;
 
 void main() {
 
@@ -288,7 +288,8 @@ vec4 getBaseColor() {
     if(BASE_COLOR_TEX_INFO.index == -1){
         return isNull(MATERIAL) ? fs_in.color : vec4(MATERIAL.baseColor);
     }
-    vec4 color = texture(BASE_COLOR_TEXTURE, fs_in.uv);
+    vec2 uv = transformUV(BASE_COLOR_TEX_INFO);
+    vec4 color = texture(BASE_COLOR_TEXTURE, uv);
     color.rgb = pow(color.rgb, vec3(2.2));
     return color;
 }
@@ -299,8 +300,10 @@ vec3 getMRO() {
     mro.g = MATERIAL.roughness;
     mro.b = 1;
 
+
     if(METAL_ROUGHNESS_TEX_INFO.index != -1) {
-        vec3 res = texture(METAL_ROUGHNESS_TEXTURE, fs_in.uv).rgb;
+        vec2 uv = transformUV(METAL_ROUGHNESS_TEX_INFO);
+        vec3 res = texture(METAL_ROUGHNESS_TEXTURE, uv).rgb;
         mro.r *= res.b;
         mro.g *= res.g;
 
@@ -308,7 +311,7 @@ vec3 getMRO() {
             if(OCCLUSION_TEX_INFO.index == METAL_ROUGHNESS_TEX_INFO.index) {
                 mro.b = res.r;
             }else {
-                mro.b = texture(OCCLUSION_TEXTURE, fs_in.uv).r;
+                mro.b = texture(OCCLUSION_TEXTURE, uv).r;
             }
         }
     }
@@ -319,8 +322,13 @@ vec3 getNormal() {
     if(NORMAL_TEX_INFO.index == -1 || noTangets()) {
         return fs_in.normal;
     }
+
+    vec2 uv = transformUV(NORMAL_TEX_INFO);
     mat3 TBN = mat3(fs_in.tangent, fs_in.bitangent, fs_in.normal);
-    vec3 normal = 2 * texture(NORMAL_TEXTURE, fs_in.uv).xyz - 1;
+
+    vec3 nScale = vec3(NORMAL_TEX_INFO.tScale, NORMAL_TEX_INFO.tScale, 1);
+    vec3 normal = 2 * texture(NORMAL_TEXTURE, uv).xyz - 1;
+    normal *= nScale;
     normal.y *= -1;
     normal = normalize(TBN * normal);
 
@@ -337,7 +345,8 @@ bool noTangets() {
 vec3 getEmission(){
     vec3 emission = MATERIAL.emission * MATERIAL.emissiveStrength;
     if(EMISSION_TEX_INFO.index != -1) {
-        emission *= pow(texture(EMISSION_TEXTURE, fs_in.uv).rgb, vec3(2.2));
+        vec2 uv = transformUV(EMISSION_TEX_INFO);
+        emission *= pow(texture(EMISSION_TEXTURE, uv).rgb, vec3(2.2));
     }
     return emission;
 }
@@ -349,7 +358,8 @@ float getTransmissionFactor() {
 float getThickness() {
     float thickness = MATERIAL.thickness;
     if(THICKNESS_TEX_INFO.index != -1){
-        thickness *= texture(THICKNESS_TEXTURE, fs_in.uv).g;
+        vec2 uv = transformUV(THICKNESS_TEX_INFO);
+        thickness *= texture(THICKNESS_TEXTURE, uv).g;
     }
     return thickness;
 }
@@ -360,6 +370,7 @@ bool isNull(Material material) {
 
 ClearCoat getClearCoat() {
     ClearCoat cc = newClearCoatInstance();
+    vec2 uv;
 
     if(MATERIAL.clearCoatFactor == 0) return cc;
     cc.factor = MATERIAL.clearCoatFactor;
@@ -369,15 +380,18 @@ ClearCoat getClearCoat() {
     cc.normal = ni.N;
 
     if(CLEAR_COAT_TEX_INFO.index != -1) {
+        uv = transformUV(CLEAR_COAT_TEX_INFO);
         cc.factor *= texture(CLEAR_COAT_TEXTURE, uv).r;
     }
 
     if(CLEAR_COAT_ROUGHNESS_TEX_INFO.index != -1) {
+        uv = transformUV(CLEAR_COAT_ROUGHNESS_TEX_INFO);
         cc.roughness *= texture(CLEAR_COAT_ROUGHNESS_TEXTURE, uv).g;
     }
 
 
     if(CLEAR_COAT_NORMAL_TEX_INFO.index != -1) {
+        uv = transformUV(CLEAR_COAT_NORMAL_TEX_INFO);
         mat3 TBN = mat3(ni.T, ni.B, ni.N);
         cc.normal = 2 * texture(CLEAR_COAT_NORMAL_TEXTURE, uv).xyz - 1;
         cc.normal.y *= -1;
@@ -388,4 +402,17 @@ ClearCoat getClearCoat() {
     cc.roughness = clamp(cc.roughness, 0, 1);
 
     return cc;
+}
+
+vec2 transformUV(TextureInfo ti) {
+    mat3 translation = mat3(1,0,0, 0,1,0, ti.offset.x, ti.offset.y, 1);
+    mat3 rotation = mat3(
+        cos(ti.rotation), -sin(ti.rotation), 0,
+        sin(ti.rotation), cos(ti.rotation), 0,
+        0,             0, 1
+    );
+    mat3 scale = mat3(ti.scale.x,0,0, 0,ti.scale.y,0, 0,0,1);
+
+    mat3 matrix = translation * rotation * scale;
+    return ( matrix * vec3(fs_in.uv, 1) ).xy;
 }

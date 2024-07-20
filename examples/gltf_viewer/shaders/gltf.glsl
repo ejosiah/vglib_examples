@@ -39,8 +39,12 @@ struct Material {
 };
 
 struct TextureInfo {
+    vec2 offset;
+    vec2 scale;
+    float tScale; // normal scale or occulsion sstrength
     int index;
     int texCoord;
+    float rotation;
 };
 
 struct ClearCoat {

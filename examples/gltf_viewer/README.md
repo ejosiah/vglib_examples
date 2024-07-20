@@ -13,21 +13,25 @@
 - KHR_materials_ior
 - KHR_materials_transmission
 - KHR_materials_volume
+- KHR_texture_transform
 
 ## TODO
-- fix - free up texture binding points used by a model when its disposed
 - implement more robust Tone mapping
 - implement bloom
+- implement path traced renderer
 - Allow users to use their own environment maps
 - add support for other glTF extensions
 - remove file dialog when path selected and display loading screen
 - add support for other drawing modes (currently on default drawing mode (Triangles) supported)
 - add support for multi uvs
 - add support for multi scenes
-- fix - app fails on exit during async loads
 -  use a different concurrent data structure for task queues
 - make loading of meshes preserve their ordering
   - gltf meshes may be ordered, with transparent meshes last for easy blending
   - order is preserved with one worker thread
   - ond the order hand multiple worker threads do not preserve this order
   - pass in meshId when processing, use to determine position in GPU mesh buffer 
+### Fixes
+- fix - descriptorPool allocation failure
+- fix - free up texture binding points used by a model when its disposed
+- fix - app fails on exit during async loads

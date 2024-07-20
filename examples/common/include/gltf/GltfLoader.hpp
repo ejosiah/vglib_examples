@@ -56,8 +56,12 @@ namespace gltf {
     };
 
     struct TextureInfo {
+        glm::vec2 offset{0};
+        glm::vec2 scale{1};
+        float tScale{1};
         int index{-1};
         int texCoord{0};
+        float rotation{0};
     };
 
     struct LightInstance {
@@ -253,6 +257,12 @@ namespace gltf {
         void initPlaceHolders();
 
         void initCommandPools();
+
+        TextureInfo extract(const tinygltf::TextureInfo& info, int offset);
+
+        TextureInfo extract(const tinygltf::NormalTextureInfo& info, int offset);
+
+        TextureInfo extract(const tinygltf::OcclusionTextureInfo& info, int offset);
 
         VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);
 

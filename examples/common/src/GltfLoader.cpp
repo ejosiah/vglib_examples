@@ -14,6 +14,7 @@ namespace gltf {
     static constexpr const char* KHR_lights_punctual = "KHR_lights_punctual";
     static constexpr const char* KHR_materials_emissive_strength = "KHR_materials_emissive_strength";
     static constexpr const char* KHR_materials_clearcoat = "KHR_materials_clearcoat";
+    static constexpr const char* KHR_texture_transform = "KHR_texture_transform";
 
     static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
@@ -27,6 +28,7 @@ namespace gltf {
     };
 
     glm::vec2 vec2From(const std::vector<double>& v);
+    glm::vec2 vec2From(const tinygltf::Value& value);
     glm::vec3 vec3From(const std::vector<double>& v);
     glm::vec3 vec3From(const tinygltf::Value& value);
     glm::vec4 vec4From(const std::vector<double>& v);
@@ -834,25 +836,12 @@ namespace gltf {
         
         std::array<TextureInfo, NUM_TEXTURE_MAPPING> textureInfos{};
 
-        if(materialUpload->material.pbrMetallicRoughness.baseColorTexture.index != -1) {
-            textureInfos[static_cast<int>(TextureType::BASE_COLOR)].index = materialUpload->material.pbrMetallicRoughness.baseColorTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.normalTexture.index != -1 ) {
-            textureInfos[static_cast<int>(TextureType::NORMAL)].index = materialUpload->material.normalTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index != -1) {
-            textureInfos[static_cast<int>(TextureType::METALLIC_ROUGHNESS)].index = materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.emissiveTexture.index != -1) {
-            textureInfos[static_cast<int>(TextureType::EMISSION)].index = materialUpload->material.emissiveTexture.index + materialUpload->pending->textureBindingOffset;
-        }
-
-        if(materialUpload->material.occlusionTexture.index != -1) {
-            textureInfos[static_cast<int>(TextureType::OCCLUSION)].index = materialUpload->material.occlusionTexture.index + materialUpload->pending->textureBindingOffset;
-        }
+        const auto offset = materialUpload->pending->textureBindingOffset;
+        textureInfos[static_cast<int>(TextureType::BASE_COLOR)] = extract(materialUpload->material.pbrMetallicRoughness.baseColorTexture,  offset);
+        textureInfos[static_cast<int>(TextureType::NORMAL)] = extract(materialUpload->material.normalTexture, offset);
+        textureInfos[static_cast<int>(TextureType::METALLIC_ROUGHNESS)] = extract(materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture, offset);
+        textureInfos[static_cast<int>(TextureType::EMISSION)] = extract(materialUpload->material.emissiveTexture, offset);
+        textureInfos[static_cast<int>(TextureType::OCCLUSION)] = extract(materialUpload->material.occlusionTexture, offset);
 
         if(materialUpload->material.extensions.contains(KHR_materials_transmission)){
             material.transmission = materialUpload->material.extensions.at(KHR_materials_transmission).Get("transmissionFactor").GetNumberAsDouble();
@@ -1567,7 +1556,12 @@ namespace gltf {
 
     glm::vec3 vec3From(const tinygltf::Value& v) {
         assert(v.IsArray());
-        return glm::vec3{ v.Get(0).GetNumberAsDouble(), v.Get(0).GetNumberAsDouble(), v.Get(0).GetNumberAsDouble() };
+        return glm::vec3{ v.Get(0).GetNumberAsDouble(), v.Get(1).GetNumberAsDouble(), v.Get(2).GetNumberAsDouble() };
+    }
+
+    glm::vec2 vec2From(const tinygltf::Value& v) {
+        assert(v.IsArray());
+        return glm::vec2{ v.Get(0).GetNumberAsDouble(), v.Get(1).GetNumberAsDouble() };
     }
 
     glm::vec4 vec4From(const std::vector<double>& v) {
@@ -1883,5 +1877,94 @@ namespace gltf {
     void Loader::onComplete(LightInstanceUploadTask* lightInstanceUpload) {
         if(!lightInstanceUpload) return;
         spdlog::info("lightInstance{} uploaded to gpu", lightInstanceUpload->instanceId);
+    }
+
+    TextureInfo Loader::extract(const tinygltf::TextureInfo &info, int offset) {
+        if(info.index == -1) return {};
+
+        TextureInfo tInfo{};
+        tInfo.index = info.index + offset;
+        tInfo.texCoord = info.texCoord;
+
+        if(info.extensions.contains(KHR_texture_transform)) {
+            const auto& transforms = info.extensions.at(KHR_texture_transform);
+
+            if(transforms.Has("offset")) {
+                tInfo.offset = vec2From(transforms.Get("offset"));
+            }
+            if(transforms.Has("scale")) {
+                tInfo.scale = vec2From(transforms.Get("scale"));
+            }
+
+            if(transforms.Has("rotation")){
+                tInfo.rotation = transforms.Get("rotation").GetNumberAsDouble();
+            }
+
+            if(transforms.Has("texCoord")) {
+                tInfo.texCoord = transforms.Get("texCoord").GetNumberAsInt();
+            }
+        }
+
+        return tInfo;
+    }
+
+    TextureInfo Loader::extract(const tinygltf::NormalTextureInfo &info, int offset) {
+        if(info.index == -1) return {};
+
+        TextureInfo tInfo{};
+        tInfo.index = info.index + offset;
+        tInfo.texCoord = info.texCoord;
+        tInfo.tScale = info.scale;
+
+        if(info.extensions.contains(KHR_texture_transform)) {
+            const auto& transforms = info.extensions.at(KHR_texture_transform);
+
+            if(transforms.Has("offset")) {
+                tInfo.offset = vec2From(transforms.Get("offset"));
+            }
+            if(transforms.Has("scale")) {
+                tInfo.scale = vec2From(transforms.Get("scale"));
+            }
+
+            if(transforms.Has("rotation")){
+                tInfo.rotation = transforms.Get("rotation").GetNumberAsDouble();
+            }
+
+            if(transforms.Has("texCoord")) {
+                tInfo.texCoord = transforms.Get("texCoord").GetNumberAsInt();
+            }
+        }
+
+        return tInfo;
+    }
+
+    TextureInfo Loader::extract(const tinygltf::OcclusionTextureInfo &info, int offset) {
+        if(info.index == -1) return {};
+
+        TextureInfo tInfo{};
+        tInfo.index = info.index + offset;
+        tInfo.texCoord = info.texCoord;
+        tInfo.tScale = info.strength;
+
+        if(info.extensions.contains(KHR_texture_transform)) {
+            const auto& transforms = info.extensions.at(KHR_texture_transform);
+
+            if(transforms.Has("offset")) {
+                tInfo.offset = vec2From(transforms.Get("offset"));
+            }
+            if(transforms.Has("scale")) {
+                tInfo.scale = vec2From(transforms.Get("scale"));
+            }
+
+            if(transforms.Has("rotation")){
+                tInfo.rotation = transforms.Get("rotation").GetNumberAsDouble();
+            }
+
+            if(transforms.Has("texCoord")) {
+                tInfo.texCoord = transforms.Get("texCoord").GetNumberAsInt();
+            }
+        }
+
+        return tInfo;
     }
 }
