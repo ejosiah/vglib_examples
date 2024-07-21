@@ -39,6 +39,8 @@ struct Material {
 
     vec3 sheenColorFactor;
     float sheenRoughnessFactor;
+
+    int unlit;
 };
 
 struct TextureInfo {

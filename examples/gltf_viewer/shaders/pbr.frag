@@ -120,6 +120,11 @@ void main() {
         baseColor.a = 1;
     }
 
+    if(MATERIAL.unlit == 1) {
+        fragColor = baseColor;
+        return;
+    }
+
     const float transmissionFactor = getTransmissionFactor();
 
     if((MATERIAL.alphaMode == ALPHA_MODE_BLEND || transmissionFactor > 0) && discard_transmissive == 1){

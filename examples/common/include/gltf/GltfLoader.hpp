@@ -56,6 +56,9 @@ namespace gltf {
 
         glm::vec3 sheenColorFactor{0};
         float sheenRoughnessFactor{0};
+
+        int unlit{0};
+        glm::vec3 padding;
     };
 
     struct TextureInfo {

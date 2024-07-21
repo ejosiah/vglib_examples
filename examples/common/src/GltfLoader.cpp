@@ -16,6 +16,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_clearcoat = "KHR_materials_clearcoat";
     static constexpr const char* KHR_texture_transform = "KHR_texture_transform";
     static constexpr const char* KHR_materials_sheen = "KHR_materials_sheen";
+    static constexpr const char* KHR_materials_unlit = "KHR_materials_unlit";
 
     static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
@@ -969,6 +970,10 @@ namespace gltf {
         }
 
         extractSheen(material, *materialUpload);
+
+        if(materialUpload->material.extensions.contains(KHR_materials_unlit)){
+            material.unlit = 1;
+        }
 
         auto stagingBuffer =  _stagingBuffers[workerId].allocate(sizeof(material));
         stagingBuffer.upload(&material);
