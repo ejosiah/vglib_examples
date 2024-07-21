@@ -11,8 +11,11 @@ layout(set = UNIFORMS_SET, binding = UNIFORMS_BINDING_POINT) uniform Constants {
     mat4 view;
     mat4 projection;
     int brdf_lut_texture_id;
+    int sheen_lut_texture_id;
+    int charlie_lut_texture_id;
     int irradiance_texture_id;
     int specular_texture_id;
+    int charlie_env_texture_id;
     int framebuffer_texture_id;
     int g_buffer_texture_id;
     int discard_transmissive;

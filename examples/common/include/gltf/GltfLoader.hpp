@@ -53,6 +53,9 @@ namespace gltf {
         float clearCoatFactor{0};
         float clearCoatRoughnessFactor{0};
         int textureInfoOffset{0};
+
+        glm::vec3 sheenColorFactor{0};
+        float sheenRoughnessFactor{0};
     };
 
     struct TextureInfo {
@@ -131,9 +134,12 @@ namespace gltf {
     };
 
     struct MaterialUploadTask {
-        std::shared_ptr<PendingModel> pending;
+        std::array<TextureInfo, NUM_TEXTURE_MAPPING> textureInfos;
         tinygltf::Material material;
+        std::shared_ptr<PendingModel> pending;
         uint32_t materialId;
+        int textureOffset;
+
     };
 
     struct InstanceUploadTask {
@@ -266,6 +272,8 @@ namespace gltf {
         TextureInfo extract(const tinygltf::NormalTextureInfo& info, int offset);
 
         TextureInfo extract(const tinygltf::OcclusionTextureInfo& info, int offset);
+
+        void extractSheen(MaterialData& material, MaterialUploadTask& materialUpload);
 
         VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);
 

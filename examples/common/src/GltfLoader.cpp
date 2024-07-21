@@ -15,6 +15,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_emissive_strength = "KHR_materials_emissive_strength";
     static constexpr const char* KHR_materials_clearcoat = "KHR_materials_clearcoat";
     static constexpr const char* KHR_texture_transform = "KHR_texture_transform";
+    static constexpr const char* KHR_materials_sheen = "KHR_materials_sheen";
 
     static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
@@ -493,7 +494,8 @@ namespace gltf {
 
                 for(auto materialId = 0u; materialId < pending->gltf->materials.size(); ++materialId) {
                     auto& material = pending->gltf->materials[materialId];
-                    _workerQueue.push(MaterialUploadTask{ pending, material, materialId});
+                    MaterialUploadTask task{ .material = material, .pending = pending, .materialId = materialId, .textureOffset = pending->textureBindingOffset };
+                    _workerQueue.push(task);
                 }
 
                 for(auto lightId = 0u; lightId < pending->numLights; ++lightId) {
@@ -890,7 +892,7 @@ namespace gltf {
         material.doubleSided = materialUpload->material.doubleSided;
         material.textureInfoOffset = materialUpload->materialId;
         
-        std::array<TextureInfo, NUM_TEXTURE_MAPPING> textureInfos{};
+        auto& textureInfos = materialUpload->textureInfos;
 
         const auto offset = materialUpload->pending->textureBindingOffset;
         textureInfos[static_cast<int>(TextureType::BASE_COLOR)] = extract(materialUpload->material.pbrMetallicRoughness.baseColorTexture,  offset);
@@ -965,6 +967,8 @@ namespace gltf {
                 textureInfos[static_cast<int>(TextureType::CLEAR_COAT_NORMAL)].index = textureIndex + materialUpload->pending->textureBindingOffset;
             }
         }
+
+        extractSheen(material, *materialUpload);
 
         auto stagingBuffer =  _stagingBuffers[workerId].allocate(sizeof(material));
         stagingBuffer.upload(&material);
@@ -2063,5 +2067,18 @@ namespace gltf {
         }
 
         return tInfo;
+    }
+
+    void Loader::extractSheen(MaterialData &material, MaterialUploadTask& materialUpload) {
+        const auto& gMat = materialUpload.material;
+        if(!gMat.extensions.contains(KHR_materials_sheen)) return;
+
+        const auto& sheen = gMat.extensions.at(KHR_materials_sheen);
+        if(sheen.Has("sheenColorFactor")){
+            material.sheenColorFactor = vec3From(sheen.Get("sheenColorFactor"));
+        }
+        if(sheen.Has("sheenRoughnessFactor")){
+            material.sheenRoughnessFactor = to<float>(sheen.Get("sheenRoughnessFactor").GetNumberAsDouble());
+        }
     }
 }

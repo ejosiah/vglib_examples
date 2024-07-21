@@ -5,8 +5,11 @@
 struct UniformData {
     Camera camera;
     int brdf_lut_texture_id{};
+    int sheen_lut_texture_id{};
+    int charlie_lut_texture_id{};
     int irradiance_texture_id{};
     int specular_texture_id{};
+    int charlie_env_texture_id{};
     int framebuffer_texture_id{};
     int g_buffer_texture_id{};
     int discard_transmissive{};
@@ -19,7 +22,7 @@ struct UniformData {
     float ibl_intensity{1};
 };
 
-enum TextureConstants{ BLACK, WHITE, NORMAL, BRDF_LUT, COUNT};
+enum TextureConstants{ BLACK, WHITE, NORMAL, BRDF_LUT, SHEEN_LUT, CHARLIE_LUT, COUNT};
 
 class GltfViewer : public VulkanBaseApp{
 public:
@@ -71,6 +74,8 @@ protected:
     void createIrradianceMap(Texture& srcTexture, Texture& dstTexture);
 
     void createSpecularMap(Texture& srcTexture, Texture& dstTexture);
+
+    void createCharlieMap(Texture& srcTexture, Texture& dstTexture);
 
     void updateConvolutionDescriptors(Texture& srcTexture, Texture& dstTexture, VkImageLayout srcImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
@@ -148,6 +153,10 @@ protected:
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } specular;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } charlie;
     } compute;
 
     VulkanDescriptorPool descriptorPool;
@@ -164,18 +173,18 @@ protected:
     std::vector<Texture> stagingTextures;
     std::vector<Texture> irradianceMaps;
     std::vector<Texture> specularMaps;
-    std::vector<Texture> SpecularMaps;
+    std::vector<Texture> charlieMaps;
     struct {
         VulkanBuffer vertices;
         VulkanBuffer indices;
     } skyBox;
     const std::vector<const char*> environmentPaths {
         "LA_Downtown_Helipad_GoldenHour_3k.hdr",
-        "BasketballCourt_3k.hdr",
-        "old_hall_4k.hdr",
-        "HdrOutdoorFrozenCreekWinterDayClear001_JPG_3K.jpg",
-        "HdrOutdoorCityCondoCourtyardEveningClear001_3K.JPG",
-        "HdrOutdoorSnowMountainsEveningClear001_3K.jpg",
+//        "BasketballCourt_3k.hdr",
+//        "old_hall_4k.hdr",
+//        "HdrOutdoorFrozenCreekWinterDayClear001_JPG_3K.jpg",
+//        "HdrOutdoorCityCondoCourtyardEveningClear001_3K.JPG",
+//        "HdrOutdoorSnowMountainsEveningClear001_3K.jpg",
     };
     struct {
         int environment{0};
@@ -218,7 +227,7 @@ protected:
     std::array<std::shared_ptr<gltf::Model>, 2> models{};
     int currentModel{0};
     int bindingOffset{TextureConstants::COUNT};
-    int textureSetWidth{3}; // environment + irradiance + specular
+    int textureSetWidth{4}; // environment + irradiance + specular + charlie
     std::map<std::string, fs::path> modelPaths;
     std::array<Texture, TextureConstants::COUNT> constantTextures;
     UniformData uniforms{};
@@ -227,4 +236,5 @@ protected:
         bool error{};
         std::string message;
     } fileOpen;
+    static constexpr uint32_t lowestLod{4};
 };

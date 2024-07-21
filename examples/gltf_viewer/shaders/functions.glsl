@@ -16,4 +16,9 @@ vec2 dirToUV(vec3 dir) {
 float clampedDot(vec3 a, vec3 b) {
     return clamp(dot(a, b), 0, 1);
 }
+
+float max3(vec3 v){
+    return max(v.x, max(v.y, v.z));
+}
+
 #endif // FUNCTIONS_GLTLS

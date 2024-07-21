@@ -99,13 +99,14 @@ void GltfViewer::createGBuffer() {
 }
 
 void GltfViewer::createFrameBufferTexture() {
-        transmissionFramebuffer.color.resize(swapChainImageCount);
-        transmissionFramebuffer.depth.resize(swapChainImageCount);
-        transmissionFramebuffer.UniformsDescriptorSet.resize(swapChainImageCount);
+    transmissionFramebuffer.color.resize(swapChainImageCount);
+    transmissionFramebuffer.depth.resize(swapChainImageCount);
+    transmissionFramebuffer.UniformsDescriptorSet.resize(swapChainImageCount);
+
     transmissionFramebuffer.info.resize(swapChainImageCount);
         const auto size = transmissionFramebuffer.color.size();
         for(auto i = 0; i < size; ++i) {
-            transmissionFramebuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1;
+            transmissionFramebuffer.color[i].levels = static_cast<uint32_t>(std::log2(1024)) + 1 - lowestLod;
             transmissionFramebuffer.color[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
             transmissionFramebuffer.color[i].bindingId = gBuffer.color.back().bindingId + i + 1;
 
@@ -123,8 +124,8 @@ void GltfViewer::createFrameBufferTexture() {
 }
 
 void GltfViewer::initBindlessDescriptor() {
-    bindingOffset += swapChainImageCount * 2;
-    int reservation = environmentPaths.size() * textureSetWidth + bindingOffset;
+    bindingOffset += to<int>(swapChainImageCount) * 2;
+    int reservation = to<int>(environmentPaths.size()) * textureSetWidth + bindingOffset;
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, reservation);
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
@@ -144,9 +145,19 @@ void GltfViewer::createConstantTextures() {
     bindlessDescriptor.update(constantTextures[TextureConstants::NORMAL], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     constantTextures[TextureConstants::BRDF_LUT].bindingId = TextureConstants::BRDF_LUT;
-    loader->loadTexture(resource("brdf.png"), constantTextures[TextureConstants::BRDF_LUT]);
+    loader->loadTexture(resource("lut/brdf.png"), constantTextures[TextureConstants::BRDF_LUT]);
+
+    constantTextures[TextureConstants::SHEEN_LUT].bindingId = TextureConstants::SHEEN_LUT;
+    constantTextures[TextureConstants::SHEEN_LUT].flipped = true;
+    loader->loadTexture(resource("lut/lut_sheen_E.png"), constantTextures[TextureConstants::SHEEN_LUT]);
+
+    constantTextures[TextureConstants::CHARLIE_LUT].bindingId = TextureConstants::CHARLIE_LUT;
+    constantTextures[TextureConstants::CHARLIE_LUT].flipped = true;
+    loader->loadTexture(resource("lut/lut_charlie.png"), constantTextures[TextureConstants::CHARLIE_LUT]);
 
     uniforms.brdf_lut_texture_id = constantTextures[TextureConstants::BRDF_LUT].bindingId;
+    uniforms.sheen_lut_texture_id = constantTextures[TextureConstants::SHEEN_LUT].bindingId;
+    uniforms.charlie_lut_texture_id = constantTextures[TextureConstants::CHARLIE_LUT].bindingId;
 }
 
 void GltfViewer::beforeDeviceCreation() {
@@ -210,7 +221,7 @@ void GltfViewer::loadTextures() {
 
     std::vector<std::shared_ptr<gltf::TextureUploadStatus>> uploadStatuses;
     for(auto i = 0; i < environments.size(); ++i) {
-        environments[i].bindingId = i  + bindingOffset;
+        environments[i].bindingId = i + bindingOffset;
 
         stagingTextures[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
         stagingTextures[i].flipped = true;
@@ -219,15 +230,19 @@ void GltfViewer::loadTextures() {
         uploadStatuses.push_back(std::move(status));
     }
 
+    for(auto i = 0; i < uploadStatuses.size(); ++i) {
+        auto& status = uploadStatuses[i];
+        status->sync();
+
+        const auto width = 2048u;
+        environments[i].levels = to<uint32_t>(std::log2(width) + 1) - lowestLod;
+        environments[i].lod = true;
+        textures::createNoTransition(device, environments[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, width, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        convertToOctahedralMap(*status->texture, environments[i]);
+    }
+
+
     runInBackground([this, uploadStatuses]{
-        for(auto i = 0; i < uploadStatuses.size(); ++i) {
-            auto& status = uploadStatuses[i];
-            status->sync();
-
-            textures::createNoTransition(device, environments[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {2048, 2048, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-            convertToOctahedralMap(*status->texture, environments[i]);
-        }
-
         for(auto i = 0; i < environments.size(); ++i) {
             Texture irradianceTexture;
             irradianceTexture.bindingId = environments.size() + i + bindingOffset;
@@ -245,8 +260,20 @@ void GltfViewer::loadTextures() {
             specularMaps.push_back(std::move(specularTexture));
         }
 
+        for(auto i = 0; i < environments.size(); ++i) {
+            Texture charlieTexture;
+            charlieTexture.bindingId = environments.size() * 3 + i + bindingOffset;
+            charlieTexture.levels = 5;
+            textures::createNoTransition(device, charlieTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {1024, 1024, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            createCharlieMap(environments[i], charlieTexture);
+            charlieMaps.push_back(std::move(charlieTexture));
+        }
+
         uniforms.irradiance_texture_id = irradianceMaps[options.environment].bindingId;
         uniforms.specular_texture_id = specularMaps[options.environment].bindingId;
+        uniforms.charlie_env_texture_id = charlieMaps[options.environment].bindingId;
+
+
     });
 
 }
@@ -449,6 +476,19 @@ void GltfViewer::createComputePipeline() {
 
     device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("specular_map_convolution_layout", compute.specular.layout.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("specular_map_convolution_pipeline", compute.specular.pipeline.handle);
+
+    // CHARLIE MAP CONVOLUTION
+    module = device.createShaderModule(resource("compute_charlie_map.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+
+    computeCreateInfo.stage = stage;
+    compute.charlie.layout = device.createPipelineLayout({ convolution.inDescriptorSetLayout, convolution.outDescriptorSetLayout }, { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float)} });
+    computeCreateInfo.layout = compute.charlie.layout.handle;
+
+    compute.charlie.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("charlie_map_convolution_layout", compute.charlie.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("charlie_map_convolution_pipeline", compute.charlie.pipeline.handle);
 }
 
 void GltfViewer::onSwapChainDispose() {
@@ -742,15 +782,15 @@ void GltfViewer::convertToOctahedralMap(Texture &srcTexture, Texture &dstTexture
     Synchronization synchronization{ ._fence = device.createFence() };
     synchronization._fence.reset();
 
-    computeCommandPool.oneTimeCommand([&](auto commandBuffer){
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         std::array<VkDescriptorSet, 2> sets{ convolution.inDescriptorSet[0], convolution.outDescriptorSet[0] };
         glm::uvec3 gc{ dstTexture.width/8, dstTexture.height/8, 1 };
 
         VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
         barrier.image = dstTexture.image.image;
-        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, dstTexture.levels, 0, 1};
         barrier.srcAccessMask = VK_ACCESS_NONE;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
@@ -761,6 +801,9 @@ void GltfViewer::convertToOctahedralMap(Texture &srcTexture, Texture &dstTexture
                 , 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
 
         vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
+
+        dstTexture.image.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+        textures::generateLOD(commandBuffer, dstTexture.image, dstTexture.width, dstTexture.height, dstTexture.levels);
 
     }, synchronization);
     synchronization._fence.wait();
@@ -874,6 +917,78 @@ void GltfViewer::createSpecularMap(Texture &srcTexture, Texture &dstTexture) {
     spdlog::info("Specular convolution completed for environment map: {}", srcTexture.path);
 }
 
+void GltfViewer::createCharlieMap(Texture &srcTexture, Texture &dstTexture) {
+
+    std::array<VulkanImageView, 6> imageViews{};
+    imageViews[0] = srcTexture.imageView;
+
+    VkImageSubresourceRange subresourceRange;
+    subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subresourceRange.baseMipLevel = 0;
+    subresourceRange.levelCount = 1;
+    subresourceRange.baseArrayLayer = 0;
+    subresourceRange.layerCount = 1;
+
+    for(auto i = 0; i < 5; ++i) {
+        subresourceRange.baseMipLevel = i;
+        subresourceRange.levelCount = 5 - i;
+        imageViews[i + 1] = dstTexture.image.createView(VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subresourceRange);
+    }
+
+    updateSpecularDescriptors(imageViews);
+
+    Synchronization synchronization{};
+    synchronization._fence = device.createFence();
+    synchronization._fence.reset();
+    computeCommandPool.oneTimeCommand([&](auto commandBuffer){
+        static std::array<VkDescriptorSet, 2> sets;
+
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.image = dstTexture.image;
+        barrier.subresourceRange = subresourceRange;
+
+        for(auto i = 0; i < dstTexture.levels; i++ ){
+            const auto width = dstTexture.width >> i;
+            const auto height = dstTexture.height >> i;
+            float roughness = static_cast<float>(i) / static_cast<float>(dstTexture.levels - 1);
+
+            barrier.srcAccessMask = VK_ACCESS_NONE;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.subresourceRange.baseMipLevel = i;
+            barrier.subresourceRange.levelCount = dstTexture.levels - i;
+
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                    , 0, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE, 1, &barrier);
+
+            sets[0] = convolution.inDescriptorSet[i];
+            sets[1] = convolution.outDescriptorSet[i];
+
+            spdlog::info("generating charlie map for {}, mip level {}, roughness {}, size {}", srcTexture.path, i, roughness, width);
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.charlie.pipeline.handle);
+            vkCmdPushConstants(commandBuffer, compute.charlie.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float), &roughness);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.charlie.layout.handle , 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+
+            vkCmdDispatch(commandBuffer, width, height, 1);
+
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                    , 0, 0, VK_NULL_HANDLE, 0, VK_NULL_HANDLE, 1, &barrier);
+        }
+    }, synchronization);
+
+    synchronization._fence.wait();
+    dstTexture.path = srcTexture.path;
+    bindlessDescriptor.update({ &dstTexture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, dstTexture.bindingId });
+    spdlog::info("Specular convolution completed for environment map: {}", srcTexture.path);
+}
+
 
 void GltfViewer::updateConvolutionDescriptors(Texture &srcTexture, Texture &dstTexture, VkImageLayout srcImageLayout) {
     auto sets = descriptorPool.allocate({ convolution.inDescriptorSetLayout, convolution.outDescriptorSetLayout });
@@ -961,6 +1076,7 @@ void GltfViewer::endFrame() {
     if(previousEnvironment != options.environment){
         uniforms.irradiance_texture_id = irradianceMaps[options.environment].bindingId;
         uniforms.specular_texture_id = specularMaps[options.environment].bindingId;
+        uniforms.charlie_env_texture_id = charlieMaps[options.environment].bindingId;
         previousEnvironment = options.environment;
     }
     uniforms.camera = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];

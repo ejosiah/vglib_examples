@@ -21,10 +21,10 @@ vec4 getSpecularSample(vec3 reflection, float lod)
 }
 
 
-//vec4 getSheenSample(vec3 reflection, float lod)
-//{
-//    return textureLod(u_CharlieEnvSampler, u_EnvRotation * reflection, lod) * u_EnvIntensity;
-//}
+vec4 getSheenSample(vec3 reflection, float lod)
+{
+    return textureLod(u_CharlieEnvSampler, dirToUV(u_EnvRotation * reflection), lod) * u_EnvIntensity;
+}
 
 
 vec3 getIBLRadianceGGX(vec3 n, vec3 v, float roughness, vec3 F0, float specularWeight)
@@ -230,21 +230,24 @@ vec3 getIBLRadianceLambertian(vec3 n, vec3 v, float roughness, vec3 diffuseColor
 //    return specularWeight * specularLight * FssEss;
 //}
 //#endif
-//
-//
-//vec3 getIBLRadianceCharlie(vec3 n, vec3 v, float sheenRoughness, vec3 sheenColor)
-//{
-//    float NdotV = clampedDot(n, v);
-//    float lod = sheenRoughness * float(u_MipCount - 1);
-//    vec3 reflection = normalize(reflect(-v, n));
-//
-//    vec2 brdfSamplePoint = clamp(vec2(NdotV, sheenRoughness), vec2(0.0, 0.0), vec2(1.0, 1.0));
-//    float brdf = texture(u_CharlieLUT, brdfSamplePoint).b;
-//    vec4 sheenSample = getSheenSample(reflection, lod);
-//
-//    vec3 sheenLight = sheenSample.rgb;
-//    return sheenLight * sheenColor * brdf;
-//}
 
+
+vec3 getIBLRadianceCharlie(vec3 n, vec3 v, float sheenRoughness, vec3 sheenColor)
+{
+    float NdotV = clampedDot(n, v);
+    float lod = sheenRoughness * float(u_MipCount - 1);
+    vec3 reflection = normalize(reflect(-v, n));
+
+    vec2 brdfSamplePoint = clamp(vec2(NdotV, sheenRoughness), vec2(0.0, 0.0), vec2(1.0, 1.0));
+    float brdf = texture(u_CharlieLUT, brdfSamplePoint).b;
+    vec4 sheenSample = getSheenSample(reflection, lod);
+
+    vec3 sheenLight = sheenSample.rgb;
+    return sheenLight * sheenColor * brdf;
+}
+
+float albedoSheenScalingLUT(float NdotV, float sheenRoughnessFactor){
+    return texture(u_SheenELUT, vec2(NdotV, sheenRoughnessFactor)).r;
+}
 
 #endif // IBL_GLSL

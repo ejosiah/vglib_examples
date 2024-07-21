@@ -36,6 +36,9 @@ struct Material {
     float clearCoatFactor;
     float clearCoatRoughnessFactor;
     int textureInfoOffset;
+
+    vec3 sheenColorFactor;
+    float sheenRoughnessFactor;
 };
 
 struct TextureInfo {
@@ -53,6 +56,13 @@ struct ClearCoat {
     vec3 f90;
     float factor;
     float roughness;
+    bool enabled;
+};
+
+struct Sheen {
+    vec3 color;
+    float roughness;
+    bool enabled;
 };
 
 struct NormalInfo {
@@ -68,8 +78,31 @@ ClearCoat newClearCoatInstance() {
     cc.f0 = vec3(0);
     cc.f90 = vec3(1);
     cc.normal = vec3(0);
+    cc.enabled = false;
 
     return cc;
 }
+
+Sheen newSheenInstance() {
+    Sheen s;
+    s.color = vec3(0);
+    s.roughness = 0;
+    s.enabled = false;
+
+    return s;
+}
+
+vec4 getBaseColor();
+vec3 getNormal();
+vec3 getMRO();
+bool noTangets();
+vec3 getEmission();
+float getTransmissionFactor();
+float getThickness();
+bool isNull(Material material);
+ClearCoat getClearCoat();
+Sheen getSheen();
+vec2 transformUV(TextureInfo textureInfo);
+
 
 #endif // GLTF_GLSL
