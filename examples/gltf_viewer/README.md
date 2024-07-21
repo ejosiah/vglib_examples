@@ -15,6 +15,7 @@
 - KHR_materials_volume
 - KHR_texture_transform
 - KHR_materials_unlit
+- KHR_materials_sheen
 
 ## TODO
 - implement more robust Tone mapping

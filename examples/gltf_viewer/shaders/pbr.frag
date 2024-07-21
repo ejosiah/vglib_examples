@@ -18,6 +18,8 @@
 #define CLEAR_COAT_INDEX 6
 #define CLEAR_COAT_ROUGHNESS_INDEX 7
 #define CLEAR_COAT_NORMAL_INDEX 8
+#define SHEEN_COLOR_INDEX 9
+#define SHEEN_ROUGHNESS_INDEX 10
 #define TEXTURE_INFO_PER_MATERIAL 12
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
@@ -38,6 +40,9 @@
 #define CLEAR_COAT_ROUGHNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + CLEAR_COAT_ROUGHNESS_INDEX]
 #define CLEAR_COAT_NORMAL_TEX_INFO textureInfos[TEXTURE_OFFSET + CLEAR_COAT_NORMAL_INDEX]
 
+#define SHEEN_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + SHEEN_COLOR_INDEX]
+#define SHEEN_ROUGHNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + SHEEN_ROUGHNESS_INDEX]
+
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
 #define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_INFO.index)]
@@ -49,6 +54,9 @@
 #define CLEAR_COAT_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_TEX_INFO.index)]
 #define CLEAR_COAT_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_ROUGHNESS_TEX_INFO.index)]
 #define CLEAR_COAT_NORMAL_TEXTURE global_textures[nonuniformEXT(CLEAR_COAT_NORMAL_TEX_INFO.index)]
+
+#define SHEEN_COLOR_TEXTURE global_textures[nonuniformEXT(SHEEN_COLOR_TEX_INFO.index)]
+#define SHEEN_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(SHEEN_ROUGHNESS_TEX_INFO.index)]
 
 #define u_GGXLUT global_textures[nonuniformEXT(brdf_lut_texture_id)]
 #define u_CharlieLUT global_textures[nonuniformEXT(charlie_lut_texture_id)]
@@ -328,14 +336,11 @@ vec3 getMRO() {
         vec3 res = texture(METAL_ROUGHNESS_TEXTURE, uv).rgb;
         mro.r *= res.b;
         mro.g *= res.g;
+    }
 
-        if(OCCLUSION_TEX_INFO.index != -1) {
-            if(OCCLUSION_TEX_INFO.index == METAL_ROUGHNESS_TEX_INFO.index) {
-                mro.b = res.r;
-            }else {
-                mro.b = texture(OCCLUSION_TEXTURE, uv).r;
-            }
-        }
+    if(OCCLUSION_TEX_INFO.index != -1) {
+        vec2 uv = transformUV(OCCLUSION_TEX_INFO);
+        mro.b = texture(OCCLUSION_TEXTURE, uv).r;
     }
     return mro;
 }
@@ -429,10 +434,19 @@ ClearCoat getClearCoat() {
 
 Sheen getSheen() {
     Sheen sheen = newSheenInstance();
-    vec2 uv = fs_in.uv[0];
-
     sheen.color = MATERIAL.sheenColorFactor;
     sheen.roughness = MATERIAL.sheenRoughnessFactor;
+
+    if(SHEEN_COLOR_TEX_INFO.index != -1) {
+        vec2 uv = transformUV(SHEEN_COLOR_TEX_INFO);
+        sheen.color *= pow(texture(SHEEN_COLOR_TEXTURE, uv).rgb, vec3(2.2));
+    }
+
+    if(SHEEN_ROUGHNESS_TEX_INFO.index != -1) {
+        vec2 uv = transformUV(SHEEN_ROUGHNESS_TEX_INFO);
+        sheen.roughness *= texture(SHEEN_ROUGHNESS_TEXTURE, uv).a;
+    }
+
     sheen.enabled = all(notEqual(sheen.color, vec3(0))) || sheen.roughness != 0;
 
     return sheen;

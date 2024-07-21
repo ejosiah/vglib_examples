@@ -392,11 +392,6 @@ int main(int argc, char** argv){
 //    for(const auto& m : meshes) {
 //        fmt::print("{}\n", m.name);
 //    }
-    fmt::print("{} => {}\n", "position", (uint32_t)offsetof(VertexMultiAttributes, position));
-    fmt::print("{} => {}\n", "color", (uint32_t)offsetof(VertexMultiAttributes, color));
-    fmt::print("{} => {}\n", "normal", (uint32_t)offsetof(VertexMultiAttributes, normal));
-    fmt::print("{} => {}\n", "tangent", (uint32_t)offsetof(VertexMultiAttributes, tangent));
-    fmt::print("{} => {}\n", "bitangent", (uint32_t)offsetof(VertexMultiAttributes, bitangent));
-    fmt::print("{} => {}\n", "uv", (uint32_t)offsetof(VertexMultiAttributes, uv));
-    fmt::print("size: {}\n", sizeof(VertexMultiAttributes));
+    fmt::print("{}", sizeof(gltf::MaterialData));
+
 }

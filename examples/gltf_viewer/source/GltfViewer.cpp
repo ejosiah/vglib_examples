@@ -145,14 +145,12 @@ void GltfViewer::createConstantTextures() {
     bindlessDescriptor.update(constantTextures[TextureConstants::NORMAL], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     constantTextures[TextureConstants::BRDF_LUT].bindingId = TextureConstants::BRDF_LUT;
-    loader->loadTexture(resource("lut/brdf.png"), constantTextures[TextureConstants::BRDF_LUT]);
+    loader->loadTexture(resource("lut/lut_ggx.png"), constantTextures[TextureConstants::BRDF_LUT]);
 
     constantTextures[TextureConstants::SHEEN_LUT].bindingId = TextureConstants::SHEEN_LUT;
-    constantTextures[TextureConstants::SHEEN_LUT].flipped = true;
     loader->loadTexture(resource("lut/lut_sheen_E.png"), constantTextures[TextureConstants::SHEEN_LUT]);
 
     constantTextures[TextureConstants::CHARLIE_LUT].bindingId = TextureConstants::CHARLIE_LUT;
-    constantTextures[TextureConstants::CHARLIE_LUT].flipped = true;
     loader->loadTexture(resource("lut/lut_charlie.png"), constantTextures[TextureConstants::CHARLIE_LUT]);
 
     uniforms.brdf_lut_texture_id = constantTextures[TextureConstants::BRDF_LUT].bindingId;
@@ -230,19 +228,19 @@ void GltfViewer::loadTextures() {
         uploadStatuses.push_back(std::move(status));
     }
 
-    for(auto i = 0; i < uploadStatuses.size(); ++i) {
-        auto& status = uploadStatuses[i];
-        status->sync();
-
-        const auto width = 2048u;
-        environments[i].levels = to<uint32_t>(std::log2(width) + 1) - lowestLod;
-        environments[i].lod = true;
-        textures::createNoTransition(device, environments[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, width, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-        convertToOctahedralMap(*status->texture, environments[i]);
-    }
-
 
     runInBackground([this, uploadStatuses]{
+        for(auto i = 0; i < uploadStatuses.size(); ++i) {
+            auto& status = uploadStatuses[i];
+            status->sync();
+
+            const auto width = 2048u;
+//            environments[i].levels = to<uint32_t>(std::log2(width) + 1) - lowestLod;
+//            environments[i].lod = true;
+            textures::createNoTransition(device, environments[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, width, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            convertToOctahedralMap(*status->texture, environments[i]);
+        }
+
         for(auto i = 0; i < environments.size(); ++i) {
             Texture irradianceTexture;
             irradianceTexture.bindingId = environments.size() + i + bindingOffset;
@@ -255,7 +253,7 @@ void GltfViewer::loadTextures() {
             Texture specularTexture;
             specularTexture.bindingId = environments.size() * 2 + i + bindingOffset;
             specularTexture.levels = 5;
-            textures::createNoTransition(device, specularTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {1024, 1024, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            textures::createNoTransition(device, specularTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {512, 512, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             createSpecularMap(environments[i], specularTexture);
             specularMaps.push_back(std::move(specularTexture));
         }
@@ -264,7 +262,7 @@ void GltfViewer::loadTextures() {
             Texture charlieTexture;
             charlieTexture.bindingId = environments.size() * 3 + i + bindingOffset;
             charlieTexture.levels = 5;
-            textures::createNoTransition(device, charlieTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {1024, 1024, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            textures::createNoTransition(device, charlieTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {512, 512, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             createCharlieMap(environments[i], charlieTexture);
             charlieMaps.push_back(std::move(charlieTexture));
         }
@@ -803,7 +801,7 @@ void GltfViewer::convertToOctahedralMap(Texture &srcTexture, Texture &dstTexture
         vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
 
         dstTexture.image.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
-        textures::generateLOD(commandBuffer, dstTexture.image, dstTexture.width, dstTexture.height, dstTexture.levels);
+//        textures::generateLOD(commandBuffer, dstTexture.image, dstTexture.width, dstTexture.height, dstTexture.levels);
 
     }, synchronization);
     synchronization._fence.wait();

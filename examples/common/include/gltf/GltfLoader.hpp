@@ -276,6 +276,8 @@ namespace gltf {
 
         TextureInfo extract(const tinygltf::OcclusionTextureInfo& info, int offset);
 
+        TextureInfo extract(const tinygltf::Value& v, int offset);
+
         void extractSheen(MaterialData& material, MaterialUploadTask& materialUpload);
 
         VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);

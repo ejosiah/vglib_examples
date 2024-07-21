@@ -24,7 +24,7 @@ vec3 importanceSampleGGX(vec2 Xi, vec3 N, float roughness, out float pdf);
 float computeLod(float pdf);
 
 
-const uint SAMPLE_COUNT = 1024u;
+const uint SAMPLE_COUNT = 64;
 
 vec4 compute(vec2 uv){
     vec3 N = octDecode(2 * uv - 1);

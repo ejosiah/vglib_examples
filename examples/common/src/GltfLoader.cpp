@@ -2085,5 +2085,40 @@ namespace gltf {
         if(sheen.Has("sheenRoughnessFactor")){
             material.sheenRoughnessFactor = to<float>(sheen.Get("sheenRoughnessFactor").GetNumberAsDouble());
         }
+
+        if(sheen.Has("sheenColorTexture")) {
+            const auto& colorTexture = extract(sheen.Get("sheenColorTexture"), materialUpload.textureOffset);
+            const auto& roughnessTexture = extract(sheen.Get("sheenColorTexture"), materialUpload.textureOffset);
+            materialUpload.textureInfos[to<int>(TextureType::SHEEN_COLOR)] = colorTexture;
+            materialUpload.textureInfos[to<int>(TextureType::SHEEN_ROUGHNESS)] = roughnessTexture;
+        }
+    }
+
+    TextureInfo Loader::extract(const tinygltf::Value &v, int offset) {
+        TextureInfo info{};
+
+        info.index = v.Has("index") ? v.Get("index").GetNumberAsInt() + offset : -1;
+        info.texCoord = v.Has("texCoord") ? v.Get("texCoord").GetNumberAsInt() : 0;
+
+        if(v.Has("extensions") && v.Get("extensions").Has(KHR_texture_transform)) {
+            const auto transforms = v.Get("extensions").Get(KHR_texture_transform);
+
+            if(transforms.Has("offset")) {
+                info.offset = vec2From(transforms.Get("offset"));
+            }
+            if(transforms.Has("scale")) {
+                info.scale = vec2From(transforms.Get("scale"));
+            }
+
+            if(transforms.Has("rotation")){
+                info.rotation = transforms.Get("rotation").GetNumberAsDouble();
+            }
+
+            if(transforms.Has("texCoord")) {
+                info.texCoord = transforms.Get("texCoord").GetNumberAsInt();
+            }
+
+        }
+        return info;
     }
 }
