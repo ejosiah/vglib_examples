@@ -57,8 +57,10 @@ namespace gltf {
         glm::vec3 sheenColorFactor{0};
         float sheenRoughnessFactor{0};
 
+        glm::vec2 anisotropyRotation{1, 0};
+        float anisotropyStrength{0};
         int unlit{0};
-        glm::vec3 padding;
+
     };
 
     struct TextureInfo {
@@ -276,9 +278,11 @@ namespace gltf {
 
         TextureInfo extract(const tinygltf::OcclusionTextureInfo& info, int offset);
 
-        TextureInfo extract(const tinygltf::Value& v, int offset);
+        TextureInfo extractTextureInfo(const tinygltf::Value& v, int offset);
 
         void extractSheen(MaterialData& material, MaterialUploadTask& materialUpload);
+
+        void extractAnisotropy(MaterialData& material, MaterialUploadTask& materialUpload);
 
         VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);
 

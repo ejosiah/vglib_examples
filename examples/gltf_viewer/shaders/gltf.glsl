@@ -40,6 +40,8 @@ struct Material {
     vec3 sheenColorFactor;
     float sheenRoughnessFactor;
 
+    vec2 anisotropyRotation;
+    float anisotropyStrength;
     int unlit;
 };
 
@@ -64,6 +66,13 @@ struct ClearCoat {
 struct Sheen {
     vec3 color;
     float roughness;
+    bool enabled;
+};
+
+struct Anisotropy {
+    vec3 tangent;
+    vec3 bitangent;
+    float strength;
     bool enabled;
 };
 
@@ -94,8 +103,18 @@ Sheen newSheenInstance() {
     return s;
 }
 
+Anisotropy newAnisotropyInstance() {
+    Anisotropy aniso;
+    aniso.bitangent = vec3(1, 0, 0);
+    aniso.tangent = vec3(0, 1, 0);
+    aniso.strength = 1;
+    bool enabled = false;
+
+    return aniso;
+}
+
 vec4 getBaseColor();
-vec3 getNormal();
+NormalInfo getNormalInfo();
 vec3 getMRO();
 bool noTangets();
 vec3 getEmission();
@@ -104,6 +123,7 @@ float getThickness();
 bool isNull(Material material);
 ClearCoat getClearCoat();
 Sheen getSheen();
+Anisotropy getAnisotropy();
 vec2 transformUV(TextureInfo textureInfo);
 
 

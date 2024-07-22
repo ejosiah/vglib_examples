@@ -20,6 +20,7 @@
 #define CLEAR_COAT_NORMAL_INDEX 8
 #define SHEEN_COLOR_INDEX 9
 #define SHEEN_ROUGHNESS_INDEX 10
+#define ANISOTROPY_INDEX 11
 #define TEXTURE_INFO_PER_MATERIAL 12
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
@@ -43,6 +44,8 @@
 #define SHEEN_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + SHEEN_COLOR_INDEX]
 #define SHEEN_ROUGHNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + SHEEN_ROUGHNESS_INDEX]
 
+#define ANISOTROPY_TEX_INFO textureInfos[TEXTURE_OFFSET - ANISOTROPY_INDEX]
+
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
 #define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_INFO.index)]
@@ -58,6 +61,8 @@
 #define SHEEN_COLOR_TEXTURE global_textures[nonuniformEXT(SHEEN_COLOR_TEX_INFO.index)]
 #define SHEEN_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(SHEEN_ROUGHNESS_TEX_INFO.index)]
 
+#define ANISOTROPY_TEXTURE global_textures[nonuniformEXT(ANISOTROPY_TEX_INFO.index)]
+
 #define u_GGXLUT global_textures[nonuniformEXT(brdf_lut_texture_id)]
 #define u_CharlieLUT global_textures[nonuniformEXT(charlie_lut_texture_id)]
 #define u_SheenELUT global_textures[nonuniformEXT(sheen_lut_texture_id)]
@@ -72,8 +77,8 @@
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
+#include "gltf_brdf.glsl"
 #include "uniforms.glsl"
-
 #include "punctual_lights.glsl"
 #include "gltf.glsl"
 #include "octahedral.glsl"
@@ -115,7 +120,7 @@ const vec3 F90 = vec3(1);
 const float IOR = 1.5;
 const float u_OcclusionStrength = 1;
 
-NormalInfo ni = NormalInfo(normalize(fs_in.tangent), normalize(fs_in.bitangent), normalize(fs_in.normal));
+NormalInfo ni;
 
 void main() {
 
@@ -139,6 +144,7 @@ void main() {
         discard;
     }
 
+    ni = getNormalInfo();
     const vec3 mro = getMRO();
     const float metalness = clamp(mro.r, 0, 1);
     const float perceptualRoughness = clamp(mro.g, 0, 1);
@@ -156,6 +162,7 @@ void main() {
     const vec3 emission = getEmission();
     const ClearCoat cc = getClearCoat();
     const Sheen sheenMat = getSheen();
+    const Anisotropy anisotropy = getAnisotropy();
 
 
     vec3 f_specular = vec3(0.0);
@@ -167,7 +174,7 @@ void main() {
     float albedoSheenScaling = 1.0;
 
 
-    vec3 normal = getNormal();
+    vec3 normal = ni.N;
     vec3 N = normalize(normal);
     vec3 V = normalize(fs_in.eyes - fs_in.position);
 
@@ -179,10 +186,16 @@ void main() {
 
 
     if(ibl_on == 1){
-        f_specular += getIBLRadianceGGX(N, V, perceptualRoughness, f0, specularWeight);
-        f_diffuse += getIBLRadianceLambertian(N, V, perceptualRoughness, c_diff, f0, specularWeight);
+        if(anisotropy.enabled) {
+            f_specular += getIBLRadianceAnisotropy(N, V, perceptualRoughness, anisotropy.strength, anisotropy.bitangent, f0, specularWeight);
+            f_diffuse += getIBLRadianceLambertian(N, V, perceptualRoughness, c_diff, f0, specularWeight);
+        }else {
+            f_specular += getIBLRadianceGGX(N, V, perceptualRoughness, f0, specularWeight);
+            f_diffuse += getIBLRadianceLambertian(N, V, perceptualRoughness, c_diff, f0, specularWeight);
+        }
+
         f_clearcoat += cc.enabled ? getIBLRadianceGGX(cc.normal, V, cc.roughness, cc.f0, 1.0) : vec3(0);
-        
+
         if(sheenMat.enabled){
             f_sheen += getIBLRadianceCharlie(N, V, sheenMat.roughness, sheenMat.color);
             albedoSheenScaling = 1.0 - max3(sheenMat.color) * albedoSheenScalingLUT(NdotV, sheenMat.roughness);
@@ -231,8 +244,14 @@ void main() {
                 vec3 l_diffuse = vec3(0.0);
                 vec3 l_specular = vec3(0.0);
 
-                l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
-                l_specular += intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
+
+                if(anisotropy.enabled){
+                    l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
+                    l_specular += intensity * NdotL * BRDF_specularGGXAnisotropy(f0, f90, alphaRoughness, anisotropy.strength, N, V, L, H, anisotropy.tangent, anisotropy.bitangent);
+                }else {
+                    l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
+                    l_specular += intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
+                }
 
                 f_diffuse += l_diffuse;
                 f_specular += l_specular;
@@ -345,13 +364,17 @@ vec3 getMRO() {
     return mro;
 }
 
-vec3 getNormal() {
+NormalInfo getNormalInfo() {
+    vec3 T = normalize(fs_in.tangent);
+    vec3 B = normalize(fs_in.bitangent);
+    vec3 N = normalize(fs_in.normal);
+
     if(NORMAL_TEX_INFO.index == -1 || noTangets()) {
-        return fs_in.normal;
+        return NormalInfo(vec3(1, 0, 0), vec3(0, 1, 0), N);
     }
 
     vec2 uv = transformUV(NORMAL_TEX_INFO);
-    mat3 TBN = mat3(fs_in.tangent, fs_in.bitangent, fs_in.normal);
+    mat3 TBN = mat3(T, B, N);
 
     vec3 nScale = vec3(NORMAL_TEX_INFO.tScale, NORMAL_TEX_INFO.tScale, 1);
     vec3 normal = 2 * texture(NORMAL_TEXTURE, uv).xyz - 1;
@@ -362,7 +385,7 @@ vec3 getNormal() {
     if(MATERIAL.doubleSided == 1 && !gl_FrontFacing) {
         normal *= -1;
     }
-    return normal;
+    return NormalInfo(T, B, normal);
 }
 
 bool noTangets() {
@@ -450,6 +473,34 @@ Sheen getSheen() {
     sheen.enabled = all(notEqual(sheen.color, vec3(0))) || sheen.roughness != 0;
 
     return sheen;
+}
+
+Anisotropy getAnisotropy() {
+    Anisotropy anisotropy = newAnisotropyInstance();
+
+    float strength = MATERIAL.anisotropyStrength;
+    vec2 rotationDirection = MATERIAL.anisotropyRotation;
+
+    vec2 direction = vec2(1, 0);
+
+    if(ANISOTROPY_TEX_INFO.index != -1){
+        vec2 uv = transformUV(ANISOTROPY_TEX_INFO);
+        vec3 anisotropySample = texture(ANISOTROPY_TEXTURE, uv).xyz;
+        direction = 2 * anisotropySample.xy - 1;
+        strength *= anisotropySample.z;
+    }
+
+    mat2 rotator = mat2(rotationDirection.x, rotationDirection.y, -rotationDirection.y, rotationDirection.x);
+    direction = rotator * direction;
+
+    anisotropy.tangent = mat3(ni.T, ni.B, ni.N) * normalize(vec3(direction, 0.0));
+    anisotropy.bitangent = cross(ni.N, anisotropy.tangent);
+    anisotropy.strength = clamp(strength, 0, 1);
+
+//    anisotropy.enabled == strength > 0 && direction.x != 1 && direction.y != 0;
+    anisotropy.enabled == false;
+
+    return anisotropy;
 }
 
 vec2 transformUV(TextureInfo ti) {

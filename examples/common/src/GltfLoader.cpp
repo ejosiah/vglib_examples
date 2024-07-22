@@ -17,6 +17,7 @@ namespace gltf {
     static constexpr const char* KHR_texture_transform = "KHR_texture_transform";
     static constexpr const char* KHR_materials_sheen = "KHR_materials_sheen";
     static constexpr const char* KHR_materials_unlit = "KHR_materials_unlit";
+    static constexpr const char* KHR_materials_anisotropy = "KHR_materials_anisotropy";
 
     static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
@@ -970,6 +971,7 @@ namespace gltf {
         }
 
         extractSheen(material, *materialUpload);
+        extractAnisotropy(material, *materialUpload);
 
         if(materialUpload->material.extensions.contains(KHR_materials_unlit)){
             material.unlit = 1;
@@ -2087,14 +2089,34 @@ namespace gltf {
         }
 
         if(sheen.Has("sheenColorTexture")) {
-            const auto& colorTexture = extract(sheen.Get("sheenColorTexture"), materialUpload.textureOffset);
-            const auto& roughnessTexture = extract(sheen.Get("sheenColorTexture"), materialUpload.textureOffset);
+            const auto& colorTexture = extractTextureInfo(sheen.Get("sheenColorTexture"), materialUpload.textureOffset);
+            const auto& roughnessTexture = extractTextureInfo(sheen.Get("sheenColorTexture"), materialUpload.textureOffset);
             materialUpload.textureInfos[to<int>(TextureType::SHEEN_COLOR)] = colorTexture;
             materialUpload.textureInfos[to<int>(TextureType::SHEEN_ROUGHNESS)] = roughnessTexture;
         }
     }
 
-    TextureInfo Loader::extract(const tinygltf::Value &v, int offset) {
+    void Loader::extractAnisotropy(MaterialData &material, MaterialUploadTask &materialUpload) {
+        const auto& gMat = materialUpload.material;
+        if(!gMat.extensions.contains(KHR_materials_anisotropy)) return;
+
+        const auto& anisotropy = gMat.extensions.at("KHR_materials_anisotropy");
+
+        if(anisotropy.Has("anisotropyStrength")) {
+            material.anisotropyStrength = to<float>(anisotropy.Get("anisotropyStrength").GetNumberAsDouble());
+        }
+
+        if(anisotropy.Has("anisotropyRotation")) {
+            const auto rotation = to<float>(anisotropy.Get("anisotropyRotation").GetNumberAsDouble());
+            material.anisotropyRotation = { glm::cos(rotation), glm::sin(rotation) };
+        }
+
+        if(anisotropy.Has("anisotropyTexture")) {
+            materialUpload.textureInfos[to<int>(TextureType::ANISOTROPY)] = extractTextureInfo(anisotropy.Get("anisotropyTexture"), materialUpload.textureOffset);
+        }
+    }
+
+    TextureInfo Loader::extractTextureInfo(const tinygltf::Value &v, int offset) {
         TextureInfo info{};
 
         info.index = v.Has("index") ? v.Get("index").GetNumberAsInt() + offset : -1;
