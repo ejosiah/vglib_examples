@@ -25,11 +25,12 @@ namespace gltf {
 
     enum class TextureType : int { BASE_COLOR = 0, NORMAL, METALLIC_ROUGHNESS, OCCLUSION
                                  , EMISSION, THICKNESS, CLEAR_COAT_COLOR, CLEAR_COAT_ROUGHNESS
-                                 , CLEAR_COAT_NORMAL, SHEEN_COLOR, SHEEN_ROUGHNESS, ANISOTROPY };
+                                 , CLEAR_COAT_NORMAL, SHEEN_COLOR, SHEEN_ROUGHNESS, ANISOTROPY,
+                                  SPECULAR_STRENGTH, SPECULAR_COLOR };
 
     enum class LightType : int { DIRECTIONAL = 0, POINT, SPOT };
 
-    constexpr int NUM_TEXTURE_MAPPING = 12;
+    constexpr int NUM_TEXTURE_MAPPING = 16;
 
 
     struct Draw {

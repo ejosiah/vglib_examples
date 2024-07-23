@@ -61,6 +61,9 @@ namespace gltf {
         float anisotropyStrength{0};
         int unlit{0};
 
+        glm::vec3 specularColor{1.0};
+        float specularFactor{1.0};
+
     };
 
     struct TextureInfo {
@@ -283,6 +286,8 @@ namespace gltf {
         void extractSheen(MaterialData& material, MaterialUploadTask& materialUpload);
 
         void extractAnisotropy(MaterialData& material, MaterialUploadTask& materialUpload);
+
+        void extractSpecular(MaterialData& material, MaterialUploadTask& materialUpload);
 
         VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);
 

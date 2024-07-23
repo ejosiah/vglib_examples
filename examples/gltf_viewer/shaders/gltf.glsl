@@ -43,6 +43,9 @@ struct Material {
     vec2 anisotropyRotation;
     float anisotropyStrength;
     int unlit;
+
+    vec3 specularColor;
+    float specularFactor;
 };
 
 struct TextureInfo {
@@ -74,6 +77,11 @@ struct Anisotropy {
     vec3 bitangent;
     float strength;
     bool enabled;
+};
+
+struct Specular{
+    vec3 color;
+    float factor;
 };
 
 struct NormalInfo {
@@ -114,6 +122,14 @@ Anisotropy newAnisotropyInstance() {
     return aniso;
 }
 
+Specular newSpecluarInstance() {
+    Specular s;
+    s.color = vec3(1);
+    s.factor = 1;
+
+    return s;
+}
+
 vec4 getBaseColor();
 NormalInfo getNormalInfo();
 vec3 getMRO();
@@ -125,6 +141,7 @@ bool isNull(Material material);
 ClearCoat getClearCoat();
 Sheen getSheen();
 Anisotropy getAnisotropy();
+Specular getSpecular();
 vec2 transformUV(TextureInfo textureInfo);
 
 

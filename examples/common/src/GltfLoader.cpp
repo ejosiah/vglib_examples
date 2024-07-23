@@ -18,6 +18,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_sheen = "KHR_materials_sheen";
     static constexpr const char* KHR_materials_unlit = "KHR_materials_unlit";
     static constexpr const char* KHR_materials_anisotropy = "KHR_materials_anisotropy";
+    static constexpr const char* KHR_materials_specular = "KHR_materials_specular";
 
     static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
@@ -971,6 +972,7 @@ namespace gltf {
 
         extractSheen(material, *materialUpload);
         extractAnisotropy(material, *materialUpload);
+        extractSpecular(material, *materialUpload);
 
         if(materialUpload->material.extensions.contains(KHR_materials_unlit)){
             material.unlit = 1;
@@ -2141,5 +2143,28 @@ namespace gltf {
 
         }
         return info;
+    }
+
+    void Loader::extractSpecular(MaterialData &material, MaterialUploadTask &materialUpload) {
+        const auto& gMat = materialUpload.material;
+        if(!gMat.extensions.contains(KHR_materials_specular)) return;
+
+        const auto& specular = gMat.extensions.at(KHR_materials_specular);
+        if(specular.Has("specularColorFactor")){
+            material.specularColor = vec3From(specular.Get("specularColorFactor"));
+        }
+        if(specular.Has("specularFactor")){
+            material.specularFactor = to<float>(specular.Get("specularFactor").GetNumberAsDouble());
+        }
+
+        if(specular.Has("specularColorTexture")) {
+            const auto& colorTexture = extractTextureInfo(specular.Get("specularColorTexture"), materialUpload.textureOffset);
+            materialUpload.textureInfos[to<int>(TextureType::SPECULAR_COLOR)] = colorTexture;
+        }
+
+        if(specular.Has("specularTexture")) {
+            const auto& strengthTexture = extractTextureInfo(specular.Get("specularTexture"), materialUpload.textureOffset);
+            materialUpload.textureInfos[to<int>(TextureType::SPECULAR_STRENGTH)] = strengthTexture;
+        }
     }
 }

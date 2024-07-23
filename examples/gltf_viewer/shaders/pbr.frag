@@ -21,7 +21,9 @@
 #define SHEEN_COLOR_INDEX 9
 #define SHEEN_ROUGHNESS_INDEX 10
 #define ANISOTROPY_INDEX 11
-#define TEXTURE_INFO_PER_MATERIAL 12
+#define SPECULAR_STRENGTH_INDEX 12
+#define SPECULAR_COLOR_INDEX 13
+#define TEXTURE_INFO_PER_MATERIAL 16
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
 #define MATERIAL materials[MATERIAL_ID]
@@ -46,6 +48,9 @@
 
 #define ANISOTROPY_TEX_INFO textureInfos[TEXTURE_OFFSET + ANISOTROPY_INDEX]
 
+#define SPECULAR_STRENGTH_TEX_INFO textureInfos[TEXTURE_OFFSET + SPECULAR_STRENGTH_INDEX]
+#define SPECULAR_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + SPECULAR_COLOR_INDEX]
+
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
 #define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_INFO.index)]
@@ -62,6 +67,9 @@
 #define SHEEN_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(SHEEN_ROUGHNESS_TEX_INFO.index)]
 
 #define ANISOTROPY_TEXTURE global_textures[nonuniformEXT(ANISOTROPY_TEX_INFO.index)]
+
+#define SPECULAR_STRENGTH_TEXTURE global_textures[nonuniformEXT(SPECULAR_STRENGTH_TEX_INFO.index)]
+#define SPECULAR_COLOR_TEXTURE global_textures[nonuniformEXT(SPECULAR_COLOR_TEX_INFO.index)]
 
 #define u_GGXLUT global_textures[nonuniformEXT(brdf_lut_texture_id)]
 #define u_CharlieLUT global_textures[nonuniformEXT(charlie_lut_texture_id)]
@@ -145,16 +153,18 @@ void main() {
     }
 
     ni = getNormalInfo();
+    const Specular spec = getSpecular();
     const vec3 mro = getMRO();
     const float metalness = clamp(mro.r, 0, 1);
     const float perceptualRoughness = clamp(mro.g, 0, 1);
     const float ao = mro.b;
     const float alphaRoughness = perceptualRoughness * perceptualRoughness;
-    const vec3 f0 = mix(F0, baseColor.rgb, metalness);
+    const vec3 dielectricSpecularF0 = min(F0 * spec.color, vec3(1));
+    const vec3 f0 = mix(dielectricSpecularF0, baseColor.rgb, metalness);
     const vec3 f90 = vec3(1);
     const vec3 c_diff = mix(baseColor.rgb, vec3(0), metalness);
     const float ior = MATERIAL.ior;
-    const float specularWeight = 1;
+    const float specularWeight = spec.factor;
     const float thickness = getThickness();
     const vec3 attenuationColor = MATERIAL.attenuationColor;
     const float attenuationDistance = MATERIAL.attenuationDistance;
@@ -314,10 +324,10 @@ void main() {
         fragColor = vec4(normal, 1);
     }
     if(debug == 3) {
-        fragColor = vec4(vec3(perceptualRoughness), 1);
+        fragColor = vec4(vec3(metalness), 1);
     }
     if(debug == 4) {
-        fragColor = vec4(vec3(metalness), 1);
+        fragColor = vec4(vec3(perceptualRoughness), 1);
     }
 
     if(debug == 5) {
@@ -504,6 +514,24 @@ Anisotropy getAnisotropy() {
 
     anisotropy.enabled = strength > 0;
     return anisotropy;
+}
+
+Specular getSpecular() {
+    Specular specular = newSpecluarInstance();
+
+    specular.color = MATERIAL.specularColor;
+    specular.factor = MATERIAL.specularFactor;
+
+    if(SPECULAR_STRENGTH_TEX_INFO.index != -1) {
+        vec2 uv = transformUV(SPECULAR_STRENGTH_TEX_INFO);
+        specular.factor *= texture(SPECULAR_STRENGTH_TEXTURE, uv).a;
+    }
+
+    if(SPECULAR_COLOR_TEX_INFO.index != -1){
+        vec2 uv = transformUV(SPECULAR_COLOR_TEX_INFO);
+        specular.color *= texture(SPECULAR_COLOR_TEXTURE, uv).rgb;
+    }
+    return specular;
 }
 
 vec2 transformUV(TextureInfo ti) {
