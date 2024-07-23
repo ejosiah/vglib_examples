@@ -44,7 +44,7 @@
 #define SHEEN_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + SHEEN_COLOR_INDEX]
 #define SHEEN_ROUGHNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + SHEEN_ROUGHNESS_INDEX]
 
-#define ANISOTROPY_TEX_INFO textureInfos[TEXTURE_OFFSET - ANISOTROPY_INDEX]
+#define ANISOTROPY_TEX_INFO textureInfos[TEXTURE_OFFSET + ANISOTROPY_INDEX]
 
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
@@ -140,7 +140,7 @@ void main() {
 
     const float transmissionFactor = getTransmissionFactor();
 
-    if((MATERIAL.alphaMode == ALPHA_MODE_BLEND || transmissionFactor > 0) && discard_transmissive == 1){
+    if((MATERIAL.alphaMode == ALPHA_MODE_BLEND || transmissionFactor > 0) && discard_transmissive == 1) {
         discard;
     }
 
@@ -368,13 +368,21 @@ NormalInfo getNormalInfo() {
     vec3 T = normalize(fs_in.tangent);
     vec3 B = normalize(fs_in.bitangent);
     vec3 N = normalize(fs_in.normal);
+    vec3 Ng = normalize(fs_in.normal);
+
+    if(!gl_FrontFacing) {
+        T *= -1;
+        B *= -1;
+        Ng *= -1;
+    }
+
 
     if(NORMAL_TEX_INFO.index == -1 || noTangets()) {
-        return NormalInfo(vec3(1, 0, 0), vec3(0, 1, 0), N);
+        return NormalInfo(vec3(1, 0, 0), vec3(0, 1, 0), Ng, Ng);
     }
 
     vec2 uv = transformUV(NORMAL_TEX_INFO);
-    mat3 TBN = mat3(T, B, N);
+    mat3 TBN = mat3(T, B, Ng);
 
     vec3 nScale = vec3(NORMAL_TEX_INFO.tScale, NORMAL_TEX_INFO.tScale, 1);
     vec3 normal = 2 * texture(NORMAL_TEXTURE, uv).xyz - 1;
@@ -382,10 +390,7 @@ NormalInfo getNormalInfo() {
     normal.y *= -1;
     normal = normalize(TBN * normal);
 
-    if(MATERIAL.doubleSided == 1 && !gl_FrontFacing) {
-        normal *= -1;
-    }
-    return NormalInfo(T, B, normal);
+    return NormalInfo(T, B, normal, Ng);
 }
 
 bool noTangets() {
@@ -491,15 +496,13 @@ Anisotropy getAnisotropy() {
     }
 
     mat2 rotator = mat2(rotationDirection.x, rotationDirection.y, -rotationDirection.y, rotationDirection.x);
-    direction = rotator * direction;
+    direction = rotator * normalize(direction);
 
-    anisotropy.tangent = mat3(ni.T, ni.B, ni.N) * normalize(vec3(direction, 0.0));
-    anisotropy.bitangent = cross(ni.N, anisotropy.tangent);
+    anisotropy.tangent = normalize(mat3(ni.T, ni.B, ni.Ng) * vec3(direction, 0.0));
+    anisotropy.bitangent = normalize(cross(ni.Ng, anisotropy.tangent));
     anisotropy.strength = clamp(strength, 0, 1);
 
-//    anisotropy.enabled == strength > 0 && direction.x != 1 && direction.y != 0;
-    anisotropy.enabled == false;
-
+    anisotropy.enabled = strength > 0;
     return anisotropy;
 }
 

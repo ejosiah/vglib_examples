@@ -16,6 +16,7 @@
 - KHR_texture_transform
 - KHR_materials_unlit
 - KHR_materials_sheen
+- KHR_materials_anisotropy
 
 ## TODO
 - implement more robust Tone mapping
@@ -37,3 +38,4 @@
 - fix - descriptorPool memory leak (descriptorSet not freed after use)
 - fix - free up texture binding points used by a model when its disposed
 - fix - app fails on exit during async loads
+- fix - KHR_materials_anisotropy tangent rotation

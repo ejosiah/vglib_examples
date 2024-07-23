@@ -80,6 +80,7 @@ struct NormalInfo {
     vec3 T;
     vec3 B;
     vec3 N;
+    vec3 Ng;
 };
 
 ClearCoat newClearCoatInstance() {
@@ -105,8 +106,8 @@ Sheen newSheenInstance() {
 
 Anisotropy newAnisotropyInstance() {
     Anisotropy aniso;
-    aniso.bitangent = vec3(1, 0, 0);
-    aniso.tangent = vec3(0, 1, 0);
+    aniso.tangent = vec3(1, 0, 0);
+    aniso.bitangent = vec3(0, 1, 0);
     aniso.strength = 1;
     bool enabled = false;
 

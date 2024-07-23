@@ -676,7 +676,6 @@ namespace gltf {
                 auto weights = getAttributeData<glm::vec4>(*pending->gltf, primitive, fmt::format("WEIGHTS_{}", j));
                 auto uvs = getAttributeData<glm::vec2>(*pending->gltf, primitive, fmt::format("TEXCOORD_{}", j));
 
-                if(!colors3.empty() || !colors4.empty() || !uvs.empty() || !joints.empty() || !weights.empty())
                 for(auto i = 0; i  < numVertices; ++i) {
                     vertices[i].color[j] = !colors3.empty() ? glm::vec4(colors3[i], 1) : (!colors4.empty() ? colors4[i] : glm::vec4(1));
 //                    vertices[i].joint = !joints.empty() ? glm::vec4(joints[i]) : glm::vec4(0);
