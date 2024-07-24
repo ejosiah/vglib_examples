@@ -64,6 +64,10 @@ namespace gltf {
         glm::vec3 specularColor{1.0};
         float specularFactor{1.0};
 
+        float iridescenceFactor{0};
+        float iridescenceIor{1.3};
+        float iridescenceThicknessMinimum{100}; // nanometers
+        float iridescenceThicknessMaximum{400}; // nanometers;
     };
 
     struct TextureInfo {
@@ -288,6 +292,8 @@ namespace gltf {
         void extractAnisotropy(MaterialData& material, MaterialUploadTask& materialUpload);
 
         void extractSpecular(MaterialData& material, MaterialUploadTask& materialUpload);
+
+        void extractIridescence(MaterialData& material, MaterialUploadTask& materialUpload);
 
         VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);
 

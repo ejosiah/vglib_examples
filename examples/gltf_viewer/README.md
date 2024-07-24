@@ -18,6 +18,7 @@
 - KHR_materials_sheen
 - KHR_materials_anisotropy
 - KHR_materials_specular
+- KHR_materials_iridescence
 
 ## TODO
 - implement more robust Tone mapping

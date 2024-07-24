@@ -46,6 +46,11 @@ struct Material {
 
     vec3 specularColor;
     float specularFactor;
+
+    float iridescenceFactor;
+    float iridescenceIor;
+    float iridescenceThicknessMinimum; // nanometers
+    float iridescenceThicknessMaximum; // nanometers;
 };
 
 struct TextureInfo {
@@ -92,6 +97,13 @@ struct NormalInfo {
     vec3 Ntex;
 };
 
+struct Iridescence {
+    float factor;
+    float ior;
+    float thickness;
+    bool enabled;
+};
+
 ClearCoat newClearCoatInstance() {
     ClearCoat cc;
     cc.factor = 0;
@@ -131,6 +143,15 @@ Specular newSpecluarInstance() {
     return s;
 }
 
+Iridescence newIridescencInstance() {
+    Iridescence ir;
+    ir.factor = 0;
+    ir.ior = 1.3;
+    ir.thickness = 400;
+
+    return ir;
+}
+
 vec4 getBaseColor();
 NormalInfo getNormalInfo();
 vec3 getMRO();
@@ -144,6 +165,7 @@ Anisotropy getAnisotropy();
 Specular getSpecular();
 bool hasTanget();
 bool hasNormal();
+Iridescence getIridescence();
 vec2 transformUV(TextureInfo textureInfo);
 
 

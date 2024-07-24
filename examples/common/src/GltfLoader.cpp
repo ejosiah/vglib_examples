@@ -19,6 +19,7 @@ namespace gltf {
     static constexpr const char* KHR_materials_unlit = "KHR_materials_unlit";
     static constexpr const char* KHR_materials_anisotropy = "KHR_materials_anisotropy";
     static constexpr const char* KHR_materials_specular = "KHR_materials_specular";
+    static constexpr const char* KHR_materials_iridescence  = "KHR_materials_iridescence";
 
     static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
 
@@ -970,6 +971,7 @@ namespace gltf {
         extractSheen(material, *materialUpload);
         extractAnisotropy(material, *materialUpload);
         extractSpecular(material, *materialUpload);
+        extractIridescence(material, *materialUpload);
 
         if(materialUpload->material.extensions.contains(KHR_materials_unlit)){
             material.unlit = 1;
@@ -2162,6 +2164,37 @@ namespace gltf {
         if(specular.Has("specularTexture")) {
             const auto& strengthTexture = extractTextureInfo(specular.Get("specularTexture"), materialUpload.textureOffset);
             materialUpload.textureInfos[to<int>(TextureType::SPECULAR_STRENGTH)] = strengthTexture;
+        }
+    }
+
+    void Loader::extractIridescence(MaterialData &material, MaterialUploadTask &materialUpload) {
+        const auto& gMat = materialUpload.material;
+        if(!gMat.extensions.contains(KHR_materials_iridescence)) return;
+
+        const auto& iridescence = gMat.extensions.at(KHR_materials_iridescence);
+
+        if(iridescence.Has("iridescenceFactor")){
+            material.iridescenceFactor = to<float>(iridescence.Get("iridescenceFactor").GetNumberAsDouble());
+        }
+
+        if(iridescence.Has("iridescenceIor")){
+            material.iridescenceIor = to<float>(iridescence.Get("iridescenceIor").GetNumberAsDouble());
+        }
+
+        if(iridescence.Has("iridescenceThicknessMinimum")){
+            material.iridescenceThicknessMinimum = to<float>(iridescence.Get("iridescenceThicknessMinimum").GetNumberAsDouble());
+        }
+
+        if(iridescence.Has("iridescenceThicknessMaximum")){
+            material.iridescenceThicknessMaximum = to<float>(iridescence.Get("iridescenceThicknessMaximum").GetNumberAsDouble());
+        }
+
+        if(iridescence.Has("iridescenceTexture")){
+            materialUpload.textureInfos[to<int>(TextureType::IRIDESCENCE)] = extractTextureInfo(iridescence.Get("iridescenceTexture"), material.textureInfoOffset);
+        }
+
+        if(iridescence.Has("iridescenceThicknessTexture")){
+            materialUpload.textureInfos[to<int>(TextureType::IRIDESCENCE_THICKNESS)] = extractTextureInfo(iridescence.Get("iridescenceThicknessTexture"), material.textureInfoOffset);
         }
     }
 }

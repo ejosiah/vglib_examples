@@ -26,7 +26,7 @@ namespace gltf {
     enum class TextureType : int { BASE_COLOR = 0, NORMAL, METALLIC_ROUGHNESS, OCCLUSION
                                  , EMISSION, THICKNESS, CLEAR_COAT_COLOR, CLEAR_COAT_ROUGHNESS
                                  , CLEAR_COAT_NORMAL, SHEEN_COLOR, SHEEN_ROUGHNESS, ANISOTROPY,
-                                  SPECULAR_STRENGTH, SPECULAR_COLOR };
+                                  SPECULAR_STRENGTH, SPECULAR_COLOR, IRIDESCENCE, IRIDESCENCE_THICKNESS };
 
     enum class LightType : int { DIRECTIONAL = 0, POINT, SPOT };
 

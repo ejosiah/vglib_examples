@@ -23,6 +23,8 @@
 #define ANISOTROPY_INDEX 11
 #define SPECULAR_STRENGTH_INDEX 12
 #define SPECULAR_COLOR_INDEX 13
+#define IRIDESCENCE 14
+#define IRIDESCENCE_THICKNESS 15
 #define TEXTURE_INFO_PER_MATERIAL 16
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
@@ -51,6 +53,9 @@
 #define SPECULAR_STRENGTH_TEX_INFO textureInfos[TEXTURE_OFFSET + SPECULAR_STRENGTH_INDEX]
 #define SPECULAR_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + SPECULAR_COLOR_INDEX]
 
+#define IRIDESCENCE_TEX_INFO textureInfos[TEXTURE_OFFSET + IRIDESCENCE]
+#define IRIDESCENCE_THICKNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + IRIDESCENCE_THICKNESS]
+
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
 #define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_INFO.index)]
@@ -70,6 +75,9 @@
 
 #define SPECULAR_STRENGTH_TEXTURE global_textures[nonuniformEXT(SPECULAR_STRENGTH_TEX_INFO.index)]
 #define SPECULAR_COLOR_TEXTURE global_textures[nonuniformEXT(SPECULAR_COLOR_TEX_INFO.index)]
+
+#define IRIDESCENCE_TEXTURE global_textures[nonuniformEXT(IRIDESCENCE_TEX_INFO.index)]
+#define IRIDESCENCE_THICKNESS_TEXTURE global_textures[nonuniformEXT(IRIDESCENCE_THICKNESS_TEX_INFO.index)]
 
 #define u_GGXLUT global_textures[nonuniformEXT(brdf_lut_texture_id)]
 #define u_CharlieLUT global_textures[nonuniformEXT(charlie_lut_texture_id)]
@@ -91,6 +99,7 @@ layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 #include "gltf.glsl"
 #include "octahedral.glsl"
 #include "ibl.glsl"
+#include "iridescence.glsl"
 
 layout(set = 0, binding = 0) buffer MeshData {
     Mesh meshes[];
@@ -173,6 +182,7 @@ void main() {
     const ClearCoat cc = getClearCoat();
     const Sheen sheenMat = getSheen();
     const Anisotropy anisotropy = getAnisotropy();
+    Iridescence iridescence = getIridescence();
 
 
     vec3 f_specular = vec3(0.0);
@@ -192,11 +202,21 @@ void main() {
     float TdotV = clampedDot(ni.T, V);
     float BdotV = clampedDot(ni.B, V);
 
+    vec3 iridescenceFresnel = evalIridescence(1.0, iridescence.ior, NdotV, iridescence.thickness, f0);
+    vec3 iridescenceF0 = Schlick_to_F0(iridescenceFresnel, NdotV);
+
+    if (iridescence.thickness == 0.0) {
+        iridescence.factor = 0.0;
+    }
+
     f_emissive = emission;
 
 
     if(ibl_on == 1){
-        if(anisotropy.enabled) {
+        if(iridescence.enabled){
+            f_specular += getIBLRadianceGGXIridescence(N, V, perceptualRoughness, f0, iridescenceFresnel, iridescence.factor, specularWeight);
+            f_diffuse += getIBLRadianceLambertianIridescence(N, V, perceptualRoughness, c_diff, f0, f90,  iridescence.factor, specularWeight);
+        }else if(anisotropy.enabled) {
             f_specular += getIBLRadianceAnisotropy(N, V, perceptualRoughness, anisotropy.strength, anisotropy.bitangent, f0, specularWeight);
             f_diffuse += getIBLRadianceLambertian(N, V, perceptualRoughness, c_diff, f0, specularWeight);
         }else {
@@ -254,8 +274,11 @@ void main() {
                 vec3 l_diffuse = vec3(0.0);
                 vec3 l_specular = vec3(0.0);
 
+                 if(iridescence.enabled) {
+                     l_diffuse += intensity * NdotL *  BRDF_lambertianIridescence(f0, f90, iridescenceFresnel, iridescence.factor, c_diff, specularWeight, VdotH);
+                     l_specular += intensity * NdotL * BRDF_specularGGXIridescence(f0, f90, iridescenceFresnel, alphaRoughness, iridescence.factor, specularWeight, VdotH, NdotL, NdotV, NdotH);
 
-                if(anisotropy.enabled){
+                 } else  if(anisotropy.enabled){
                     l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
                     l_specular += intensity * NdotL * BRDF_specularGGXAnisotropy(f0, f90, alphaRoughness, anisotropy.strength, N, V, L, H, anisotropy.tangent, anisotropy.bitangent);
                 }else {
@@ -499,7 +522,6 @@ ClearCoat getClearCoat() {
         uv = transformUV(CLEAR_COAT_NORMAL_TEX_INFO);
         mat3 TBN = mat3(ni.T, ni.B, ni.N);
         cc.normal = 2 * texture(CLEAR_COAT_NORMAL_TEXTURE, uv).xyz - 1;
-        cc.normal.y *= -1;
         cc.normal = normalize(TBN * cc.normal);
     }
 
@@ -572,6 +594,29 @@ Specular getSpecular() {
         specular.color *= texture(SPECULAR_COLOR_TEXTURE, uv).rgb;
     }
     return specular;
+}
+
+Iridescence getIridescence() {
+    Iridescence iri = newIridescencInstance();
+
+    iri.factor = MATERIAL.iridescenceFactor;
+    iri.ior = MATERIAL.iridescenceIor;
+    iri.thickness = MATERIAL.iridescenceThicknessMaximum;
+
+    if(IRIDESCENCE_TEX_INFO.index != -1) {
+        vec2 uv = transformUV(IRIDESCENCE_TEX_INFO);
+        iri.factor *= texture(IRIDESCENCE_TEXTURE, uv).r;
+    }
+
+    if(IRIDESCENCE_THICKNESS_TEX_INFO.index != -1){
+        vec2 uv = transformUV(IRIDESCENCE_THICKNESS_TEX_INFO);
+        float g = texture(IRIDESCENCE_THICKNESS_TEXTURE, uv).g;
+        iri.thickness = mix(MATERIAL.iridescenceThicknessMinimum, iri.thickness, g);
+    }
+
+    iri.enabled = iri.factor > 0;
+
+    return iri;
 }
 
 vec2 transformUV(TextureInfo ti) {
