@@ -375,36 +375,76 @@ vec3 getMRO() {
 }
 
 NormalInfo getNormalInfo() {
-    vec3 T = normalize(fs_in.tangent);
-    vec3 B = normalize(fs_in.bitangent);
-    vec3 N = normalize(fs_in.normal);
-    vec3 Ng = normalize(fs_in.normal);
-
-    if(!gl_FrontFacing) {
-        T *= -1;
-        B *= -1;
-        Ng *= -1;
-    }
-
-
-    if(NORMAL_TEX_INFO.index == -1 || noTangets()) {
-        return NormalInfo(vec3(1, 0, 0), vec3(0, 1, 0), Ng, Ng);
-    }
 
     vec2 uv = transformUV(NORMAL_TEX_INFO);
-    mat3 TBN = mat3(T, B, Ng);
+    vec2 uv_dx = dFdx(uv);
+    vec2 uv_dy = dFdy(uv);
 
-    vec3 nScale = vec3(NORMAL_TEX_INFO.tScale, NORMAL_TEX_INFO.tScale, 1);
-    vec3 normal = 2 * texture(NORMAL_TEXTURE, uv).xyz - 1;
-    normal *= nScale;
-    normal.y *= -1;
-    normal = normalize(TBN * normal);
+    if (length(uv_dx) <= 1e-2) {
+        uv_dx = vec2(1.0, 0.0);
+    }
 
-    return NormalInfo(T, B, normal, Ng);
+    if (length(uv_dy) <= 1e-2) {
+        uv_dy = vec2(0.0, 1.0);
+    }
+
+    vec3 t_ = (uv_dy.t * dFdx(fs_in.position) - uv_dx.t * dFdy(fs_in.position)) /
+    (uv_dx.s * uv_dy.t - uv_dy.s * uv_dx.t);
+
+    vec3 n, t, b, ng;
+
+    // Compute geometrical TBN:
+    if(hasNormal()){
+        if (hasTanget()){
+            // Trivial TBN computation, present as vertex attribute.
+            // Normalize eigenvectors as matrix is linearly interpolated.
+            t = normalize(fs_in.tangent);
+            b = normalize(fs_in.bitangent);
+            ng = normalize(fs_in.normal);
+        } else {
+            // Normals are either present as vertex attributes or approximated.
+            ng = normalize(fs_in.normal);
+            t = normalize(t_ - ng * dot(ng, t_));
+            b = cross(ng, t);
+        }
+    } else {
+        ng = normalize(cross(dFdx(fs_in.position), dFdy(fs_in.position)));
+        t = normalize(t_ - ng * dot(ng, t_));
+        b = cross(ng, t);
+    }
+
+
+    // For a back-facing surface, the tangential basis vectors are negated.
+    if (gl_FrontFacing == false)
+    {
+        t *= -1.0;
+        b *= -1.0;
+        ng *= -1.0;
+    }
+
+    // Compute normals:
+    NormalInfo info;
+    info.Ng = ng;
+    if(NORMAL_TEX_INFO.index != -1){
+        info.Ntex = texture(NORMAL_TEXTURE, uv).rgb * 2.0 - vec3(1.0);
+        info.Ntex *= vec3(NORMAL_TEX_INFO.tScale, NORMAL_TEX_INFO.tScale, 1.0);
+        info.Ntex = normalize(info.Ntex);
+        info.N = normalize(mat3(t, b, ng) * info.Ntex);
+    } else {
+        info.N = ng;
+    }
+    info.T = t;
+    info.B = b;
+    return info;
+
 }
 
-bool noTangets() {
-    return all(equal(fs_in.tangent, vec3(0)));
+bool hasTanget() {
+    return !all(equal(fs_in.tangent, vec3(0)));
+}
+
+bool hasNormal() {
+    return !all(equal(fs_in.normal, vec3(0)));
 }
 
 vec3 getEmission(){
@@ -535,6 +575,8 @@ Specular getSpecular() {
 }
 
 vec2 transformUV(TextureInfo ti) {
+    if(ti.index == -1) return fs_in.uv[0];
+
     mat3 translation = mat3(1,0,0, 0,1,0, ti.offset.x, ti.offset.y, 1);
     mat3 rotation = mat3(
         cos(ti.rotation), -sin(ti.rotation), 0,

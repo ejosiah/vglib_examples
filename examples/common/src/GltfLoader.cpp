@@ -664,7 +664,7 @@ namespace gltf {
             for(auto i = 0; i < numVertices; ++i) {
                 VertexMultiAttributes vertex{};
                 vertex.position = glm::vec4(positions[i], 1);
-                vertex.normal = normals.empty() ? glm::vec3(0, 0, 1) : normals[i];
+                vertex.normal = normals.empty() ? glm::vec3(0) : normals[i];
                 vertex.tangent = tangents.empty() ? glm::vec3(0) : tangents[i].xyz();
                 vertex.bitangent = tangents.empty() ? glm::vec3(0) : glm::cross(normals[i], tangents[i].xyz()) * tangents[i].w;
                 vertices.push_back(vertex);
@@ -695,9 +695,6 @@ namespace gltf {
                 regions[1].size = BYTE_SIZE(indices);
                 stagingBuffer.copy(indices.data(), regions[1].size, regions[0].size);
 
-                if(tangents.empty()) {
-                    calculateTangents(vertices, indices);
-                }
             }else if(indexType == ComponentType::UNSIGNED_SHORT) {
                 auto pIndices = getIndices<uint16_t>(*pending->gltf, primitive);
                 std::vector<uint16_t> indices{pIndices.begin(), pIndices.end()};

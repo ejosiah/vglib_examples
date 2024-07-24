@@ -89,6 +89,7 @@ struct NormalInfo {
     vec3 B;
     vec3 N;
     vec3 Ng;
+    vec3 Ntex;
 };
 
 ClearCoat newClearCoatInstance() {
@@ -133,7 +134,6 @@ Specular newSpecluarInstance() {
 vec4 getBaseColor();
 NormalInfo getNormalInfo();
 vec3 getMRO();
-bool noTangets();
 vec3 getEmission();
 float getTransmissionFactor();
 float getThickness();
@@ -142,6 +142,8 @@ ClearCoat getClearCoat();
 Sheen getSheen();
 Anisotropy getAnisotropy();
 Specular getSpecular();
+bool hasTanget();
+bool hasNormal();
 vec2 transformUV(TextureInfo textureInfo);
 
 

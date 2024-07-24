@@ -36,7 +36,7 @@ layout(location = 13) out flat int drawId;
 void main(){
     drawId = gl_DrawID;
     mat4 meshModel = model * meshes[nonuniformEXT(gl_DrawID)].model;
-    mat3 nModel = mat3(meshModel);
+    mat3 nModel = transpose(inverse(mat3(meshModel)));
 
     vec4 worldPos = meshModel * position;
 
