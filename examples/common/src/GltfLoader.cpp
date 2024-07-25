@@ -877,25 +877,11 @@ namespace gltf {
     void Loader::process(VkCommandBuffer commandBuffer, MaterialUploadTask* materialUpload, int workerId) {
         if(!materialUpload) return;
 
-        MaterialData material{};
-        material.baseColor = vec4From(materialUpload->material.pbrMetallicRoughness.baseColorFactor);
-        material.roughness = static_cast<float>(materialUpload->material.pbrMetallicRoughness.roughnessFactor);
-        material.metalness = static_cast<float>(materialUpload->material.pbrMetallicRoughness.metallicFactor);
-        material.emission = vec3From(materialUpload->material.emissiveFactor);
-        material.alphaMode = alphaModeToIndex(materialUpload->material.alphaMode);
-        material.alphaCutOff = static_cast<float>(materialUpload->material.alphaCutoff);
-        material.doubleSided = materialUpload->material.doubleSided;
-        material.textureInfoOffset = materialUpload->materialId;
-        
         auto& textureInfos = materialUpload->textureInfos;
 
-        const auto offset = materialUpload->pending->textureBindingOffset;
-        textureInfos[static_cast<int>(TextureType::BASE_COLOR)] = extract(materialUpload->material.pbrMetallicRoughness.baseColorTexture,  offset);
-        textureInfos[static_cast<int>(TextureType::NORMAL)] = extract(materialUpload->material.normalTexture, offset);
-        textureInfos[static_cast<int>(TextureType::METALLIC_ROUGHNESS)] = extract(materialUpload->material.pbrMetallicRoughness.metallicRoughnessTexture, offset);
-        textureInfos[static_cast<int>(TextureType::EMISSION)] = extract(materialUpload->material.emissiveTexture, offset);
-        textureInfos[static_cast<int>(TextureType::OCCLUSION)] = extract(materialUpload->material.occlusionTexture, offset);
+        MaterialData material{};
 
+        extractPbr(material, *materialUpload);
         extractTransmission(material, *materialUpload);
 
         if(materialUpload->material.extensions.contains(KHR_materials_emissive_strength)){
@@ -910,57 +896,8 @@ namespace gltf {
             material.ior = materialUpload->material.extensions.at(KHR_materials_ior).Get("ior").GetNumberAsDouble();
         }
 
-        if(materialUpload->material.extensions.contains(KHR_materials_volume)) {
-
-            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("thicknessFactor")) {
-                material.thickness = materialUpload->material.extensions.at(KHR_materials_volume).Get( "thicknessFactor").GetNumberAsDouble();
-            }
-
-            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("attenuationDistance")) {
-                material.attenuationDistance = materialUpload->material.extensions.at(KHR_materials_volume).Get("attenuationDistance").GetNumberAsDouble();
-            }
-
-            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("attenuationColor")) {
-                material.attenuationColor.r = materialUpload->material.extensions.at(KHR_materials_volume).Get("attenuationColor").Get(0).GetNumberAsDouble();
-                material.attenuationColor.g = materialUpload->material.extensions.at(KHR_materials_volume).Get( "attenuationColor").Get(1).GetNumberAsDouble();
-                material.attenuationColor.b = materialUpload->material.extensions.at(KHR_materials_volume).Get( "attenuationColor").Get(2).GetNumberAsDouble();
-            }
-
-            if(materialUpload->material.extensions.at(KHR_materials_volume).Has("thicknessTexture")){
-                auto textureIndex = materialUpload->material.extensions.at(KHR_materials_volume).Get("thicknessTexture").Get("index").GetNumberAsInt();
-                if(textureIndex != -1) {
-                    textureInfos[static_cast<int>(TextureType::THICKNESS)].index = textureIndex + materialUpload->pending->textureBindingOffset;
-                }
-            }
-        }
-
-        if(materialUpload->material.extensions.contains(KHR_materials_clearcoat)){
-            const auto& clearCoat = materialUpload->material.extensions.at(KHR_materials_clearcoat);
-
-            if(clearCoat.Has("clearcoatFactor")){
-                material.clearCoatFactor = clearCoat.Get("clearcoatFactor").GetNumberAsDouble();
-            }
-
-            if(clearCoat.Has("clearcoatRoughnessFactor")){
-                material.clearCoatRoughnessFactor = clearCoat.Get("clearcoatRoughnessFactor").GetNumberAsDouble();
-            }
-
-            if(clearCoat.Has("clearcoatTexture")){
-                auto textureIndex = clearCoat.Get("clearcoatTexture").Get("index").GetNumberAsInt();
-                textureInfos[static_cast<int>(TextureType::CLEAR_COAT_COLOR)].index = textureIndex + materialUpload->pending->textureBindingOffset;
-            }
-
-            if(clearCoat.Has("clearcoatRoughnessTexture")){
-                auto textureIndex = clearCoat.Get("clearcoatRoughnessTexture").Get("index").GetNumberAsInt();
-                textureInfos[static_cast<int>(TextureType::CLEAR_COAT_ROUGHNESS)].index = textureIndex + materialUpload->pending->textureBindingOffset;
-            }
-
-            if(clearCoat.Has("clearcoatNormalTexture")){
-                auto textureIndex = clearCoat.Get("clearcoatNormalTexture").Get("index").GetNumberAsInt();
-                textureInfos[static_cast<int>(TextureType::CLEAR_COAT_NORMAL)].index = textureIndex + materialUpload->pending->textureBindingOffset;
-            }
-        }
-
+        extractVolume(material, *materialUpload);
+        extractClearCoat(material, *materialUpload);
         extractSheen(material, *materialUpload);
         extractAnisotropy(material, *materialUpload);
         extractSpecular(material, *materialUpload);
@@ -2203,5 +2140,76 @@ namespace gltf {
         if(transmission.Has("transmissionTexture")) {
             materialUpload.textureInfos[to<int>(TextureType::TRANSMISSION)] = extractTextureInfo(transmission.Get("transmissionTexture"), materialUpload.textureOffset);
         }
+    }
+
+    void Loader::extractVolume(MaterialData &material, MaterialUploadTask &materialUpload) {
+        const auto& gMat = materialUpload.material;
+        if(!gMat.extensions.contains(KHR_materials_volume)) return;
+        
+        const auto& volume = materialUpload.material.extensions.at(KHR_materials_volume);
+
+        if(volume.Has("thicknessFactor")) {
+            material.thickness = to<float>(volume.Get( "thicknessFactor").GetNumberAsDouble());
+        }
+
+        if(volume.Has("attenuationDistance")) {
+            material.attenuationDistance = to<float>(volume.Get("attenuationDistance").GetNumberAsDouble());
+        }
+
+        if(volume.Has("attenuationColor")) {
+            material.attenuationColor.r = to<float>(volume.Get("attenuationColor").Get(0).GetNumberAsDouble());
+            material.attenuationColor.g = to<float>(volume.Get( "attenuationColor").Get(1).GetNumberAsDouble());
+            material.attenuationColor.b = to<float>(volume.Get( "attenuationColor").Get(2).GetNumberAsDouble());
+        }
+
+        if(volume.Has("thicknessTexture")){
+            materialUpload.textureInfos[static_cast<int>(TextureType::THICKNESS)] = extractTextureInfo(volume.Get("thicknessTexture"), materialUpload.textureOffset);
+        }
+    }
+
+    void Loader::extractClearCoat(MaterialData &material, MaterialUploadTask &materialUpload) {
+        const auto& gMat = materialUpload.material;
+        if(!gMat.extensions.contains(KHR_materials_clearcoat)) return;
+
+        const auto& clearCoat = materialUpload.material.extensions.at(KHR_materials_clearcoat);
+
+        if(clearCoat.Has("clearcoatFactor")){
+            material.clearCoatFactor = clearCoat.Get("clearcoatFactor").GetNumberAsDouble();
+        }
+
+        if(clearCoat.Has("clearcoatRoughnessFactor")){
+            material.clearCoatRoughnessFactor = clearCoat.Get("clearcoatRoughnessFactor").GetNumberAsDouble();
+        }
+
+        if(clearCoat.Has("clearcoatTexture")){
+            materialUpload.textureInfos[static_cast<int>(TextureType::CLEAR_COAT_COLOR)] = extractTextureInfo(clearCoat.Get("clearcoatTexture"), materialUpload.textureOffset);
+        }
+
+        if(clearCoat.Has("clearcoatRoughnessTexture")){
+            materialUpload.textureInfos[static_cast<int>(TextureType::CLEAR_COAT_ROUGHNESS)] = extractTextureInfo(clearCoat.Get("clearcoatRoughnessTexture"), materialUpload.textureOffset);
+        }
+
+        if(clearCoat.Has("clearcoatNormalTexture")){
+            materialUpload.textureInfos[static_cast<int>(TextureType::CLEAR_COAT_NORMAL)] = extractTextureInfo(clearCoat.Get("clearcoatNormalTexture"), materialUpload.textureOffset);
+        }
+
+    }
+
+    void Loader::extractPbr(MaterialData &material, MaterialUploadTask &materialUpload) {
+        material.baseColor = vec4From(materialUpload.material.pbrMetallicRoughness.baseColorFactor);
+        material.roughness = to<float>(materialUpload.material.pbrMetallicRoughness.roughnessFactor);
+        material.metalness = to<float>(materialUpload.material.pbrMetallicRoughness.metallicFactor);
+        material.emission = vec3From(materialUpload.material.emissiveFactor);
+        material.alphaMode = alphaModeToIndex(materialUpload.material.alphaMode);
+        material.alphaCutOff = to<float>(materialUpload.material.alphaCutoff);
+        material.doubleSided = materialUpload.material.doubleSided;
+        material.textureInfoOffset = materialUpload.materialId;
+
+        const auto offset = materialUpload.textureOffset;
+        materialUpload.textureInfos[to<int>(TextureType::BASE_COLOR)] = extract(materialUpload.material.pbrMetallicRoughness.baseColorTexture,  offset);
+        materialUpload.textureInfos[to<int>(TextureType::NORMAL)] = extract(materialUpload.material.normalTexture, offset);
+        materialUpload.textureInfos[to<int>(TextureType::METALLIC_ROUGHNESS)] = extract(materialUpload.material.pbrMetallicRoughness.metallicRoughnessTexture, offset);
+        materialUpload.textureInfos[to<int>(TextureType::EMISSION)] = extract(materialUpload.material.emissiveTexture, offset);
+        materialUpload.textureInfos[to<int>(TextureType::OCCLUSION)] = extract(materialUpload.material.occlusionTexture, offset);
     }
 }

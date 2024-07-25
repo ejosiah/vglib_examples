@@ -287,6 +287,12 @@ namespace gltf {
 
         TextureInfo extractTextureInfo(const tinygltf::Value& v, int offset);
 
+        void extractVolume(MaterialData& material, MaterialUploadTask& materialUpload);
+
+        void extractPbr(MaterialData& material, MaterialUploadTask& materialUpload);
+
+        void extractClearCoat(MaterialData& material, MaterialUploadTask& materialUpload);
+
         void extractSheen(MaterialData& material, MaterialUploadTask& materialUpload);
 
         void extractAnisotropy(MaterialData& material, MaterialUploadTask& materialUpload);
