@@ -23,9 +23,10 @@
 #define ANISOTROPY_INDEX 11
 #define SPECULAR_STRENGTH_INDEX 12
 #define SPECULAR_COLOR_INDEX 13
-#define IRIDESCENCE 14
-#define IRIDESCENCE_THICKNESS 15
-#define TEXTURE_INFO_PER_MATERIAL 16
+#define IRIDESCENCE_INDEX 14
+#define IRIDESCENCE_THICKNESS_INDEX 15
+#define TRANSMISSION_INDEX 16
+#define TEXTURE_INFO_PER_MATERIAL 20
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
 #define MATERIAL materials[MATERIAL_ID]
@@ -53,8 +54,10 @@
 #define SPECULAR_STRENGTH_TEX_INFO textureInfos[TEXTURE_OFFSET + SPECULAR_STRENGTH_INDEX]
 #define SPECULAR_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + SPECULAR_COLOR_INDEX]
 
-#define IRIDESCENCE_TEX_INFO textureInfos[TEXTURE_OFFSET + IRIDESCENCE]
-#define IRIDESCENCE_THICKNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + IRIDESCENCE_THICKNESS]
+#define IRIDESCENCE_TEX_INFO textureInfos[TEXTURE_OFFSET + IRIDESCENCE_INDEX]
+#define IRIDESCENCE_THICKNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + IRIDESCENCE_THICKNESS_INDEX]
+
+#define TRANSMISSION_TEX_INFO textureInfos[TEXTURE_OFFSET + TRANSMISSION_INDEX]
 
 #define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
 #define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
@@ -78,6 +81,8 @@
 
 #define IRIDESCENCE_TEXTURE global_textures[nonuniformEXT(IRIDESCENCE_TEX_INFO.index)]
 #define IRIDESCENCE_THICKNESS_TEXTURE global_textures[nonuniformEXT(IRIDESCENCE_THICKNESS_TEX_INFO.index)]
+
+#define TRANSMISSION_TEXTURE global_textures[nonuniformEXT(TRANSMISSION_TEX_INFO.index)]
 
 #define u_GGXLUT global_textures[nonuniformEXT(brdf_lut_texture_id)]
 #define u_CharlieLUT global_textures[nonuniformEXT(charlie_lut_texture_id)]
@@ -367,12 +372,14 @@ float saturate(float x) {
 }
 
 vec4 getBaseColor() {
-    if(BASE_COLOR_TEX_INFO.index == -1){
-        return isNull(MATERIAL) ? fs_in.color : vec4(MATERIAL.baseColor);
+    vec4 color = fs_in.color * MATERIAL.baseColor;
+    if (BASE_COLOR_TEX_INFO.index != -1){
+        vec2 uv = transformUV(BASE_COLOR_TEX_INFO);
+        vec4 texColor = texture(BASE_COLOR_TEXTURE, uv);
+        texColor.rgb = pow(texColor.rgb, vec3(2.2));
+        color *= texColor;
     }
-    vec2 uv = transformUV(BASE_COLOR_TEX_INFO);
-    vec4 color = texture(BASE_COLOR_TEXTURE, uv);
-    color.rgb = pow(color.rgb, vec3(2.2));
+
     return color;
 }
 
@@ -480,7 +487,13 @@ vec3 getEmission(){
 }
 
 float getTransmissionFactor() {
-    return MATERIAL.transmission;
+    float transmission = MATERIAL.transmission;
+    if(TRANSMISSION_TEX_INFO.index == -1) return transmission;
+
+    vec2 uv = transformUV(TRANSMISSION_TEX_INFO);
+    transmission *= texture(TRANSMISSION_TEXTURE, uv).r;
+
+    return transmission;
 }
 
 float getThickness() {

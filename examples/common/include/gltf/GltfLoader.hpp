@@ -295,6 +295,8 @@ namespace gltf {
 
         void extractIridescence(MaterialData& material, MaterialUploadTask& materialUpload);
 
+        void extractTransmission(MaterialData& material, MaterialUploadTask& materialUpload);
+
         VulkanSampler createSampler(const tinygltf::Model& model, int sampler, uint32_t mipLevels);
 
         friend bool isFloat(VkFormat format);

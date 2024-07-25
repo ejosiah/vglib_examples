@@ -21,8 +21,6 @@ namespace gltf {
     static constexpr const char* KHR_materials_specular = "KHR_materials_specular";
     static constexpr const char* KHR_materials_iridescence  = "KHR_materials_iridescence";
 
-    static const MaterialData NullMaterial{ .baseColor{std::numeric_limits<float>::quiet_NaN()} };
-
     struct Counts {
         struct { size_t u8{}; size_t u16{}; size_t u32{}; size_t count() const { return u8 + u16 + u32; }} instances;
         struct { size_t u8{}; size_t u16{}; size_t u32{}; size_t count() const { return u8 + u16 + u32; }} indices;
@@ -240,9 +238,6 @@ namespace gltf {
         std::vector<MaterialData> materials(gltf->materials.size() + 1);
         std::vector<TextureInfo> textureInfos(materials.size() * NUM_TEXTURE_MAPPING, TextureInfo{ });
         
-        auto back = materials.size() - 1; 
-        materials[back] = NullMaterial;
-        materials[back].textureInfoOffset = back;
         model->materials = _device->createDeviceLocalBuffer(materials.data(), BYTE_SIZE(materials), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         _device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("mode{}_materials", _modelId), model->materials.buffer);
         
@@ -901,9 +896,7 @@ namespace gltf {
         textureInfos[static_cast<int>(TextureType::EMISSION)] = extract(materialUpload->material.emissiveTexture, offset);
         textureInfos[static_cast<int>(TextureType::OCCLUSION)] = extract(materialUpload->material.occlusionTexture, offset);
 
-        if(materialUpload->material.extensions.contains(KHR_materials_transmission)){
-            material.transmission = materialUpload->material.extensions.at(KHR_materials_transmission).Get("transmissionFactor").GetNumberAsDouble();
-        }
+        extractTransmission(material, *materialUpload);
 
         if(materialUpload->material.extensions.contains(KHR_materials_emissive_strength)){
             material.emissiveStrength = materialUpload->material.extensions.at(KHR_materials_emissive_strength).Get("emissiveStrength").GetNumberAsDouble();
@@ -2195,6 +2188,20 @@ namespace gltf {
 
         if(iridescence.Has("iridescenceThicknessTexture")){
             materialUpload.textureInfos[to<int>(TextureType::IRIDESCENCE_THICKNESS)] = extractTextureInfo(iridescence.Get("iridescenceThicknessTexture"), material.textureInfoOffset);
+        }
+    }
+
+    void Loader::extractTransmission(MaterialData &material, MaterialUploadTask &materialUpload) {
+        const auto& gMat = materialUpload.material;
+        if(!gMat.extensions.contains(KHR_materials_transmission)) return;
+
+        const auto& transmission = materialUpload.material.extensions.at(KHR_materials_transmission);
+        if(transmission.Has("transmissionFactor")){
+            material.transmission = to<float>(transmission.Get("transmissionFactor").GetNumberAsDouble());
+        }
+
+        if(transmission.Has("transmissionTexture")) {
+            materialUpload.textureInfos[to<int>(TextureType::TRANSMISSION)] = extractTextureInfo(transmission.Get("transmissionTexture"), materialUpload.textureOffset);
         }
     }
 }
