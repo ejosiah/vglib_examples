@@ -1,0 +1,68 @@
+#version 460
+#include "complex.glsl"
+
+#define VERTICAL_BUFFERFLY (vertical == 1)
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) readonly uniform image2D src_image_real;
+layout(set = 0, binding = 1, rgba32f) readonly uniform image2D src_image_imaginary;
+layout(set = 1, binding = 0, rgba32f) uniform image2D dst_image_real;
+layout(set = 1, binding = 1, rgba32f) uniform image2D dst_image_imaginary;
+
+layout(set = 2, binding = 0) uniform isampler2D lookupIndex;
+layout(set = 2, binding = 1) uniform sampler2D butterflyLUT;
+
+layout(push_constant) uniform UBO {
+    int pass;
+    int N;
+    int inverse;
+    int vertical;
+};
+
+ivec2 idx = ivec2(gl_GlobalInvocationID);
+
+Complex[3] load(ivec2 pos) {
+    Complex c[3] = Complex[3](COMPLEX_ZERO, COMPLEX_ZERO, COMPLEX_ZERO);
+
+    ivec2 dim = imageSize(src_image_real);
+
+    vec3 real = imageLoad(src_image_real, pos).rgb;
+    vec3 imag = imageLoad(src_image_imaginary, pos).rgb;
+
+    c[0] = Complex(real[0], imag[0]);
+    c[1] = Complex(real[1], imag[1]);
+    c[2] = Complex(real[2], imag[2]);
+
+    return c;
+}
+
+void main(){
+
+    ivec2 lookupId = ivec2(VERTICAL_BUFFERFLY ? idx.y : idx.x, pass);
+    vec2 index = texelFetch(lookupIndex, lookupId, 0).xy;
+    vec2 wv = texelFetch(butterflyLUT, lookupId, 0).xy;
+    Complex W = complexFrom(wv);
+
+    ivec2 aPos = VERTICAL_BUFFERFLY ? ivec2(idx.x, index[0]) : ivec2(index[0], idx.y);
+    ivec2 bPos = VERTICAL_BUFFERFLY ? ivec2(idx.x, index[1]) : ivec2(index[1], idx.y);
+
+    Complex A[3] = load(aPos);
+    Complex B[3] = load(bPos);
+
+    Complex res[3];
+
+    res[0] = add(A[0], mul(B[0], W));
+    res[1] = add(A[1], mul(B[1], W));
+    res[2] = add(A[2], mul(B[2], W));
+
+    if(inverse == 1 && (pass == log2(N) - 1)){
+        res[0] = div(res[0], float(N));
+        res[1] = div(res[1], float(N));
+        res[2] = div(res[2], float(N));
+    }
+
+    imageStore(dst_image_real, idx, vec4(res[0].real, res[1].real, res[2].real, 0));
+    imageStore(dst_image_imaginary, idx, vec4(res[0].imaginary, res[1].imaginary, res[2].imaginary, 0));
+
+}

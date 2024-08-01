@@ -175,4 +175,22 @@ void AppContext::renderFloor(VkCommandBuffer commandBuffer, BaseCameraController
     instance._floor.render(commandBuffer, camera);
 }
 
+void AppContext::addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std::vector<std::reference_wrapper<VulkanImage>> &images,
+                                        VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask) {
+    std::vector<VkImageMemoryBarrier> barriers(images.size());
+
+    for(int i = 0; i < images.size(); i++) {
+        barriers[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[i].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT; // TODO add as param
+        barriers[i].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;  // TODO add as param
+        barriers[i].oldLayout = images[i].get().currentLayout;
+        barriers[i].newLayout = images[i].get().currentLayout;
+        barriers[i].image = images[i].get();
+        barriers[i].subresourceRange = DEFAULT_SUB_RANGE;
+    }
+
+    vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask, 0, 0,nullptr
+            , 0, nullptr, COUNT(barriers), barriers.data());
+}
+
 AppContext AppContext::instance;

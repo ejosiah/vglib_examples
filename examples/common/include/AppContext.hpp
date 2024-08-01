@@ -31,6 +31,10 @@ public:
 
     static std::string resource(const std::string& name);
 
+    static  void addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std::vector<std::reference_wrapper<VulkanImage>> &images
+            ,VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            , VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
     static void renderSolid(VkCommandBuffer commandBuffer, BaseCameraController& camera,  auto content, bool dynamic = false) {
         auto& solid = !dynamic ? instance._shading.solid : instance._shading.dynamic.solid;
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, solid.pipeline.handle);

@@ -1,0 +1,51 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D image;
+
+layout(push_constant) uniform Contants {
+    int maskId;
+    int n;
+    int inverse;
+    float d0;
+};
+
+float boxSdf(vec2 p, vec2 size){
+    vec2 q = abs(p) - size;
+
+    return length(max(vec2(0), q)) + min(0, max(q.x, q.y));
+}
+
+void main(){
+    ivec2 id = ivec2(gl_GlobalInvocationID);
+    vec2 uv = vec2(id)/vec2(gl_NumWorkGroups * gl_WorkGroupSize);
+
+    float c = 1;
+    float d = length(uv - 0.5);
+    float dd = d * d;
+
+    if(maskId == 1){
+        c = step(d, d0);
+    }
+
+    if(maskId == 2){
+        c = exp(-dd/(2 * d0 * d0));
+    }
+
+    if(maskId == 3){
+        c = 1/(1 + pow(d/d0, 2.0 * n));
+    }
+
+    if(maskId == 4){
+        float w = 1/imageSize(image).x;
+        c = boxSdf(uv - 0.5, vec2(d0));
+        c = 1 - smoothstep(0, w, c);
+    }
+
+    if(inverse == 1){
+        c = 1 - c;
+    }
+
+    imageStore(image, id, vec4(c));
+}

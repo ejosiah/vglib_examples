@@ -361,7 +361,7 @@ void SignalProcessing::computeMask(VkCommandBuffer commandBuffer) {
 
 }
 
-void SignalProcessing::loadImageSignal() {
+void SignalProcessing:: loadImageSignal() {
     textures::fromFile(device, imageSignal, resource(images[selectedImage]));
     textures::create(device, grayscaleTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
 //    imageSignalTexId = plugin<ImGuiPlugin>(IM_GUI_PLUGIN).addTexture(grayscaleTexture.imageView);

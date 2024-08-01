@@ -1,0 +1,18 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform sampler2D srcSignal;
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D complex_image_real;
+layout(set = 0, binding = 1, rgba32f) uniform image2D complex_image_imaginary;
+
+void main() {
+    ivec2 idx = ivec2(gl_GlobalInvocationID);
+    vec2 dim = textureSize(srcSignal, 0);
+
+    vec4 aSample = (idx.x < dim.x || idx.y < dim.y) ? texelFetch(srcSignal, idx, 0) : vec4(0);
+
+    imageStore(complex_image_real, idx, aSample);
+
+}
