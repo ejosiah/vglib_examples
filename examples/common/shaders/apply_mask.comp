@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 1, local_size_y = 1) in;
+layout(local_size_x = 32, local_size_y = 32) in;
 
 layout(set = 0, binding = 0, rgba32f) uniform image2D image_real;
 layout(set = 0, binding = 1, rgba32f) uniform image2D image_imaginary;
@@ -13,12 +13,11 @@ ivec2 shift(ivec2 id){
 
 void main(){
     ivec2 id = ivec2(gl_GlobalInvocationID);
-    float mask = imageLoad(image_mask, id).r;
 
-    id = shift(id);
-    float real = imageLoad(image_real, id).r * mask;
-    float imaginary = imageLoad(image_imaginary, id).r * mask;
+    float mask = imageLoad(image_mask, shift(id)).r;
+    vec3 real = imageLoad(image_real, id).rgb * mask;
+    vec3 imaginary = imageLoad(image_imaginary, id).rgb * mask;
 
-    imageStore(image_real, id, vec4(real));
-    imageStore(image_imaginary, id, vec4(imaginary));
+    imageStore(image_real, id, vec4(real, 0));
+    imageStore(image_imaginary, id, vec4(imaginary, 0));
 }

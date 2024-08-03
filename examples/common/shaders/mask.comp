@@ -1,13 +1,18 @@
 #version 460
 
-layout(local_size_x = 1, local_size_y = 1) in;
+#define MASK_TYPE_IDEAL 0
+#define MASK_TYPE_GAUSSIAN 1
+#define MASK_TYPE_BUTTERWORTH 2
+#define MASK_TYPE_BOX 3
+#define MASK_TYPE_TEXTURE 4
+
+layout(local_size_x = 32, local_size_y = 32) in;
 
 layout(set = 0, binding = 0, rgba32f) uniform image2D image;
 
 layout(push_constant) uniform Contants {
     int maskId;
     int n;
-    int inverse;
     float d0;
 };
 
@@ -19,32 +24,28 @@ float boxSdf(vec2 p, vec2 size){
 
 void main(){
     ivec2 id = ivec2(gl_GlobalInvocationID);
-    vec2 uv = vec2(id)/vec2(gl_NumWorkGroups * gl_WorkGroupSize);
+    vec2 uv = vec2(id + 0.5)/vec2(gl_NumWorkGroups * gl_WorkGroupSize);
 
     float c = 1;
     float d = length(uv - 0.5);
     float dd = d * d;
 
-    if(maskId == 1){
+    if(maskId == MASK_TYPE_IDEAL){
         c = step(d, d0);
     }
 
-    if(maskId == 2){
+    if(maskId == MASK_TYPE_GAUSSIAN){
         c = exp(-dd/(2 * d0 * d0));
     }
 
-    if(maskId == 3){
+    if(maskId == MASK_TYPE_BUTTERWORTH){
         c = 1/(1 + pow(d/d0, 2.0 * n));
     }
 
-    if(maskId == 4){
+    if(maskId == MASK_TYPE_BOX){
         float w = 1/imageSize(image).x;
         c = boxSdf(uv - 0.5, vec2(d0));
         c = 1 - smoothstep(0, w, c);
-    }
-
-    if(inverse == 1){
-        c = 1 - c;
     }
 
     imageStore(image, id, vec4(c));

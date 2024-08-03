@@ -1,0 +1,29 @@
+#version 460
+
+#define BLEND_MODE_ADD 0
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D imageA;
+layout(set = 1, binding = 0, rgba32f) uniform image2D imageB;
+layout(set = 2, binding = 0, rgba32f) uniform image2D imageC;
+
+layout(push_constant) uniform Constants {
+    int mode;
+};
+
+void main() {
+    ivec2 id = ivec2(gl_GlobalInvocationID);
+    vec4 a = imageLoad(imageA, id);
+    vec4 b = imageLoad(imageB, id);
+    vec4 c;
+
+    switch(mode) {
+        case BLEND_MODE_ADD:
+        default:
+            c = a + b;
+    }
+
+    imageStore(imageC, id, c);
+}

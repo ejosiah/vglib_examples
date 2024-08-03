@@ -15,6 +15,8 @@ protected:
 
     void initBindlessDescriptor();
 
+    void createPrimitive();
+
     void initFFT();
 
     void loadTexture();
@@ -56,6 +58,8 @@ protected:
     void runFFT();
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
+
+    void renderPrimitive(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -109,5 +113,9 @@ protected:
     ComplexSignal frequencyDomain;
     ComplexSignal inverseFD;
     Texture renderTTexture;
-    const char* path{R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\signal_processing\textures\box_01.png)"};
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer indices;
+    } primitive;
+    const char* path{R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\signal_processing\textures\lena.png)"};
 };

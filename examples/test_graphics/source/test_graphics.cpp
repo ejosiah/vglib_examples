@@ -17,6 +17,7 @@ test_graphics::test_graphics(const Settings& settings) : VulkanRayTraceBaseApp("
 void test_graphics::initApp() {
     initCamera();
     createDescriptorPool();
+    createPrimitive();
     createInverseCam();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     loadTexture();
@@ -30,8 +31,9 @@ void test_graphics::initApp() {
     createComputePipeline();
     createRayTracingPipeline();
     initFFT();
-
-    runFFT();
+//
+//    runFFT();
+//    runFFT();
 }
 
 void test_graphics::initFFT() {
@@ -53,58 +55,61 @@ void test_graphics::runFFT() {
 
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         fft(commandBuffer, timeDomain, frequencyDomain);
-    });
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         fft.inverse(commandBuffer, frequencyDomain, inverseFD);
+        textures::copy(commandBuffer, inverseFD.real, renderTTexture);
     });
 
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        textures::copy(commandBuffer, frequencyDomain.real, stagingReal, {w, h});
-        textures::copy(commandBuffer, frequencyDomain.imaginary, stagingImaginary, {w, h});
-    });
-
-    auto size = w * h;
-    glm::vec4 maxMag{MIN_FLOAT, MIN_FLOAT, MIN_FLOAT, 0};
-
-    auto real = stagingReal.span<glm::vec4>(size);
-    auto imaginary = stagingImaginary.span<glm::vec4>(size);
-    auto magnitudes = stagingMagnitude.span<glm::vec4>(size);
-
-    auto shift = [w, h](int index) {
-        int i = index % w;
-        int j = index / w;
-
-        i = (i + w/2) % w;
-        j = (j + h/2) % h;
-
-        return j * w + i;
+//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+//        fft.inverse(commandBuffer, frequencyDomain, inverseFD);
+//    });
+//
+//
+//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+//        textures::copy(commandBuffer, inverseFD.real, stagingReal, {w, h});
+//        textures::copy(commandBuffer, inverseFD.imaginary, stagingImaginary, {w, h});
+//    });
+//
+//    auto size = w * h;
+//    glm::vec4 maxMag{MIN_FLOAT, MIN_FLOAT, MIN_FLOAT, 0};
+//
+//    auto real = stagingReal.span<glm::vec4>(size);
+//    auto imaginary = stagingImaginary.span<glm::vec4>(size);
+//    auto magnitudes = stagingMagnitude.span<glm::vec4>(size);
+//
+//    auto shift = [w, h](int index) {
+//        int i = index % w;
+//        int j = index / w;
+//
+//        i = (i + w/2) % w;
+//        j = (j + h/2) % h;
+//
+////        return j * w + i;
 //        return index;
-    };
-
-    for(auto i = 0; i < size; ++i) {
-        auto re = real[i];
-        auto im = imaginary[i];
-
-        auto mag = glm::vec4{
-            glm::length(glm::vec2(re.x, im.x)) ,
-            glm::length(glm::vec2(re.y, im.y)) ,
-            glm::length(glm::vec2(re.z, im.z)) ,
-            0
-        };
-        maxMag = glm::max(maxMag, mag);
-
-        magnitudes[shift(i)] = mag;
-    }
-
-    for(auto& mag : magnitudes) {
-        mag = glm::log(mag + 1.f)/10.f;
-    }
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        textures::transfer(commandBuffer, stagingMagnitude, renderTTexture.image, {w, h}, VK_IMAGE_LAYOUT_GENERAL);
-    });
+//    };
+//
+//    for(auto i = 0; i < size; ++i) {
+//        auto re = real[i];
+//        auto im = imaginary[i];
+//
+////        auto mag = glm::vec4{
+////            glm::length(glm::vec2(re.x, im.x)) ,
+////            glm::length(glm::vec2(re.y, im.y)) ,
+////            glm::length(glm::vec2(re.z, im.z)) ,
+////            0
+////        };
+//        auto mag = re;
+//        maxMag = glm::max(maxMag, mag);
+//
+//        magnitudes[shift(i)] = mag;
+//    }
+//
+//    for(auto& mag : magnitudes) {
+////        mag = glm::log(mag + 1.f)/10.f;
+//    }
+//
+//    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+//        textures::transfer(commandBuffer, stagingMagnitude, renderTTexture.image, {w, h}, VK_IMAGE_LAYOUT_GENERAL);
+//    });
 
 }
 
@@ -178,6 +183,24 @@ void test_graphics::initBindlessDescriptor() {
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0);
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
+}
+
+void test_graphics::createPrimitive() {
+    constexpr int N = 7;
+    constexpr float delta = glm::two_pi<float>()/to<float>(N);
+    const auto r = 0.10f;
+
+    std::vector<Vertex> vertices;
+    vertices.push_back(Vertex{  .color = glm::vec4(1) });
+
+    for(auto i = 0; i <= N; ++i) {
+        auto angle = to<float>(i) * delta;
+        glm::vec2 p{ glm::cos(angle), glm::sin(angle) };
+        p *= r;
+        Vertex v{ .position = glm::vec4(p, 0, 1), .color = glm::vec4(1) };
+        vertices.push_back(v);
+    }
+    primitive.vertices = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
 void test_graphics::beforeDeviceCreation() {
@@ -402,8 +425,12 @@ void test_graphics::createRenderPipeline() {
         render.pipeline =
             builder
                 .shaderStage()
-                    .vertexShader(resource("shaders/pass_through.vert.spv"))
-                    .fragmentShader(resource("shaders/pass_through.frag.spv"))
+                    .vertexShader(resource("shaders/flat.vert.spv"))
+                    .fragmentShader(resource("shaders/flat.frag.spv"))
+                .inputAssemblyState()
+                    .triangleFan()
+                .rasterizationState()
+                    .cullNone()
                 .name("render")
                 .build(render.layout);
     //    @formatter:on
@@ -445,7 +472,7 @@ VkCommandBuffer *test_graphics::buildCommandBuffers(uint32_t imageIndex, uint32_
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     static std::array<VkClearValue, 2> clearValues;
-    clearValues[0].color = {0, 0, 1, 1};
+    clearValues[0].color = {0, 0, 0, 1};
     clearValues[1].depthStencil = {1.0, 0u};
 
     VkRenderPassBeginInfo rPassInfo = initializers::renderPassBeginInfo();
@@ -459,7 +486,7 @@ VkCommandBuffer *test_graphics::buildCommandBuffers(uint32_t imageIndex, uint32_
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     canvas.draw(commandBuffer, textureDescriptorSet);
-
+//    renderPrimitive(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
 //    rayTrace(commandBuffer);
@@ -468,6 +495,16 @@ VkCommandBuffer *test_graphics::buildCommandBuffers(uint32_t imageIndex, uint32_
     vkEndCommandBuffer(commandBuffer);
 
     return &commandBuffer;
+}
+
+void test_graphics::renderPrimitive(VkCommandBuffer commandBuffer) {
+    static Camera lCamera{};
+    VkDeviceSize  offset = 0;
+    const auto vertexCount = primitive.vertices.sizeAs<Vertex>();
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &lCamera);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, primitive.vertices, &offset);
+    vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0);
 }
 
 void test_graphics::update(float time) {
@@ -495,7 +532,15 @@ void test_graphics::onPause() {
 }
 
 void test_graphics::endFrame() {
-
+    static bool once = true;
+    static int count = 0;
+    if(once & count > 100) {
+        textures::save(device, "heptagon.jpg", colorBuffer.width, colorBuffer.height, colorBuffer.format, colorBuffer.image, FileFormat::JPG);
+        once = false;
+        spdlog::info("heptagon saved");
+    }
+    ++count;
+    runFFT();
 }
 
 
@@ -513,6 +558,7 @@ int main(){
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
+        settings.msaaSamples = VK_SAMPLE_COUNT_8_BIT;
 
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
         auto app = test_graphics{ settings };

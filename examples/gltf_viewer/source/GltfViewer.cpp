@@ -28,6 +28,7 @@ void GltfViewer::initApp() {
     initUniforms();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    initBloom();
     createGBuffer();
     createFrameBufferTexture();
     initLoader();
@@ -42,6 +43,14 @@ void GltfViewer::initApp() {
     createConvolutionSampler();
     loadTextures();
     initModels();
+}
+
+void GltfViewer::initBloom() {
+    for(auto i = 0; i <swapChainImageCount; ++i) {
+        auto bloom = Bloom{{width, height}};
+        bloom.init();
+        _bloom.push_back(std::move(bloom));
+    }
 }
 
 void GltfViewer::initScreenQuad() {
@@ -495,6 +504,7 @@ void GltfViewer::onSwapChainDispose() {
 
 void GltfViewer::onSwapChainRecreation() {
     createGBuffer();
+    initBloom();
     createFrameBufferTexture();
     updateDescriptorSets();
     createRenderPipeline();
@@ -514,6 +524,7 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     renderToTransmissionFrameBuffer(commandBuffer);
     renderToGBuffer(commandBuffer);
+    applyBloom(commandBuffer);
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -581,6 +592,11 @@ void GltfViewer::renderToGBuffer(VkCommandBuffer commandBuffer) {
     barrier.subresourceRange = DEFAULT_SUB_RANGE;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, 0, 0, 0, 1, &barrier);
 
+}
+
+void GltfViewer::applyBloom(VkCommandBuffer commandBuffer) {
+    if(!options.bloom.enabled) return;
+    _bloom[currentImageIndex](commandBuffer, gBuffer.color[currentImageIndex].image);
 }
 
 void GltfViewer::toneMap(VkCommandBuffer commandBuffer){
@@ -687,14 +703,25 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::PopID();
 
     ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
+    ImGui::Text("Bloom");
+    ImGui::SameLine();
+    ImGui::Checkbox("enabled", &options.bloom.enabled);
+
+    if(options.bloom.enabled) {
+        ImGui::PushID("bloom_filter_labels");
+        ImGui::Combo("", &options.bloom.filterId, options.bloomFilters.data(), options.bloomFilters.size());
+        ImGui::PopID();
+        ImGui::SliderFloat("radius", &options.bloom.d0, 0.01, 0.5);
+        if(options.bloom.filterId == 2) {
+            ImGui::SliderInt("order", &options.bloom.n, 1, 5);
+        }
+    }
+
+    ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
     ImGui::Text("Debug");
-    ImGui::RadioButton("Off", &options.debug, 0); ImGui::SameLine();
-    ImGui::RadioButton("Color", &options.debug, 1); ImGui::SameLine();
-    ImGui::RadioButton("Normal", &options.debug, 2); ImGui::SameLine();
-    ImGui::RadioButton("Metalness", &options.debug, 3); ImGui::SameLine();
-    ImGui::RadioButton("Roughness", &options.debug, 4);
-    ImGui::RadioButton("AmbientOcclusion", &options.debug, 5); ImGui::SameLine();
-    ImGui::RadioButton("Emission", &options.debug, 6); ImGui::SameLine();
+    ImGui::PushID("debug_labels");
+    ImGui::Combo("", &options.debug, options.debugLabels.data(), options.debugLabels.size());
+    ImGui::PopID();
 
     ImGui::End();
 
@@ -1086,6 +1113,12 @@ void GltfViewer::endFrame() {
 
     if(options.envMapType == 1) {
         uniforms.environment = irradianceMaps[options.environment].bindingId;
+    }
+
+    for(auto i = 0; i < swapChainImageCount; ++i){
+        _bloom[i].constants.filterId = options.bloom.filterId;
+        _bloom[i].constants.n = options.bloom.n;
+        _bloom[i].constants.d0 = options.bloom.d0;
     }
 }
 

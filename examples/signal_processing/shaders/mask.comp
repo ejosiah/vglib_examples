@@ -19,7 +19,7 @@ float boxSdf(vec2 p, vec2 size){
 
 void main(){
     ivec2 id = ivec2(gl_GlobalInvocationID);
-    vec2 uv = vec2(id)/vec2(gl_NumWorkGroups * gl_WorkGroupSize);
+    vec2 uv = vec2(id + 0.5)/vec2(gl_NumWorkGroups * gl_WorkGroupSize);
 
     float c = 1;
     float d = length(uv - 0.5);

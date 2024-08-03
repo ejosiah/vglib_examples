@@ -19,6 +19,8 @@ FFT &FFT::init() {
 }
 
 void FFT::operator()(VkCommandBuffer commandBuffer, ComplexSignal &inSignal, ComplexSignal &outSignal) {
+    _data.in = 0;
+    _data.out = 1;
     _constants.inverse = 0;
     clear(commandBuffer, _data.signal[0].c);
     copy(commandBuffer, inSignal, _data.signal[0].c, {inSignal.real.width, inSignal.real.height});
@@ -27,6 +29,8 @@ void FFT::operator()(VkCommandBuffer commandBuffer, ComplexSignal &inSignal, Com
 }
 
 void FFT::inverse(VkCommandBuffer commandBuffer, ComplexSignal &inSignal, ComplexSignal &outSignal) {
+    _inverseData.in = 0;
+    _inverseData.out = 1;
     _constants.inverse = 1;
     clear(commandBuffer, _inverseData.signal[0].c);
     copy(commandBuffer, inSignal, _inverseData.signal[0].c, {inSignal.real.width, inSignal.real.height});
@@ -382,4 +386,11 @@ void FFT::prepForCompute(VkCommandBuffer commandBuffer, ComplexSignal &cs) {
     auto barrier1 = createTransferDstToShaderReadBarrier(cs.imaginary);
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, 0, 0, 0, 1, &barrier1);
     cs.imaginary.image.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+}
+
+glm::uvec2 FFT::fftImageSize(glm::uvec2 imageSize) {
+    auto size = std::max(imageSize.x, imageSize.y);
+    auto sizeLog2 = to<int>(std::ceil(std::log2(size)));
+    auto fftSize = 1 << sizeLog2;
+    return glm::uvec2(fftSize);
 }

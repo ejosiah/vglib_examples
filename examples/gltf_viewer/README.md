@@ -22,7 +22,6 @@
 
 ## TODO
 - implement more robust Tone mapping
-- implement bloom
 - implement path traced renderer
 - Allow users to use their own environment maps
 - add support for other glTF extensions

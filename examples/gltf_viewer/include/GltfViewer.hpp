@@ -1,6 +1,7 @@
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 #include "Offscreen.hpp"
+#include "Bloom.hpp"
 
 struct UniformData {
     Camera camera;
@@ -30,6 +31,8 @@ public:
 
 protected:
     void initApp() override;
+
+    void initBloom();
 
     void initCamera();
 
@@ -98,6 +101,8 @@ protected:
     void renderToTransmissionFrameBuffer(VkCommandBuffer commandBuffer);
 
     void renderToGBuffer(VkCommandBuffer commandBuffer);
+
+    void applyBloom(VkCommandBuffer commandBuffer);
 
     void renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout);
 
@@ -196,8 +201,29 @@ protected:
         float iblIntensity{1};
         int selectedModel;
         bool modelSelected{false};
+
+        struct {
+            bool enabled{false};
+            int filterId{1};
+            int n{2};
+            float d0{0.1};
+        } bloom;
+
         std::vector<const char*> models;
         std::vector<const char*> cameras{"Default"};
+        std::vector<const char*> debugLabels{
+            "Off",
+            "Color",
+            "Normal",
+            "Metalness",
+            "Roughness",
+            "AmbientOcclusion",
+            "Emission"
+        };
+
+        std::vector<const char*> bloomFilters{
+           "Ideal", "Gaussian", "Butterworth", "Box"
+        };
     } options;
     struct {
         VulkanDescriptorSetLayout inDescriptorSetLayout;
@@ -237,4 +263,5 @@ protected:
         std::string message;
     } fileOpen;
     static constexpr uint32_t lowestLod{4};
+    std::vector<Bloom> _bloom;
 };

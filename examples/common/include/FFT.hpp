@@ -40,6 +40,8 @@ public:
 
     void inverse(VkCommandBuffer commandBuffer, ComplexSignal& inSignal, ComplexSignal& outSignal);
 
+    static glm::uvec2 fftImageSize(glm::uvec2 imageSize);
+
 private:
     void createButterflyLookup();
 
