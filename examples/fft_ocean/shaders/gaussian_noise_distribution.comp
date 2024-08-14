@@ -1,0 +1,46 @@
+#version 460
+
+#define PI 3.14159265358
+#define TWO_PI (2. * PI)
+#define EPSILON 1e-6
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform writeonly image2D gaussian_out;
+
+vec2 hash22(vec2 p){
+    vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+    p3 += dot(p3, p3.yzx+33.33);
+    return fract((p3.xx+p3.yz)*p3.zy);
+}
+
+vec4 genrateGaussianNoise(vec2 seed, vec2 seedOffset, float mu, float sigma){
+
+    vec2 u = hash22(seed);
+    while(u.x <= EPSILON){
+        seed += seedOffset;
+        u = hash22(seed);
+    }
+
+    float mag = sigma * sqrt(-2.0 * log(u.x));
+    float z0 = mag * cos(TWO_PI * u.y) + mu;
+    float z1 = mag * sin(TWO_PI * u.y) + mu;
+
+    return vec4(z0, z1, seed);
+}
+
+vec4 genrateGaussianNoise(){
+    vec2 seed = vec2(gl_GlobalInvocationID);
+    vec2 seedOffset = vec2(gl_NumWorkGroups * gl_WorkGroupSize);
+
+    vec4 res0 = genrateGaussianNoise(seed, seedOffset, 0, 1);
+    seed += res0.zw;
+    vec4 res1 = genrateGaussianNoise(seed, seedOffset, 0, 1);
+
+    return vec4(res0.xy, res1.xy);
+}
+
+void main(){
+    vec4 gaussNoise = genrateGaussianNoise();
+    imageStore(gaussian_out, ivec2(gl_GlobalInvocationID), gaussNoise);
+}

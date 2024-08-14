@@ -1,0 +1,31 @@
+#version 460
+
+#include "complex.glsl"
+
+#define gid ivec2(gl_GlobalInvocationID)
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D fft_height_field_real;
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D fft_height_field_imaginary;
+layout(set = 1, binding = 0, rgba32f) uniform writeonly image2D height_field;
+
+ivec2 shift(ivec2 id){
+    ivec2 Size = ivec2(gl_NumWorkGroups * gl_WorkGroupSize);
+    return (id + Size/2) % (Size);
+}
+
+
+void main() {
+    vec3 rel = imageLoad(fft_height_field_real, gid).rgb;
+    vec3 img = imageLoad(fft_height_field_imaginary, gid).rgb;
+
+    vec4 h = vec4(0);
+
+    for(int i = 0; i < 3; ++i){
+        Complex c = Complex(rel[i], img[i]);
+        h[i] = magnitude(c);
+    }
+
+    imageStore(height_field, shift(gid), h);
+}

@@ -1,0 +1,63 @@
+#version 460
+#define PI 3.14159265358
+#define TWO_PI (2. * PI)
+#define EPSILON 1e-6
+#define SQRT2 1.4142135623730950488016887242097
+#define INV_SQRT2 0.70710678118654752440084436210485
+#define N (gl_NumWorkGroups.x * gl_WorkGroupSize.x)
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D gaussian_distribution;
+layout(set = 1, binding = 0, rgba32f) uniform writeonly image2D base_amp_h0;
+layout(set = 2, binding = 0, rgba32f) uniform writeonly image2D base_amp_h0_k;
+
+layout(push_constant) uniform Constants {
+    vec2 windDirection;
+    float windSpeed;
+    float amplitude;
+    float horizontalLength;
+    float time;
+    float windPower;
+};
+
+const float gravity = 9.8; // m/s
+
+float P(vec2 K){
+    const float V = windSpeed;
+    const vec2 w = normalize(windDirection);
+    const float k = max(length(K), EPSILON);
+    const vec2 kn = K/k;
+    const float A = amplitude;
+    const float L = (V * V)/gravity;
+    const float k2 = k * k;
+    const float kL2 = k2 * L * L;
+    const float k4 = k2 * k2;
+    const float kdotw = dot(kn, w) ;
+
+    const float ph = A/k4 * exp(-1/kL2) * pow(kdotw, 2);
+
+    return ph;
+}
+
+vec2 h0(vec2 k, float er, float ei){
+    const float ph = P(k);
+    float real = INV_SQRT2 * er * sqrt(ph);
+    float img = INV_SQRT2 * ei * sqrt(ph);
+
+    return vec2(real, img);
+}
+
+void main(){
+    const float L = horizontalLength;
+    ivec2 id = ivec2(gl_GlobalInvocationID);
+    vec4 gauss = imageLoad(gaussian_distribution, id);
+    vec2 x = vec2(id) - float(N) * 0.5;
+    vec2 k = vec2(TWO_PI * x.x/L, TWO_PI * x.y/L);
+
+    vec2 h0k = h0(k, gauss.x, gauss.y);
+    vec2 h0_k = h0(-k, gauss.z, gauss.w);
+
+    imageStore(base_amp_h0, id, vec4(h0k, 0, 1));
+    imageStore(base_amp_h0_k, id, vec4(h0_k, 0, 1));
+}

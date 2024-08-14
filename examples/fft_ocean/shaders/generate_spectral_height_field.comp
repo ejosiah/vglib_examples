@@ -1,0 +1,59 @@
+#version 460
+
+#include "complex.glsl"
+
+#define PI 3.14159265358
+#define TWO_PI (2. * PI)
+#define EPSILON 1e-6
+#define SQRT2 1.4142135623730950488016887242097
+#define INV_SQRT2 0.70710678118654752440084436210485
+#define N (gl_NumWorkGroups.x * gl_WorkGroupSize.x)
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D base_amp_h0;
+layout(set = 1, binding = 0, rgba32f) uniform readonly image2D base_amp_h0_k;
+
+
+layout(set = 2, binding = 0, rgba32f) uniform writeonly image2D fft_height_field_real;
+layout(set = 2, binding = 1, rgba32f) uniform writeonly image2D fft_height_field_imaginary;
+
+layout(push_constant) uniform Constants {
+    vec2 windDirection;
+    float windSpeed;
+    float amplitude;
+    float horizontalLength;
+    float time;
+    float windPower;
+};
+
+const float gravity = 9.8; // m/s
+
+void main(){
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    const float L = horizontalLength;
+
+    vec2 x = vec2(gid) - float(N) * 0.5;
+    vec2 K = vec2(TWO_PI * x.x/L, TWO_PI * x.y/L);
+
+    float k = max(length(K), EPSILON);
+
+    Complex h0 = complexFrom(imageLoad(base_amp_h0, gid).xy);
+    Complex h0_k = conjugate(complexFrom(imageLoad(base_amp_h0_k, gid).xy));
+
+    const float t = time;
+    const float wkt = sqrt(gravity * k) * t;
+    Complex iwkt = Complex(0, wkt);
+    Complex _iwkt = Complex(0, -wkt);
+    Complex h_dy = add(mul(h0, exp(iwkt)), mul(h0_k, exp(_iwkt)));
+
+    Complex dx = Complex(0.0, -K.x/k);
+    Complex h_dx = mul(dx, h_dy);
+
+    Complex dz = Complex(0.0, -K.y/k);
+    Complex h_dz = mul(dz, h_dy);
+
+    imageStore(fft_height_field_real, gid, vec4(h_dx.real, h_dy.real, h_dz.real, 0));
+    imageStore(fft_height_field_imaginary, gid, vec4(h_dx.imaginary, h_dy.imaginary, h_dz.imaginary, 0));
+
+}

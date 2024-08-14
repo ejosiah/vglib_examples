@@ -1,0 +1,65 @@
+#version 460
+
+#include "complex.glsl"
+
+#define M_PI 3.1415926535897932384626433832795
+#define N (gl_NumWorkGroups.x * gl_WorkGroupSize.x)
+#define L horizontalLength
+#define A amplitude
+#define tilde_h0k base_amp_h0
+#define tilde_h0minusk base_amp_h0_k
+#define complex Complex
+#define t time
+#define gid ivec2(gl_GlobalInvocationID)
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D base_amp_h0;
+layout(set = 1, binding = 0, rgba32f) uniform readonly image2D base_amp_h0_k;
+
+layout(set = 2, binding = 0, rgba32f) uniform writeonly image2D fft_height_field_real;
+layout(set = 2, binding = 1, rgba32f) uniform writeonly image2D fft_height_field_imaginary;
+
+layout(push_constant) uniform Constants {
+    vec2 windDirection;
+    float windSpeed;
+    float amplitude;
+    float horizontalLength;
+    float time;
+    float windPower;
+};
+
+
+void main() {
+    vec2 x = vec2 (gl_GlobalInvocationID.xy) - float(N) / 2.0;
+    vec2 k = vec2 (2.0 * M_PI * x.x/L, 2.0 * M_PI * x.y/L);
+
+    float magnitude = length (k);
+    if (magnitude < 0.00001) magnitude = 0.00001;
+    float w = sqrt (9.81 * magnitude);
+    vec2 tilde_h0k_values = imageLoad (tilde_h0k ,
+    ivec2 (gl_GlobalInvocationID.xy)).rg;
+    complex fourier_cmp = complex (tilde_h0k_values.x, tilde_h0k_values.y);
+
+    vec2 tilde_h0minusk_values = imageLoad (tilde_h0minusk , ivec2 (gl_GlobalInvocationID.xy)).rg;
+    complex fourier_cmp_conj = conjugate (complex (tilde_h0minusk_values.x, tilde_h0minusk_values.y));
+
+    float cos_w_t = cos (w* t);
+    float sin_w_t = sin(w* t);
+
+    // e u l e r formula
+    complex exp_iwt = complex (cos_w_t, sin_w_t);
+    complex exp_iwt_inv = complex (cos_w_t, -sin_w_t);
+    // dy
+    complex h_k_t_dy = add (mul (fourier_cmp, exp_iwt),
+    mul (fourier_cmp_conj, exp_iwt_inv));
+    // dx
+    complex dx = complex (0.0, -k.x/magnitude);
+    complex h_k_t_dx = mul (dx, h_k_t_dy);
+    // dz
+    complex dy = complex (0.0, -k.y/magnitude);
+    complex h_k_t_dz = mul (dy, h_k_t_dy);
+
+    imageStore(fft_height_field_real, gid, vec4(h_k_t_dx.real, h_k_t_dy.real, h_k_t_dz.real, 0));
+    imageStore(fft_height_field_imaginary, gid, vec4(h_k_t_dx.imaginary, h_k_t_dy.imaginary, h_k_t_dz.imaginary, 0));
+}

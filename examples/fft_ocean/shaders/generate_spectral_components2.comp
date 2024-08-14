@@ -1,0 +1,57 @@
+#version 460
+
+#define M_PI 3.1415926535897932384626433832795
+#define N (gl_NumWorkGroups.x * gl_WorkGroupSize.x)
+#define L horizontalLength
+#define A amplitude
+#define tilde_h0k base_amp_h0
+#define tilde_h0minusk base_amp_h0_k
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D gaussian_distribution;
+layout(set = 1, binding = 0, rgba32f) uniform writeonly image2D base_amp_h0;
+layout(set = 2, binding = 0, rgba32f) uniform writeonly image2D base_amp_h0_k;
+
+layout(push_constant) uniform Constants {
+    vec2 windDirection;
+    float windspeed;
+    float amplitude;
+    float horizontalLength;
+    float time;
+    float windPower;
+};
+
+const float g = 9.81;
+
+// Box-Muller-Method
+vec4 gaussRND(){
+    return imageLoad(gaussian_distribution, ivec2(gl_GlobalInvocationID));
+}
+
+void main() {
+    vec2 x = vec2 (gl_GlobalInvocationID.xy) - float(N) / 2.0;
+    vec2 k = vec2 (2.0 * M_PI * x.x/L, 2.0 * M_PI * x.y/L);
+
+    float L_ = (windspeed * windspeed)/ g;
+    float mag = length (k);
+    if (mag < 0.00001) mag = 0.00001;
+    float magSq = mag * mag;
+
+    // sqrt (Ph( k ) ) / sqrt ( 2 )
+    float h0k = clamp (sqrt ((A/(magSq*magSq))
+    * pow(dot (normalize (k), normalize (windDirection)), 6.0)
+    * exp (-(1.0/(magSq * L_ * L_)))
+    * exp(-magSq*pow(L/ 2000.0, 2.0))) / sqrt (2.0), -4000, 4000);
+    // sqrt (Ph(-k ) ) / sqrt ( 2 )
+    float h0minusk = clamp (sqrt ((A/(magSq*magSq))
+    * pow(dot (normalize (-k), normalize(windDirection)), 6.0)
+    * exp (-(1.0/(magSq * L_ * L_)))
+    * exp(-magSq*pow(L/ 20000, 2.0))) / sqrt (2.0), -4000, 4000);
+    vec4 gauss_random = gaussRND();
+
+    imageStore (tilde_h0k , ivec2 (gl_GlobalInvocationID.xy),
+    vec4 (gauss_random.xy * h0k, 0, 1));
+    imageStore (tilde_h0minusk , ivec2 (gl_GlobalInvocationID.xy),
+    vec4 (gauss_random.zw * h0minusk, 0, 1));
+}
