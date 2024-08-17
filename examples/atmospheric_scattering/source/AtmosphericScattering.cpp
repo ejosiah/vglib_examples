@@ -4,12 +4,12 @@
 #include "ImGuiPlugin.hpp"
 
 AtmosphericScattering::AtmosphericScattering(const Settings& settings) : VulkanBaseApp("Precomputed Atmospheric Scattering", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering/data");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering/spv");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering/models");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/data");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/spv");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/models");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/textures");
 }
 
 void AtmosphericScattering::initApp() {

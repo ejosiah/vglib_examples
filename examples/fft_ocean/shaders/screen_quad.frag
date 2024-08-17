@@ -11,6 +11,8 @@
 #define ACTION_DISPLAY_SPECTRAL_COMPS 2
 #define ACTION_DISPLAY_FFT_HEIGHT_FIELD 3
 #define ACTION_DISPLAY_HEIGHT_FIELD 4
+#define ACTION_DISPLAY_HEIGHT_FIELD_X_DISPLACEMENT 5
+#define ACTION_DISPLAY_HEIGHT_FIELD_Z_DISPLACEMENT 6
 
 
 layout(set = 0, binding = 10) uniform sampler2D global_textures[];
@@ -33,6 +35,14 @@ bool displayFFTHeightField() {
 
 bool displayHeightField() {
     return action == ACTION_DISPLAY_HEIGHT_FIELD;
+}
+
+bool displayHeightFieldxDisplacement() {
+    return action == ACTION_DISPLAY_HEIGHT_FIELD_X_DISPLACEMENT;
+}
+
+bool displayHeightFieldzDisplacement() {
+    return action == ACTION_DISPLAY_HEIGHT_FIELD_Z_DISPLACEMENT;
 }
 
 layout(location = 0) in vec2 fs_uv;
@@ -64,9 +74,21 @@ void main() {
         color.rg = c;
     }
 
+    vec3 delta = texture(global_textures[HF_TEXTURE_ID], uv).rgb;
     if(displayHeightField()) {
-        vec3 delta = texture(global_textures[HF_TEXTURE_ID], uv).rgb;
         color = vec3(delta.y);
+        color *= 10;
+        color /= color + 1;
+    }
+
+    if(displayHeightFieldxDisplacement()) {
+        color = vec3(delta.x);
+        color *= 10;
+        color /= color + 1;
+    }
+
+    if(displayHeightFieldzDisplacement()) {
+        color = vec3(delta.z);
         color *= 10;
         color /= color + 1;
     }

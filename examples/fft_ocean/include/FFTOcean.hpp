@@ -3,6 +3,8 @@
 #include "FFT.hpp"
 #include "imgui.h"
 #include "Canvas.hpp"
+#include "Offscreen.hpp"
+#include "Scene.hpp"
 
 class FFTOcean : public VulkanBaseApp{
 public:
@@ -17,7 +19,11 @@ protected:
 
     void initFFT();
 
+    void createWindControl();
+
     void initScreenQuad();
+
+    void initAtmosphere();
 
     void createPatch();
 
@@ -57,6 +63,10 @@ protected:
 
     void extractHeightFieldMagnitude(VkCommandBuffer commandBuffer);
 
+    void generateGradientMap(VkCommandBuffer commandBuffer);
+
+    void addBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanImage*>& images);
+
     void copyToCanvas(VkCommandBuffer commandBuffer, const VulkanImage& source);
 
     void onSwapChainDispose() override;
@@ -65,11 +75,19 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void renderAtmosphere(VkCommandBuffer commandBuffer);
+
     void renderOcean(VkCommandBuffer commandBuffer);
 
     void renderScreenQuad(VkCommandBuffer commandBuffer);
 
+    void renderWindControl(VkCommandBuffer commandBuffer);
+
+    void renderUI(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
+
+    void endFrame() override;
 
     void checkAppInputs() override;
 
@@ -88,6 +106,14 @@ protected:
             VulkanPipeline pipeline;
             int action{4};
         } debug;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } windControl;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } atmosphere;
     } render;
 
     struct {
@@ -107,6 +133,10 @@ protected:
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } height_field_mag;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } gradient;
     } compute;
 
     VulkanDescriptorPool descriptorPool;
@@ -136,18 +166,13 @@ protected:
     } hkt;
 
     struct {
-        glm::vec2 windDirection{1, 1};
+        glm::vec2 windDirection{1, 0};
         float windSpeed{100};
-        float amplitude{4};
+        float A{0.5};
         const float horizontalLength{1000};
         float time{0};
         float windPower{2};
     } constants;
-
-    struct {
-        Camera camera;
-        float time{0};
-    } renderConstants;
 
     static constexpr uint32_t hSize = 1024;
 
@@ -163,9 +188,34 @@ protected:
         Texture texture;
         VkDescriptorSet descriptorSet{};
     } heightField;
+
+    struct {
+        Texture texture;
+        VkDescriptorSet descriptorSet{};
+    } gradientMap;
+
     VulkanBuffer patch;
     uint32_t numPatches{25};
     FFT fft;
     VulkanBuffer screenQuad;
     Action* debugAction{};
+    bool generateHComp{true};
+
+    struct {
+        VulkanBuffer circleBuffer;
+        VulkanBuffer windArrow;
+        glm::mat4 model{1};
+        ImTextureID textureId{};
+        Texture ColorBuffer;
+        Offscreen::RenderInfo renderInfo;
+    } windControl;
+
+    VulkanDescriptorSetLayout uniformDescriptorSetLayout;
+
+    Scene scene;
+    AtmosphereDescriptor atmosphere;
+
+    Offscreen offscreen;
+    float sunZenith{45};
+    float sunAzimuth{0};
 };

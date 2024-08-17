@@ -21,8 +21,10 @@ mat4 translation() {
 }
 
 layout(location = 0) out vec2 vUv;
+layout(location = 1) flat out int patchId;
 
 void main(){
     vUv = uv;
-    gl_Position = vec4(position.x, 0, position.y, 1);
+    patchId = gl_InstanceIndex;
+    gl_Position = translation() * vec4(position.x, 0, position.y, 1);
 }

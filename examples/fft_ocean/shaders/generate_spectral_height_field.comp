@@ -47,11 +47,14 @@ void main(){
     Complex _iwkt = Complex(0, -wkt);
     Complex h_dy = add(mul(h0, exp(iwkt)), mul(h0_k, exp(_iwkt)));
 
+    float kx = dot(K/k, x);
+    Complex expKX = exp(Complex(0, kx));
+
     Complex dx = Complex(0.0, -K.x/k);
-    Complex h_dx = mul(dx, h_dy);
+    Complex h_dx = mul(mul(dx, h_dy), expKX);
 
     Complex dz = Complex(0.0, -K.y/k);
-    Complex h_dz = mul(dz, h_dy);
+    Complex h_dz = mul(mul(dz, h_dy), expKX);
 
     imageStore(fft_height_field_real, gid, vec4(h_dx.real, h_dy.real, h_dz.real, 0));
     imageStore(fft_height_field_imaginary, gid, vec4(h_dx.imaginary, h_dy.imaginary, h_dz.imaginary, 0));

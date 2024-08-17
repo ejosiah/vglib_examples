@@ -19,12 +19,15 @@ FFTOcean::FFTOcean(const Settings& settings)
 
 void FFTOcean::initApp() {
     debugAction = &mapToMouse(static_cast<int>(MouseEvent::Button::RIGHT), "next texture", Action::detectInitialPressOnly());
+    scene = Scene::init(device);
     initScreenQuad();
     initBindlessDescriptor();
     initCamera();
+    createWindControl();
     createPatch();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    initAtmosphere();
     initLoader();
     initCanvas();
     initTextures();
@@ -36,10 +39,6 @@ void FFTOcean::initApp() {
     createRenderPipeline();
     createComputePipeline();
     initFFT();
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        createHeightField(commandBuffer);
-    });
 }
 
 void FFTOcean::initCanvas() {
@@ -92,10 +91,7 @@ std::vector<glm::vec4> FFTOcean::createDistribution(float mu, float sigma) {
 void FFTOcean::initTextures() {
     const auto N = hSize;
 
-    auto dist = createDistribution();
-//    textures::createNoTransition(device, distribution, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
-    textures::create(device, distribution, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, dist.data(), {N, N, 1});
-
+    textures::createNoTransition(device, distribution, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
 
     textures::createNoTransition(device, tilde_h0k, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
     textures::createNoTransition(device, tilde_h0_minus_k, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
@@ -106,6 +102,8 @@ void FFTOcean::initTextures() {
     textures::createNoTransition(device, heightFieldSpectral.signal.real, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
     textures::createNoTransition(device, heightFieldSpectral.signal.imaginary, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
     textures::createNoTransition(device, heightField.texture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
+    textures::createNoTransition(device, gradientMap.texture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {N, N, 1});
+
 
 
     distribution.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
@@ -114,16 +112,27 @@ void FFTOcean::initTextures() {
 
     hkt.signal.real.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
     hkt.signal.imaginary.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-    heightField.texture.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 
-    distribution.bindingId = 0;
-    tilde_h0k.bindingId = 1;
-    tilde_h0_minus_k.bindingId = 2;
-    hkt.signal.real.bindingId = 3;
-    hkt.signal.imaginary.bindingId = 4;
-    heightFieldSpectral.signal.real.bindingId = 5;
-    heightFieldSpectral.signal.imaginary.bindingId = 6;
-    heightField.texture.bindingId = 7;
+    heightFieldSpectral.signal.real.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    heightFieldSpectral.signal.imaginary.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    heightField.texture.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    gradientMap.texture.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+
+    auto offset = bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 9);
+
+
+    distribution.bindingId = offset + 0;
+    tilde_h0k.bindingId = offset + 1;
+    tilde_h0_minus_k.bindingId = offset + 2;
+    hkt.signal.real.bindingId = offset + 3;
+    hkt.signal.imaginary.bindingId = offset + 4;
+    heightFieldSpectral.signal.real.bindingId = offset + 5;
+    heightFieldSpectral.signal.imaginary.bindingId = offset + 6;
+    heightField.texture.bindingId = offset + 7;
+    gradientMap.texture.bindingId = offset + 8;
+    scene.cpu->height_field_texture_id = heightField.texture.bindingId;
+    scene.cpu->gradient_texture_id = gradientMap.texture.bindingId;
 
     bindlessDescriptor.update(distribution, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     bindlessDescriptor.update(tilde_h0k, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -133,6 +142,7 @@ void FFTOcean::initTextures() {
     bindlessDescriptor.update(heightFieldSpectral.signal.real, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     bindlessDescriptor.update(heightFieldSpectral.signal.imaginary, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     bindlessDescriptor.update(heightField.texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    bindlessDescriptor.update(gradientMap.texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 }
 
 void FFTOcean::loadInputSignal() {
@@ -175,18 +185,19 @@ void FFTOcean::loadInputSignal() {
 void FFTOcean::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = 60.0f;
+    cameraSettings.zFar = 25 * km;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
     cameraSettings.velocity = glm::vec3(100);
     cameraSettings.acceleration = glm::vec3(50);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->lookAt({500, 100, 0}, glm::vec3(0), {0, 1, 0});
+    auto w = std::sqrt(numPatches) * constants.horizontalLength * 0.5;
+    camera->lookAt({w, 2050, w}, glm::vec3(0, 2100, 0), {0, 1, 0});
 }
 
 void FFTOcean::initBindlessDescriptor() {
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8);
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5);
 }
 
 void FFTOcean::beforeDeviceCreation() {
@@ -247,21 +258,32 @@ void FFTOcean::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
+
+    uniformDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("uniform_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .createLayout();
 }
 
 void FFTOcean::updateDescriptorSets(){
     auto sets = descriptorPool.allocate( {
-        imageDescriptorSetLayout, imageDescriptorSetLayout, imageDescriptorSetLayout,
-        imageDescriptorSetLayout, complexSetLayout, complexSetLayout  });
+        imageDescriptorSetLayout, imageDescriptorSetLayout, imageDescriptorSetLayout, imageDescriptorSetLayout,
+        imageDescriptorSetLayout, complexSetLayout, complexSetLayout, uniformDescriptorSetLayout  });
 
     descriptorSets.distributionImageSet = sets[0];
     descriptorSets.tilde_h0k = sets[1];
     descriptorSets.tilde_h0_minus_k = sets[2];
     heightField.descriptorSet = sets[3];
-    hkt.descriptorSet = sets[4];
-    heightFieldSpectral.descriptorSet = sets[5];
+    gradientMap.descriptorSet = sets[4];
+    hkt.descriptorSet = sets[5];
+    heightFieldSpectral.descriptorSet = sets[6];
+    scene.descriptorSet = sets[7];
 
-    auto writes = initializers::writeDescriptorSets<8>();
+    auto writes = initializers::writeDescriptorSets<10>();
     
     writes[0].dstSet = descriptorSets.distributionImageSet;
     writes[0].dstBinding = 0;
@@ -305,19 +327,33 @@ void FFTOcean::updateDescriptorSets(){
     VkDescriptorImageInfo heightFieldImagInfo{VK_NULL_HANDLE, heightField.texture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[5].pImageInfo = &heightFieldImagInfo;
 
-    writes[6].dstSet = heightFieldSpectral.descriptorSet;
+    writes[6].dstSet = gradientMap.descriptorSet;
     writes[6].dstBinding = 0;
     writes[6].descriptorType =  VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[6].descriptorCount = 1;
-    VkDescriptorImageInfo hf_realInfo{VK_NULL_HANDLE, heightFieldSpectral.signal.real.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
-    writes[6].pImageInfo = &hf_realInfo;
+    VkDescriptorImageInfo gradientMapImagInfo{VK_NULL_HANDLE, gradientMap.texture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[6].pImageInfo = &gradientMapImagInfo;
 
     writes[7].dstSet = heightFieldSpectral.descriptorSet;
-    writes[7].dstBinding = 1;
+    writes[7].dstBinding = 0;
     writes[7].descriptorType =  VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[7].descriptorCount = 1;
+    VkDescriptorImageInfo hf_realInfo{VK_NULL_HANDLE, heightFieldSpectral.signal.real.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[7].pImageInfo = &hf_realInfo;
+
+    writes[8].dstSet = heightFieldSpectral.descriptorSet;
+    writes[8].dstBinding = 1;
+    writes[8].descriptorType =  VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[8].descriptorCount = 1;
     VkDescriptorImageInfo hf_imagInfo{VK_NULL_HANDLE, heightFieldSpectral.signal.imaginary.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
-    writes[7].pImageInfo = &hf_imagInfo;
+    writes[8].pImageInfo = &hf_imagInfo;
+
+    writes[9].dstSet = scene.descriptorSet;
+    writes[9].dstBinding = 0;
+    writes[9].descriptorType =  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[9].descriptorCount = 1;
+    VkDescriptorBufferInfo sceneInfo{ scene.gpu, 0, VK_WHOLE_SIZE };
+    writes[9].pBufferInfo = &sceneInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -353,9 +389,9 @@ void FFTOcean::createRenderPipeline() {
                     .domainOrigin(VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
                 .rasterizationState()
                     .cullNone()
-                    .polygonModeLine()
                 .layout().clear()
-                    .addPushConstantRange(VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, 0, sizeof(renderConstants))
+                    .addDescriptorSetLayout(uniformDescriptorSetLayout)
+                    .addDescriptorSetLayout(atmosphere.uboDescriptorSetLayout)
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                 .name("ocean_render")
                 .build(render.ocean.layout);
@@ -370,6 +406,46 @@ void FFTOcean::createRenderPipeline() {
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                 .name("ocean_fft_debug")
             .build(render.debug.layout);
+
+        render.windControl.pipeline =
+            prototypes->cloneScreenSpaceGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("wind_control.vert.spv"))
+                    .fragmentShader(resource("wind_control.frag.spv"))
+                .viewportState().clear()
+                    .viewport()
+                        .origin(0, 0)
+                        .dimension({ 1024, 1024})
+                        .minDepth(0)
+                        .maxDepth(1)
+                    .scissor()
+                        .offset(0, 0)
+                        .extent({1024, 1024})
+                    .add()
+                .rasterizationState()
+                    .lineWidth(5)
+                .dynamicState()
+                    .primitiveTopology()
+                .dynamicRenderPass()
+                    .addColorAttachment(VK_FORMAT_R8G8B8A8_UNORM)
+                .layout()
+                    .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4))
+                .name("wind_control")
+            .build(render.windControl.layout);
+
+        render.atmosphere.pipeline =
+            prototypes->cloneScreenSpaceGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("atmosphere_.vert.spv"))
+                    .fragmentShader(resource("atmosphere_.frag.spv"))
+                .depthStencilState()
+                    .compareOpLessOrEqual()
+                .layout()
+                    .addDescriptorSetLayout(uniformDescriptorSetLayout)
+                    .addDescriptorSetLayout(atmosphere.uboDescriptorSetLayout)
+                    .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
+                .name("atmosphere")
+            .build(render.atmosphere.layout);
     //    @formatter:on
 }
 
@@ -428,6 +504,20 @@ void FFTOcean::createComputePipeline() {
     compute.height_field_mag.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("generate_height_field_mag", compute.height_field_mag.pipeline.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("generate_height_field_mag", compute.height_field_mag.layout.handle);
+
+    // Generate  gradient map
+    module = device.createShaderModule(resource("generate_gradient.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    compute.gradient.layout =
+            device.createPipelineLayout(
+                    { imageDescriptorSetLayout, imageDescriptorSetLayout },
+                    { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} });
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.gradient.layout.handle;
+    compute.gradient.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("generate_gradient", compute.gradient.pipeline.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("generate_gradient", compute.gradient.layout.handle);
 }
 
 
@@ -464,44 +554,65 @@ VkCommandBuffer *FFTOcean::buildCommandBuffers(uint32_t imageIndex, uint32_t &nu
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+//    AppContext::renderAtmosphere(commandBuffer, *camera);
+    renderAtmosphere(commandBuffer);
     renderOcean(commandBuffer);
 //    renderScreenQuad(commandBuffer);
+    renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
     createHeightField(commandBuffer);
+    renderWindControl(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
     return &commandBuffer;
 }
 
-void FFTOcean::renderOcean(VkCommandBuffer commandBuffer) {
+void FFTOcean::renderAtmosphere(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = scene.descriptorSet;
+    sets[1] = atmosphere.uboDescriptorSet;
+    sets[2] = bindlessDescriptor.descriptorSet;
+
     VkDeviceSize offset = 0;
-
-    static std::array<VkDescriptorSet, 1> sets;
-    sets[0] = bindlessDescriptor.descriptorSet;
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.layout.handle, 0, sets.size(), sets.data(), 0, 0);
-    vkCmdPushConstants(commandBuffer, render.ocean.layout.handle, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, 0, sizeof(renderConstants), &renderConstants);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch, &offset);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.atmosphere.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.atmosphere.layout.handle, 0, COUNT(sets), sets.data(), 0, 0);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
 
+void FFTOcean::renderOcean(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = scene.descriptorSet;
+    sets[1] = atmosphere.uboDescriptorSet;
+    sets[2] = bindlessDescriptor.descriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.layout.handle, 0, sets.size(), sets.data(), 0, 0);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch, &offset);
+    vkCmdDraw(commandBuffer, 4, numPatches, 0, 0);
+}
+
 void FFTOcean::update(float time) {
-    camera->update(time);
+    if(!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
     auto cam = camera->cam();
     constants.time += time;
-    renderConstants.camera = cam;
-    renderConstants.time += time;
+
+    glfwSetWindowTitle(window, fmt::format("{}, fps: {}", title, framePerSecond).c_str());
 }
 
 void FFTOcean::checkAppInputs() {
     camera->processInput();
     if(debugAction->isPressed()) {
         render.debug.action++;
-        render.debug.action %= 5;
+        render.debug.action %= 7;
+        render.debug.action = std::max(1, render.debug.action);
     }
 }
 
@@ -515,44 +626,30 @@ void FFTOcean::onPause() {
 }
 
 void FFTOcean::createHeightField(VkCommandBuffer commandBuffer) {
-    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.subresourceRange = DEFAULT_SUB_RANGE;
 
-//    createDistribution(commandBuffer);
-//
-//    barrier.image = distribution.image;
-//    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
+    static decltype(constants) prevConstants{};
 
-    createSpectralComponents(commandBuffer);
+    if(generateHComp) {
+        spdlog::info("generating spectral components");
+        createDistribution(commandBuffer);
+        addBarrier(commandBuffer, {&distribution.image});
 
-    barrier.image = tilde_h0k.image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
-
-    barrier.image = tilde_h0_minus_k.image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
+        createSpectralComponents(commandBuffer);
+        addBarrier(commandBuffer, {&tilde_h0k.image, &tilde_h0_minus_k.image});
+        generateHComp = false;
+    }
 
     createSpectralHeightField(commandBuffer);
-
-//    fft(commandBuffer, inputSignal, hkt.signal);
-
-    barrier.image = hkt.signal.real.image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
-    barrier.image = hkt.signal.imaginary.image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
+    addBarrier(commandBuffer, { &hkt.signal.real.image, &hkt.signal.imaginary.image });
 
     fft.inverse(commandBuffer, hkt.signal, heightFieldSpectral.signal);
-
-    barrier.image = heightFieldSpectral.signal.real.image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
-    barrier.image = heightFieldSpectral.signal.imaginary.image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
+    addBarrier(commandBuffer, { &heightFieldSpectral.signal.real.image, &heightFieldSpectral.signal.imaginary.image});
 
     extractHeightFieldMagnitude(commandBuffer);
+    addBarrier(commandBuffer,  { &heightField.texture.image });
 
-    barrier.image = heightField.texture.image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
+    generateGradientMap(commandBuffer);
+    addBarrier(commandBuffer,  { &gradientMap.texture.image });
 }
 
 void FFTOcean::createDistribution(VkCommandBuffer commandBuffer) {
@@ -597,6 +694,31 @@ void FFTOcean::extractHeightFieldMagnitude(VkCommandBuffer commandBuffer) {
     vkCmdDispatch(commandBuffer, hSize/32, hSize/32, 1);
 }
 
+void FFTOcean::generateGradientMap(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = heightField.descriptorSet;
+    sets[1] = gradientMap.descriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.gradient.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.gradient.layout.handle, 0, sets.size(), sets.data(), 0, 0);
+    vkCmdDispatch(commandBuffer, hSize/32, hSize/32, 1);
+}
+
+void FFTOcean::addBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanImage *>& images) {
+    std::vector<VkImageMemoryBarrier> barriers;
+
+    for(const auto image : images) {
+        VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.subresourceRange = DEFAULT_SUB_RANGE;
+        barrier.image = image->image;
+        barriers.push_back(barrier);
+    }
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, COUNT(barriers), barriers.data());
+
+}
+
 void FFTOcean::copyToCanvas(VkCommandBuffer commandBuffer, const VulkanImage &source) {
     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -639,14 +761,15 @@ void FFTOcean::copyToCanvas(VkCommandBuffer commandBuffer, const VulkanImage &so
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
     barrier.image = canvas.image;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,  0, 0, 0, 0, 0, 1, &barrier);
 
 }
 
 void FFTOcean::createPatch() {
-    const auto L = constants.horizontalLength + 24;
-    std::vector<glm::vec4> patchPoints{ {0, 0, 0, 0}, {L, 0, 1, 0}, {L, L, 1, 1}, {0, L, 0, 1}};
+    const auto L = constants.horizontalLength/2;
+    std::vector<glm::vec4> patchPoints{ {-L, -L, 0, 0}, {-L, L, 0, 1}, {L, L, 1, 1}, {L, -L, 1, 0} };
     patch = device.createDeviceLocalBuffer(patchPoints.data(), BYTE_SIZE(patchPoints), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
@@ -667,13 +790,119 @@ void FFTOcean::renderScreenQuad(VkCommandBuffer commandBuffer) {
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
 
+void FFTOcean::createWindControl() {
+    constexpr int N = 360;
+    constexpr float delta = glm::two_pi<float>()/to<float>(N);
+    const auto r = 0.8f;
+
+    std::vector<glm::vec4> vertices;
+    for(auto i = 0; i <= N; ++i) {
+        auto angle = to<float>(i) * delta;
+        glm::vec2 p{ glm::cos(angle), glm::sin(angle) };
+        p *= r;
+        vertices.push_back(glm::vec4(p, 0, 0));
+    }
+    windControl.circleBuffer = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    vertices.clear();
+    vertices.push_back(glm::vec4(0));
+    vertices.push_back(glm::vec4(0.75, 0, 0, 0));
+
+    windControl.windArrow = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    textures::create(device, windControl.ColorBuffer, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, {1024, 1024, 1});
+    windControl.textureId = plugin<ImGuiPlugin>(IM_GUI_PLUGIN).addTexture(windControl.ColorBuffer);
+
+    windControl.renderInfo = {
+        .colorAttachments = { { .texture = &windControl.ColorBuffer, .format = VK_FORMAT_R8G8B8A8_UNORM } },
+        .renderArea{ 1024 }
+    };
+}
+
+void FFTOcean::renderWindControl(VkCommandBuffer commandBuffer) {
+
+    offscreen.render(commandBuffer, windControl.renderInfo, [&]{
+        VkDeviceSize offset = 0;
+
+        windControl.model = glm::mat4(1);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.windControl.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, render.windControl.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(windControl.model));
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, windControl.circleBuffer, &offset);
+        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP);
+        vkCmdDraw(commandBuffer, windControl.circleBuffer.sizeAs<glm::vec4>(), 1, 0, 0);
+
+        auto v = glm::normalize(constants.windDirection);
+        auto angle = glm::atan(v.y, v.x);
+        windControl.model = glm::rotate(glm::mat4{1}, angle, {0, 0, -1});
+        vkCmdPushConstants(commandBuffer, render.windControl.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(windControl.model));
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, windControl.windArrow, &offset);
+        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+        vkCmdDraw(commandBuffer, windControl.windArrow.sizeAs<glm::vec4>(), 1, 0, 0);
+    });
+}
+
+void FFTOcean::renderUI(VkCommandBuffer commandBuffer) {
+
+    static bool dirty = false;
+    static auto v = glm::normalize(constants.windDirection);
+    static float angle = glm::atan(v.y, v.x);
+
+    ImGui::Begin("Ocean");
+    ImGui::SetWindowSize({256, 400});
+    ImGui::Image(windControl.textureId, {256, 256});
+    dirty |= ImGui::SliderAngle("direction", &angle);
+    dirty |= ImGui::SliderFloat("speed", &constants.windSpeed, 10, 1000);
+    dirty |= ImGui::SliderFloat("Amplitude", &scene.cpu->amplitude, 1, 100);
+    ImGui::End();
+
+    ImGui::Begin("Sun");
+    ImGui::SetWindowSize({});
+    ImGui::SliderFloat("zenith", &sunZenith, -20, 90);
+    ImGui::SliderFloat("azimuth", &sunAzimuth, 0, 360);
+    ImGui::End();
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+
+    if(dirty){
+        constants.windDirection = glm::vec2(glm::cos(angle), glm::sin(angle));
+        dirty = false;
+        generateHComp = true;
+    }
+
+}
+
+void FFTOcean::endFrame() {
+    const auto cam = camera->cam();
+    scene.cpu->model = cam.model;
+    scene.cpu->view = cam.view;
+    scene.cpu->projection = cam.proj;
+    scene.cpu->inverse_model = glm::inverse(cam.model);
+    scene.cpu->inverse_view = glm::inverse(cam.view);
+    scene.cpu->inverse_projection = glm::inverse(cam.proj);
+    scene.cpu->mvp = cam.proj * cam.view * cam.model;
+    scene.cpu->time = elapsedTime;
+    scene.cpu->camera = camera->position();
+
+    glm::vec3 p{1, 0, 0};
+    auto axis = glm::angleAxis(glm::radians(sunZenith), glm::vec3{0, 0, 1});
+    p = axis * p;
+
+    axis = glm::angleAxis(glm::radians(sunAzimuth), glm::vec3{0, 1, 0});
+    scene.cpu->sunDirection  = glm::normalize(axis * p);
+}
+
+void FFTOcean::initAtmosphere() {
+    atmosphere = AtmosphereDescriptor{ &device, &descriptorPool, &bindlessDescriptor };
+    atmosphere.init();
+    atmosphere.load(resource("default.atmosphere"));
+}
+
 
 int main(){
     try{
 
         Settings settings;
-        settings.width =  1024;
-        settings.height =  1024;
+        settings.width =  1440;
+        settings.height =  1280;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;

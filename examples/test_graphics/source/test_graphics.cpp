@@ -485,8 +485,8 @@ VkCommandBuffer *test_graphics::buildCommandBuffers(uint32_t imageIndex, uint32_
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    canvas.draw(commandBuffer, textureDescriptorSet);
-//    renderPrimitive(commandBuffer);
+//    canvas.draw(commandBuffer, textureDescriptorSet);
+    renderPrimitive(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
 //    rayTrace(commandBuffer);

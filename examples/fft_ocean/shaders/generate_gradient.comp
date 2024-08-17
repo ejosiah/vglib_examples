@@ -1,0 +1,38 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform readonly image2D height_field;
+layout(set = 1, binding = 0, rgba32f) uniform writeonly image2D gradient_map;
+
+layout(push_constant) uniform Constants {
+    vec2 windDirection;
+    float windSpeed;
+    float amplitude;
+    float horizontalLength;
+    float time;
+    float windPower;
+};
+
+ivec2 limit(ivec2 pos) {
+    return pos & ivec2(imageSize(height_field) - 1);
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    vec3 hf_left        =  imageLoad(height_field, limit(gid - ivec2(1, 0))).xyz;
+    vec3 hf_right       =  imageLoad(height_field, limit(gid + ivec2(1, 0))).xyz;
+    vec3 hf_bottom      =  imageLoad(height_field, limit(gid - ivec2(0, 1))).xyz;
+    vec3 hf_top         =  imageLoad(height_field, limit(gid + ivec2(0, 1))).xyz;
+
+    vec2 gradient = vec2(hf_left.y - hf_right.y, hf_bottom.y - hf_top.y);
+
+    // Jacobian
+    vec2 dDx = (hf_right.xz - hf_left.xz)/horizontalLength;
+    vec2 dDy = (hf_top.xz - hf_bottom.xz)/horizontalLength;
+
+    float J = (1.0 + dDx.x) * (1.0 + dDy.y) - dDx.y * dDy.x;
+
+    imageStore(gradient_map, gid, vec4(gradient, 1/horizontalLength, J));
+}

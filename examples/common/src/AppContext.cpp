@@ -33,18 +33,36 @@ void AppContext::createDescriptorSets() {
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
 
-    _defaultInstanceSet = _descriptorPool->allocate( { _instanceSetLayout  }).front();
+    _uniformDescriptorSetLayout =
+        _device->descriptorSetLayoutBuilder()
+            .name("default_uniform_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .createLayout();
 }
 
 void AppContext::updateDescriptorSets() {
-    auto writes = initializers::writeDescriptorSets<1>();
+    auto sets = _descriptorPool->allocate( { _instanceSetLayout, _uniformDescriptorSetLayout  });
+    _defaultInstanceSet = sets[0];
+    _atmosphere.info.descriptorSet = sets[1];
+
+    auto writes = initializers::writeDescriptorSets<2>();
     
-    writes[0].dstSet = instance._defaultInstanceSet;
+    writes[0].dstSet = _defaultInstanceSet;
     writes[0].dstBinding = 0 ;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
-    VkDescriptorBufferInfo instanceInfo{ instance._instanceTransforms, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo instanceInfo{ _instanceTransforms, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &instanceInfo;
+
+    writes[1].dstSet = _atmosphere.info.descriptorSet;
+    writes[1].dstBinding = 0 ;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo atmospheresInfo{ _atmosphere.info.gpu, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &atmospheresInfo;
 
     _device->updateDescriptorSets(writes);
 }
@@ -75,13 +93,26 @@ void AppContext::init0() {
     initPrototype();
     glm::mat4 model{1};
     _instanceTransforms = _device->createDeviceLocalBuffer(glm::value_ptr(model), sizeof(model), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+    initAtmosphere();
+
     createDescriptorSets();
     updateDescriptorSets();
 
     auto clipQuad = ClipSpace::Quad::positions;
     _clipSpaceBuffer  = _device->createDeviceLocalBuffer(clipQuad.data(), BYTE_SIZE(clipQuad), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
     createPipelines();
     initFloor();
+}
+
+void AppContext::initAtmosphere() {
+    _atmosphere.descriptor = AtmosphereDescriptor{ &device(), &descriptorPool() };
+    AtmosphereInfo defaultInfo{};
+    _atmosphere.descriptor.init();
+    _atmosphere.descriptor.load(resource("default.atmosphere"));
+    _atmosphere.info.gpu = _device->createCpuVisibleBuffer(&defaultInfo, sizeof(defaultInfo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    _atmosphere.info.cpu = reinterpret_cast<AtmosphereInfo*>(_atmosphere.info.gpu.map());
 }
 
 void AppContext::initPrototype() {
@@ -159,6 +190,20 @@ void AppContext::createPipelines() {
                 .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec3))
 			.name("wireframe")
 			.build(_shading.wireframe.layout);
+
+    _shading.atmosphere.pipeline =
+        _prototype->cloneScreenSpaceGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(resource("atmosphere.vert.spv"))
+                .fragmentShader(resource("atmosphere.frag.spv"))
+            .depthStencilState()
+                .compareOpLessOrEqual()
+            .layout()
+                .addDescriptorSetLayout(_uniformDescriptorSetLayout)
+                .addDescriptorSetLayout(_atmosphere.descriptor.uboDescriptorSetLayout)
+                .addDescriptorSetLayout(_atmosphere.descriptor.lutDescriptorSetLayout)
+            .name("atmosphere")
+        .build(_shading.atmosphere.layout);
 
 }
 

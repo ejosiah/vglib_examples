@@ -5,18 +5,18 @@
 #include "dft.hpp"
 
 AtmosphericScattering2::AtmosphericScattering2(const Settings& settings) : VulkanBaseApp("atmospheric scattering", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering2");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering2/data");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering2/spv");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering2/models");
-    fileManager.addSearchPathFront("../../examples/atmospheric_scattering2/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/data");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/spv");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/models");
+    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/textures");
 }
 
 void AtmosphericScattering2::initApp() {
     initCamera();
     createDescriptorPool();
-    atmosphereGenerator = std::make_unique<AtmosphereGenerator>(&device, &descriptorPool, &fileManager);
+    atmosphereGenerator = std::make_unique<AtmosphereGenerator>(&device, &descriptorPool, &fileManager());
     atmosphereGenerator->load();
 //    atmosphereGenerator->generateLUT();
     atmosphere = const_cast<AtmosphereDescriptor*>(&atmosphereGenerator->atmosphereDescriptor());

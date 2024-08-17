@@ -7,9 +7,23 @@
 #include "Prototypes.hpp"
 #include "camera_base.h"
 #include "Floor.hpp"
+#include "atmosphere/AtmosphereDescriptor.hpp"
 
 class AppContext {
 public:
+    static constexpr float SunAngularRadius = 0.004675;
+    struct AtmosphereInfo {
+        glm::mat4 inverse_model;
+        glm::mat4 inverse_view;
+        glm::mat4 inverse_projection;
+
+        glm::vec4 camera;
+        glm::vec4 earthCenter{0, - 6360 * km, 0, 1};
+        glm::vec4 sunDirection{0.57735026918962576450914878050196};
+        glm::vec4 whitePoint{1};
+        glm::vec2 sunSize{glm::tan(SunAngularRadius), glm::cos(SunAngularRadius)};
+        float exposure{10};
+    };
 
     static void init(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, VulkanSwapChain& swapChain, VulkanRenderPass& renderPass);
 
@@ -67,6 +81,24 @@ public:
         content();
     }
 
+    static void renderAtmosphere(VkCommandBuffer commandBuffer, BaseCameraController& camera) {
+        static std::array<VkDescriptorSet, 3> sets;
+        sets[0] = instance._atmosphere.info.descriptorSet;
+        sets[1] = instance._atmosphere.descriptor.uboDescriptorSet;
+        sets[2] = instance._atmosphere.descriptor.lutDescriptorSet;
+
+        const auto& pipeline = instance._shading.atmosphere;
+        auto& info = *instance._atmosphere.info.cpu;
+        info.inverse_model = glm::inverse(camera.cam().model);
+        info.inverse_view = glm::inverse(camera.cam().view);
+        info.inverse_projection = glm::inverse(camera.cam().proj);
+        info.camera = glm::vec4{ camera.position(), 1 };
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 0, COUNT(sets), sets.data(), 0, 0);
+        renderClipSpaceQuad(commandBuffer);
+    }
+
     static void renderFloor(VkCommandBuffer commandBuffer, BaseCameraController& camera);
 
     static void shutdown();
@@ -77,6 +109,8 @@ private:
     void updateDescriptorSets();
 
     void init0();
+
+    void initAtmosphere();
 
     void initPrototype();
 
@@ -98,6 +132,7 @@ private:
     VulkanSwapChain* _swapChain{};
     VulkanRenderPass* _renderPass{};
     VulkanDescriptorSetLayout _instanceSetLayout;
+    VulkanDescriptorSetLayout _uniformDescriptorSetLayout;
     VkDescriptorSet _defaultInstanceSet{};
     VulkanBuffer _instanceTransforms;
     VulkanBuffer _clipSpaceBuffer;
@@ -110,10 +145,21 @@ private:
         Pipeline material;
         Pipeline wireframe;
         Pipeline flat;
+        Pipeline atmosphere;
         struct {
             Pipeline solid;
+            Pipeline atmosphere;
         } dynamic;
     } _shading;
     Floor _floor;
+
+    struct {
+        AtmosphereDescriptor descriptor;
+        struct {
+            VulkanBuffer gpu;
+            AtmosphereInfo* cpu{};
+            VkDescriptorSet descriptorSet{};
+        } info;
+    } _atmosphere;
 
 };
