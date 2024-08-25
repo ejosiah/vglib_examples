@@ -30,6 +30,9 @@
 #include "primitives.h"
 #include "gltf/GltfLoader.hpp"
 
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
+
 using namespace glm;
 
 #define QUEUE_CAPACITY 5
@@ -326,10 +329,125 @@ void asioTimer() {
     std::cout << "Hello, world!" << std::endl;
 }
 
+template<typename ValueType>
+struct FrameType {
+    ValueType left;
+    ValueType right;
+};
+
+using Frame = FrameType<float>;
+constexpr int SampleRate = 48000;
+constexpr int SampleCount = SampleRate * 10;
+constexpr int ChannelCount = 2;
+
+void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+    static ma_uint32 read = 0;
+    if(read >= SampleCount) return;
+
+    std::span<float> samples{ (reinterpret_cast<float*>(pDevice->pUserData) + read), frameCount };
+    auto output = reinterpret_cast<Frame*>(pOutput);
+
+    for(auto i = 0; i < frameCount; ++i) {
+        auto sample = samples[i] * 1000;
+        output[i].left = sample;
+        output[i].right = sample;
+    }
+    read = (read + frameCount) % SampleCount;
+}
+
+void noise_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+    static std::default_random_engine engine{1 << 20};
+    static std::uniform_real_distribution<float> dist{-.5, .5};
+    static auto sample = std::bind(dist, engine);
+
+    auto output = reinterpret_cast<Frame*>(pOutput);
+    for(auto i = 0; i < frameCount; ++i) {
+        auto s = sample();
+        output[i].left = s;
+        output[i].right = s;
+    }
+
+}
+
+int enumerate_audio_devices() {
+    ma_context context{};
+
+    if(ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
+        spdlog::error("unable to initialize audio context");
+        return 100;
+    }
+
+    ma_device_info* pPlaybackInfos;
+    ma_uint32 playbackCount;
+    ma_device_info* pCaptureInfos;
+    ma_uint32 captureCount;
+
+    if(ma_context_get_devices(&context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount) != MA_SUCCESS) {
+        spdlog::error("unable to retrieve device info");
+        return 110;
+    }
+
+    std::string info{};
+    for(ma_uint32 iDevice = 0; iDevice <= playbackCount; ++iDevice) {
+        info += fmt::format("{} - {}\n", iDevice, pPlaybackInfos[iDevice].name);
+    }
+
+    spdlog::info("\nPlayback info:\n{}", info);
+
+    info = "";
+    for(auto iDevice = 0u; iDevice <= captureCount; ++iDevice) {
+        info += fmt::format("{} - {}\n", iDevice, pCaptureInfos[iDevice].name);
+    }
+
+    spdlog::info("\nCapture info:{}\n", info);
+
+    return 0;
+}
+
+int audio_demo() {
+
+    constexpr float period = 1/to<float>(SampleRate);
+
+    std::vector<float> data(SampleRate);
+
+    auto ocean = loadFile("ocean.dat");
+
+    for(auto i = 0; i < SampleRate; ++i) {
+        float t = to<float>(i) * period;
+        data[i] = glm::cos(glm::two_pi<float>() * 440 * t);
+    }
+
+    ma_device_config config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format = ma_format_f32;
+    config.playback.channels = 2;
+    config.sampleRate = SampleRate;
+    config.dataCallback = data_callback;
+    config.pUserData = ocean.data();
+
+    ma_device device;
+    if(ma_device_init(NULL, &config, &device) != MA_SUCCESS) {
+        spdlog::error("unable to initialize audio device");
+        return  -1;
+    }
+
+    ma_device_start(&device);
+    spdlog::info("Audio device initialized");
+
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(10s);
+
+    ma_device_stop(&device);
+
+    ma_device_uninit(&device);
+    spdlog::info("Audio device shutdown");
+    return 0;
+
+}
 
 int main(int argc, char** argv){
 
-//    ContextCreateInfo createInfo{};
+
+//    ContxtCreateInfo createInfo{};
 //    createInfo.applicationInfo.sType  = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 //    createInfo.applicationInfo.applicationVersion = VK_MAKE_VERSION(0, 0, 0);
 //    createInfo.applicationInfo.pApplicationName = "Vulkan Performance Test";
@@ -392,6 +510,5 @@ int main(int argc, char** argv){
 //    for(const auto& m : meshes) {
 //        fmt::print("{}\n", m.name);
 //    }
-    fmt::print("{}", sizeof(gltf::MaterialData));
-
+    audio_demo();
 }

@@ -19,6 +19,9 @@ FFTOcean::FFTOcean(const Settings& settings)
 
 void FFTOcean::initApp() {
     debugAction = &mapToMouse(static_cast<int>(MouseEvent::Button::RIGHT), "next texture", Action::detectInitialPressOnly());
+    std::vector<DebugInfo> allocation(swapChain.width() * swapChain.height());
+    debugBuffer = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    debugInfo = { reinterpret_cast<DebugInfo*>(debugBuffer.map()), debugBuffer.sizeAs<DebugInfo>() };
     scene = Scene::init(device);
     initScreenQuad();
     initBindlessDescriptor();
@@ -39,6 +42,48 @@ void FFTOcean::initApp() {
     createRenderPipeline();
     createComputePipeline();
     initFFT();
+//    recordAudio();
+}
+
+void FFTOcean::recordAudio() {
+    spdlog::info("recording audio");
+    int SampleRate = 48000;
+    int numSamples = SampleRate * 10;
+    float period = 1/to<float>(SampleRate);
+
+    float maxSample = MIN_FLOAT;
+    float minSample = MAX_FLOAT;
+    std::vector<float> samples(numSamples);
+
+    VulkanBuffer stagingBuffer = device.createStagingBuffer(heightField.texture.image.size);
+    auto hf = reinterpret_cast<glm::vec4*>(stagingBuffer.map());
+    int recorder = 512 * 1024 + 512;
+    static bool once = true;
+    for(auto i = 0; i < numSamples; ++i){
+        constants.time = period * to<float>(i);
+
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+            createHeightField(commandBuffer);
+            textures::copy(commandBuffer, heightField.texture, stagingBuffer, {1024, 1024});
+        });
+        auto sample = hf[recorder].y;
+        samples[i] = sample;
+
+        if(once) {
+            for (auto j = 0; j < 1024 * 1024; ++j) {
+                maxSample = std::max(maxSample, hf[j].y);
+                minSample = std::min(minSample, hf[j].y);
+            }
+            once = false;
+        }
+    }
+    spdlog::info("sample [max: {}, min: {}]", maxSample, minSample);
+
+    std::ofstream fout("ocean.dat", std::ios::binary);
+    if(!fout.good()) spdlog::error("unable to open ocean.dat for writing");
+
+    fout.write(reinterpret_cast<char*>(samples.data()), samples.size() * sizeof(float));
+    spdlog::info("audio recorded");
 }
 
 void FFTOcean::initCanvas() {
@@ -266,6 +311,10 @@ void FFTOcean::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
 }
 
@@ -283,7 +332,7 @@ void FFTOcean::updateDescriptorSets(){
     heightFieldSpectral.descriptorSet = sets[6];
     scene.descriptorSet = sets[7];
 
-    auto writes = initializers::writeDescriptorSets<10>();
+    auto writes = initializers::writeDescriptorSets<11>();
     
     writes[0].dstSet = descriptorSets.distributionImageSet;
     writes[0].dstBinding = 0;
@@ -354,6 +403,13 @@ void FFTOcean::updateDescriptorSets(){
     writes[9].descriptorCount = 1;
     VkDescriptorBufferInfo sceneInfo{ scene.gpu, 0, VK_WHOLE_SIZE };
     writes[9].pBufferInfo = &sceneInfo;
+    
+    writes[10].dstSet = scene.descriptorSet;
+    writes[10].dstBinding = 1;
+    writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[10].descriptorCount = 1;
+    VkDescriptorBufferInfo descDebugInfo{ debugBuffer, 0, VK_WHOLE_SIZE };
+    writes[10].pBufferInfo = &descDebugInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -377,6 +433,7 @@ void FFTOcean::createRenderPipeline() {
                     .vertexShader(resource("ocean.vert.spv"))
                     .tessellationControlShader(resource("ocean.tesc.spv"))
                     .tessellationEvaluationShader(resource("ocean.tese.spv"))
+                    .geometryShader(resource("ocean.geom.spv"))
                     .fragmentShader(resource("ocean.frag.spv"))
                 .vertexInputState().clear()
                     .addVertexBindingDescription(0, sizeof(glm::vec4), VK_VERTEX_INPUT_RATE_VERTEX)
@@ -626,7 +683,7 @@ void FFTOcean::onPause() {
 }
 
 void FFTOcean::createHeightField(VkCommandBuffer commandBuffer) {
-
+//    constants.time = 10;
     static decltype(constants) prevConstants{};
 
     if(generateHComp) {
@@ -881,6 +938,8 @@ void FFTOcean::endFrame() {
     scene.cpu->mvp = cam.proj * cam.view * cam.model;
     scene.cpu->time = elapsedTime;
     scene.cpu->camera = camera->position();
+    scene.cpu->numPatches = numPatches;
+    scene.cpu->patchSize = constants.horizontalLength;
 
     glm::vec3 p{1, 0, 0};
     auto axis = glm::angleAxis(glm::radians(sunZenith), glm::vec3{0, 0, 1});
@@ -888,6 +947,21 @@ void FFTOcean::endFrame() {
 
     axis = glm::angleAxis(glm::radians(sunAzimuth), glm::vec3{0, 1, 0});
     scene.cpu->sunDirection  = glm::normalize(axis * p);
+
+    static bool once = true;
+    if(frameCount >= 10 && once){
+        int i = 0;
+        for(auto& di : debugInfo) {
+            if(di.counters.y == 1) {
+                spdlog::info("N : {}, V: {}, R: {}", di.N.xyz(), di.V.xyz(), di.R.xyz());
+                i++;
+            }
+            if(i >= 10) break;
+        }
+        once = false;
+    }
+    memset(debugInfo.data(), 0, debugBuffer.size);
+
 }
 
 void FFTOcean::initAtmosphere() {
@@ -905,6 +979,7 @@ int main(){
         settings.height =  1280;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
+        settings.enabledFeatures.geometryShader = true;
         settings.enableBindlessDescriptors = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);

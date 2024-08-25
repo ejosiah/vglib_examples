@@ -31,6 +31,8 @@ struct SceneData {
     glm::vec2 sunSize{glm::tan(SunAngularRadius), glm::cos(SunAngularRadius)};
     float amplitude{100};
     int gradient_texture_id{0};
+
+    int patchSize{1};
 };
 
 

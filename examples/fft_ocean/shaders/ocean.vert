@@ -1,16 +1,18 @@
 #version 460
 
+#include "scene.glsl"
+
 layout(location = 0) in vec2 position;
 layout(location = 1) in vec2 uv;
 
-const int numPatchX = 5;
-const int numPatchZ = 5;
-const int patchSize = 1000;
-
 mat4 translation() {
+
+    int numPatchX = int(sqrt(scene.numPatches));
+    int numPatchY = numPatchX;
+
     int id = int(gl_InstanceIndex);
-    float x = float(id % numPatchX) * patchSize;
-    float z =  float(id / numPatchX) * patchSize;
+    float x = float(id % numPatchX) * scene.patchSize;
+    float z =  float(id / numPatchX) * scene.patchSize;
 
     mat4 xform = mat4(1);
     xform[3][0] = x;

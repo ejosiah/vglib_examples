@@ -13,6 +13,8 @@ public:
 protected:
     void initApp() override;
 
+    void recordAudio();
+
     void initCamera();
 
     void initCanvas();
@@ -166,9 +168,9 @@ protected:
     } hkt;
 
     struct {
-        glm::vec2 windDirection{1, 0};
+        glm::vec2 windDirection{-0.4, -0.9};
         float windSpeed{100};
-        float A{0.5};
+        float A{4};
         const float horizontalLength{1000};
         float time{0};
         float windPower{2};
@@ -214,6 +216,16 @@ protected:
 
     Scene scene;
     AtmosphereDescriptor atmosphere;
+
+    struct DebugInfo {
+        glm::vec4 N;
+        glm::vec4 V;
+        glm::vec4 R;
+        glm::ivec4 counters;
+    };
+
+    VulkanBuffer debugBuffer;
+    std::span<DebugInfo> debugInfo{};
 
     Offscreen offscreen;
     float sunZenith{45};

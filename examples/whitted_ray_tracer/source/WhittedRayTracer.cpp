@@ -4,15 +4,15 @@
 #include "sampling.hpp"
 
 WhittedRayTracer::WhittedRayTracer(const Settings& settings) : VulkanRayTraceBaseApp("Whitted Ray tracer", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/whitted_ray_tracer");
-    fileManager.addSearchPath("../../examples/whitted_ray_tracer/spv");
-    fileManager.addSearchPath("../../examples/whitted_ray_tracer/models");
-    fileManager.addSearchPath("../../examples/whitted_ray_tracer/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("../../examples/whitted_ray_tracer");
+    fileManager().addSearchPath("../../examples/whitted_ray_tracer/spv");
+    fileManager().addSearchPath("../../examples/whitted_ray_tracer/models");
+    fileManager().addSearchPath("../../examples/whitted_ray_tracer/textures");
+    fileManager().addSearchPath("../../data/shaders");
+    fileManager().addSearchPath("../../data/models");
+    fileManager().addSearchPath("../../data/textures");
+    fileManager().addSearchPath("../../data");
 }
 
 void WhittedRayTracer::initApp() {

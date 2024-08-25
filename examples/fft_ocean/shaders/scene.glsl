@@ -26,6 +26,8 @@ layout(set = 0, binding = 0) uniform Globals {
     vec2 sunSize;
     float amplitude;
     int gradient_texture_id;
+
+    int patchSize;
 } scene;
 
 #endif // SCENE_GLSL

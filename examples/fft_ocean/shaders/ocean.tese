@@ -19,10 +19,13 @@ layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 layout(location = 0) in vec2 vUv[gl_MaxPatchVertices];
 layout(location = 1) flat in int te_patchId[gl_MaxPatchVertices];
 
-layout(location = 0) out vec3 worldPos;
-layout(location = 1) out vec3 normal;
-layout(location = 2) out vec2 uv;
-layout(location = 3) out int patchId;
+layout(location = 0) out sruct {
+     vec3 worldPos;
+     vec3 normal;
+     vec2 uv;
+} ts_out;
+
+layout(location = 3) flat out int patchId;
 
 vec3 F(float u, float v, out vec2 uv) {
     vec3 p0 = gl_in[0].gl_Position.xyz;
@@ -37,7 +40,8 @@ vec3 F(float u, float v, out vec2 uv) {
     vec3 offset = texture(HEIGHT_FIELD, uv).rgb;
     p.y += 2000;
     offset.y *= scene.amplitude;
-    return p + offset;
+    p.y += offset.y;
+    return p;
 }
 
 vec3 computeNormal(vec2 uv) {
@@ -56,17 +60,17 @@ void main(){
     float u = gl_TessCoord.x;
     float v = gl_TessCoord.y;
 
-    vec3 p = F(u, v, uv);
-    worldPos = p;
+    vec3 p = F(u, v, ts_out.uv);
+    ts_out.worldPos = p;
     float ep = 0.0001;
 
-//    vec2 unused;
-//    vec3 dFdx = (F(u + ep, v, unused) - F(u - ep, v, unused)) * ep * 0.5;
-//    vec3 dFdy = (F(u, v + ep, unused) - F(u, v - ep, unused)) * ep * 0.5;
-//    normal = normalize(cross(dFdx, dFdy));
-    normal = computeNormal(uv);
+    vec2 unused;
+    vec3 dFdx = (F(u + ep, v, unused) - F(u - ep, v, unused)) * ep * 0.5;
+    vec3 dFdy = (F(u, v + ep, unused) - F(u, v - ep, unused)) * ep * 0.5;
+    ts_out.normal = normalize(cross(dFdx, dFdy));
+//    normal = computeNormal(uv);
 
     patchId = te_patchId[0];
 
-    gl_Position =  scene.mvp * vec4(p, 1);
+    gl_Position =  vec4(p, 1);
 }
