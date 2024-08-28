@@ -37,6 +37,8 @@ float lodDistanceFromCamera(LodParams lodParams, int v0, int v1){
 
     float maxDepth = lodParams.maxDepth;
     float minDepth = lodParams.minDepth;
+    float minTessLevel = lodParams.minTessLevel;
+    float maxTessLevel = lodParams.maxTessLevel;
 
     p0 = lodParams.modelView * p0;
     p1 = lodParams.modelView * p1;

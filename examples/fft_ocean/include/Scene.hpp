@@ -28,11 +28,15 @@ struct SceneData {
     glm::vec3 whitePoint{1};
     int height_field_texture_id{0};
 
-    glm::vec2 sunSize{glm::tan(SunAngularRadius), glm::cos(SunAngularRadius)};
+    glm::vec2 sunSize{glm::tan(SunAngularRadius * 10), glm::cos(SunAngularRadius * 10)};
     float amplitude{100};
     int gradient_texture_id{0};
 
-    int patchSize{1};
+    glm::vec3 wireframe_color{1, 1, 0};
+    int wireframe_enabled{1};
+
+    float wireframe_width{0.1};
+    int patchSize;
 };
 
 

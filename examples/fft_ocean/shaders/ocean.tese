@@ -38,7 +38,7 @@ vec3 F(float u, float v, out vec2 uv) {
     uv = mix(mix(vUv[0], vUv[1], u), mix(vUv[3], vUv[2], u), v);
 
     vec3 offset = texture(HEIGHT_FIELD, uv).rgb;
-    p.y += 2000;
+//    p.y += 2000;
     offset.y *= scene.amplitude;
     p.y += offset.y;
     return p;

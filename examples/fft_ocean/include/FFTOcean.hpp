@@ -5,6 +5,7 @@
 #include "Canvas.hpp"
 #include "Offscreen.hpp"
 #include "Scene.hpp"
+#include "NormalMapping.hpp"
 
 class FFTOcean : public VulkanBaseApp{
 public:
@@ -170,7 +171,7 @@ protected:
     struct {
         glm::vec2 windDirection{-0.4, -0.9};
         float windSpeed{100};
-        float A{4};
+        float A{10};
         const float horizontalLength{1000};
         float time{0};
         float windPower{2};
@@ -188,7 +189,8 @@ protected:
 
     struct {
         Texture texture;
-        VkDescriptorSet descriptorSet{};
+        VkDescriptorSet imageDescriptorSet{};
+        VkDescriptorSet textureDescriptorSet{};
     } heightField;
 
     struct {
@@ -197,7 +199,7 @@ protected:
     } gradientMap;
 
     VulkanBuffer patch;
-    uint32_t numPatches{25};
+    uint32_t numPatches{121};
     FFT fft;
     VulkanBuffer screenQuad;
     Action* debugAction{};
@@ -213,6 +215,7 @@ protected:
     } windControl;
 
     VulkanDescriptorSetLayout uniformDescriptorSetLayout;
+    VulkanDescriptorSetLayout textureDescriptorSetLayout;
 
     Scene scene;
     AtmosphereDescriptor atmosphere;
@@ -226,8 +229,9 @@ protected:
 
     VulkanBuffer debugBuffer;
     std::span<DebugInfo> debugInfo{};
+    NormalMapping normalMapping;
 
     Offscreen offscreen;
-    float sunZenith{45};
-    float sunAzimuth{0};
+    float sunZenith{7.5};
+    float sunAzimuth{128};
 };

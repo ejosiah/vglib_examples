@@ -30,6 +30,8 @@ void FFTOcean::initApp() {
     createPatch();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    normalMapping = NormalMapping{device};
+    normalMapping.init();
     initAtmosphere();
     initLoader();
     initCanvas();
@@ -237,7 +239,7 @@ void FFTOcean::initCamera() {
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     auto w = std::sqrt(numPatches) * constants.horizontalLength * 0.5;
-    camera->lookAt({w, 2050, w}, glm::vec3(0, 2100, 0), {0, 1, 0});
+    camera->lookAt({w, 50, w}, glm::vec3(0, 100, 0), {0, 1, 0});
 }
 
 void FFTOcean::initBindlessDescriptor() {
@@ -250,10 +252,12 @@ void FFTOcean::beforeDeviceCreation() {
     if(devFeatures13.has_value()) {
         devFeatures13.value()->synchronization2 = VK_TRUE;
         devFeatures13.value()->dynamicRendering = VK_TRUE;
+        devFeatures13.value()->maintenance4 = VK_TRUE;
     }else {
         static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
         devFeatures13.synchronization2 = VK_TRUE;
         devFeatures13.dynamicRendering = VK_TRUE;
+        devFeatures13.maintenance4 = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
     };
 
@@ -284,9 +288,18 @@ void FFTOcean::initLoader() {
 void FFTOcean::createDescriptorSetLayouts() {
     imageDescriptorSetLayout =
         device.descriptorSetLayoutBuilder()
-            .name("gaussian_distribution")
+            .name("ocean_fft_image_distribution")
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .createLayout();
+    
+    textureDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("ocean_fft_texture_distribution")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
@@ -321,18 +334,20 @@ void FFTOcean::createDescriptorSetLayouts() {
 void FFTOcean::updateDescriptorSets(){
     auto sets = descriptorPool.allocate( {
         imageDescriptorSetLayout, imageDescriptorSetLayout, imageDescriptorSetLayout, imageDescriptorSetLayout,
-        imageDescriptorSetLayout, complexSetLayout, complexSetLayout, uniformDescriptorSetLayout  });
+        imageDescriptorSetLayout, complexSetLayout, complexSetLayout, uniformDescriptorSetLayout,
+        textureDescriptorSetLayout });
 
     descriptorSets.distributionImageSet = sets[0];
     descriptorSets.tilde_h0k = sets[1];
     descriptorSets.tilde_h0_minus_k = sets[2];
-    heightField.descriptorSet = sets[3];
+    heightField.imageDescriptorSet = sets[3];
     gradientMap.descriptorSet = sets[4];
     hkt.descriptorSet = sets[5];
     heightFieldSpectral.descriptorSet = sets[6];
     scene.descriptorSet = sets[7];
+    heightField.textureDescriptorSet = sets[8];
 
-    auto writes = initializers::writeDescriptorSets<11>();
+    auto writes = initializers::writeDescriptorSets<12>();
     
     writes[0].dstSet = descriptorSets.distributionImageSet;
     writes[0].dstBinding = 0;
@@ -369,7 +384,7 @@ void FFTOcean::updateDescriptorSets(){
     VkDescriptorImageInfo hkt_dy_imagInfo{VK_NULL_HANDLE, hkt.signal.imaginary.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[4].pImageInfo = &hkt_dy_imagInfo;
 
-    writes[5].dstSet = heightField.descriptorSet;
+    writes[5].dstSet = heightField.imageDescriptorSet;
     writes[5].dstBinding = 0;
     writes[5].descriptorType =  VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[5].descriptorCount = 1;
@@ -410,6 +425,13 @@ void FFTOcean::updateDescriptorSets(){
     writes[10].descriptorCount = 1;
     VkDescriptorBufferInfo descDebugInfo{ debugBuffer, 0, VK_WHOLE_SIZE };
     writes[10].pBufferInfo = &descDebugInfo;
+    
+    writes[11].dstSet = heightField.textureDescriptorSet;
+    writes[11].dstBinding = 0;
+    writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[11].descriptorCount = 1;
+    VkDescriptorImageInfo hfTexInfo{ heightField.texture.sampler.handle, heightField.texture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
+    writes[11].pImageInfo = &hfTexInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -445,7 +467,7 @@ void FFTOcean::createRenderPipeline() {
                     .patchControlPoints(4)
                     .domainOrigin(VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
                 .rasterizationState()
-                    .cullNone()
+                    .cullBackFace()
                 .layout().clear()
                     .addDescriptorSetLayout(uniformDescriptorSetLayout)
                     .addDescriptorSetLayout(atmosphere.uboDescriptorSetLayout)
@@ -705,7 +727,8 @@ void FFTOcean::createHeightField(VkCommandBuffer commandBuffer) {
     extractHeightFieldMagnitude(commandBuffer);
     addBarrier(commandBuffer,  { &heightField.texture.image });
 
-    generateGradientMap(commandBuffer);
+//    generateGradientMap(commandBuffer);
+    normalMapping.execute(commandBuffer, heightField.textureDescriptorSet, gradientMap.descriptorSet, {1024, 1024});
     addBarrier(commandBuffer,  { &gradientMap.texture.image });
 }
 
@@ -744,7 +767,7 @@ void FFTOcean::createSpectralHeightField(VkCommandBuffer commandBuffer) {
 void FFTOcean::extractHeightFieldMagnitude(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = heightFieldSpectral.descriptorSet;
-    sets[1] = heightField.descriptorSet;
+    sets[1] = heightField.imageDescriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.height_field_mag.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.height_field_mag.layout.handle, 0, sets.size(), sets.data(), 0, 0);
@@ -753,7 +776,7 @@ void FFTOcean::extractHeightFieldMagnitude(VkCommandBuffer commandBuffer) {
 
 void FFTOcean::generateGradientMap(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = heightField.descriptorSet;
+    sets[0] = heightField.imageDescriptorSet;
     sets[1] = gradientMap.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.gradient.pipeline.handle);
@@ -948,18 +971,18 @@ void FFTOcean::endFrame() {
     axis = glm::angleAxis(glm::radians(sunAzimuth), glm::vec3{0, 1, 0});
     scene.cpu->sunDirection  = glm::normalize(axis * p);
 
-    static bool once = true;
-    if(frameCount >= 10 && once){
-        int i = 0;
-        for(auto& di : debugInfo) {
-            if(di.counters.y == 1) {
-                spdlog::info("N : {}, V: {}, R: {}", di.N.xyz(), di.V.xyz(), di.R.xyz());
-                i++;
-            }
-            if(i >= 10) break;
-        }
-        once = false;
-    }
+//    static bool once = true;
+//    if(frameCount >= 10 && once){
+//        int i = 0;
+//        for(auto& di : debugInfo) {
+//            if(di.counters.y == 1) {
+//                spdlog::info("N : {}, V: {}, R: {}", di.N.xyz(), di.V.xyz(), di.R.xyz());
+//                i++;
+//            }
+//            if(i >= 10) break;
+//        }
+//        once = false;
+//    }
     memset(debugInfo.data(), 0, debugBuffer.size);
 
 }

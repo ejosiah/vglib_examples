@@ -20,13 +20,17 @@ ivec2 limit(ivec2 pos) {
 
 void main() {
     ivec2 gid = ivec2(gl_GlobalInvocationID);
+    int offset = 1;
 
-    vec3 hf_left        =  imageLoad(height_field, limit(gid - ivec2(1, 0))).xyz;
-    vec3 hf_right       =  imageLoad(height_field, limit(gid + ivec2(1, 0))).xyz;
-    vec3 hf_bottom      =  imageLoad(height_field, limit(gid - ivec2(0, 1))).xyz;
-    vec3 hf_top         =  imageLoad(height_field, limit(gid + ivec2(0, 1))).xyz;
+    vec3 hf = imageLoad(height_field, gid).xyz;
 
-    vec2 gradient = vec2(hf_left.y - hf_right.y, hf_bottom.y - hf_top.y);
+    vec3 hf_left        =  imageLoad(height_field, limit(gid - ivec2(offset, 0))).xyz;
+    vec3 hf_right       =  imageLoad(height_field, limit(gid + ivec2(offset, 0))).xyz;
+    vec3 hf_bottom      =  imageLoad(height_field, limit(gid - ivec2(0, offset))).xyz;
+    vec3 hf_top         =  imageLoad(height_field, limit(gid + ivec2(0, offset))).xyz;
+
+//    vec2 gradient = vec2(hf_left.y - hf_right.y, hf_bottom.y - hf_top.y);
+    vec2 gradient = vec2(hf.x, hf.z);
 
     // Jacobian
     vec2 dDx = (hf_right.xz - hf_left.xz)/horizontalLength;
@@ -34,5 +38,8 @@ void main() {
 
     float J = (1.0 + dDx.x) * (1.0 + dDy.y) - dDx.y * dDy.x;
 
-    imageStore(gradient_map, gid, vec4(gradient, 1/horizontalLength, J));
+//    vec3 normal = 0.5 + 0.5 * vec3(gradient, 1/horizontalLength);
+    vec3 normal = 0.5 + 0.5 * vec3(gradient, 1);
+
+    imageStore(gradient_map, gid, vec4(normal, J));
 }

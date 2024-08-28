@@ -27,6 +27,10 @@ layout(set = 0, binding = 0) uniform Globals {
     float amplitude;
     int gradient_texture_id;
 
+    vec3 wireframe_color;
+    int wireframe_enabled;
+
+    float wireframe_width;
     int patchSize;
 } scene;
 
