@@ -11,7 +11,7 @@
 #define HEIGHT_FIELD global_textures[scene.height_field_texture_id]
 
 
-layout(quads, equal_spacing, ccw) in;
+layout(quads, fractional_even_spacing, ccw) in;
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
@@ -64,10 +64,10 @@ void main(){
     ts_out.worldPos = p;
     float ep = 0.0001;
 
-    vec2 unused;
-    vec3 dFdx = (F(u + ep, v, unused) - F(u - ep, v, unused)) * ep * 0.5;
-    vec3 dFdy = (F(u, v + ep, unused) - F(u, v - ep, unused)) * ep * 0.5;
-    ts_out.normal = normalize(cross(dFdx, dFdy));
+//    vec2 unused;
+//    vec3 dFdx = (F(u + ep, v, unused) - F(u - ep, v, unused)) * ep * 0.5;
+//    vec3 dFdy = (F(u, v + ep, unused) - F(u, v - ep, unused)) * ep * 0.5;
+//    ts_out.normal = normalize(cross(dFdx, dFdy));
 //    normal = computeNormal(uv);
 
     patchId = te_patchId[0];

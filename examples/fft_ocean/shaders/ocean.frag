@@ -44,10 +44,10 @@ const vec3 deepBlue = vec3(0.0056f, 0.0194f, 0.0331f);
 const vec3 carribbean = vec3(0.1812f, 0.4678f, 0.5520f);
 const vec3 lightBlue = vec3(0.0000f, 0.2307f, 0.3613f);
 
-const vec3 oceanColor = vec3(deepBlue);
+vec3 oceanColor = scene.ocean_color;
 
 vec3 hash31(float p){
-    vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
+    vec3 p3 = fract(vec3(p + 1) * vec3(.1031, .1030, .0973));
     p3 += dot(p3, p3.yzx+33.33);
     return fract((p3.xxy+p3.yzz)*p3.zyx);
 }
@@ -140,8 +140,9 @@ void main(){
         float t = smoothstep(-scene.wireframe_width, scene.wireframe_width, d);
         fragColor.rgb = mix(scene.wireframe_color, fragColor.rgb, t);
     }
-//    fragColor.rgb = hash31(patchId);
-    if( R.y < 0 ) {
-        debugInfo[i].counters.y = 1;
-    }
+//    fragColor.rgb = hash31(patchId + 1);
+//    fragColor.rgb = vec3(fs_in.uv, 0);
+//    if( R.y < 0 ) {
+//        debugInfo[i].counters.y = 1;
+//    }
 }

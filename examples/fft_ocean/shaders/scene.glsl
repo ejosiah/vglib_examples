@@ -30,8 +30,11 @@ layout(set = 0, binding = 0) uniform Globals {
     vec3 wireframe_color;
     int wireframe_enabled;
 
+    vec3 ocean_color;
     float wireframe_width;
-    int patchSize;
+
+    int tileSize;
+    int numTiles;
 } scene;
 
 #endif // SCENE_GLSL

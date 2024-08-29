@@ -171,7 +171,7 @@ protected:
     struct {
         glm::vec2 windDirection{-0.4, -0.9};
         float windSpeed{100};
-        float A{10};
+        float A{20};
         const float horizontalLength{1000};
         float time{0};
         float windPower{2};
@@ -199,7 +199,8 @@ protected:
     } gradientMap;
 
     VulkanBuffer patch;
-    uint32_t numPatches{121};
+    uint32_t numPatches{25};
+    uint32_t numTiles{121};
     FFT fft;
     VulkanBuffer screenQuad;
     Action* debugAction{};

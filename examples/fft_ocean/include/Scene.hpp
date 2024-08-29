@@ -33,10 +33,13 @@ struct SceneData {
     int gradient_texture_id{0};
 
     glm::vec3 wireframe_color{1, 1, 0};
-    int wireframe_enabled{1};
+    int wireframe_enabled{0};
 
-    float wireframe_width{0.1};
-    int patchSize;
+    glm::vec3 ocean_color{0.0056f, 0.0194f, 0.0331f};
+    float wireframe_width{0.2};
+
+    int tileSize;
+    int numTiles;
 };
 
 

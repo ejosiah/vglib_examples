@@ -36,7 +36,7 @@ void main(){
 //        lodParams.displacement[3] = texture(HEIGHT_FIELD, vs_uv[3]).y * scene.amplitude;
 //
 //        lodParams.minDepth = 5;
-//        lodParams.maxDepth = 1000;
+//        lodParams.maxDepth = 500;
 //
 //        lodParams.minTessLevel = 8;
 //        lodParams.maxTessLevel = 64;

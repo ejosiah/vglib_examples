@@ -238,7 +238,7 @@ void FFTOcean::initCamera() {
     cameraSettings.acceleration = glm::vec3(50);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    auto w = std::sqrt(numPatches) * constants.horizontalLength * 0.5;
+    auto w = std::sqrt(numTiles) * constants.horizontalLength * 0.5;
     camera->lookAt({w, 50, w}, glm::vec3(0, 100, 0), {0, 1, 0});
 }
 
@@ -673,7 +673,7 @@ void FFTOcean::renderOcean(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.layout.handle, 0, sets.size(), sets.data(), 0, 0);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch, &offset);
-    vkCmdDraw(commandBuffer, 4, numPatches, 0, 0);
+    vkCmdDraw(commandBuffer, 4, numPatches * numTiles, 0, 0);
 }
 
 void FFTOcean::update(float time) {
@@ -848,7 +848,7 @@ void FFTOcean::copyToCanvas(VkCommandBuffer commandBuffer, const VulkanImage &so
 }
 
 void FFTOcean::createPatch() {
-    const auto L = constants.horizontalLength/2;
+    const auto L = constants.horizontalLength/(2 * int(std::sqrt(numPatches)) );
     std::vector<glm::vec4> patchPoints{ {-L, -L, 0, 0}, {-L, L, 0, 1}, {L, L, 1, 1}, {L, -L, 1, 0} };
     patch = device.createDeviceLocalBuffer(patchPoints.data(), BYTE_SIZE(patchPoints), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
@@ -932,6 +932,7 @@ void FFTOcean::renderUI(VkCommandBuffer commandBuffer) {
     dirty |= ImGui::SliderAngle("direction", &angle);
     dirty |= ImGui::SliderFloat("speed", &constants.windSpeed, 10, 1000);
     dirty |= ImGui::SliderFloat("Amplitude", &scene.cpu->amplitude, 1, 100);
+    ImGui::ColorEdit3("ocean color", &scene.cpu->ocean_color.x);
     ImGui::End();
 
     ImGui::Begin("Sun");
@@ -940,8 +941,17 @@ void FFTOcean::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SliderFloat("azimuth", &sunAzimuth, 0, 360);
     ImGui::End();
 
+    ImGui::Begin("Debug");
+    ImGui::SetWindowSize({});
+
+    static bool wireFrameEnabled = bool(scene.cpu->wireframe_enabled);
+    ImGui::Checkbox("Wireframe", &wireFrameEnabled);
+    ImGui::ColorEdit3("Wireframe Color", &scene.cpu->wireframe_color.x);
+    ImGui::End();
+
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 
+    scene.cpu->wireframe_enabled = static_cast<bool>(wireFrameEnabled);
     if(dirty){
         constants.windDirection = glm::vec2(glm::cos(angle), glm::sin(angle));
         dirty = false;
@@ -962,7 +972,8 @@ void FFTOcean::endFrame() {
     scene.cpu->time = elapsedTime;
     scene.cpu->camera = camera->position();
     scene.cpu->numPatches = numPatches;
-    scene.cpu->patchSize = constants.horizontalLength;
+    scene.cpu->tileSize = constants.horizontalLength;
+    scene.cpu->numTiles = numTiles;
 
     glm::vec3 p{1, 0, 0};
     auto axis = glm::angleAxis(glm::radians(sunZenith), glm::vec3{0, 0, 1});
