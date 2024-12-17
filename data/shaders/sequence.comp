@@ -1,0 +1,19 @@
+#version 460
+
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform Constants {
+    uint start;
+    uint numEntries;
+};
+
+layout(set = 0, binding = 0) buffer Data {
+    uint data[];
+};
+
+void main() {
+    uint i = gl_GlobalInvocationID.y * (gl_NumWorkGroups * gl_WorkGroupSize).x + gl_GlobalInvocationID.x;
+    if(i >= numEntries) return;
+
+    data[i] = start + i;
+}

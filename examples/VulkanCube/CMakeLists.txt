@@ -1,10 +1,8 @@
 
-include_directories(include)
-
-find_package(OPENXR REQUIRED)
+include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 
 file(GLOB_RECURSE CPP_FILES ${CMAKE_CURRENT_LIST_DIR}/source/*.cpp)
 file(GLOB_RECURSE HPP_FILES ${CMAKE_CURRENT_LIST_DIR}/include/*.*)
 
 add_executable(VulkanCube ${CPP_FILES} ${HPP_FILES})
-target_link_libraries(VulkanCube VulkanBase Vulkan::Vulkan ${CONAN_LIBS} OpenXR::openxr_loader)
+target_link_libraries(VulkanCube PRIVATE VulkanBase Vulkan::Vulkan ${CONAN_LIBS})

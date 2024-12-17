@@ -2,13 +2,10 @@
 
 
 #include "VulkanCube.h"
-#include <openxr/openxr.h>
-#include <openxr/openxr_platform.h>
 #include  <stb_image.h>
 
 VulkanCube::VulkanCube(const Settings& settings): VulkanBaseApp("VulkanCube", settings, {}){
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/data");
 }
 
 void VulkanCube::initApp() {
@@ -297,6 +294,7 @@ void VulkanCube::cleanup() {
 }
 
 int main() {
+    fs::current_path("../../../../examples/data");
     try{
         Settings settings;
         settings.vSync = false;

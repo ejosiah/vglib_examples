@@ -4,7 +4,7 @@
 #define SUMS 1
 #define DATA 0
 #define NUM_DATA_ELEMENTS 1
-#define VALUE_ID 0
+#define KEY_ID 0
 layout(local_size_x = 1024) in;
 
 layout(set = 0, binding=DATA) buffer DataIn{
@@ -20,5 +20,5 @@ void main(){
 	uint val = sum[gl_WorkGroupID.x];
 	uint i = gl_GlobalInvocationID.x;
 
-	data[VALUE_ID].buf[i] += val;
+	data[KEY_ID].buf[i] += val;
 }

@@ -75,7 +75,7 @@ void main(){
 
 	uint thid = gl_LocalInvocationIndex;
 	uint group = thid/R;
-	
+
 	if(thid == 0){
 		uint sum = 0;
 		for(int i = 0; i < Radix; i++){
@@ -100,22 +100,28 @@ void main(){
 		uint idx = (gl_WorkGroupID.x * Num_Groups_per_WorkGroup + group) * Num_Elements_Per_Group + (thid % R) + r;
 
 		if(idx >= Num_Elements) break;
-			
-			uint word = data_in[KEY_ID].buf[idx];
-			uint bit = DIGIT(word, block, Radix);
-			uint bitIdx = bit * Num_Groups_per_WorkGroup + group;
+
+		uint word = data_in[KEY_ID].buf[idx];
+		uint bit = DIGIT(word, block, Radix);
+		uint bitIdx = bit * Num_Groups_per_WorkGroup + group;
 
 
-			for(int i = 0; i < R; i++){
-				if(thid%R == i) {
-					uint localOffset = local_counts[bitIdx]++;
-					uint globalOffset = local_sum[bit];
-					uint oIdx = localOffset + globalOffset;
-					if(oIdx >= Num_Elements) continue;
-					data_out[KEY_ID].buf[oIdx] = data_in[KEY_ID].buf[idx];
+		for(int i = 0; i < R; i++){
+			if(thid%R == i) {
+				uint localOffset = local_counts[bitIdx]++;
+				uint globalOffset = local_sum[bit];
+				uint oIdx = localOffset + globalOffset;
+				data_out[KEY_ID].buf[oIdx] = data_in[KEY_ID].buf[idx];
+
+
+				uint iRid = idx * recordSize;
+				uint oRid = oIdx * recordSize;
+				for(uint j = 0; j < recordSize; ++j ) {
+					record_out[KEY_ID].buf[oRid + j] = record_in[KEY_ID].buf[ iRid + j];
 				}
-				barrier();
 			}
+			barrier();
+		}
 	}
 	barrier();
 }

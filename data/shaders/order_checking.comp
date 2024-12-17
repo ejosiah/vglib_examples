@@ -1,0 +1,137 @@
+#version 460 core
+
+#define DATA_ITERMS_PER_WORKGROUP 8192
+#define STUFF 0
+#define SHARED_STORAGE_SIZE (2048)
+#define BANKS 32
+#define LOG_BANKS 5
+#define CONFLICT_FREE_OFFSET(n) (((n) >> LOG_BANKS))
+#define NUM_SMEM_ELEMENTS SHARED_STORAGE_SIZE + CONFLICT_FREE_OFFSET(SHARED_STORAGE_SIZE)
+#define CONFLICT_FREE_ID(n) (n) + CONFLICT_FREE_OFFSET(n)
+#define GET_DATA(INDEX) (INDEX < numEntries ? g_data[INDEX] : 0xFFFFFFFFu)
+#define SET_DATA(INDEX, VALUE) \
+if(INDEX < numEntries){ g_data[INDEX] = VALUE; }
+
+layout(push_constant) uniform Constants {
+    uint itemsPerWorkGroup;
+    uint numEntries;
+};
+
+layout(local_size_x = 1024) in;
+
+layout(set = 0, binding = 0) buffer DATA {
+    uint g_data[];
+};
+
+layout(set = 0, binding = 1) buffer SUMS {
+    uint g_sums[];
+};
+
+shared uint data[NUM_SMEM_ELEMENTS];
+
+void compare(inout uvec4 values, uint last);
+
+void scan(inout uvec4 v, out uint sum);
+
+void main(){
+    uint thid  = gl_LocalInvocationIndex;
+    uint gthid = gl_GlobalInvocationID.x;
+    uint gthid2 = gthid + SHARED_STORAGE_SIZE/2;
+    uint gOffset = gl_WorkGroupID.x * DATA_ITERMS_PER_WORKGROUP/2;
+    uint n = SHARED_STORAGE_SIZE;
+
+    // sequencial memory access
+    uvec4 temp0 = uvec4(GET_DATA(4 * gthid + 0 + gOffset), GET_DATA(4 * gthid + 1 + gOffset), GET_DATA(4 * gthid + 2 + gOffset), GET_DATA(4 * gthid + 3 + gOffset));
+    uvec4 temp1 = uvec4(GET_DATA(4 * gthid2 + 0 + gOffset), GET_DATA(4 * gthid2 + 1 + gOffset), GET_DATA(4 * gthid2 + 2 + gOffset), GET_DATA(4 * gthid2 + 3 + gOffset));
+    uint tail0 = GET_DATA(4 * gthid + gOffset + 4);
+    uint tail1 = GET_DATA(4 * gthid2 + gOffset + 4);
+
+    compare(temp0, tail0);
+    compare(temp1, tail1);
+
+    uint sum = 0;
+    uint ai = CONFLICT_FREE_ID(thid);
+    scan(temp0, sum);
+    data[ai] = sum;
+
+    uint bi = CONFLICT_FREE_ID(thid + SHARED_STORAGE_SIZE/2);
+    scan(temp1, sum);
+    data[bi] = sum;
+
+    uint offset = 1;
+    for(uint d = (n >> 1); d > 0; d >>= 1){
+        barrier();
+        if(thid < d){
+            uint ai = CONFLICT_FREE_ID(offset * (2 * thid + 1) - 1);
+            uint bi = CONFLICT_FREE_ID(offset * (2 * thid + 2) - 1);
+
+            data[bi] += data[ai];
+        }
+        offset *= 2;
+    }
+
+    if(thid == 0){
+        uint last = CONFLICT_FREE_ID(n - 1);
+        uint temp = data[last];
+        data[last] = 0;
+        g_sums[gl_WorkGroupID.x] = temp;
+    }
+
+    for(uint d = 1; d < n; d *= 2){
+        offset >>= 1;
+        barrier();
+        if(thid < d){
+            uint ai = CONFLICT_FREE_ID(offset * (2 * thid + 1) - 1);
+            uint bi = CONFLICT_FREE_ID(offset * (2 * thid + 2) - 1);
+
+            uint temp = data[bi];
+            data[bi] = temp + data[ai];
+            data[ai] = temp;
+        }
+    }
+
+    barrier();
+
+    uint sum0 = data[ai];
+    uint sum1 = data[bi];
+
+    temp0 += uvec4(sum0);
+    temp1 += uvec4(sum1);
+
+    SET_DATA(4 * gthid + 0 + gOffset, temp0.x)
+    SET_DATA(4 * gthid + 1 + gOffset, temp0.y)
+    SET_DATA(4 * gthid + 2 + gOffset, temp0.z)
+    SET_DATA(4 * gthid + 3 + gOffset, temp0.w)
+
+    SET_DATA(4 * gthid2 + 0 + gOffset, temp1.x)
+    SET_DATA(4 * gthid2 + 1 + gOffset, temp1.y)
+    SET_DATA(4 * gthid2 + 2 + gOffset, temp1.z)
+    SET_DATA(4 * gthid2 + 3 + gOffset, temp1.w)
+}
+
+void scan(inout uvec4 v, out uint sum){
+    sum = 0;
+    uint temp = v.x;
+    v.x = sum;
+    sum += temp;
+
+    temp = v.y;
+    v.y = sum;
+    sum += temp;
+
+    temp = v.z;
+    v.z = sum;
+    sum += temp;
+
+    temp = v.w;
+    v.w = sum;
+    sum += temp;
+}
+
+void compare(inout uvec4 values, uint last){
+    uvec4 temp = values;
+    values[0] = uint(temp[0] > temp[1]);
+    values[1] = uint(temp[1] > temp[2]);
+    values[2] = uint(temp[2] > temp[3]);
+    values[3] = uint(temp[3] > last);
+}

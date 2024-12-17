@@ -1,0 +1,33 @@
+#version 460
+#define DATA_TYPE_INT 0
+#define DATA_TYPE_FLOAT 1
+
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform Constants {
+    uint dataType;
+    uint reverse;
+    uint numEntries;
+};
+
+layout(set = 0, binding = 0) buffer Data {
+    uint data[];
+};
+
+void main() {
+    uint i = gl_GlobalInvocationID.y * (gl_NumWorkGroups * gl_WorkGroupSize).x + gl_GlobalInvocationID.x;
+    if(i >= numEntries) return;
+
+    uint entry = data[i];
+    uint mask = 0x80000000u;
+    if(dataType == DATA_TYPE_FLOAT) {
+        if (reverse == 0) {
+            mask = uint(-int(entry >> 31) | 0x80000000);
+        } else {
+            mask = ((entry >> 31u) - 1u) | 0x80000000u;
+        }
+
+    }
+
+    data[i] = entry ^ mask;
+}

@@ -1,0 +1,44 @@
+#version 460
+
+#define MAX_VALUE_LOCAL_ID (0xFFFFFFFF + gl_LocalInvocationIndex - gl_WorkGroupSize.x - 1)
+#define WORD(bits) ((bits >> (block * wordSize)) & mask)
+
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform Constants {
+    uint wordSize;
+    uint block;
+    uint mask;
+    uint numEntries;
+};
+
+layout(set = 0, binding = 0) buffer DataIn {
+    uint data[];
+};
+
+layout(set = 0, binding = 1) buffer DataOut {
+    uint bitSet[];
+};
+
+uint gid = gl_GlobalInvocationID.y * (gl_NumWorkGroups * gl_WorkGroupSize).x + gl_GlobalInvocationID.x;
+
+shared uint localData[257];
+
+void main() {
+    // TODO writes this for this
+    uint localID = gl_LocalInvocationIndex;
+    uint globalID = gid;
+    localData[localID] = globalID >= numEntries ? mask : WORD( data[globalID] );
+
+    if (localID == 0) {
+        const uint end = localData.length() - 1;
+        localData[end] = (gid + end) >= numEntries ? mask : data[gid + end];
+    }
+
+    barrier();
+
+    if(gid < numEntries){
+        bitSet[gid] = localData[localID] <= localData[localID + 1] ? 0 : 1;
+    }
+}
+

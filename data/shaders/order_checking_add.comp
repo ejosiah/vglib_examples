@@ -3,20 +3,20 @@
 layout(local_size_x = 1024) in;
 
 layout(set = 0, binding = 0) buffer DATA {
-    int g_data[];
+    uint g_data[];
 };
 
 layout(set = 0, binding = 1) buffer SUMS {
-    int g_sums[];
+    uint g_sums[];
 };
 
-layout(push_constant) uniform Constants{
+layout(push_constant) uniform Constants {
     uint itemsPerWorkGroup;
-    uint N;
+    uint numEntries;
 };
 
 void main(){
-    int sum = g_sums[gl_WorkGroupID.x];
+    uint sum = g_sums[gl_WorkGroupID.x];
     uint offset = gl_WorkGroupID.x * itemsPerWorkGroup;
     uint i = offset + gl_LocalInvocationIndex;
     uint step = gl_WorkGroupSize.x;

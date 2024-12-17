@@ -20,5 +20,5 @@ void main(){
     col.a += worleyFbm(uv, freq*4.);
     col.r += remap(pfbm, 0., 1., col.g, 1.); // perlin-worley
 
-    imageStore(image, ivec2(gl_GlobalInvocationID.xyz), col);
+    imageStore(image, ivec3(gl_GlobalInvocationID.xyz), col);
 }

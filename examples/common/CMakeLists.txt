@@ -1,10 +1,4 @@
 # open vdb setup
-set(CMAKE_TOOLCHAIN_FILE d:vcpkg/scripts/buildsystems/vcpkg.cmake CACHE STRING "vcpkg build system")
-
-find_package(TBB CONFIG REQUIRED)
-find_package(ZLIB REQUIRED)
-find_package(blosc  REQUIRED)
-find_package(Boost REQUIRED)
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../../dependencies/openvdb/include)
 
@@ -14,10 +8,10 @@ file(INSTALL "${CMAKE_CURRENT_LIST_DIR}/../../dependencies/openvdb/bin/openvdb.d
 
 set(OPEN_VDB_LIBS
         ZLIB::ZLIB
-        TBB::tbb
-        TBB::tbbmalloc
-        TBB::tbbmalloc_proxy
-        blosc_shared
+        ENV${VCPKG_PATH}/installed/x64-windows/debug/lib/tbb12_debug.lib
+        ENV${VCPKG_PATH}/installed/x64-windows/debug/lib/tbbmalloc_debug.lib
+        ENV${VCPKG_PATH}/installed/x64-windows/debug/lib/tbbmalloc_proxy_debug.lib
+        ENV${VCPKG_PATH}/installed/x64-windows/debug/lib/blosc.lib.lib
         Boost::boost
         ${OPENVDB_LIBRARY})
 

@@ -1,0 +1,120 @@
+#version 460 core
+
+#define WORKGROUP_SIZE 1024
+#define COUNTS 0
+#define SUMS 1
+#define ORDER_CHECKING 2
+#define DATA 0
+#define INDICES 1
+#define RECORDS 2
+#define NUM_DATA_ELEMENTS 1
+#define KEY_ID 0
+#define INDEX_ID 1
+#define BYTE_SIZE 8
+#define DIGIT(WORD, BLOCK, RADIX) ((WORD >> BLOCK * BYTE_SIZE) & (RADIX-1))
+#define IS_GROUP_LEADER(ID, NUM_INVOC_PER_GROUP) ((ID % NUM_INVOC_PER_GROUP) == 0)
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(push_constant) uniform Consts{
+    uint block;
+    uint R;
+    uint Radix;
+    uint Num_Groups_per_WorkGroup;
+    uint Num_Elements_per_WorkGroup;
+    uint Num_Elements_Per_Group;
+    uint Num_Elements;
+    uint Num_Radices_Per_WorkGroup;
+    uint Num_Groups;
+    uint recordSize;
+};
+
+
+layout(set = 0, binding=DATA) buffer DataIn{
+    uint buf[];
+} data_in[NUM_DATA_ELEMENTS];
+
+layout(set = 1, binding=DATA) buffer DataOut{
+    uint buf[];
+} data_out[NUM_DATA_ELEMENTS];
+
+layout(set = 0, binding=INDICES) buffer IndexIn{
+    uint buf[];
+} index_in[NUM_DATA_ELEMENTS];
+
+layout(set = 1, binding=INDICES) buffer IndexOut{
+    uint buf[];
+} index_out[NUM_DATA_ELEMENTS];
+
+layout(set = 0, binding=RECORDS) buffer RecordsIn{
+    uint buf[];
+} record_in[NUM_DATA_ELEMENTS];
+
+layout(set = 1, binding=RECORDS) buffer RecordsOut{
+    uint buf[];
+} record_out[NUM_DATA_ELEMENTS];
+
+layout(set = 2, binding=COUNTS) buffer Counts{
+    uint counts[];
+};
+
+layout(set = 2, binding=SUMS) buffer Sums{
+    uint sums[];
+};
+
+layout(set = 2, binding=ORDER_CHECKING) buffer OrderChecking{
+    uint isOrdered;
+};
+
+shared uint local_counts[8192];
+shared uint local_sum[256];
+
+void main(){
+    if(isOrdered == 0) return;
+
+    uint thid = gl_LocalInvocationIndex;
+    uint group = thid/R;
+
+    if(thid == 0){
+        uint sum = 0;
+        for(int i = 0; i < Radix; i++){
+            uint temp = sums[i];
+            local_sum[i] = sum;
+            sum += temp;
+        }
+    }
+
+    if(IS_GROUP_LEADER(thid, R)){	 // TODO group member processes Radix/groupSize
+        for(uint i = 0; i < Radix; i++){
+            uint local_bit_Idx = i * Num_Groups_per_WorkGroup + group;
+            uint global_bit_Idx = i * (gl_NumWorkGroups.x * Num_Groups_per_WorkGroup) + gl_WorkGroupID.x * Num_Groups_per_WorkGroup + group;
+            local_counts[local_bit_Idx] = counts[global_bit_Idx];
+        }
+    }
+
+
+    barrier();
+
+    for(uint r = 0; r < Num_Elements_Per_Group; r += R){
+        uint idx = (gl_WorkGroupID.x * Num_Groups_per_WorkGroup + group) * Num_Elements_Per_Group + (thid % R) + r;
+
+        if(idx >= Num_Elements) break;
+
+        uint word = data_in[KEY_ID].buf[idx];
+        uint bit = DIGIT(word, block, Radix);
+        uint bitIdx = bit * Num_Groups_per_WorkGroup + group;
+
+
+        for(int i = 0; i < R; i++){
+            if(thid%R == i) {
+                uint localOffset = local_counts[bitIdx]++;
+                uint globalOffset = local_sum[bit];
+                uint oIdx = localOffset + globalOffset;
+                data_out[KEY_ID].buf[oIdx] = data_in[KEY_ID].buf[idx];
+                index_out[KEY_ID].buf[oIdx] = index_in[KEY_ID].buf[idx];
+            }
+            barrier();
+        }
+    }
+    barrier();
+}
