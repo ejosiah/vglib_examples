@@ -29,7 +29,7 @@ void TerrainMC::initApp() {
 }
 
 void TerrainMC::checkInvariants() {
-    assert(sizeof(CameraInfo) == 260);
+    assert(sizeof(CameraInfo) == 324);
 }
 
 void TerrainMC::initCamera() {
@@ -58,12 +58,10 @@ void TerrainMC::initCamera() {
 
     cameraBounds.vertices = device.createDeviceLocalBuffer(cBounds.vertices.data(), BYTE_SIZE(cBounds.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    cameraView.gpu.resize(MAX_IN_FLIGHT_FRAMES);
-    cameraView.info.resize(MAX_IN_FLIGHT_FRAMES);
+    cameraInfoGpu.resize(MAX_IN_FLIGHT_FRAMES);
 
     for(auto i = 0; i <MAX_IN_FLIGHT_FRAMES; ++i) {
-        cameraView.gpu[i] = device.createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(CameraInfo), "camera_info");
-        cameraView.info[i] = reinterpret_cast<CameraInfo *>(cameraView.gpu[i].map());
+        cameraInfoGpu[i] = device.createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(CameraInfo), "camera_info");
     }
 }
 
@@ -242,6 +240,8 @@ void TerrainMC::update(float time) {
 
 //    camera->rotate(angle, 0, 0);
     camera->update(time);
+
+    glfwSetWindowTitle(window, fmt::format("{}, fps - {}", title, framePerSecond).c_str());
 }
 
 void TerrainMC::checkAppInputs() {
@@ -273,7 +273,7 @@ void TerrainMC::updateVisibilityList() {
     cube.instances.clear();
     skipList.clear();
 
-    auto dim = glm::ivec3(cameraView.info[currentFrame]->aabbMax - cameraView.info[currentFrame]->aabbMin) + 2;
+    auto dim = glm::ivec3(cameraInfo.aabbMax - cameraInfo.aabbMin) + 2;
     auto inverse_view = glm::inverse(camera->cam().view);
     const auto near = camera->near();
     const auto far = camera->far();
@@ -317,19 +317,15 @@ void TerrainMC::newFrame() {
     debugCamera.model = identity;
 
     const auto cam = camera->cam();
-    cameraView.info[currentFrame]->position = camera->position();
-    cameraView.info[currentFrame]->view_projection = cam.proj * cam.view;
-    cameraView.info[currentFrame]->inverse_view_projection = glm::inverse(cam.proj * cam.view);
-    camera->extract(cameraView.info[currentFrame]->frustum);
+    cameraInfo.position = camera->position();
+    cameraInfo.view_projection = cam.proj * cam.view;
+    cameraInfo.inverse_view_projection = glm::inverse(cam.proj * cam.view);
+    camera->extract(cameraInfo.frustum);
     computeCameraBounds();
     updateVisibilityList();
 }
 
 void TerrainMC::computeCameraBounds() {
-    auto camInfo = cameraView.info[currentFrame];
-    camInfo->aabbMin = glm::vec3(MAX_FLOAT);
-    camInfo->aabbMax = glm::vec3(MIN_FLOAT);
-
     const auto near = camera->near();
     const auto far = camera->far();
     const auto aspect = camera->aspectRatio;
@@ -358,17 +354,14 @@ void TerrainMC::computeCameraBounds() {
     corners[6] = glm::vec4(farCorner, -far, 1);
     corners[7] = glm::vec4(-farCorner, -far, 1);
 
-    auto& bMin = camInfo->aabbMin;
-    auto& bMax = camInfo->aabbMax;
+    auto& bMin = cameraInfo.aabbMin;
+    auto& bMax = cameraInfo.aabbMax;
     auto inverse_view = glm::inverse(camera->cam().view);
 
     for(auto& corner : corners) {
         bMin = glm::min(corner.xyz(), bMin);
         bMax = glm::max(corner.xyz(), bMax);
     }
-
-//    bMin = (inverse_view * glm::vec4(bMin, 1)).xyz();
-//    bMax = (inverse_view * glm::vec4(bMax, 1)).xyz();
 
     auto dim = glm::ceil(bMax - bMin);
 

@@ -100,5 +100,7 @@ protected:
     Vertices cBounds;
 
     glm::mat4 tinyCube;
-    CameraView cameraView{};
+    CameraInfo cameraInfo{};
+    std::vector<VulkanBuffer> cameraInfoGpu;
+    std::array<glm::vec4, 8> corners{};
 };
