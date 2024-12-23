@@ -88,8 +88,8 @@ void AppContext::renderClipSpaceQuad(VkCommandBuffer commandBuffer) {
 }
 
 void AppContext::init0() {
-    FileManager::instance().addSearchPath("../../examples/common/spv");
-    FileManager::instance().addSearchPath("../../examples/common/data");
+    FileManager::instance().addSearchPath("common/spv");
+    FileManager::instance().addSearchPath("common/data");
     initPrototype();
     glm::mat4 model{1};
     _instanceTransforms = _device->createDeviceLocalBuffer(glm::value_ptr(model), sizeof(model), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);

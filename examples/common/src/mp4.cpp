@@ -31,7 +31,7 @@ std::vector<mp4::BoxHeader> mp4::readHeaders(const std::filesystem::path &path) 
         fin.seekg(seekHead); // skip body
     } while (fin);
 
-    fmt::print("file size: {}, seek head: {}\n", size, seekHead);
+//    fmt::print("file size: {}, seek head: {}\n", size, seekHead);
 
     return headers;
 }

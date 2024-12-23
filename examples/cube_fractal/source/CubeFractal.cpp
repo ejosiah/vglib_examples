@@ -4,12 +4,12 @@
 #include "ImGuiPlugin.hpp"
 
 CubeFractal::CubeFractal(const Settings& settings) : VulkanBaseApp("Cube fractal", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/cube_fractal");
-    fileManager.addSearchPathFront("../../examples/cube_fractal/data");
-    fileManager.addSearchPathFront("../../examples/cube_fractal/spv");
-    fileManager.addSearchPathFront("../../examples/cube_fractal/models");
-    fileManager.addSearchPathFront("../../examples/cube_fractal/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("./cube_fractal");
+    fileManager().addSearchPathFront("./cube_fractal/data");
+    fileManager().addSearchPathFront("./cube_fractal/spv");
+    fileManager().addSearchPathFront("./cube_fractal/models");
+    fileManager().addSearchPathFront("./cube_fractal/textures");
 }
 
 void CubeFractal::initApp() {
@@ -41,7 +41,7 @@ void CubeFractal::initCamera() {
 }
 
 void CubeFractal::createCube() {
-    auto mesh = primitives::cube();
+    auto mesh = primitives::cube(randomColor(), glm::scale(glm::mat4{1}, glm::vec3(0.5)));
     cube.vertices = device.createDeviceLocalBuffer(mesh.vertices.data(), BYTE_SIZE(mesh.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     cube.indices = device.createDeviceLocalBuffer(mesh.indices.data(), BYTE_SIZE(mesh.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
@@ -273,7 +273,7 @@ void CubeFractal::onPause() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
 

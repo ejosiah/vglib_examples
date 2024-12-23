@@ -2,8 +2,19 @@ if (NOT NO_OPENCL)
     find_package(OpenCL QUIET)
 endif()
 
+set(OPEN_VDB_SOURCE_PATH ${CMAKE_CURRENT_LIST_DIR}/../../dependencies/openvdb)
+
+file(INSTALL "${OPEN_VDB_SOURCE_PATH}/bin/openvdb.dll" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/Debug")
+file(INSTALL "${OPEN_VDB_SOURCE_PATH}/bin/tbb12_debug.dll" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/Debug")
+file(INSTALL "${OPEN_VDB_SOURCE_PATH}/bin/blosc.dll" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/Debug")
+file(INSTALL "${OPEN_VDB_SOURCE_PATH}/bin/zlibd1.dll" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/Debug")
+file(INSTALL "${OPEN_VDB_SOURCE_PATH}/bin/zstd.dll" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/Debug")
+file(INSTALL "${OPEN_VDB_SOURCE_PATH}/bin/lz4d.dll" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/Debug")
+
+
+include_directories($ENV{VCPKG_PATH}/installed/x64-windows/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/../../dependencies/openvdb/include)
+include_directories(${OPEN_VDB_SOURCE_PATH}/include)
 
 file(GLOB_RECURSE HPP_FILES ${CMAKE_CURRENT_LIST_DIR}/include/*.*)
 file(GLOB_RECURSE CPP_FILES ${CMAKE_CURRENT_LIST_DIR}/source/*.cpp)

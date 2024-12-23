@@ -10,11 +10,13 @@
 
 MarchingCubes2::MarchingCubes2(const Settings& settings) : VulkanBaseApp("Marching Cubes", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/marching_cubes2");
-    fileManager().addSearchPathFront("../../examples/marching_cubes2/data");
-    fileManager().addSearchPathFront("../../examples/marching_cubes2/spv");
-    fileManager().addSearchPathFront("../../examples/marching_cubes2/models");
-    fileManager().addSearchPathFront("../../examples/marching_cubes2/textures");
+    fileManager().addSearchPathFront("data");
+    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("marching_cubes2");
+    fileManager().addSearchPathFront("marching_cubes2/data");
+    fileManager().addSearchPathFront("marching_cubes2/spv");
+    fileManager().addSearchPathFront("marching_cubes2/models");
+    fileManager().addSearchPathFront("marching_cubes2/textures");
 }
 
 void MarchingCubes2::initApp() {
@@ -429,9 +431,11 @@ void MarchingCubes2::beforeDeviceCreation() {
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
     if(devFeatures13.has_value()) {
         devFeatures13.value()->maintenance4 = VK_TRUE;
+        devFeatures13.value()->dynamicRendering = VK_TRUE;
     }else {
         static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
         devFeatures13.maintenance4 = VK_TRUE;
+        devFeatures13.dynamicRendering = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
     };
 
@@ -451,7 +455,7 @@ void MarchingCubes2::beforeDeviceCreation() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
