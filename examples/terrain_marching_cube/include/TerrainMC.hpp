@@ -1,6 +1,7 @@
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 #include "ResourcePool.hpp"
+#include "Models.hpp"
 
 class TerrainMC : public VulkanBaseApp{
 public:
@@ -8,6 +9,8 @@ public:
 
 protected:
     void initApp() override;
+
+    void checkInvariants();
 
     void initCamera();
 
@@ -37,6 +40,10 @@ protected:
 
     void renderCamera(VkCommandBuffer commandBuffer);
 
+    void renderCube(VkCommandBuffer commandBuffer, Camera& acamera, const glm::mat4& model, bool outline = false);
+
+    void newFrame() override;
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -46,6 +53,8 @@ protected:
     void cleanup() override;
 
     void onPause() override;
+
+    void computeCameraBounds();
 
 protected:
     struct {
@@ -73,6 +82,7 @@ protected:
     struct {
         VulkanBuffer vertices;
         glm::mat4 transform{1};
+        glm::mat4 aabb{1};
     } cameraBounds;
 
     std::vector<glm::mat4> visibleList;
@@ -83,9 +93,12 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<SpectatorCameraController> camera;
-    std::unique_ptr<SpectatorCameraController> debugCamera;
+    Camera debugCamera{};
     BindlessDescriptor bindlessDescriptor;
     ResourcePool<glm::mat4> cubes;
     ResourcePool<std::tuple<glm::vec3, glm::vec3>> boundingBoxes;
     Vertices cBounds;
+
+    glm::mat4 tinyCube;
+    CameraView cameraView{};
 };

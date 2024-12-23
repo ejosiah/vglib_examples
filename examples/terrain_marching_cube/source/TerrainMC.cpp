@@ -16,6 +16,7 @@ TerrainMC::TerrainMC(const Settings& settings) : VulkanBaseApp("Marching Cube Te
 }
 
 void TerrainMC::initApp() {
+    checkInvariants();
     createCube();
     initCamera();
     createDescriptorPool();
@@ -27,37 +28,43 @@ void TerrainMC::initApp() {
     createRenderPipeline();
 }
 
+void TerrainMC::checkInvariants() {
+    assert(sizeof(CameraInfo) == 260);
+}
+
 void TerrainMC::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
-    cameraSettings.zNear = 0.5;
+    cameraSettings.zNear = 1.0;
     cameraSettings.zFar = 10;
     cameraSettings.acceleration = glm::vec3(10);
     cameraSettings.velocity = glm::vec3(20);
 
     camera = std::make_unique<SpectatorCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-//    camera->position(glm::vec3(0, 0, 5));
 
-    camera->lookAt(glm::vec3(0, 0, 5), glm::vec3(0), {0, 1, 0});
+//    camera->lookAt(glm::vec3(0, 0, 5), glm::vec3(0), {0, 1, 0});
     cameraSettings.zFar = 1000;
     cameraSettings.fieldOfView = 90.f;
 
-    debugCamera = std::make_unique<SpectatorCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-//    debugCamera->position({0, 1, 20});
-    debugCamera->lookAt({0, 20, 0}, glm::vec3(0), {0, 0, -1});
+//    debugCamera.proj = vkn::ortho(-20, 20, -20, 20, 0.5, 1000);
+//    debugCamera.view = glm::lookAt({0, 20, 0}, glm::vec3(0), {0, 0, -1});
+    debugCamera.proj = vkn::perspective(glm::radians(90.f), swapChain.aspectRatio(), 1, 1000);
+    debugCamera.view = glm::lookAt({0, 0, 20}, glm::vec3(0), {0, 1, 0});
 
     auto xform = glm::translate(glm::mat4{1}, {0, 0, 0.5});
     xform = glm::scale(xform, {1, 1, 0.5});
     cBounds = primitives::cubeOutline({0, 1, 1, 1}, xform);
 
-//    auto M = glm::inverse(camera->camera.proj * camera->camera.view);
-//    for(auto& v : cBounds.vertices) {
-//        v.position = M * v.position;
-//        v.position /= v.position.w;
-//    }
-
     cameraBounds.vertices = device.createDeviceLocalBuffer(cBounds.vertices.data(), BYTE_SIZE(cBounds.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    cameraView.gpu.resize(MAX_IN_FLIGHT_FRAMES);
+    cameraView.info.resize(MAX_IN_FLIGHT_FRAMES);
+
+    for(auto i = 0; i <MAX_IN_FLIGHT_FRAMES; ++i) {
+        cameraView.gpu[i] = device.createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(CameraInfo), "camera_info");
+        cameraView.info[i] = reinterpret_cast<CameraInfo *>(cameraView.gpu[i].map());
+    }
 }
 
 void TerrainMC::initBindlessDescriptor() {
@@ -196,16 +203,11 @@ VkCommandBuffer *TerrainMC::buildCommandBuffers(uint32_t imageIndex, uint32_t &n
     VkDeviceSize offset = 0;
 
     for(const auto& transform : visibleList) {
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-        debugCamera->push(commandBuffer, render.layout, transform);
-//        vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.solid.vertices, &offset);
-//        vkCmdBindIndexBuffer(commandBuffer, cube.solid.indexes, 0, VK_INDEX_TYPE_UINT32);
-//        vkCmdDrawIndexed(commandBuffer, cube.solid.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
-
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.outline.vertices, &offset);
-        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-        vkCmdDraw(commandBuffer, cube.outline.vertices.sizeAs<Vertex>(), 1, 0, 0);
+        renderCube(commandBuffer, debugCamera, transform, true);
     }
+
+    renderCube(commandBuffer, debugCamera, glm::translate(glm::mat4(1), {0, 0, -1}) * tinyCube);
+    renderCube(commandBuffer, debugCamera, glm::translate(glm::mat4(1), {0, 0, -10}) * tinyCube);
 
     renderCamera(commandBuffer);
 
@@ -218,37 +220,32 @@ VkCommandBuffer *TerrainMC::buildCommandBuffers(uint32_t imageIndex, uint32_t &n
 
 void TerrainMC::renderCamera(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-//    auto model = glm::scale(glm::mat4{1}, glm::vec3(0.5)) * glm::inverse(camera->cam().view);
-    auto model = glm::mat4{1};
-//    auto model = glm::scale(glm::mat4{1}, glm::vec3(0.25));
 
+    // render frustum
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, camRender.pipeline.handle);
-    debugCamera->push(commandBuffer, camRender.layout, cameraBounds.transform);
+    debugCamera.model = cameraBounds.transform;
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &debugCamera);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, cameraBounds.vertices, &offset);
 
     vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     vkCmdDraw(commandBuffer, cameraBounds.vertices.sizeAs<Vertex>(), 1, 0, 0);
+
+    // render frustum bounding box
+//    renderCube(commandBuffer, debugCamera, cameraBounds.aabb, true);
+
 }
 
 void TerrainMC::update(float time) {
     static float angle = 0;
-    static float speed = 100;
+    static float speed = 50;
     angle = time * speed;
 
-//    camera->rotate(0.1, 0, 0);
-    updateVisibilityList();
-
+//    camera->rotate(angle, 0, 0);
     camera->update(time);
-//    debugCamera->update(time);
-
-
-   cameraBounds.transform = glm::inverse(camera->camera.proj * camera->camera.view);
-
 }
 
 void TerrainMC::checkAppInputs() {
     camera->processInput();
-//    debugCamera->processInput();
 }
 
 void TerrainMC::cleanup() {
@@ -268,69 +265,147 @@ void TerrainMC::createCube() {
     auto vertices = primitives::cubeOutline({1, 1, 0, 1}, glm::scale(glm::mat4{1}, glm::vec3(0.5)));
     cube.outline.vertices = device.createDeviceLocalBuffer(vertices.vertices.data(), BYTE_SIZE(vertices.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    static constexpr auto N = 32;
-    static constexpr auto n = float(N - 1);
-    auto offset = glm::vec3(0.5);
-    for(auto z = 0; z < N; ++z) {
-        for (auto y = 0; y < N; ++y) {
-            for (auto x = 0; x < N; ++x) {
-                glm::vec3 position =  glm::vec3(x, y, z);
-                position = remap(position, glm::vec3(0), glm::vec3(n), glm::vec3(-n * 0.5), glm::vec3(n * 0.5));
-                auto transform = glm::translate(glm::mat4(1), position);
-                cube.instances.push_back(transform);
-            }
-        }
-    }
+    tinyCube = glm::scale(glm::mat4(1), glm::vec3(0.25));
 }
 
 void TerrainMC::updateVisibilityList() {
     visibleList.clear();
+    cube.instances.clear();
     skipList.clear();
-    static auto corners = std::array<glm::vec3, 8> {{
-        { -0.5, -0.5, -0.5 },
-        { 0.5, -0.5, -0.5 },
-        { 0.5, -0.5, 0.5 },
-        { -0.5, -0.5, 0.5 },
-        { -0.5, 0.5, -0.5 },
-        { 0.5, 0.5, -0.5 },
-        { 0.5, 0.5, 0.5 },
-        { -0.5, 0.5, 0.5 },
-    }};
+
+    auto dim = glm::ivec3(cameraView.info[currentFrame]->aabbMax - cameraView.info[currentFrame]->aabbMin) + 2;
+    auto inverse_view = glm::inverse(camera->cam().view);
+    const auto near = camera->near();
+    const auto far = camera->far();
+
+    auto n = glm::vec3(dim - 1);
+    for(auto z = 0; z < dim.z; ++z) {
+        for (auto y = 0; y < dim.y; ++y) {
+            for (auto x = 0; x < dim.x; ++x) {
+                glm::vec3 position =  glm::vec3(x, y, z);
+                position = remap(position, glm::vec3(0), n, -n * 0.5f, n * 0.5f);
+                auto transform =
+                        inverse_view
+                        * glm::translate(glm::mat4(1), {0, 0, -(far - near) * 0.5 - near})
+                        * glm::translate(glm::mat4(1), position);
+                cube.instances.push_back(transform);
+            }
+        }
+    }
+
+    visibleList.clear();
+    skipList.clear();
 
     static Frustum frustum{};
     camera->extract(frustum);
 
+    for(const auto & transform : cube.instances) {
 
-    for(auto i = 0; i < cube.instances.size(); ++i) {
-
-        const auto& transform = cube.instances[i];
         const auto center = transform * glm::vec4(0, 0, 0, 1);
-        glm::vec3 bMin{MAX_FLOAT};
-        glm::vec3 bMax{MIN_FLOAT};
 
-        for(const auto corner : corners) {
-            auto p = center.xyz() + corner;
-            bMin = glm::min(bMin, p);
-            bMax = glm::max(bMax, p);
-        }
-        if(frustum.test(bMin, bMax)) {
+        if(frustum.test(center, 1)) {
             visibleList.push_back(transform);
         }else {
             skipList.push_back(transform);
         }
     }
-    auto vl = visibleList;
-    auto sl = skipList;
-    auto n = 0;
 }
 
+void TerrainMC::newFrame() {
+    cameraBounds.transform = glm::inverse(camera->camera.proj * camera->camera.view);
+    static auto identity = glm::mat4{1};
+    debugCamera.model = identity;
+
+    const auto cam = camera->cam();
+    cameraView.info[currentFrame]->position = camera->position();
+    cameraView.info[currentFrame]->view_projection = cam.proj * cam.view;
+    cameraView.info[currentFrame]->inverse_view_projection = glm::inverse(cam.proj * cam.view);
+    camera->extract(cameraView.info[currentFrame]->frustum);
+    computeCameraBounds();
+    updateVisibilityList();
+}
+
+void TerrainMC::computeCameraBounds() {
+    auto camInfo = cameraView.info[currentFrame];
+    camInfo->aabbMin = glm::vec3(MAX_FLOAT);
+    camInfo->aabbMax = glm::vec3(MIN_FLOAT);
+
+    const auto near = camera->near();
+    const auto far = camera->far();
+    const auto aspect = camera->aspectRatio;
+    const auto fov = glm::radians(camera->fov);
+
+    glm::vec2 nearCorner{0, 0};
+    nearCorner.y = glm::tan(fov / 2) * -near; // TODO check if horizontal or vertical fov
+    nearCorner.x = nearCorner.y * aspect;
+
+    static std::array<glm::vec4, 8> corners{};
+    corners[0] = glm::vec4(nearCorner, -near, 1);
+    corners[1] = glm::vec4(-nearCorner, -near, 1);
+
+    nearCorner.y *= -1;
+    corners[2] = glm::vec4(nearCorner, -near, 1);
+    corners[3] = glm::vec4(-nearCorner, -near, 1);
+
+    glm::vec2 farCorner{0, 0,};
+    farCorner.y = glm::tan(fov / 2) * -far; // TODO check if horizontal or vertical fov
+    farCorner.x = farCorner.y * aspect;
+
+    corners[4] = glm::vec4(farCorner, -far, 1);
+    corners[5] = glm::vec4(-farCorner, -far, 1);
+
+    farCorner.y *= -1;
+    corners[6] = glm::vec4(farCorner, -far, 1);
+    corners[7] = glm::vec4(-farCorner, -far, 1);
+
+    auto& bMin = camInfo->aabbMin;
+    auto& bMax = camInfo->aabbMax;
+    auto inverse_view = glm::inverse(camera->cam().view);
+
+    for(auto& corner : corners) {
+        bMin = glm::min(corner.xyz(), bMin);
+        bMax = glm::max(corner.xyz(), bMax);
+    }
+
+//    bMin = (inverse_view * glm::vec4(bMin, 1)).xyz();
+//    bMax = (inverse_view * glm::vec4(bMax, 1)).xyz();
+
+    auto dim = glm::ceil(bMax - bMin);
+
+    cameraBounds.aabb = glm::mat4{1};
+    cameraBounds.aabb = glm::translate(cameraBounds.aabb, {0, 0, -dim.z * 0.5 - near});
+    cameraBounds.aabb = glm::scale(cameraBounds.aabb, dim);
+    cameraBounds.aabb = inverse_view * cameraBounds.aabb;
+}
+
+void TerrainMC::renderCube(VkCommandBuffer commandBuffer, Camera& aCamera, const glm::mat4 &model, bool outline) {
+    VkDeviceSize offset = 0;
+    if(outline) {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+        aCamera.model = model;
+        vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &aCamera);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.outline.vertices, &offset);
+
+        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+        vkCmdDraw(commandBuffer, cube.outline.vertices.sizeAs<Vertex>(), 1, 0, 0);
+    }else {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+        aCamera.model = model;
+        vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &aCamera);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.solid.vertices, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, cube.solid.indexes, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        vkCmdDrawIndexed(commandBuffer, cube.solid.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
+    }
+}
 
 
 int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 1024;
+        settings.width = 720;
         settings.height = 720;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
