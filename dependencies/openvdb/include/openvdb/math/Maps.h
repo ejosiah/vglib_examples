@@ -1,5 +1,5 @@
 // Copyright Contributors to the OpenVDB Project
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 /// @file math/Maps.h
 
@@ -283,9 +283,6 @@ public:
 
 private:
     MapRegistry() {}
-
-    static MapRegistry* staticInstance();
-
     MapDictionary mMap;
 };
 

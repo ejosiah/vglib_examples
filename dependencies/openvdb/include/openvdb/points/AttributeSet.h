@@ -1,5 +1,5 @@
 // Copyright Contributors to the OpenVDB Project
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 /// @file points/AttributeSet.h
 ///
@@ -15,6 +15,7 @@
 #include <openvdb/MetaMap.h>
 
 #include <limits>
+#include <climits>
 #include <memory>
 #include <vector>
 
@@ -38,7 +39,7 @@ using GroupType = uint8_t;
 class OPENVDB_API AttributeSet
 {
 public:
-    enum { INVALID_POS = std::numeric_limits<size_t>::max() };
+    enum AttributePositionLabel : size_t { INVALID_POS = std::numeric_limits<size_t>::max() };
 
     using Ptr                   = std::shared_ptr<AttributeSet>;
     using ConstPtr              = std::shared_ptr<const AttributeSet>;
@@ -113,12 +114,10 @@ public:
     /// Return the number of bytes of memory used by this attribute set.
     size_t memUsage() const;
 
-#if OPENVDB_ABI_VERSION_NUMBER >= 10
     /// Return the number of bytes of memory used by this attribute set once it
     /// has been deserialized (this may be different to memUsage() if delay-loading
     /// is in use).
     size_t memUsageIfLoaded() const;
-#endif
 
     /// @brief  Return the position of the attribute array whose name is @a name,
     ///         or @c INVALID_POS if no match is found.

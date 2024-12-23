@@ -1,5 +1,5 @@
 // Copyright Contributors to the OpenVDB Project
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 /// @author Ken Museth
 ///
@@ -69,6 +69,7 @@
 #include <openvdb/tree/LeafManager.h>
 #include <openvdb/util/logging.h>
 #include <openvdb/util/NullInterrupter.h>
+#include <openvdb/util/Assert.h>
 #include <openvdb/thread/Threading.h>
 
 #include "Composite.h" // for csgUnion()
@@ -566,7 +567,7 @@ struct ParticlesToLevelSet<SdfGridT, AttributeT, InterrupterT>::Raster
     /// @brief Kick off the optionally multithreaded computation.
     void operator()(const tbb::blocked_range<size_t>& r)
     {
-        assert(mTask);
+        OPENVDB_ASSERT(mTask);
         mTask(this, r);
         mParent.mMinCount = mMinCount;
         mParent.mMaxCount = mMaxCount;
@@ -686,7 +687,7 @@ private:
                 const Vec3R Nrml = -V * invSpeed; // inverse normalized direction
                 Vec3R P = P0; // local position of instance
                 Real R = R0, d = 0; // local radius and length of trail
-                for (size_t m = 0; run && d <= speed ; ++m) {
+                while (run && d <= speed) {
                     run = this->makeSphere(P, R, att, acc);
                     P += 0.5 * delta * R * Nrml; // adaptive offset along inverse velocity direction
                     d = (P - P0).length(); // current length of trail

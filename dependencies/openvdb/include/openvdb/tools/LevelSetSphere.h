@@ -1,5 +1,5 @@
 // Copyright Contributors to the OpenVDB Project
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: Apache-2.0
 ///
 /// @file LevelSetSphere.h
 ///
@@ -189,7 +189,7 @@ private:
                 Op(TreeT &tree) : mDelete(false), mTree(&tree) {}
                 Op(const Op& other, tbb::split) : mDelete(true), mTree(new TreeT(other.mTree->background())) {}
                 ~Op() { if (mDelete) delete mTree; }
-                void operator()(RangeT &r) { for (auto i=r.begin(); i!=r.end(); ++i) this->merge(*i);}
+                void operator()(const RangeT &r) { for (auto i=r.begin(); i!=r.end(); ++i) this->merge(*i);}
                 void join(Op &other) { this->merge(*(other.mTree)); }
                 void merge(TreeT &tree) { mTree->merge(tree, openvdb::MERGE_ACTIVE_STATES); }
             } op( mGrid->tree() );
