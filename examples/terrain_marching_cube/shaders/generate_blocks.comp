@@ -1,0 +1,32 @@
+#version 460
+
+#include "models.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+void main() {
+    const vec3 aabbMax = camera_info.aabbMax;
+    const vec3 aabbMin = camera_info.aabbMin;
+    const mat4 grid_to_world = camera_info.grid_to_world;
+    const vec4 frustum[6] = camera_info.frustum;
+
+    uvec3 padding = uvec3(2);
+    uvec3 dim = uvec3(aabbMax - aabbMin) + padding;
+
+    uvec3 gid = uvec3(gl_GlobalInvocationID);
+    vec3 last = vec3(dim - uvec3(1));
+
+    if(any(greaterThan(gid, last))) return;
+
+    vec4 position = vec4(1);
+    position.xyz =  remap(vec3(gid), vec3(0), last, -last * .5, last * .5);
+
+    vec4 world_position = grid_to_world * position;
+
+    if(box_in_frustum_test(frustum, world_position.xyz)) {
+        uint index = atomicAdd(block_id, 1);
+        block[index].aabb = position.xyz;
+        distance_to_camera[index] = distance(world_position.xyz, camera_info.position);
+    }
+
+}

@@ -1,9 +1,10 @@
+#include "TerrainCompute.hpp"
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 #include "ResourcePool.hpp"
 #include "Models.hpp"
 
-class TerrainMC : public VulkanBaseApp{
+class TerrainMC : public VulkanBaseApp {
 public:
     explicit TerrainMC(const Settings& settings = {});
 
@@ -17,6 +18,10 @@ protected:
     void initBindlessDescriptor();
 
     void createCube();
+
+    void initBlockData();
+
+    void initVoxels();
 
     void beforeDeviceCreation() override;
 
@@ -42,6 +47,8 @@ protected:
 
     void renderCube(VkCommandBuffer commandBuffer, Camera& acamera, const glm::mat4& model, bool outline = false);
 
+    void renderBlocks(VkCommandBuffer commandBuffer);
+
     void newFrame() override;
 
     void update(float time) override;
@@ -56,6 +63,10 @@ protected:
 
     void computeCameraBounds();
 
+    void generateTerrain();
+
+    void generateBlocks(VkCommandBuffer commandBuffer);
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -66,6 +77,11 @@ protected:
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
     } camRender;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } blockRender;
 
     struct {
         struct {
@@ -101,6 +117,17 @@ protected:
 
     glm::mat4 tinyCube;
     CameraInfo cameraInfo{};
-    std::vector<VulkanBuffer> cameraInfoGpu;
-    std::array<glm::vec4, 8> corners{};
+    const int poolSize{300};
+    GpuData gpuData;
+    VulkanDescriptorSetLayout terrainDescriptorSetLayout;
+    VulkanDescriptorSetLayout cameraDescriptorSetLayout;
+    std::vector<VkDescriptorSet> cameraDescriptorSet;
+    VkDescriptorSet terrainDescriptorSet;
+    TerrainCompute compute;
+    VkMemoryBarrier2 memoryBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
+    VkMemoryBarrier2 imageMemoryBarrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+    VkDependencyInfo dependencyInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+
+    Counters* counters{};
+
 };
