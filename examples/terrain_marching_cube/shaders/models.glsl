@@ -4,16 +4,28 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#define KEY_ADD 0
+#define KEY_REMOVE 1
+#define KEY_CHECK 2
+#define POOL_SIZE 300
+
+
 #define DEFINE_REMAP(Type) \
  Type remap(Type x, Type a, Type b, Type c, Type d) { \
     return mix(c, d, (x - a)/(b - a)); \
  }
+
+DEFINE_REMAP(float)
+DEFINE_REMAP(vec2)
+DEFINE_REMAP(vec3)
+DEFINE_REMAP(vec4)
 
 struct BlockData {
     vec3 aabb;
     uint vertex_id;
     uint voxel_id;
     uint vertex_count;
+    float distanceToCam;
 };
 
 layout(set = 0, binding = 0, scalar) buffer CameraInfoUbo {
@@ -24,6 +36,7 @@ layout(set = 0, binding = 0, scalar) buffer CameraInfoUbo {
     vec3 position;
     vec3 aabbMin;
     vec3 aabbMax;
+    vec3 direction;
 } camera_info;
 
 layout(set = 1, binding = 0, scalar) buffer vertexDataBuffer {
@@ -37,14 +50,19 @@ layout(set = 1, binding = 1, scalar) buffer ssboBlockData3 {
 };
 
 layout(set = 1, binding = 2, std430) buffer distanceToCameraBuffer {
-    float distance_to_camera[];
+    uint distance_to_camera[];
 };
 
 layout(set = 1, binding = 3) buffer AtomicsBuffer {
     uint block_id;
+    uint set_add_id;
+} counters;
+
+layout(set = 1, binding = 4, scalar) buffer BlockHashSsbo {
+    uint block_keys[];
 };
 
-layout(set = 1, binding = 4, r32f) uniform image3D voxels[];
+layout(set = 1, binding = 5, r32f) uniform writeonly image3D voxels[];
 
 
 const vec4 corners[8] = vec4[8](
@@ -73,9 +91,8 @@ bool box_in_frustum_test(vec4 frustum[6], vec3 center) {
     return true;
 }
 
-DEFINE_REMAP(float)
-DEFINE_REMAP(vec2)
-DEFINE_REMAP(vec3)
-DEFINE_REMAP(vec4)
+uint compute_hash_key(vec3 p) {
+   return uint(p.z * 31 + p.y * 79 + p.x * 541);
+}
 
 #endif // MODELS_GLSL

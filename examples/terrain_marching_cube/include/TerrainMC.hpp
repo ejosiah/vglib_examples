@@ -3,6 +3,8 @@
 #include "VulkanBaseApp.h"
 #include "ResourcePool.hpp"
 #include "Models.hpp"
+#include "gpu/HashSet.hpp"
+#include "Sort.hpp"
 
 class TerrainMC : public VulkanBaseApp {
 public:
@@ -12,6 +14,8 @@ protected:
     void initApp() override;
 
     void checkInvariants();
+
+    void initHelpers();
 
     void initCamera();
 
@@ -66,6 +70,8 @@ protected:
     void generateTerrain();
 
     void generateBlocks(VkCommandBuffer commandBuffer);
+
+    void computeDistanceToCamera(VkCommandBuffer commandBuffer);
 
 protected:
     struct {
@@ -129,5 +135,6 @@ protected:
     VkDependencyInfo dependencyInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
 
     Counters* counters{};
-
+    RadixSort sort;
+    gpu::HashSet set;
 };

@@ -8,6 +8,7 @@
 
 struct Counters {
     uint32_t block_id;
+    uint32_t set_add_id;
 };
 
 struct CameraInfo {
@@ -18,6 +19,7 @@ struct CameraInfo {
     glm::vec3 position;
     glm::vec3 aabbMin;
     glm::vec3 aabbMax;
+    glm::vec3 direction;
 };
 
 struct BlockData {
@@ -25,6 +27,7 @@ struct BlockData {
     uint32_t vertex_id;
     uint32_t voxel_id;
     uint vertex_count;
+    float distanceToCam;
 };
 
 struct BlockVertex {
@@ -40,4 +43,5 @@ struct GpuData {
     VulkanBuffer distanceToCamera;
     VulkanBuffer blockData;
     VulkanBuffer counters;
+    VulkanBuffer blockHash;
 };

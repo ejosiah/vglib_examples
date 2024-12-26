@@ -21,7 +21,7 @@ layout(location = 1) out vec2 vUv;
 
 void main(){
     const uint bid = gl_InstanceIndex;
-    if(bid >= block_id) return;
+    if(bid >= counters.block_id) return;
     vColor = color;
     vUv = uv;
     vec3 center  = block[bid].aabb;
