@@ -1,0 +1,24 @@
+#version 460
+
+#include "models.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(push_constant) uniform Constants {
+    ivec3 dim;
+    uint frameCount;
+};
+
+void main() {
+
+    uvec3 gid = uvec3(gl_GlobalInvocationID);
+    vec3 last = vec3(dim - ivec3(1));
+
+    if(any(greaterThan(gid, last))) return;
+
+    vec4 position = vec4(gid, 1);
+    position.xyz =  remap(vec3(gid), vec3(0), last, -last * .5, last * .5);
+
+    uint index = (gid.z * dim.y + gid.y) * dim.x + gid.x;
+    block[index].aabb = position.xyz;
+}

@@ -17,5 +17,4 @@ void main() {
     const float distance_to_cam =  sign(dot(camera_direction, world_position)) * distance(camera_position, world_position);
 
     distance_to_camera[index] = floatBitsToUint(distance_to_cam);
-    block[index].distanceToCam = distance_to_cam;
 }

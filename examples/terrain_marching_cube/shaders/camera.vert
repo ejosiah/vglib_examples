@@ -18,7 +18,7 @@ layout(location = 1) out vec2 vUv;
 
 
 void main(){
-    vColor = color;
+    vColor = vec4(1);
     vUv = uv;
     gl_PointSize = 2.0;
     vec4 worldPos = model * position;

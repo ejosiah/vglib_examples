@@ -6,6 +6,12 @@
 #include "gpu/HashSet.hpp"
 #include "Sort.hpp"
 
+struct DebugConstants {
+    glm::ivec3 dim{256, 8, 256};
+//    glm::ivec3 dim{16, 2, 16};
+    float elapsed_time{};
+};
+
 class TerrainMC : public VulkanBaseApp {
 public:
     explicit TerrainMC(const Settings& settings = {});
@@ -69,7 +75,21 @@ protected:
 
     void generateTerrain();
 
+    void sortBlocks(VkCommandBuffer commandBuffer);
+
+    void debugScene();
+
+    void computeToComputeBarrier(VkCommandBuffer commandBuffer);
+
+    void transferToComputeBarrier(VkCommandBuffer commandBuffer);
+
+    void computeToRenderBarrier(VkCommandBuffer commandBuffer);
+
+    void blockInCameraTest(VkCommandBuffer commandBuffer);
+
     void generateBlocks(VkCommandBuffer commandBuffer);
+
+    void generateBlocks();
 
     void computeDistanceToCamera(VkCommandBuffer commandBuffer);
 
@@ -137,4 +157,5 @@ protected:
     Counters* counters{};
     RadixSort sort;
     gpu::HashSet set;
+    DebugConstants debugConstants;
 };

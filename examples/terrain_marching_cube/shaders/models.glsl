@@ -20,12 +20,17 @@ DEFINE_REMAP(vec2)
 DEFINE_REMAP(vec3)
 DEFINE_REMAP(vec4)
 
+#define BLOCK_STATE_OUTSIDE 0U
+#define BLOCK_STATE_INSIDE 1U
+#define BLOCK_STATE_EVICTED 2U
+
 struct BlockData {
     vec3 aabb;
     uint vertex_id;
     uint voxel_id;
     uint vertex_count;
-    float distanceToCam;
+    uint state;
+    float time_stamp;
 };
 
 layout(set = 0, binding = 0, scalar) buffer CameraInfoUbo {
@@ -92,6 +97,7 @@ bool box_in_frustum_test(vec4 frustum[6], vec3 center) {
 }
 
 uint compute_hash_key(vec3 p) {
+    p = mod(p, vec3(1000)); // I'm assuming grid volume is 1km^3
    return uint(p.z * 31 + p.y * 79 + p.x * 541);
 }
 

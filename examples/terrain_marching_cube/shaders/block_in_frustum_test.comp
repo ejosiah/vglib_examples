@@ -1,0 +1,44 @@
+#version 460
+
+#include "models.glsl"
+#include "cuckoo_hash_functions.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(push_constant) uniform Constants {
+    ivec3 dim;
+    float elapsed_time;
+};
+
+void main() {
+
+    uvec3 gid = uvec3(gl_GlobalInvocationID);
+
+    if(any(greaterThanEqual(gid, dim))) return;
+
+    uint index = (gid.z * dim.y + gid.y) * dim.x + gid.x;
+    BlockData bd = block[index];
+    const vec3 position = bd.aabb;
+
+    const vec4 frustum[6] = camera_info.frustum;
+//    const uint key = compute_hash_key(position);
+    const uint key = index;
+
+    if(box_in_frustum_test(frustum, position)) {
+        bd.state = BLOCK_STATE_INSIDE;
+
+        if(!block_already_processed(key)) {
+            block_keys[index] = key;
+        }
+    } else {
+        if(block_already_processed(key)) {
+            remove_from_block_set(key);
+            bd.state = BLOCK_STATE_EVICTED;
+            bd.time_stamp = elapsed_time;
+        } else if(bd.state == BLOCK_STATE_EVICTED && elapsed_time - bd.time_stamp > 2){
+            bd.time_stamp = 0;
+            bd.state = BLOCK_STATE_OUTSIDE;
+        }
+    }
+    block[index] = bd;
+}
