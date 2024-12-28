@@ -9,6 +9,20 @@
 #define KEY_CHECK 2
 #define POOL_SIZE 300
 
+#define DISPATCH_GEN_3D_TEXTURE 0
+
+struct DrawCommand {
+    uint  vertexCount;
+    uint  instanceCount;
+    uint  firstVertex;
+    uint  firstInstance;
+};
+
+struct DispatchCommand {
+    uint x;
+    uint y;
+    uint z;
+};
 
 #define DEFINE_REMAP(Type) \
  Type remap(Type x, Type a, Type b, Type c, Type d) { \
@@ -33,6 +47,12 @@ struct BlockData {
     float time_stamp;
 };
 
+struct Vertex {
+    vec3 position;
+    vec2 normal;
+    float ambient_occulsion;
+};
+
 layout(set = 0, binding = 0, scalar) buffer CameraInfoUbo {
     mat4 view_projection;
     mat4 inverse_view_projection;
@@ -45,9 +65,7 @@ layout(set = 0, binding = 0, scalar) buffer CameraInfoUbo {
 } camera_info;
 
 layout(set = 1, binding = 0, scalar) buffer vertexDataBuffer {
-    vec3 position;
-    vec2 normal;
-    float ambient_occulsion;
+    Vertex data[];
 } vertex[];
 
 layout(set = 1, binding = 1, scalar) buffer ssboBlockData3 {
@@ -59,16 +77,24 @@ layout(set = 1, binding = 2, std430) buffer distanceToCameraBuffer {
 };
 
 layout(set = 1, binding = 3) buffer AtomicsBuffer {
-    uint block_id;
+    uint free_slots;
     uint set_add_id;
+    uint blocks;
 } counters;
 
 layout(set = 1, binding = 4, scalar) buffer BlockHashSsbo {
     uint block_keys[];
 };
 
-layout(set = 1, binding = 5, r32f) uniform writeonly image3D voxels[];
+layout(set = 1, binding = 5, r32f) uniform image3D voxels[];
 
+layout(set = 2, binding = 0, scalar) buffer DispatchIndirectSsbo {
+    DispatchCommand dispatch[];
+};
+
+layout(set = 2, binding = 1, scalar) buffer DrawIndirectSsbo {
+    DrawCommand draw[];
+};
 
 const vec4 corners[8] = vec4[8](
     vec4( -0.5, -0.5, -0.5, 0.5 ), vec4(0.5, -0.5, -0.5, 0.5 ),
@@ -98,7 +124,7 @@ bool box_in_frustum_test(vec4 frustum[6], vec3 center) {
 
 uint compute_hash_key(vec3 p) {
     p = mod(p, vec3(1000)); // I'm assuming grid volume is 1km^3
-   return uint(p.z * 31 + p.y * 79 + p.x * 541);
+   return uint(p.z * 163 + p.y * 397 + p.x * 509);
 }
 
 #endif // MODELS_GLSL

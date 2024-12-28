@@ -1,0 +1,60 @@
+#version 460
+#include "models.glsl"
+#include "cuckoo_hash_functions.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+void main() {
+    const vec3 aabbMax = camera_info.aabbMax;
+    const vec3 aabbMin = camera_info.aabbMin;
+
+    const uvec3 padding = uvec3(2);
+    const uvec3 dim = uvec3(aabbMax - aabbMin) + padding;
+
+    const uvec3 gid = uvec3(gl_GlobalInvocationID);
+    const vec3 last = vec3(dim - uvec3(1));
+
+    if(any(greaterThan(gid, last))) return;
+
+    const mat4 grid_to_world = camera_info.grid_to_world;
+    const vec4 frustum[6] = camera_info.frustum;
+
+    vec4 position = vec4(1);
+    position.xyz =  remap(vec3(gid), vec3(0), last, -last * .5, last * .5);
+
+    const vec4 world_position = grid_to_world * position;
+
+    if(box_in_frustum_test(frustum, world_position.xyz)) {
+
+        const uint key = compute_hash_key(world_position.xyz);
+        if(block_already_processed(key)) return;
+
+        uint index = atomicAdd(counters.blocks, 1);
+        if(index >= POOL_SIZE) {
+            atomicAdd(counters.blocks, -1);   // return index
+            const uint eviction_index = POOL_SIZE - index % POOL_SIZE - 1;
+
+            const vec3 camera_direction = camera_info.direction;
+            const vec3 camera_position = camera_info.position;
+
+            const float my_distance =  sign(dot(camera_direction, world_position.xyz)) * distance(camera_position, world_position.xyz);
+
+            uint eviction_candidate_distance = distance_to_camera[index];
+
+            if(floatBitsToUint(my_distance) > eviction_candidate_distance ) return;
+
+            BlockData eviction_candidate = block[eviction_index];
+            uint eviction_key = compute_hash_key(eviction_candidate.aabb);
+
+            remove_from_block_set(eviction_key);
+            index = eviction_index;
+
+        }
+
+        const uint add_key_id = atomicAdd(counters.set_add_id, 1);
+        block_keys[add_key_id] = key;
+
+        block[index].aabb = position.xyz;
+    }
+
+}

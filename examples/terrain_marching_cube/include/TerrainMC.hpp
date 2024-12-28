@@ -75,6 +75,8 @@ protected:
 
     void generateTerrain();
 
+    void prepareBuffers(VkCommandBuffer commandBuffer);
+
     void sortBlocks(VkCommandBuffer commandBuffer);
 
     void debugScene();
@@ -88,6 +90,14 @@ protected:
     void blockInCameraTest(VkCommandBuffer commandBuffer);
 
     void generateBlocks(VkCommandBuffer commandBuffer);
+
+    void computeDrawBlocks(VkCommandBuffer commandBuffer);
+
+    void generateTextures(VkCommandBuffer commandBuffer, int pass);
+
+    void generateVoxels(VkCommandBuffer commandBuffer);
+
+    void marchTextures(VkCommandBuffer commandBuffer, int pass);
 
     void generateBlocks();
 
@@ -144,18 +154,23 @@ protected:
     glm::mat4 tinyCube;
     CameraInfo cameraInfo{};
     const int poolSize{300};
+    const int scratchTextureCount{32};
     GpuData gpuData;
     VulkanDescriptorSetLayout terrainDescriptorSetLayout;
     VulkanDescriptorSetLayout cameraDescriptorSetLayout;
+    VulkanDescriptorSetLayout indirectDescriptorSetLayout;
     std::vector<VkDescriptorSet> cameraDescriptorSet;
     VkDescriptorSet terrainDescriptorSet;
+    VkDescriptorSet indirectDescriptorSet;
     TerrainCompute compute;
     VkMemoryBarrier2 memoryBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
-    VkMemoryBarrier2 imageMemoryBarrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+    VkImageMemoryBarrier2 imageMemoryBarrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
     VkDependencyInfo dependencyInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
 
     Counters* counters{};
     RadixSort sort;
     gpu::HashSet set;
     DebugConstants debugConstants;
+    std::array<VkDescriptorSet, 3> gen_sets;
+    VkDeviceSize debugDrawOffset{};
 };

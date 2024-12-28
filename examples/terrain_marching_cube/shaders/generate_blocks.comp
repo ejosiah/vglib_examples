@@ -22,39 +22,24 @@ void main() {
     vec4 position = vec4(1);
     position.xyz =  remap(vec3(gid), vec3(0), last, -last * .5, last * .5);
 
-    const vec4 world_position = grid_to_world * position;
+    const vec3 world_position = (grid_to_world * position).xyz;
 
+//    const uint key = (gid.z * dim.y + gid.y) * dim.x + gid.x;
+    const uint key = compute_hash_key(position.xyz);
     if(box_in_frustum_test(frustum, world_position.xyz)) {
 
-        const uint key = compute_hash_key(world_position.xyz);
-        if(block_already_processed(key)) return;
+        if(block_already_processed(key)) return; // TODO also check if its empty space
 
-        uint index = atomicAdd(counters.block_id, 1);
-        if(index >= POOL_SIZE) {
-            atomicAdd(counters.block_id, -1);   // return index
-            const uint eviction_index = POOL_SIZE - index % POOL_SIZE - 1;
+        uint index = atomicAdd(counters.blocks, 1);
 
-            const vec3 camera_direction = camera_info.direction;
-            const vec3 camera_position = camera_info.position;
+        const vec3 camera_position = camera_info.position;
+        const vec3 camera_direction = camera_info.direction;
+        const float distance_to_cam =  sign(dot(camera_direction, world_position)) * distance(camera_position, world_position);
 
-            const float my_distance =  sign(dot(camera_direction, world_position.xyz)) * distance(camera_position, world_position.xyz);
-
-            uint eviction_candidate_distance = distance_to_camera[index];
-
-            if(floatBitsToUint(my_distance) > eviction_candidate_distance ) return;
-
-            BlockData eviction_candidate = block[eviction_index];
-            uint eviction_key = compute_hash_key(eviction_candidate.aabb);
-
-            remove_from_block_set(eviction_key);
-            index = eviction_index;
-
-        }
-
+        distance_to_camera[index] = floatBitsToUint(distance_to_cam);
         const uint add_key_id = atomicAdd(counters.set_add_id, 1);
         block_keys[add_key_id] = key;
 
         block[index].aabb = position.xyz;
     }
-
 }

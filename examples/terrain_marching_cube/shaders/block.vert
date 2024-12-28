@@ -29,5 +29,5 @@ void main(){
     vec4 worldPos =  vec4(center + position.xyz, 1);
     const mat4 grid_to_world = camera_info.grid_to_world;
 
-    gl_Position = proj * view *  worldPos;
+    gl_Position = proj * view * grid_to_world * worldPos;
 }

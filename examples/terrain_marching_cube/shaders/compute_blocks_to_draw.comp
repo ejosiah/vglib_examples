@@ -1,0 +1,11 @@
+#version 460
+#include "models.glsl"
+#include "cuckoo_hash_functions.glsl"
+
+layout(local_size_x = 1024) in;
+
+void main() {
+    if(table[gl_GlobalInvocationID.x] != KEY_EMPTY) {
+        atomicAdd(draw[300].instanceCount, 1);
+    }
+}

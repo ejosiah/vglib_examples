@@ -32,7 +32,6 @@ layout(set = 1, binding = 1, scalar) uniform TRI_TABLE{
     int triTable[4096];
 };
 
-
 layout(set = 2, binding = 0) buffer MESH_ATTRIBUTES {
     Vertex mesh[];
 };

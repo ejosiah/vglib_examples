@@ -1,0 +1,38 @@
+#version 460
+#include "models.glsl"
+#include "cuckoo_hash_functions.glsl"
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 32) in;
+
+layout(push_constant) uniform Constants {
+    int pass;
+};
+
+shared uint isEmpty;
+
+void main() {
+
+    const uint index = pass * gl_WorkGroupSize.y + gl_WorkGroupID.y;
+    const uint voxel_id = gl_WorkGroupID.y;
+
+    if(index >= counters.blocks) return;
+
+    vec3 box_center = block[index].aabb;
+    const uint key = compute_hash_key(box_center);
+
+    if(block_already_processed(key)) return;
+
+    const mat4 grid_to_world = camera_info.grid_to_world;
+    const vec3 world_position = (grid_to_world * vec4(box_center, 1)).xyz;
+
+    vec3 origin = world_position - vec3(0.5); // FIXME convert to world position;
+
+    for(int y = 0; y < 32; ++y) {
+        ivec3 location = ivec3(gl_LocalInvocationID.x, y, gl_LocalInvocationID.z);
+        vec3 position = origin + vec3(location);
+        float density = -position.y;
+        imageStore(voxels[voxel_id], location, vec4(density));
+    }
+
+    block[index].voxel_id = voxel_id;
+}

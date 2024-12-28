@@ -7,8 +7,9 @@
 #include <array>
 
 struct Counters {
-    uint32_t block_id;
-    uint32_t set_add_id;
+    uint32_t free_slots{};
+    uint32_t set_add_id{};
+    uint32_t blocks{};
 };
 
 struct CameraInfo {
@@ -45,4 +46,6 @@ struct GpuData {
     VulkanBuffer blockData;
     VulkanBuffer counters;
     VulkanBuffer blockHash;
+    VulkanBuffer dispatchIndirectBuffer;
+    VulkanBuffer drawIndirectBuffer;
 };

@@ -6,7 +6,7 @@ layout(local_size_x = 128) in;
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
-    if(index >= counters.block_id) return;
+    if(index >= counters.blocks) return;
 
     const mat4 grid_to_world = camera_info.grid_to_world;
     const vec3 camera_direction = camera_info.direction;
