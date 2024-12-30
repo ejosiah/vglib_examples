@@ -101,6 +101,8 @@ protected:
 
     void computeToTransferBarrier(VkCommandBuffer commandBuffer);
 
+    void computeReadToComputeWriteBarrier(VkCommandBuffer commandBuffer);
+
     void computeToRenderBarrier(VkCommandBuffer commandBuffer);
 
     void blockInCameraTest(VkCommandBuffer commandBuffer);
@@ -201,5 +203,4 @@ protected:
     VulkanBuffer cpuBuffer;
     std::span<DrawCommand> drawCmds;
     VoxelGenConstants voxelGenConstants;
-
 };

@@ -67,7 +67,6 @@ void TerrainMC::initCamera() {
 
 //    gpuData.cameraInfo.resize(MAX_IN_FLIGHT_FRAMES);
     gpuData.cameraInfo.resize(2);
-
     for(auto i = 0; i <2; ++i) {
         gpuData.cameraInfo[i] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
                                                             , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(CameraInfo), "camera_info");
@@ -459,7 +458,7 @@ VkCommandBuffer *TerrainMC::buildCommandBuffers(uint32_t imageIndex, uint32_t &n
 //    }
 
     renderScene(commandBuffer);
-    renderBlocks(commandBuffer);
+//    renderBlocks(commandBuffer);
 //    renderCamera(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -672,9 +671,16 @@ void TerrainMC::initBlockData() {
     auto numBlocks = cDim.x * cDim.y * cDim.z;
     size = sizeof(BlockData) * numBlocks;
     std::vector<BlockData> blockDataAlloc(numBlocks);
-//    blockDataAlloc[0] = { .aabb = { 2.0000, 0.0000, 3.0000}  };
-//    blockDataAlloc[1] = { .aabb = { 2.0000, -1.0000, 3.0000}  };
-//    blockDataAlloc[2] = { .aabb = { 2.0000, 0.0000, 3.0000}  };
+//    blockDataAlloc[0] = { .aabb = { 0.0000, 0.0000, 0.0000} };
+//    blockDataAlloc[0] = { .aabb = { -2.0000, 0.0000, 0.0000} };
+//    blockDataAlloc[1] = { .aabb = { -3.0000, 0.0000, 0.0000} };
+//    blockDataAlloc[2] = { .aabb = { 3.0000, 0.0000, 0.0000} };
+//    blockDataAlloc[3] = { .aabb = { 2.0000, 0.0000, 0.0000} };
+//    blockDataAlloc[4] = { .aabb = { -1.0000, 0.0000, -1.0000} };
+//    blockDataAlloc[5] = { .aabb = { 0.0000, 0.0000, -1.0000} };
+//    blockDataAlloc[6] = { .aabb = { 2.0000, 0.0000, -1.0000} };
+//    blockDataAlloc[7] = { .aabb = { -2.0000, 0.0000, -1.0000} };
+//    blockDataAlloc[8] = { .aabb = { 1.0000, 0.0000, -1.0000} };
 
     gpuData.blockData = device.createDeviceLocalBuffer(blockDataAlloc.data(), BYTE_SIZE(blockDataAlloc), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
     device.setName<VK_OBJECT_TYPE_BUFFER>("block_data", gpuData.blockData.buffer);
@@ -689,7 +695,7 @@ void TerrainMC::initBlockData() {
     counters = reinterpret_cast<Counters*>(gpuData.counters.map());
     counters->free_slots = poolSize;
     counters->slots_used = 0;
-//    counters->blocks = 3;
+//    counters->blocks = 9;
 
     size = sizeof(uint32_t) * (1 << 20);
     gpuData.blockHash = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "block_hash");
@@ -960,6 +966,7 @@ void TerrainMC::generateVoxels(VkCommandBuffer commandBuffer) {
         generateTextures(commandBuffer, pass);
         computeToComputeBarrier(commandBuffer);
         marchTextures(commandBuffer, pass);
+        computeReadToComputeWriteBarrier(commandBuffer);
     }
     computeToComputeBarrier(commandBuffer);
 }
@@ -991,6 +998,17 @@ void TerrainMC::initDebugStuff() {
     cube.instances.push_back(glm::translate(glm::mat4{1}, glm::vec3(2.0000, -1.0000, 1.0000)));
     cube.instances.push_back(glm::translate(glm::mat4{1}, glm::vec3(1.0000, -1.0000, 4.0000)));
     cube.instances.push_back(glm::translate(glm::mat4{1}, glm::vec3(0.0000, -1.0000, 3.0000)));
+}
+
+void TerrainMC::computeReadToComputeWriteBarrier(VkCommandBuffer commandBuffer) {
+    memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    memoryBarrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+    memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    memoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    dependencyInfo.memoryBarrierCount = 1;
+    dependencyInfo.pMemoryBarriers = &memoryBarrier;
+
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 }
 
 /************************************** TerrainCompute ***********************************************************/
