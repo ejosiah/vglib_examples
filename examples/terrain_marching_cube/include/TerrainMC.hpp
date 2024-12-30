@@ -13,6 +13,11 @@ struct DebugConstants {
     float elapsed_time{};
 };
 
+struct VoxelGenConstants {
+    uint32_t pass{};
+    uint32_t blocksPerPass{};
+};
+
 class TerrainMC : public VulkanBaseApp {
 public:
     explicit TerrainMC(const Settings& settings = {});
@@ -195,5 +200,6 @@ protected:
     VkDeviceSize debugDrawOffset{};
     VulkanBuffer cpuBuffer;
     std::span<DrawCommand> drawCmds;
+    VoxelGenConstants voxelGenConstants;
 
 };

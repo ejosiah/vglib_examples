@@ -603,7 +603,7 @@ void TerrainMC::newFrame() {
     cameraInfo.view_projection = cam.proj * cam.view;
     cameraInfo.inverse_view_projection = glm::inverse(cam.proj * cam.view);
     cameraInfo.grid_to_world = glm::inverse(camera->cam().view) * glm::translate(glm::mat4(1), camPosOffset);;
-    cameraInfo.direction = camera->direction;
+    cameraInfo.direction = camera->viewDir;
     camera->extract(cameraInfo.frustum);
     computeCameraBounds();
 //    debugScene();
@@ -611,7 +611,7 @@ void TerrainMC::newFrame() {
     static bool once = true;
     if(once) {
         glm::vec4 world_pos = cameraInfo.grid_to_world * glm::vec4(2.0000, -1.0000, 3.0000, 1);
-//        fmt::print("world_pos: {}", world_pos.xyz());
+        fmt::print("world_pos: {}", world_pos.xyz());
         generateTerrain();
         once = false;
     }
@@ -671,7 +671,14 @@ void TerrainMC::initBlockData() {
     glm::uvec3 cDim = glm::uvec3(cMax - cMin) + 2u;
     auto numBlocks = cDim.x * cDim.y * cDim.z;
     size = sizeof(BlockData) * numBlocks;
-    gpuData.blockData = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "block_data");
+    std::vector<BlockData> blockDataAlloc(numBlocks);
+//    blockDataAlloc[0] = { .aabb = { 2.0000, 0.0000, 3.0000}  };
+//    blockDataAlloc[1] = { .aabb = { 2.0000, -1.0000, 3.0000}  };
+//    blockDataAlloc[2] = { .aabb = { 2.0000, 0.0000, 3.0000}  };
+
+    gpuData.blockData = device.createDeviceLocalBuffer(blockDataAlloc.data(), BYTE_SIZE(blockDataAlloc), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("block_data", gpuData.blockData.buffer);
+//    gpuData.blockData = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "block_data");
 
     std::vector<uint32_t> allocation(numBlocks, 0xffffffff);
     gpuData.distanceToCamera = device.createDeviceLocalBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
@@ -682,6 +689,7 @@ void TerrainMC::initBlockData() {
     counters = reinterpret_cast<Counters*>(gpuData.counters.map());
     counters->free_slots = poolSize;
     counters->slots_used = 0;
+//    counters->blocks = 3;
 
     size = sizeof(uint32_t) * (1 << 20);
     gpuData.blockHash = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "block_hash");
@@ -938,15 +946,17 @@ void TerrainMC::generateTextures(VkCommandBuffer commandBuffer, int pass) {
     const auto gc = scratchTextureCount;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("generate_textures"));
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("generate_textures"), 0, COUNT(gen_sets), gen_sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, compute.layout("generate_textures"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+    vkCmdPushConstants(commandBuffer, compute.layout("generate_textures"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VoxelGenConstants), &voxelGenConstants);
     vkCmdDispatch(commandBuffer, 1, gc, 1);
 }
 
 void TerrainMC::generateVoxels(VkCommandBuffer commandBuffer) {
     const int numBlocks = gpuData.blockData.sizeAs<BlockData>();
-//    const int passes = numBlocks/scratchTextureCount + glm::sign(numBlocks - (numBlocks/scratchTextureCount) * scratchTextureCount);
-    const int passes = 2;
+    const int passes = numBlocks/scratchTextureCount + glm::sign(numBlocks - (numBlocks/scratchTextureCount) * scratchTextureCount);
+//    const int passes = 2;
+    voxelGenConstants.blocksPerPass = scratchTextureCount;
     for(auto pass = 0; pass < passes; ++pass) {
+        voxelGenConstants.pass = pass;
         generateTextures(commandBuffer, pass);
         computeToComputeBarrier(commandBuffer);
         marchTextures(commandBuffer, pass);
@@ -958,7 +968,7 @@ void TerrainMC::marchTextures(VkCommandBuffer commandBuffer, int pass) {
     const auto gc = scratchTextureCount;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("march_voxels"));
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("march_voxels"), 0, COUNT(gen_sets), gen_sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, compute.layout("march_voxels"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+    vkCmdPushConstants(commandBuffer, compute.layout("march_voxels"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VoxelGenConstants), &voxelGenConstants);
     vkCmdDispatch(commandBuffer, 1, gc, 1);
 }
 
@@ -1015,13 +1025,13 @@ std::vector<PipelineMetaData> TerrainCompute::pipelineMetaData() {
             .name = "generate_textures",
             .shadePath = FileManager::resource("generate_textures.comp.spv"),
             .layouts = descriptorSetLayouts_,
-            .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) }}
+            .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VoxelGenConstants) }}
         },
         {
             .name = "march_voxels",
             .shadePath = FileManager::resource("march_voxels.comp.spv"),
             .layouts = descriptorSetLayouts_,
-            .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) }}
+            .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VoxelGenConstants) }}
         },
     };
 }

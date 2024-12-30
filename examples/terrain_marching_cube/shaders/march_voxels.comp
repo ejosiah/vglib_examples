@@ -16,7 +16,8 @@ layout(set = 3, binding = 1, scalar) buffer TRI_TABLE{
 };
 
 layout(push_constant) uniform Constants {
-    int pass;
+    uint pass;
+    uint blocksPerPass;
 };
 
 const ivec3 cube[NUM_VERTICES] = {
@@ -43,7 +44,7 @@ vec3 triangles[MAX_TRIANGLE_VERTICES];
 vec3 triNormals[MAX_TRIANGLE_VERTICES];
 
 vec3 getVertex(vec3 center, int edgeIndex);
-float getIsoValue(ivec3 center, int index);
+float getIsoValue(ivec3 center, int index, uint voxel_id);
 
 
 shared DrawCommand drawCmd;
@@ -53,8 +54,7 @@ shared int mutex;
 const float cubeSize = 1.0/32.0;
 const float isoLevel = 0;
 
-uint block_index = pass * gl_WorkGroupSize.y + gl_WorkGroupID.y;
-uint voxel_id = gl_WorkGroupID.y;
+uint block_index = pass * blocksPerPass + gl_WorkGroupID.y;
 
 void take_lock();
 
@@ -65,7 +65,7 @@ bool once();
 void main() {
     vec3 box_center = block[block_index].aabb;
     const uint key = compute_hash_key(box_center);
-
+    const uint voxel_id = block[block_index].voxel_id;
     if(block_index >= counters.blocks || block_already_processed(key) || counters.free_slots <= 0) {
         return;
     }
@@ -86,7 +86,7 @@ void main() {
 
         int config = 0;
         for(int i = 0; i < 8; ++i){
-            isoValues[i] = getIsoValue(location, i);
+            isoValues[i] = getIsoValue(location, i, voxel_id);
             if(isoValues[i] > isoLevel){
                 config |= (1 << i);
             }
@@ -131,13 +131,13 @@ void main() {
     barrier();
     if(slot != -1 && gl_LocalInvocationIndex == 0 && drawCmd.vertexCount > 0) {
         draw[slot] = drawCmd;
-
+        block[block_index].vertex_id = pass;
     }
 }
 
 
 
-float getIsoValue(ivec3 center, int index){
+float getIsoValue(ivec3 center, int index, uint voxel_id){
     ivec3 location = center + cube[index];
     return imageLoad(voxels[voxel_id],  location).r;
 }

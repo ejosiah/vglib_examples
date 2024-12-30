@@ -5,7 +5,8 @@
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 32) in;
 
 layout(push_constant) uniform Constants {
-    int pass;
+    uint pass;
+    uint blocksPerPass;
 };
 
 float densityFunction(vec3 x) {
@@ -16,7 +17,7 @@ const float scale = 1/32.0;
 
 void main() {
 
-    const uint index = pass * gl_WorkGroupSize.y + gl_WorkGroupID.y;
+    const uint index = pass * blocksPerPass + gl_WorkGroupID.y;
     const uint voxel_id = gl_WorkGroupID.y;
 
     if(index >= counters.blocks) return;
