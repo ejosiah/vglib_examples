@@ -7,7 +7,7 @@
 #include <array>
 
 struct Counters {
-    uint32_t free_slots{};
+    int free_slots{};
     uint32_t set_add_id{};
     uint32_t blocks{};
 };
@@ -48,4 +48,6 @@ struct GpuData {
     VulkanBuffer blockHash;
     VulkanBuffer dispatchIndirectBuffer;
     VulkanBuffer drawIndirectBuffer;
+    VulkanBuffer edgeLUT;
+    VulkanBuffer triangleLUT;
 };

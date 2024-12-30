@@ -2,18 +2,20 @@
 #include "models.glsl"
 #include "cuckoo_hash_functions.glsl"
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 32) in;
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 layout(push_constant) uniform Constants {
     int pass;
 };
 
-shared uint isEmpty;
+float densityFunction(vec3 x) {
+    return -x.z;
+}
 
 void main() {
 
-    const uint index = pass * gl_WorkGroupSize.y + gl_WorkGroupID.y;
-    const uint voxel_id = gl_WorkGroupID.y;
+    const uint index = pass * gl_WorkGroupSize.z + gl_WorkGroupID.z;
+    const uint voxel_id = gl_WorkGroupID.z;
 
     if(index >= counters.blocks) return;
 
@@ -25,12 +27,29 @@ void main() {
     const mat4 grid_to_world = camera_info.grid_to_world;
     const vec3 world_position = (grid_to_world * vec4(box_center, 1)).xyz;
 
-    vec3 origin = world_position - vec3(0.5); // FIXME convert to world position;
+    const vec3 origin = world_position - vec3(0.5);
+    const ivec3 texOffset = ivec3(1, 0, 1);
 
-    for(int y = 0; y < 32; ++y) {
-        ivec3 location = ivec3(gl_LocalInvocationID.x, y, gl_LocalInvocationID.z);
+    int layers = 33;
+    for(int z = 0; z < layers; ++z) {
+        ivec3 location = ivec3(gl_LocalInvocationID.x, gl_LocalInvocationID.y, z);
         vec3 position = origin + vec3(location);
-        float density = -position.y;
+        float density = densityFunction(position);
+        imageStore(voxels[voxel_id], location, vec4(density));
+
+        // process last column;
+        location = ivec3(gl_WorkGroupSize.x, gl_LocalInvocationID.y, z);
+        position = origin + vec3(location);
+        imageStore(voxels[voxel_id], location, vec4(density));
+
+        // process last row
+        location = ivec3(gl_LocalInvocationID.x, gl_WorkGroupSize.y, z);
+        position = origin + vec3(location);
+        imageStore(voxels[voxel_id], location, vec4(density));
+
+        // process last slice
+        location = ivec3(gl_WorkGroupSize.x, gl_WorkGroupSize.y, z);
+        position = origin + vec3(location);
         imageStore(voxels[voxel_id], location, vec4(density));
     }
 

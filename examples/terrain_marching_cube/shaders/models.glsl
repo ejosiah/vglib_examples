@@ -77,7 +77,7 @@ layout(set = 1, binding = 2, std430) buffer distanceToCameraBuffer {
 };
 
 layout(set = 1, binding = 3) buffer AtomicsBuffer {
-    uint free_slots;
+    int free_slots;
     uint set_add_id;
     uint blocks;
 } counters;

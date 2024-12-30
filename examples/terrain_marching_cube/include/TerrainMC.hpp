@@ -1,3 +1,4 @@
+#define MAX_IN_FLIGHT_FRAMES 1
 #include "TerrainCompute.hpp"
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
@@ -24,6 +25,8 @@ protected:
     void initHelpers();
 
     void initCamera();
+
+    void initLuts();
 
     void initBindlessDescriptor();
 
@@ -59,6 +62,8 @@ protected:
 
     void renderBlocks(VkCommandBuffer commandBuffer);
 
+    void renderScene(VkCommandBuffer commandBuffer);
+
     void newFrame() override;
 
     void update(float time) override;
@@ -75,6 +80,8 @@ protected:
 
     void generateTerrain();
 
+    void generateTerrain(VkCommandBuffer commandBuffer);
+
     void prepareBuffers(VkCommandBuffer commandBuffer);
 
     void sortBlocks(VkCommandBuffer commandBuffer);
@@ -84,6 +91,8 @@ protected:
     void computeToComputeBarrier(VkCommandBuffer commandBuffer);
 
     void transferToComputeBarrier(VkCommandBuffer commandBuffer);
+
+    void computeToTransferBarrier(VkCommandBuffer commandBuffer);
 
     void computeToRenderBarrier(VkCommandBuffer commandBuffer);
 
@@ -102,6 +111,9 @@ protected:
     void generateBlocks();
 
     void computeDistanceToCamera(VkCommandBuffer commandBuffer);
+
+    void copyBuffersToCpu(VkCommandBuffer commandBuffer);
+
 
 protected:
     struct {
@@ -153,15 +165,17 @@ protected:
 
     glm::mat4 tinyCube;
     CameraInfo cameraInfo{};
-    const int poolSize{300};
-    const int scratchTextureCount{32};
+    static const int poolSize{300};
+    static const int scratchTextureCount{32};
     GpuData gpuData;
     VulkanDescriptorSetLayout terrainDescriptorSetLayout;
     VulkanDescriptorSetLayout cameraDescriptorSetLayout;
     VulkanDescriptorSetLayout indirectDescriptorSetLayout;
+    VulkanDescriptorSetLayout marchingCubeLutSetLayout;
     std::vector<VkDescriptorSet> cameraDescriptorSet;
     VkDescriptorSet terrainDescriptorSet;
     VkDescriptorSet indirectDescriptorSet;
+    VkDescriptorSet marchingCubeLutSet;
     TerrainCompute compute;
     VkMemoryBarrier2 memoryBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
     VkImageMemoryBarrier2 imageMemoryBarrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
@@ -171,6 +185,9 @@ protected:
     RadixSort sort;
     gpu::HashSet set;
     DebugConstants debugConstants;
-    std::array<VkDescriptorSet, 3> gen_sets;
+    std::array<VkDescriptorSet, 4> gen_sets;
     VkDeviceSize debugDrawOffset{};
+    VulkanBuffer cpuBuffer;
+    std::span<VkDrawIndirectCommand> drawCmds;
+
 };
