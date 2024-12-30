@@ -20,6 +20,8 @@ public:
 protected:
     void initApp() override;
 
+    void initDebugStuff();
+
     void checkInvariants();
 
     void initHelpers();
@@ -120,6 +122,10 @@ protected:
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
     } render;
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } cubeRender;
 
     struct {
         VulkanPipelineLayout layout;
@@ -188,6 +194,6 @@ protected:
     std::array<VkDescriptorSet, 4> gen_sets;
     VkDeviceSize debugDrawOffset{};
     VulkanBuffer cpuBuffer;
-    std::span<VkDrawIndirectCommand> drawCmds;
+    std::span<DrawCommand> drawCmds;
 
 };

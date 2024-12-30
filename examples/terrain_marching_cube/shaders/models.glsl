@@ -16,6 +16,7 @@ struct DrawCommand {
     uint  instanceCount;
     uint  firstVertex;
     uint  firstInstance;
+    vec4 aabb;
 };
 
 struct DispatchCommand {
@@ -80,6 +81,7 @@ layout(set = 1, binding = 3) buffer AtomicsBuffer {
     int free_slots;
     uint set_add_id;
     uint blocks;
+    int slots_used;
 } counters;
 
 layout(set = 1, binding = 4, scalar) buffer BlockHashSsbo {

@@ -6,7 +6,7 @@
 #define NUM_EDGES 12
 #define MAX_TRIANGLE_VERTICES 16
 
-layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 32) in;
 
 layout(set = 3, binding = 0, scalar) buffer EDGE_TABLE{
     uint edgeTable[256];
@@ -47,15 +47,14 @@ float getIsoValue(ivec3 center, int index);
 
 
 shared DrawCommand drawCmd;
-shared uint slot;
+shared int slot;
 shared int mutex;
-shared bool slot_acquired;
 
 const float cubeSize = 1.0/32.0;
 const float isoLevel = 0;
 
-uint block_index = pass * gl_WorkGroupSize.z + gl_WorkGroupID.z;
-uint voxel_id = gl_WorkGroupID.z;
+uint block_index = pass * gl_WorkGroupSize.y + gl_WorkGroupID.y;
+uint voxel_id = gl_WorkGroupID.y;
 
 void take_lock();
 
@@ -71,10 +70,10 @@ void main() {
         return;
     }
 
-    if(gl_WorkGroupID.z == 0) {
-        drawCmd = DrawCommand(0, 1, 0, 0);
+    if(gl_LocalInvocationIndex == 0) {
+        drawCmd = DrawCommand(0, 1, 0, 0, vec4(box_center, block_index));
         mutex = 0;
-        slot_acquired = false;
+        slot = -1;
     }
     barrier();
 
@@ -82,8 +81,8 @@ void main() {
     const vec3 world_position = (grid_to_world * vec4(box_center, 1)).xyz;
     const vec3 start = world_position - vec3(0.5) + vec3(cubeSize) * 0.5;
 
-    for(int z = 0; z < 32; ++z) {
-        ivec3 location = ivec3(gl_LocalInvocationID.x, gl_LocalInvocationID.y, z);
+    for(int y = 0; y < 32; ++y) {
+        ivec3 location = ivec3(gl_LocalInvocationID.x, y, gl_LocalInvocationID.z);
 
         int config = 0;
         for(int i = 0; i < 8; ++i){
@@ -95,7 +94,7 @@ void main() {
 
         if(edgeTable[config] == 0) continue;
 
-        const vec3 position = start + vec3(location.xzy)/32;
+        const vec3 position = start + vec3(location)/32.0;
         for(int edge = 0; edge < NUM_EDGES; edge++){
             if((edgeTable[config] & (1 << edge)) != 0){
                 vertexList[edge] = getVertex(position, edge);
@@ -115,11 +114,13 @@ void main() {
         uint vOffset = atomicAdd(drawCmd.vertexCount, numVertices);
 
         if(once()) {
-            slot = atomicAdd(counters.free_slots, -1);
-            slot_acquired = true;
+            int acquire_slot = atomicAdd(counters.free_slots, -1);
+            if(acquire_slot > 0) {
+                slot = atomicAdd(counters.slots_used, 1);
+            }
         }
         barrier();
-        if(slot < 0) break;
+        if(slot == -1) break;
 
         for(uint i = 0; i < numVertices; ++i) {
             uint vId = i + vOffset;
@@ -128,8 +129,9 @@ void main() {
     }
 
     barrier();
-    if(slot >= 0 && gl_WorkGroupID.z == 0 && drawCmd.vertexCount > 0) {
+    if(slot != -1 && gl_LocalInvocationIndex == 0 && drawCmd.vertexCount > 0) {
         draw[slot] = drawCmd;
+
     }
 }
 
@@ -142,8 +144,8 @@ float getIsoValue(ivec3 center, int index){
 
 vec3 getVertex(vec3 center, int edgeIndex) {
     ivec2 edge = cubeEdges[edgeIndex];
-    vec3 p0 = center + cube[edge[0]];
-    vec3 p1 = center + cube[edge[1]];
+    vec3 p0 = center + cube[edge[0]] * cubeSize;
+    vec3 p1 = center + cube[edge[1]] * cubeSize;
 
     float isoVal0 = isoValues[edge[0]];
     float isoVal1 = isoValues[edge[1]];

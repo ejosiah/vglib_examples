@@ -23,11 +23,12 @@ vec4 colors[3] = vec4[3](vec4(1, 1, 0, 1), vec4(0, 1, 0, 1), vec4(1, 0, 0, 1));
 void main(){
     const uint bid = gl_InstanceIndex;
 
-    vColor = colors[block[bid].state];
+//    vColor = colors[block[bid].state];
+    vColor = vec4(1, 1, 0, 1);
     vUv = uv;
-    vec3 center  = block[bid].aabb;
-    vec4 worldPos =  vec4(center + position.xyz, 1);
+    vec3 center  = draw[bid].aabb.xyz;
+    vec4 position =  vec4(center + position.xyz, 1);
     const mat4 grid_to_world = camera_info.grid_to_world;
 
-    gl_Position = proj * view * grid_to_world * worldPos;
+    gl_Position = proj * view * grid_to_world * position;
 }

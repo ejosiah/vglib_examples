@@ -10,6 +10,7 @@ struct Counters {
     int free_slots{};
     uint32_t set_add_id{};
     uint32_t blocks{};
+    uint32_t slots_used{};
 };
 
 struct CameraInfo {
@@ -50,4 +51,12 @@ struct GpuData {
     VulkanBuffer drawIndirectBuffer;
     VulkanBuffer edgeLUT;
     VulkanBuffer triangleLUT;
+};
+
+struct DrawCommand {
+    uint  vertexCount;
+    uint  instanceCount;
+    uint  firstVertex;
+    uint  firstInstance;
+    glm::vec4 aabb;
 };
