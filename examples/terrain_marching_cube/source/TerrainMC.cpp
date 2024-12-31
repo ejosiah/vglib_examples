@@ -627,7 +627,8 @@ void TerrainMC::newFrame() {
     cameraInfo.position = camera->position();
     cameraInfo.view_projection = cam.proj * cam.view;
     cameraInfo.inverse_view_projection = glm::inverse(cam.proj * cam.view);
-    cameraInfo.grid_to_world = glm::inverse(camera->cam().view) * glm::translate(glm::mat4(1), camPosOffset);;
+//    cameraInfo.grid_to_world = glm::inverse(camera->cam().view) * glm::translate(glm::mat4(1), camPosOffset);
+    cameraInfo.grid_to_world = glm::mat4{1};
     cameraInfo.direction = camera->viewDir;
     camera->extract(cameraInfo.frustum);
     computeCameraBounds();

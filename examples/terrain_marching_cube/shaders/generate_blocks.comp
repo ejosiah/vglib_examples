@@ -14,13 +14,15 @@ void main() {
     const uvec3 gid = uvec3(gl_GlobalInvocationID);
     const vec3 last = vec3(dim - uvec3(1));
 
-    if(any(greaterThan(gid, last))) return;
+//    if(any(greaterThan(gid, last))) return;
 
     const mat4 grid_to_world = camera_info.grid_to_world;
     const vec4 frustum[6] = camera_info.frustum;
+    const vec3 camera_position = camera_info.position;
+    const vec3 center_block = floor(camera_position) + vec3(0.5);
 
     vec4 position = vec4(1);
-    position.xyz =  remap(vec3(gid), vec3(0), last, -last * .5, last * .5);
+    position.xyz = center_block + vec3(gid) - vec3(dim)/2;
 
     const vec3 world_position = (grid_to_world * position).xyz;
 
@@ -32,7 +34,6 @@ void main() {
 
         uint index = atomicAdd(counters.blocks, 1);
 
-        const vec3 camera_position = camera_info.position;
         const vec3 camera_direction = camera_info.direction;
         const float distance_to_cam =  sign(dot(camera_direction, world_position)) * distance(camera_position, world_position);
 
