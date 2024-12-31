@@ -8,17 +8,29 @@ layout(push_constant) uniform Constants {
     uint pass;
     uint blocksPerPass;
 };
+const float scale = 1/32.0;
+shared bool emptySpace;
+shared bool belowGround;
 
 float densityFunction(vec3 x) {
-    return -x.y;
+    float d = -x.y;
+
+    belowGround = belowGround && d > 0;
+    emptySpace = emptySpace && d < 0;
+
+    return d;
 }
 
-const float scale = 1/32.0;
 
 void main() {
 
     const uint index = pass * blocksPerPass + gl_WorkGroupID.y;
     const uint voxel_id = gl_WorkGroupID.y;
+
+    if(gl_LocalInvocationIndex == 0) {
+        emptySpace = true;
+        belowGround = true;
+    }
 
     if(index >= counters.blocks) return;
 
@@ -59,5 +71,14 @@ void main() {
         imageStore(voxels[voxel_id], location, vec4(density));
     }
 
-    block[index].voxel_id = voxel_id;
+    barrier();
+
+    if(gl_LocalInvocationIndex == 0) {
+        block[index].voxel_id = voxel_id;
+//        if (!emptySpace && !belowGround) {
+//            block[index].voxel_id = voxel_id;
+//        }else {
+//            // Add to empty space list
+//        }
+    }
 }

@@ -5,33 +5,30 @@
 
 layout(set = 1, binding = 7) buffer HashSetSsbo {
     uint table[];
-};
+} processed;
 
 layout(set = 1, binding = 8) buffer TableInfoSsbo {
     uint tableSize;
     uint numItems;
-};
+} processed_metadata;
 
-uint get_entry(uint location) {
-    return table[location];
-}
 
 bool block_already_processed(uint key) {
 
-    uint location1 = hash1(key);
-    uint location2 = hash2(key);
-    uint location3 = hash3(key);
-    uint location4 = hash4(key);
+    uint location1 = hash1(key, processed_metadata);
+    uint location2 = hash2(key, processed_metadata);
+    uint location3 = hash3(key, processed_metadata);
+    uint location4 = hash4(key, processed_metadata);
 
-    uint entry = get_entry(location1);
+    uint entry = processed.table[location1];
     if(entry != key) {
-        entry = get_entry(location2);
+        entry = processed.table[location2];
 
         if(entry != key) {
-            entry = get_entry(location3);
+            entry = processed.table[location3];
 
             if(entry != key) {
-                entry = get_entry(location4);
+                entry = processed.table[location4];
 
                 if(entry != key) {
                     return false;
@@ -43,23 +40,23 @@ bool block_already_processed(uint key) {
 }
 
 void remove_from_block_set(uint key) {
-    uint location = hash1(key);
+    uint location = hash1(key, processed_metadata);
 
-    if(get_entry(location) != key) {
-        location = hash2(key);
+    if(processed.table[location] != key) {
+        location = hash2(key, processed_metadata);
 
-        if(get_entry(location) != key) {
-            location = hash3(key);
+        if(processed.table[location] != key) {
+            location = hash3(key, processed_metadata);
 
-            if(get_entry(location) != key) {
-                location = hash4(key);
+            if(processed.table[location] != key) {
+                location = hash4(key, processed_metadata);
 
-                if(get_entry(location) != key) {
+                if(processed.table[location] != key) {
                     return;
                 }
             }
         }
     }
-    table[location] = KEY_EMPTY;
+    processed.table[location] = KEY_EMPTY;
 }
 #endif // CUCKOO_HAS_FUNCTIONS_GLSL

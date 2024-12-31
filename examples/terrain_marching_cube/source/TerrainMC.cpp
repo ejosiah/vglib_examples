@@ -506,7 +506,7 @@ void TerrainMC::update(float time) {
 
 //    camera->rotate(angle, 0, 0);
     camera->update(time);
-    glfwSetWindowTitle(window, fmt::format("{}, fps - {}", title, framePerSecond).c_str());
+    glfwSetWindowTitle(window, fmt::format("{}, fps - {}, blocks - {}", title, framePerSecond, counters->slots_used).c_str());
     debugConstants.elapsed_time += time;
 }
 
@@ -609,10 +609,8 @@ void TerrainMC::newFrame() {
 
     static bool once = true;
     if(once) {
-        glm::vec4 world_pos = cameraInfo.grid_to_world * glm::vec4(2.0000, -1.0000, 3.0000, 1);
-        fmt::print("world_pos: {}", world_pos.xyz());
         generateTerrain();
-        once = false;
+//        once = false;
     }
 //    counters->free_slots = std::max(0u, poolSize - counters->slots_used);
 //    updateVisibilityList();
@@ -755,7 +753,6 @@ void TerrainMC::generateTerrain(VkCommandBuffer commandBuffer) {
     generateVoxels(commandBuffer);
 
     set.insert(commandBuffer, gpuData.blockHash.region(0));
-//        copyBuffersToCpu(commandBuffer);
     computeDrawBlocks(commandBuffer);
     computeToRenderBarrier(commandBuffer);
 }
@@ -764,7 +761,7 @@ void TerrainMC::prepareBuffers(VkCommandBuffer commandBuffer) {
     static VkDispatchIndirectCommand dispatchCmd{0, 1, 1};
     static DrawCommand drawCmd{24, 0, 0, 0};
 
-//    counters->blocks = 0;
+    counters->blocks = 0;
     counters->set_add_id = 0;
 //    vkCmdUpdateBuffer(commandBuffer, gpuData.counters, 0, sizeof(Counters), &counters);
     vkCmdFillBuffer(commandBuffer, gpuData.distanceToCamera, 0, gpuData.distanceToCamera.size, ~0u);

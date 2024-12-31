@@ -15,11 +15,11 @@
 #define b4 1234838u
 #define KEY 0
 #define VALUE 1
-#define TABLE_SIZE tableSize
+#define TABLE_SIZE(prefix) prefix.tableSize
 
-#define hash1(key) ((a1 ^ key + b1) % p % TABLE_SIZE)
-#define hash2(key) ((a2 ^ key + b2) % p % TABLE_SIZE)
-#define hash3(key) ((a3 ^ key + b3) % p % TABLE_SIZE)
-#define hash4(key) ((a4 ^ key + b4) % p % TABLE_SIZE)
+#define hash1(key, prefix) ((a1 ^ key + b1) % p % TABLE_SIZE(prefix))
+#define hash2(key, prefix) ((a2 ^ key + b2) % p % TABLE_SIZE(prefix))
+#define hash3(key, prefix) ((a3 ^ key + b3) % p % TABLE_SIZE(prefix))
+#define hash4(key, prefix) ((a4 ^ key + b4) % p % TABLE_SIZE(prefix))
 
 #endif // CUCKOO_HASH_COMMON_GLSL

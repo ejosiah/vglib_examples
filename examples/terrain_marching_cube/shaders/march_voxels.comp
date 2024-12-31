@@ -132,6 +132,9 @@ void main() {
     if(slot != -1 && gl_LocalInvocationIndex == 0 && drawCmd.vertexCount > 0) {
         draw[slot] = drawCmd;
         block[block_index].vertex_id = pass;
+
+//        const uint add_key_id = atomicAdd(counters.set_add_id, 1);
+//        block_keys[add_key_id] = key;
     }
 }
 

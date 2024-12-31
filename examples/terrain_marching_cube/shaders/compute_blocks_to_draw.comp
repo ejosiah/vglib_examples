@@ -5,7 +5,7 @@
 layout(local_size_x = 1024) in;
 
 void main() {
-    if(table[gl_GlobalInvocationID.x] != KEY_EMPTY) {
+    if(processed.table[gl_GlobalInvocationID.x] != KEY_EMPTY) {
         atomicAdd(draw[300].instanceCount, 1);
     }
 }
