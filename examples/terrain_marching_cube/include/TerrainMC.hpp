@@ -196,7 +196,8 @@ protected:
 
     Counters* counters{};
     RadixSort sort;
-    gpu::HashSet set;
+    gpu::HashSet processed_blocks;
+    gpu::HashSet empty_blocks;
     DebugConstants debugConstants;
     std::array<VkDescriptorSet, 4> gen_sets;
     VkDeviceSize debugDrawOffset{};

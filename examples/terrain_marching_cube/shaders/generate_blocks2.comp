@@ -51,8 +51,8 @@ void main() {
 
         }
 
-        const uint add_key_id = atomicAdd(counters.set_add_id, 1);
-        block_keys[add_key_id] = key;
+        const uint processed_block_add_id = atomicAdd(counters.processed_block_add_id, 1);
+        processed_block_keys[processed_block_add_id] = key;
 
         block[index].aabb = position.xyz;
     }

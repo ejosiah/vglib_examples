@@ -66,7 +66,7 @@ void main() {
     vec3 box_center = block[block_index].aabb;
     const uint key = compute_hash_key(box_center);
     const uint voxel_id = block[block_index].voxel_id;
-    if(block_index >= counters.blocks || block_already_processed(key) || counters.free_slots <= 0) {
+    if(block_index >= counters.blocks || skip_block(key) || counters.free_slots <= 0) {
         return;
     }
 
@@ -129,12 +129,18 @@ void main() {
     }
 
     barrier();
-    if(slot != -1 && gl_LocalInvocationIndex == 0 && drawCmd.vertexCount > 0) {
-        draw[slot] = drawCmd;
-        block[block_index].vertex_id = pass;
+    if(slot != -1 && gl_LocalInvocationIndex == 0) {
+        if(drawCmd.vertexCount > 0) {
+            draw[slot] = drawCmd;
+            block[block_index].vertex_id = pass;
 
-//        const uint add_key_id = atomicAdd(counters.set_add_id, 1);
-//        block_keys[add_key_id] = key;
+            const uint processed_block_add_id = atomicAdd(counters.processed_block_add_id, 1);
+            processed_block_keys[processed_block_add_id] = key;
+        }else {
+            const uint empty_block_add_id = atomicAdd(counters.empty_block_add_id, 1);
+            empty_block_keys[empty_block_add_id] = key;
+        }
+
     }
 }
 

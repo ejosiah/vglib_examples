@@ -9,15 +9,9 @@ layout(push_constant) uniform Constants {
     uint blocksPerPass;
 };
 const float scale = 1/32.0;
-shared bool emptySpace;
-shared bool belowGround;
 
 float densityFunction(vec3 x) {
     float d = -x.y;
-
-    belowGround = belowGround && d > 0;
-    emptySpace = emptySpace && d < 0;
-
     return d;
 }
 
@@ -27,17 +21,12 @@ void main() {
     const uint index = pass * blocksPerPass + gl_WorkGroupID.y;
     const uint voxel_id = gl_WorkGroupID.y;
 
-    if(gl_LocalInvocationIndex == 0) {
-        emptySpace = true;
-        belowGround = true;
-    }
-
     if(index >= counters.blocks) return;
 
     vec3 box_center = block[index].aabb;
     const uint key = compute_hash_key(box_center);
 
-    if(block_already_processed(key)) return;
+    if(skip_block(key)) return;
 
     const mat4 grid_to_world = camera_info.grid_to_world;
     const vec3 world_position = (grid_to_world * vec4(box_center, 1)).xyz;
@@ -75,10 +64,5 @@ void main() {
 
     if(gl_LocalInvocationIndex == 0) {
         block[index].voxel_id = voxel_id;
-//        if (!emptySpace && !belowGround) {
-//            block[index].voxel_id = voxel_id;
-//        }else {
-//            // Add to empty space list
-//        }
     }
 }

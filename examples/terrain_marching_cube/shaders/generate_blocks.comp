@@ -28,7 +28,7 @@ void main() {
     const uint key = compute_hash_key(position.xyz);
     if(box_in_frustum_test(frustum, world_position.xyz)) {
 
-        if(block_already_processed(key)) return; // TODO also check if its empty space
+        if(skip_block(key)) return;
 
         uint index = atomicAdd(counters.blocks, 1);
 
@@ -37,9 +37,6 @@ void main() {
         const float distance_to_cam =  sign(dot(camera_direction, world_position)) * distance(camera_position, world_position);
 
         distance_to_camera[index] = floatBitsToUint(distance_to_cam);
-        const uint add_key_id = atomicAdd(counters.set_add_id, 1);
-        block_keys[add_key_id] = key;
-
         block[index].aabb = position.xyz;
     }
 }

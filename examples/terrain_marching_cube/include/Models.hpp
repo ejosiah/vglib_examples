@@ -8,9 +8,10 @@
 
 struct Counters {
     int free_slots{};
-    uint32_t set_add_id{};
-    uint32_t blocks{};
-    uint32_t slots_used{};
+    uint processed_block_add_id{};
+    uint empty_block_add_id{};
+    uint blocks{};
+    int slots_used{};
 };
 
 struct CameraInfo {
@@ -46,7 +47,8 @@ struct GpuData {
     VulkanBuffer distanceToCamera;
     VulkanBuffer blockData;
     VulkanBuffer counters;
-    VulkanBuffer blockHash;
+    VulkanBuffer processed_blocks;
+    VulkanBuffer empty_blocks;
     VulkanBuffer dispatchIndirectBuffer;
     VulkanBuffer drawIndirectBuffer;
     VulkanBuffer edgeLUT;

@@ -28,7 +28,7 @@ void main() {
         bd.state = BLOCK_STATE_INSIDE;
 
         if(!block_already_processed(key)) {
-            block_keys[index] = key;
+            processed_block_keys[index] = key;
         }
     } else {
         if(block_already_processed(key)) {

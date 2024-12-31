@@ -79,16 +79,21 @@ layout(set = 1, binding = 2, std430) buffer distanceToCameraBuffer {
 
 layout(set = 1, binding = 3) buffer AtomicsBuffer {
     int free_slots;
-    uint set_add_id;
+    uint processed_block_add_id;
+    uint empty_block_add_id;
     uint blocks;
     int slots_used;
 } counters;
 
 layout(set = 1, binding = 4, scalar) buffer BlockHashSsbo {
-    uint block_keys[];
+    uint processed_block_keys[];
 };
 
-layout(set = 1, binding = 5, r32f) uniform image3D voxels[];
+layout(set = 1, binding = 5, scalar) buffer Empty_BlockHashSsbo {
+    uint empty_block_keys[];
+};
+
+layout(set = 1, binding = 6, r32f) uniform image3D voxels[];
 
 layout(set = 2, binding = 0, scalar) buffer DispatchIndirectSsbo {
     DispatchCommand dispatch[];
