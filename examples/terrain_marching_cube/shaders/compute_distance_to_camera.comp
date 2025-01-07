@@ -1,20 +1,23 @@
 #version 460
 
+#extension GL_EXT_debug_printf : enable
 #include "models.glsl"
 
-layout(local_size_x = 128) in;
+layout(local_size_x = 512) in;
 
 void main() {
     const uint index = gl_GlobalInvocationID.x;
-    if(index >= counters.blocks) return;
+    if(index >= counters.slots_used) return;
 
-    const mat4 grid_to_world = camera_info.grid_to_world;
-    const vec3 camera_direction = camera_info.direction;
-    const vec3 camera_position = camera_info.position;
+    const vec3 position = draw[index].aabb.xyz;
+    const float distance_to_cam =  computeDistanceToCamera(position);
 
-    const vec3 grid_position = block[index].aabb;
-    const vec3 world_position = (camera_info.grid_to_world * vec4(grid_position, 1)).xyz;
-    const float distance_to_cam =  sign(dot(camera_direction, world_position)) * distance(camera_position, world_position);
+    if(isnan(distance_to_cam)) {
+        vec3 x = camera_info.position;
+        vec3 y = position;
+        debugPrintfEXT("cam: [%f, %f, %f], position: [%f, %f, %f]", x.x, x.y, x.z, y.x, y.y, y.z);
+    }
 
-    distance_to_camera[index] = floatBitsToUint(distance_to_cam);
+    distance_to_camera[0].data[index] = floatBitsToUint(distance_to_cam);
+    draw[index].aabb.w = distance_to_cam;
 }

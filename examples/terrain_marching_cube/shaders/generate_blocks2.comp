@@ -39,7 +39,7 @@ void main() {
 
             const float my_distance =  sign(dot(camera_direction, world_position.xyz)) * distance(camera_position, world_position.xyz);
 
-            uint eviction_candidate_distance = distance_to_camera[index];
+            uint eviction_candidate_distance = distance_to_camera[0].data[index];
 
             if(floatBitsToUint(my_distance) > eviction_candidate_distance ) return;
 

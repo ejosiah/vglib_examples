@@ -67,9 +67,13 @@ protected:
 
     void renderCube(VkCommandBuffer commandBuffer, Camera& acamera, const glm::mat4& model, bool outline = false);
 
-    void renderBlocks(VkCommandBuffer commandBuffer);
+    void renderBlocks(VkCommandBuffer commandBuffer, const Camera& camera);
 
-    void renderScene(VkCommandBuffer commandBuffer);
+    void renderGridBounds(VkCommandBuffer commandBuffer, const Camera& camera);
+
+    void renderScene(VkCommandBuffer commandBuffer, const Camera& camera);
+
+    void renderDebug(VkCommandBuffer commandBuffer);
 
     void newFrame() override;
 
@@ -91,6 +95,8 @@ protected:
 
     void prepareBuffers(VkCommandBuffer commandBuffer);
 
+    void sortDrawCommands(VkCommandBuffer commandBuffer);
+
     void sortBlocks(VkCommandBuffer commandBuffer);
 
     void debugScene();
@@ -98,6 +104,8 @@ protected:
     void computeToComputeBarrier(VkCommandBuffer commandBuffer);
 
     void transferToComputeBarrier(VkCommandBuffer commandBuffer);
+
+    void transferToInputAssembly(VkCommandBuffer commandBuffer);
 
     void computeToTransferBarrier(VkCommandBuffer commandBuffer);
 
@@ -179,7 +187,7 @@ protected:
     glm::mat4 tinyCube;
     CameraInfo cameraInfo{};
     static const int poolSize{300};
-    static const int scratchTextureCount{32};
+    static const int scratchTextureCount{300};
     GpuData gpuData;
     VulkanDescriptorSetLayout terrainDescriptorSetLayout;
     VulkanDescriptorSetLayout cameraDescriptorSetLayout;
@@ -202,6 +210,11 @@ protected:
     std::array<VkDescriptorSet, 4> gen_sets;
     VkDeviceSize debugDrawOffset{};
     VulkanBuffer cpuBuffer;
+    VulkanBuffer gridBoundsBuffer;
+    std::array<Vertex, 24> gridBounds;
     std::span<DrawCommand> drawCmds;
+    std::span<DebugData> dd;
+    std::span<float> distance_to_camera;
     VoxelGenConstants voxelGenConstants;
+    glm::vec3 worldDim{128, 32, 256};
 };

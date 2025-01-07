@@ -8,10 +8,12 @@
 
 struct Counters {
     int free_slots{};
+    int eviction_id{};
     uint processed_block_add_id{};
     uint empty_block_add_id{};
     uint blocks{};
     int slots_used{};
+    uint debug_id;
 };
 
 struct CameraInfo {
@@ -23,6 +25,7 @@ struct CameraInfo {
     glm::vec3 aabbMin;
     glm::vec3 aabbMax;
     glm::vec3 direction;
+    float offset;
 };
 
 struct BlockData {
@@ -44,7 +47,7 @@ struct GpuData {
     std::vector<VulkanBuffer> cameraInfo;
     std::vector<VulkanBuffer> vertices;
     std::vector<Texture> voxels;
-    VulkanBuffer distanceToCamera;
+    std::array<VulkanBuffer, 2> distanceToCamera;
     VulkanBuffer blockData;
     VulkanBuffer counters;
     VulkanBuffer processed_blocks;
@@ -53,12 +56,26 @@ struct GpuData {
     VulkanBuffer drawIndirectBuffer;
     VulkanBuffer edgeLUT;
     VulkanBuffer triangleLUT;
+    VulkanBuffer debugBuffer;
 };
 
 struct DrawCommand {
-    uint  vertexCount;
-    uint  instanceCount;
-    uint  firstVertex;
-    uint  firstInstance;
-    glm::vec4 aabb;
+    uint  vertexCount{};
+    uint  instanceCount{};
+    uint  firstVertex{};
+    uint  firstInstance{};
+    glm::vec4 aabb{};
+    uint vertex_id{};
+};
+
+struct DebugData {
+    glm::vec3 my_block;
+    glm::vec3 their_block;
+    float my_distance;
+    float their_distance;
+    int eviction_id;
+    int evicted;
+    int skipped;
+    int vertex_count;
+    int slot;
 };

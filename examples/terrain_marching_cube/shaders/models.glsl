@@ -11,12 +11,25 @@
 
 #define DISPATCH_GEN_3D_TEXTURE 0
 
+struct DebugData {
+    vec3 my_block;
+    vec3 their_block;
+    float my_distance;
+    float their_distance;
+    int eviction_id;
+    int evicted;
+    int skipped;
+    int vertex_count;
+    int slot;
+};
+
 struct DrawCommand {
     uint  vertexCount;
     uint  instanceCount;
     uint  firstVertex;
     uint  firstInstance;
     vec4 aabb;
+    uint vertex_id;
 };
 
 struct DispatchCommand {
@@ -63,6 +76,7 @@ layout(set = 0, binding = 0, scalar) buffer CameraInfoUbo {
     vec3 aabbMin;
     vec3 aabbMax;
     vec3 direction;
+    float offset;
 } camera_info;
 
 layout(set = 1, binding = 0, scalar) buffer vertexDataBuffer {
@@ -74,15 +88,17 @@ layout(set = 1, binding = 1, scalar) buffer ssboBlockData3 {
 };
 
 layout(set = 1, binding = 2, std430) buffer distanceToCameraBuffer {
-    uint distance_to_camera[];
-};
+    uint data[];
+} distance_to_camera[2];
 
 layout(set = 1, binding = 3) buffer AtomicsBuffer {
     int free_slots;
+    int eviction_id;
     uint processed_block_add_id;
     uint empty_block_add_id;
     uint blocks;
     int slots_used;
+    uint debug_id;
 } counters;
 
 layout(set = 1, binding = 4, scalar) buffer BlockHashSsbo {
@@ -94,6 +110,10 @@ layout(set = 1, binding = 5, scalar) buffer Empty_BlockHashSsbo {
 };
 
 layout(set = 1, binding = 6, r32f) uniform image3D voxels[];
+
+layout(set = 1, binding = 11, scalar) buffer DebugSsbo {
+    DebugData debug[];
+};
 
 layout(set = 2, binding = 0, scalar) buffer DispatchIndirectSsbo {
     DispatchCommand dispatch[];
@@ -130,8 +150,21 @@ bool box_in_frustum_test(vec4 frustum[6], vec3 center) {
 }
 
 uint compute_hash_key(vec3 p) {
-    p = mod(p, vec3(1000)); // I'm assuming grid volume is 1km^3
-   return uint(p.z * 163 + p.y * 397 + p.x * 509);
+    vec3 dim = vec3(128, 32, 256);
+//    p = mod(p, vec3(1000)); // I'm assuming grid volume is 1km^3
+//   return uint(p.z * 163 + p.y * 397 + p.x * 509);
+    p = mod(p, dim);
+    dim *= 0.5;
+    return uint((p.z * dim.y + p.y) * dim.x + p.x);
+}
+
+float computeDistanceToCamera(vec3 position) {
+    const vec3 camera_direction = camera_info.direction;
+    const vec3 camera_position = camera_info.position;
+    vec3 cam_to_position = position - camera_position;
+
+    return sign(dot(camera_direction, cam_to_position)) * distance(camera_position, position);
+
 }
 
 #endif // MODELS_GLSL

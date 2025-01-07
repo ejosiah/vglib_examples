@@ -21,14 +21,15 @@ layout(location = 1) out vec2 vUv;
 vec4 colors[3] = vec4[3](vec4(1, 1, 0, 1), vec4(0, 1, 0, 1), vec4(1, 0, 0, 1));
 
 void main(){
-    const uint bid = gl_InstanceIndex;
 
 //    vColor = colors[block[bid].state];
     vColor = vec4(1, 1, 0, 1);
     vUv = uv;
-    vec3 center  = draw[bid].aabb.xyz;
+    vec3 center  = block[gl_InstanceIndex].aabb;
+//    vec3 center  = draw[gl_InstanceIndex].aabb.xyz;
     vec4 position =  vec4(center + position.xyz, 1);
-    const mat4 grid_to_world = camera_info.grid_to_world;
+//    const mat4 grid_to_world = camera_info.grid_to_world;
+    const mat4 grid_to_world = mat4(1);
 
     gl_Position = proj * view * grid_to_world * position;
 }

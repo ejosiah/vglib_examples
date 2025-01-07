@@ -35,7 +35,7 @@ void TerrainMC::initApp() {
 }
 
 void TerrainMC::checkInvariants() {
-    assert(sizeof(CameraInfo) == 336);
+//    assert(sizeof(CameraInfo) == 336);
 }
 
 void TerrainMC::initCamera() {
@@ -48,16 +48,22 @@ void TerrainMC::initCamera() {
     cameraSettings.velocity = glm::vec3(20);
 
     camera = std::make_unique<SpectatorCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->lookAt({0, 1, 5}, glm::vec3(0), {0, 1, 0});
+    camera->lookAt({0, 1, 25}, glm::vec3(0), {0, 1, 0});
 
 //    camera->lookAt(glm::vec3(0, 0, 5), glm::vec3(0), {0, 1, 0});
     cameraSettings.zFar = 1000;
     cameraSettings.fieldOfView = 90.f;
 
+    // back view
 //    debugCamera.proj = vkn::ortho(-20, 20, -20, 20, -20, 20);
-//    debugCamera.view = glm::lookAt({0, 20, 0}, glm::vec3(0), {0, 0, -1});
-    debugCamera.proj = vkn::perspective(glm::radians(90.f), swapChain.aspectRatio(), 1, 1000);
-    debugCamera.view = glm::lookAt({0, 0, 20}, glm::vec3(0), {0, 1, 0});
+//    debugCamera.view = glm::lookAt({0, 0, 20}, glm::vec3(0), {0, 1, 0});
+
+    // top view
+    debugCamera.proj = vkn::ortho(-30, 30, -30, 30, -20, 20);
+    debugCamera.view = glm::lookAt({0, 20, 0}, glm::vec3(0), {0, 0, -1});
+
+//    debugCamera.proj = vkn::perspective(glm::radians(90.f), swapChain.aspectRatio(), 1, 1000);
+//    debugCamera.view = glm::lookAt({0, 0, 20}, glm::vec3(0), {0, 1, 0});
 
     auto xform = glm::translate(glm::mat4{1}, {0, 0, 0.5});
     xform = glm::scale(xform, {1, 1, 0.5});
@@ -170,7 +176,7 @@ void TerrainMC::createDescriptorSetLayouts() {
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(2)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
+                .descriptorCount(2)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(3)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
@@ -204,6 +210,10 @@ void TerrainMC::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(11)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 }
 
@@ -224,7 +234,7 @@ void TerrainMC::updateDescriptorSets(){
     device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("indirect_descriptor_set", indirectDescriptorSet);
     device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("marching_cube_lut_descriptor_set", marchingCubeLutSet);
 
-    auto writes = initializers::writeDescriptorSets<13>();
+    auto writes = initializers::writeDescriptorSets<14>();
     
     writes[0].dstSet = cameraDescriptorSet[0];
     writes[0].dstBinding = 0;
@@ -263,9 +273,11 @@ void TerrainMC::updateDescriptorSets(){
     writes[4].dstSet = terrainDescriptorSet;
     writes[4].dstBinding = 2;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[4].descriptorCount = 1;
-    VkDescriptorBufferInfo distanceInfo{ gpuData.distanceToCamera, 0, VK_WHOLE_SIZE };
-    writes[4].pBufferInfo = &distanceInfo;
+    writes[4].descriptorCount = 2;
+    std::vector<VkDescriptorBufferInfo> distanceInfo{
+        {gpuData.distanceToCamera[0], 0, VK_WHOLE_SIZE},
+        {gpuData.distanceToCamera[1], 0, VK_WHOLE_SIZE} };
+    writes[4].pBufferInfo = distanceInfo.data();
     
     writes[5].dstSet = terrainDescriptorSet;
     writes[5].dstBinding = 3;
@@ -330,6 +342,13 @@ void TerrainMC::updateDescriptorSets(){
     writes[12].descriptorCount = 1;
     VkDescriptorBufferInfo triangleLutInfo{ gpuData.triangleLUT, 0, VK_WHOLE_SIZE };
     writes[12].pBufferInfo = &triangleLutInfo;
+
+    writes[13].dstSet = terrainDescriptorSet;
+    writes[13].dstBinding = 11;
+    writes[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[13].descriptorCount = 1;
+    VkDescriptorBufferInfo debugInfo{ gpuData.debugBuffer, 0, VK_WHOLE_SIZE };
+    writes[13].pBufferInfo = &debugInfo;
 
     std::vector<VkCopyDescriptorSet> copySets(4, { .sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET } );
 
@@ -483,10 +502,9 @@ VkCommandBuffer *TerrainMC::buildCommandBuffers(uint32_t imageIndex, uint32_t &n
 //        renderCube(commandBuffer, camera->camera, transform, true);
 //    }
 
-    renderScene(commandBuffer);
-//    renderBlocks(commandBuffer);
-//    renderCamera(commandBuffer);
-
+//    renderScene(commandBuffer, camera->cam());
+//    renderBlocks(commandBuffer, camera->cam());
+    renderDebug(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
 
@@ -495,12 +513,12 @@ VkCommandBuffer *TerrainMC::buildCommandBuffers(uint32_t imageIndex, uint32_t &n
     return &commandBuffer;
 }
 
-void TerrainMC::renderScene(VkCommandBuffer commandBuffer) {
+void TerrainMC::renderScene(VkCommandBuffer commandBuffer, const Camera& camera) {
     const int numBuffers = counters->slots_used;
     const VkDeviceSize offset = 0;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-    camera->push(commandBuffer, render.layout);
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &camera);
 
     for(auto i = 0; i < numBuffers; ++i) {
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, gpuData.vertices[i], &offset);
@@ -532,7 +550,10 @@ void TerrainMC::update(float time) {
 
 //    camera->rotate(angle, 0, 0);
     camera->update(time);
-    glfwSetWindowTitle(window, fmt::format("{}, fps - {}, blocks - {}", title, framePerSecond, counters->slots_used).c_str());
+    glfwSetWindowTitle(window, fmt::format("{}, fps - {}, free blocks - {}, usd blocks - {}, new blocks - {}, debug - {}, evictions - {}",
+                                           title, framePerSecond, counters->free_slots,
+                                           counters->slots_used, counters->blocks,
+                                           counters->debug_id, counters->eviction_id).c_str());
     debugConstants.elapsed_time += time;
 }
 
@@ -622,16 +643,24 @@ void TerrainMC::newFrame() {
     const auto far = camera->far();
     const auto camPosOffset = glm::vec3(0, 0, -(far - near) * 0.5 - near);
 
+    const glm::vec3 center_block = glm::floor(camera->position()) + 0.5f;
+    auto camera_direction = camera->viewDir;
+    camera_direction.y = 0;
+    camera_direction = glm::normalize(camera_direction);
+    auto rotation = glm::acos(glm::dot(glm::vec3(0, 0, -1), camera_direction));
 
     const auto cam = camera->cam();
     cameraInfo.position = camera->position();
     cameraInfo.view_projection = cam.proj * cam.view;
     cameraInfo.inverse_view_projection = glm::inverse(cam.proj * cam.view);
-//    cameraInfo.grid_to_world = glm::inverse(camera->cam().view) * glm::translate(glm::mat4(1), camPosOffset);
+//    cameraInfo.grid_to_world =  glm::translate(glm::mat4(1), center_block + camPosOffset);
     cameraInfo.grid_to_world = glm::mat4{1};
     cameraInfo.direction = camera->viewDir;
+    cameraInfo.offset = -near;
     camera->extract(cameraInfo.frustum);
     computeCameraBounds();
+    cameraInfo.aabbMin -= near;
+    cameraInfo.aabbMax += near;
 //    debugScene();
 
     static bool once = true;
@@ -639,8 +668,20 @@ void TerrainMC::newFrame() {
         generateTerrain();
 //        once = false;
     }
-//    counters->free_slots = std::max(0u, poolSize - counters->slots_used);
+//    spdlog::info("free slots: {}", counters->free_slots);
 //    updateVisibilityList();
+
+    static std::vector<DebugData> fdd;
+    fdd.clear();
+    fdd.reserve(counters->blocks);
+    for(auto i = 0; i < counters->blocks; ++i) {
+        if(dd[i].my_block.y == 0) {
+            fdd.push_back(dd[i]);
+        }
+    }
+    if(!fdd.empty()) {
+        auto first = fdd.front();
+    }
 }
 
 void TerrainMC::computeCameraBounds() {
@@ -648,10 +689,74 @@ void TerrainMC::computeCameraBounds() {
 
     auto dim = glm::ceil(cameraInfo.aabbMin - cameraInfo.aabbMax);
 
+    const auto near = camera->near();
+    const auto far = camera->far();
+    const auto camPosOffset = glm::vec3(0, 0, -(far - near) * 0.5 - near);
+
     cameraBounds.aabb = glm::mat4{1};
-    cameraBounds.aabb = glm::translate(cameraBounds.aabb, {0, 0, -dim.z * 0.5 - camera->znear});
+    cameraBounds.aabb = glm::translate(cameraBounds.aabb, camPosOffset);
     cameraBounds.aabb = glm::scale(cameraBounds.aabb, dim);
     cameraBounds.aabb = glm::inverse(camera->camera.view) * cameraBounds.aabb;
+
+//    std::array<glm::vec4, 8> clip{{
+//         {-1, -1, 0, 1}, {1, -1, 0, 1}, {1, -1, 1, 1}, {-1, -1, 1, 1},
+//         {-1, 1, 0, 1}, {1, 1, 0, 1}, {1, 1, 1, 1}, {-1, 1, 1, 1}
+//     }};
+//
+//    auto bMin = glm::vec3(MAX_FLOAT);
+//    auto bMax = glm::vec3(MIN_FLOAT);
+//    const auto P = glm::inverse(camera->cam().proj);
+//    const auto V = glm::inverse(camera->cam().view);
+//    const auto position = camera->position() + camPosOffset;
+//    for(auto& corner : clip) {
+//        auto vCorner = P * corner;
+//        vCorner /= vCorner.w;
+//        corner = V * vCorner;
+//        corner = glm::vec4(position + corner.xyz(), 1);
+//        bMin = glm::min(corner.xyz(), bMin);
+//        bMax = glm::max(corner.xyz(), bMax);
+//    }
+//    cameraInfo.aabbMin = bMin - near;
+//    cameraInfo.aabbMax = bMax + near;
+//
+//    gridBounds[0].position = clip[0];
+//    gridBounds[1].position = clip[1];
+//
+//    gridBounds[2].position = clip[1];
+//    gridBounds[3].position = clip[2];
+//
+//    gridBounds[4].position = clip[2];
+//    gridBounds[5].position = clip[3];
+//
+//    gridBounds[6].position = clip[3];
+//    gridBounds[7].position = clip[0];
+//
+//    gridBounds[8].position = clip[4];
+//    gridBounds[9].position = clip[5];
+//
+//    gridBounds[10].position = clip[5];
+//    gridBounds[11].position = clip[6];
+//
+//    gridBounds[12].position = clip[6];
+//    gridBounds[13].position = clip[7];
+//
+//    gridBounds[14].position = clip[7];
+//    gridBounds[15].position = clip[4];
+//
+//    gridBounds[16].position = clip[0];
+//    gridBounds[17].position = clip[4];
+//
+//    gridBounds[18].position = clip[1];
+//    gridBounds[19].position = clip[5];
+//
+//    gridBounds[20].position = clip[2];
+//    gridBounds[21].position = clip[6];
+//
+//    gridBounds[22].position = clip[3];
+//    gridBounds[23].position = clip[7];
+
+//    cameraInfo.aabbMin = -worldDim * 0.5f + 0.5f;
+//    cameraInfo.aabbMax = worldDim * 0.5f - 0.5f;
 }
 
 void TerrainMC::renderCube(VkCommandBuffer commandBuffer, Camera& aCamera, const glm::mat4 &model, bool outline) {
@@ -692,34 +797,27 @@ void TerrainMC::initBlockData() {
     }
     glm::vec3 cMin, cMax;
     camera->extractAABB(cMin, cMax);
-    glm::uvec3 cDim = glm::uvec3(cMax - cMin) + 2u;
-    auto numBlocks = cDim.x * cDim.y * cDim.z;
-    size = sizeof(BlockData) * numBlocks;
+    glm::uvec3 cDim = glm::uvec3(cMax - cMin);
+    auto numBlocks = cDim.x * cDim.y * cDim.z *5;
     std::vector<BlockData> blockDataAlloc(numBlocks);
-//    blockDataAlloc[0] = { .aabb = { 0.0000, 0.0000, 0.0000} };
-//    blockDataAlloc[0] = { .aabb = { -2.0000, 0.0000, 0.0000} };
-//    blockDataAlloc[1] = { .aabb = { -3.0000, 0.0000, 0.0000} };
-//    blockDataAlloc[2] = { .aabb = { 3.0000, 0.0000, 0.0000} };
-//    blockDataAlloc[3] = { .aabb = { 2.0000, 0.0000, 0.0000} };
-//    blockDataAlloc[4] = { .aabb = { -1.0000, 0.0000, -1.0000} };
-//    blockDataAlloc[5] = { .aabb = { 0.0000, 0.0000, -1.0000} };
-//    blockDataAlloc[6] = { .aabb = { 2.0000, 0.0000, -1.0000} };
-//    blockDataAlloc[7] = { .aabb = { -2.0000, 0.0000, -1.0000} };
-//    blockDataAlloc[8] = { .aabb = { 1.0000, 0.0000, -1.0000} };
-
     gpuData.blockData = device.createDeviceLocalBuffer(blockDataAlloc.data(), BYTE_SIZE(blockDataAlloc), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
     device.setName<VK_OBJECT_TYPE_BUFFER>("block_data", gpuData.blockData.buffer);
 //    gpuData.blockData = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "block_data");
 
-    std::vector<uint32_t> allocation(numBlocks, 0xffffffff);
-    gpuData.distanceToCamera = device.createDeviceLocalBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("distance_to_camera", gpuData.distanceToCamera.buffer);
+    std::vector<uint32_t> allocation(poolSize, 0xffffffff);
+    gpuData.distanceToCamera[0] = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("distance_to_camera_draw", gpuData.distanceToCamera[0].buffer);
+
+    allocation = std::vector<uint32_t>(numBlocks, 0xffffffff);
+    gpuData.distanceToCamera[1] = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("distance_to_camera_blocks", gpuData.distanceToCamera[1].buffer);
 
     size = sizeof(Counters);
     gpuData.counters = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, size, "atomic_counters");
     counters = reinterpret_cast<Counters*>(gpuData.counters.map());
     counters->free_slots = poolSize;
     counters->slots_used = 0;
+    counters->eviction_id = poolSize - 1;
 //    counters->blocks = 9;
 
     size = sizeof(uint32_t) * (1 << 20);
@@ -731,12 +829,21 @@ void TerrainMC::initBlockData() {
     size = sizeof(VkDispatchIndirectCommand);
     gpuData.dispatchIndirectBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "dispatch_indirect");
 
-    size = sizeof(DrawCommand) * (poolSize + 1);
+    std::vector<DrawCommand> drawAllocations(poolSize + 1);
+    std::ranges::generate(drawAllocations, [vid=0u]() mutable  { return DrawCommand{ .vertex_id = vid++ }; });
     debugDrawOffset = sizeof(DrawCommand) * poolSize;
-    gpuData.drawIndirectBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "draw_indirect");
+    gpuData.drawIndirectBuffer = device.createDeviceLocalBuffer(drawAllocations.data(), BYTE_SIZE(drawAllocations), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("draw_indirect", gpuData.drawIndirectBuffer.buffer);
     cpuBuffer = device.createStagingBuffer((10 << 20));
 
-    drawCmds = cpuBuffer.span<DrawCommand>(poolSize/10);
+    drawCmds = gpuData.drawIndirectBuffer.span<DrawCommand>();
+    distance_to_camera = gpuData.distanceToCamera[0].span<float>();
+
+    size = sizeof(DebugData) * 100'000;
+    gpuData.debugBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_TO_CPU, size, "debug_buffer");
+    dd = gpuData.debugBuffer.span<DebugData>();
+
+    gridBoundsBuffer = device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(Vertex) * 24, "grid_bound_lines");
 }
 
 void TerrainMC::initVoxels() {
@@ -771,16 +878,19 @@ void TerrainMC::initVoxels() {
 void TerrainMC::generateTerrain() {
     device.computeCommandPool().oneTimeCommand([&](auto commandBuffer){
         generateTerrain(commandBuffer);
+        copyBuffersToCpu(commandBuffer);
     });
-//    device.copy(gpuData.drawIndirectBuffer, cpuBuffer, sizeof(DrawCommand) * (poolSize/10));
+    // cpuBuffer.copy(gridBounds.data(), BYTE_SIZE(gridBounds));
 }
 
 void TerrainMC::generateTerrain(VkCommandBuffer commandBuffer) {
     prepareBuffers(commandBuffer);
     generateBlocks(commandBuffer);
-
     sortBlocks(commandBuffer);
+
     generateVoxels(commandBuffer);
+    computeDistanceToCamera(commandBuffer);
+    sortDrawCommands(commandBuffer);
 
     processed_blocks.insert(commandBuffer, gpuData.processed_blocks.region(0));
     empty_blocks.insert(commandBuffer, gpuData.empty_blocks.region(0));
@@ -796,11 +906,14 @@ void TerrainMC::prepareBuffers(VkCommandBuffer commandBuffer) {
     counters->blocks = 0;
     counters->processed_block_add_id = 0;
     counters->empty_block_add_id = 0;
-    vkCmdFillBuffer(commandBuffer, gpuData.distanceToCamera, 0, gpuData.distanceToCamera.size, ~0u);
+    counters->eviction_id = counters->slots_used - 1;
+    counters->debug_id = 0;
     vkCmdFillBuffer(commandBuffer, gpuData.processed_blocks, 0, gpuData.processed_blocks.size, ~0u);
+    vkCmdFillBuffer(commandBuffer, gpuData.empty_blocks, 0, gpuData.empty_blocks.size, ~0u);
     vkCmdUpdateBuffer(commandBuffer, gpuData.cameraInfo[0], 0, sizeof(CameraInfo), &cameraInfo);
     vkCmdUpdateBuffer(commandBuffer, gpuData.dispatchIndirectBuffer, 0, sizeof(VkDispatchIndirectCommand), &dispatchCmd);
     vkCmdUpdateBuffer(commandBuffer, gpuData.drawIndirectBuffer, debugDrawOffset, sizeof(DrawCommand), &drawCmd);
+    vkCmdFillBuffer(commandBuffer, gpuData.debugBuffer, 0, gpuData.debugBuffer.size, 0u);
     transferToComputeBarrier(commandBuffer);
 }
 
@@ -825,7 +938,7 @@ void TerrainMC::debugScene() {
 }
 
 void TerrainMC::generateBlocks(VkCommandBuffer commandBuffer) {
-    auto dim = glm::ivec3(cameraInfo.aabbMax - cameraInfo.aabbMin) + 2;
+    auto dim = glm::ivec3(cameraInfo.aabbMax - cameraInfo.aabbMin);
     auto gc = dim/8 + glm::sign(dim - (dim/8 * 8));
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("generate_blocks"));
@@ -861,26 +974,31 @@ void TerrainMC::generateBlocks() {
 }
 
 void TerrainMC::computeDistanceToCamera(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = cameraDescriptorSet[0];
-    sets[1] = terrainDescriptorSet;
-
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("compute_distance_to_camera"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("compute_distance_to_camera"), 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, poolSize/128 + 128, 1, 1);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("compute_distance_to_camera"), 0, COUNT(gen_sets), gen_sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+    computeToComputeBarrier(commandBuffer);
 }
 
-void TerrainMC::renderBlocks(VkCommandBuffer commandBuffer) {
+void TerrainMC::renderBlocks(VkCommandBuffer commandBuffer, const Camera& camera) {
     VkDeviceSize offset = 0;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blockRender.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blockRender.layout.handle, 0, 3, gen_sets.data(), 0, VK_NULL_HANDLE);
-//    vkCmdPushConstants(commandBuffer, blockRender.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &debugCamera);
-    camera->push(commandBuffer, blockRender.layout);
+    vkCmdPushConstants(commandBuffer, blockRender.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &camera);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.outline.vertices, &offset);
 
-//    vkCmdDrawIndirect(commandBuffer, gpuData.drawIndirectBuffer, debugDrawOffset, 1, sizeof(DrawCommand));
-    vkCmdDraw(commandBuffer, cube.outline.vertices.sizeAs<Vertex>(), counters->slots_used, 0, 0);
+    vkCmdDrawIndirect(commandBuffer, gpuData.drawIndirectBuffer, debugDrawOffset, 1, sizeof(DrawCommand));
+//    vkCmdDraw(commandBuffer, cube.outline.vertices.sizeAs<Vertex>(), counters->slots_used, 0, 0);
+}
+
+void TerrainMC::renderGridBounds(VkCommandBuffer commandBuffer, const Camera &camera) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blockRender.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blockRender.layout.handle, 0, 3, gen_sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, blockRender.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &camera);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, gridBoundsBuffer, &offset);
+    vkCmdDraw(commandBuffer, gridBoundsBuffer.sizeAs<Vertex>(), 1, 0, 0);
 }
 
 void TerrainMC::initHelpers() {
@@ -950,6 +1068,17 @@ void TerrainMC::transferToComputeBarrier(VkCommandBuffer commandBuffer) {
     vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 }
 
+void TerrainMC::transferToInputAssembly(VkCommandBuffer commandBuffer) {
+    memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    memoryBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    memoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
+    memoryBarrier.dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+
+    dependencyInfo.memoryBarrierCount = 1;
+    dependencyInfo.pMemoryBarriers = &memoryBarrier;
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+}
+
 
 void TerrainMC::computeToTransferBarrier(VkCommandBuffer commandBuffer) {
     memoryBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
@@ -962,22 +1091,30 @@ void TerrainMC::computeToTransferBarrier(VkCommandBuffer commandBuffer) {
     vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 }
 
+void TerrainMC::sortDrawCommands(VkCommandBuffer commandBuffer) {
+    static Records blockRecords {
+        .buffer = gpuData.drawIndirectBuffer,
+        .size = sizeof(DrawCommand),
+    };
+
+    sort(commandBuffer, gpuData.distanceToCamera[0], blockRecords);
+    computeToComputeBarrier(commandBuffer);
+}
+
 void TerrainMC::sortBlocks(VkCommandBuffer commandBuffer) {
     static Records blockRecords {
         .buffer = gpuData.blockData,
         .size = sizeof(BlockData),
     };
 
-    sort(commandBuffer, gpuData.distanceToCamera, blockRecords);
+    sort(commandBuffer, gpuData.distanceToCamera[1], blockRecords);
     computeToComputeBarrier(commandBuffer);
 }
 
 void TerrainMC::computeDrawBlocks(VkCommandBuffer commandBuffer) {
-    auto gc = processed_blocks.capacity()/1024;
-
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("compute_blocks_to_draw"));
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("compute_blocks_to_draw"), 0, COUNT(gen_sets), gen_sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, gc, 1, 1);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
 }
 
 
@@ -992,7 +1129,7 @@ void TerrainMC::generateTextures(VkCommandBuffer commandBuffer, int pass) {
 void TerrainMC::generateVoxels(VkCommandBuffer commandBuffer) {
     const int numBlocks = gpuData.blockData.sizeAs<BlockData>();
     const int passes = numBlocks/scratchTextureCount + glm::sign(numBlocks - (numBlocks/scratchTextureCount) * scratchTextureCount);
-//    const int passes = 2;
+//    const int passes = 1;
     voxelGenConstants.blocksPerPass = scratchTextureCount;
     for(auto pass = 0; pass < passes; ++pass) {
         voxelGenConstants.pass = pass;
@@ -1021,12 +1158,14 @@ void TerrainMC::initLuts() {
 }
 
 void TerrainMC::copyBuffersToCpu(VkCommandBuffer commandBuffer) {
+    cpuBuffer.copy(gridBounds.data(), BYTE_SIZE(gridBounds));
     computeToTransferBarrier(commandBuffer);
     VkBufferCopy copy{};
-    copy.size = sizeof(DrawCommand) * (poolSize/10);;
+    copy.size = BYTE_SIZE(gridBounds);
     copy.srcOffset = 0;
     copy.dstOffset = 0;
-    vkCmdCopyBuffer(commandBuffer, gpuData.drawIndirectBuffer, cpuBuffer, 1u, &copy);
+    vkCmdCopyBuffer(commandBuffer, cpuBuffer, gridBoundsBuffer.buffer, 1u, &copy);
+    transferToInputAssembly(commandBuffer);
 }
 
 void TerrainMC::initDebugStuff() {
@@ -1044,6 +1183,15 @@ void TerrainMC::computeReadToComputeWriteBarrier(VkCommandBuffer commandBuffer) 
     dependencyInfo.pMemoryBarriers = &memoryBarrier;
 
     vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+}
+
+void TerrainMC::renderDebug(VkCommandBuffer commandBuffer) {
+    renderScene(commandBuffer, debugCamera);
+    renderBlocks(commandBuffer, debugCamera);
+//    renderGridBounds(commandBuffer, debugCamera);
+//    renderCube(commandBuffer, debugCamera, cameraBounds.aabb, true);
+    renderCamera(commandBuffer);
+
 }
 
 /************************************** TerrainCompute ***********************************************************/
@@ -1094,7 +1242,7 @@ int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 720;
+        settings.width = 800;
         settings.height = 720;
         settings.depthTest = true;
         settings.queueFlags |= VK_QUEUE_COMPUTE_BIT;

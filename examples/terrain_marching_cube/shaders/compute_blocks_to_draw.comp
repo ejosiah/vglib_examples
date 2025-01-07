@@ -2,10 +2,8 @@
 #include "models.glsl"
 #include "cuckoo_hash_functions.glsl"
 
-layout(local_size_x = 1024) in;
+layout(local_size_x = 1) in;
 
 void main() {
-    if(processed.table[gl_GlobalInvocationID.x] != KEY_EMPTY) {
-        atomicAdd(draw[300].instanceCount, 1);
-    }
+    draw[300].instanceCount = counters.blocks;
 }
