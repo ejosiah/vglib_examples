@@ -54,11 +54,7 @@ DEFINE_REMAP(vec4)
 
 struct BlockData {
     vec3 aabb;
-    uint vertex_id;
     uint voxel_id;
-    uint vertex_count;
-    uint state;
-    float time_stamp;
 };
 
 struct Vertex {

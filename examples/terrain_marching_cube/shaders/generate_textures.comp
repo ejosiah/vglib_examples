@@ -11,13 +11,8 @@ layout(push_constant) uniform Constants {
 };
 const float scale = 1/32.0;
 
-
-bool aboveGround = true;
-bool belowGround = true;
 float densityFunction(vec3 x) {
     float d = -x.y;
-    aboveGround = aboveGround && d < 0;
-    belowGround = belowGround && d > 0;
     return d;
 }
 
@@ -68,10 +63,6 @@ void main() {
     barrier();
 
     if(gl_LocalInvocationIndex == 0) {
-//        if(!aboveGround && !belowGround) {
-//            vec3 x = world_position;
-//            debugPrintfEXT("surface x: [%f, %f, %f]\n", x.x, x.y, x.z);
-//        }
         block[index].voxel_id = voxel_id;
     }
 }

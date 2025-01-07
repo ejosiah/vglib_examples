@@ -59,34 +59,16 @@ const float isoLevel = 0;
 
 uint block_index = pass * blocksPerPass + gl_WorkGroupID.y;
 
-void take_lock();
-
-void release_lock();
-
 bool once();
 
 void main() {
-    DebugData dd = DebugData(vec3(0), vec3(0), 0, 0, 0, 0, 0, 0, -2);
     vec3 box_center = block[block_index].aabb;
     const uint key = compute_hash_key(box_center);
     const uint voxel_id = block[block_index].voxel_id;
 
-    dd.my_block = box_center;
-
-
     if(block_index >= counters.blocks) return;
 
-    //    if(gl_LocalInvocationIndex == 0){
-    //        debugPrintfEXT("block_index id %d \n", block_index);
-    //    }
-
-
     if(skip_block(key)) {
-        if(gl_LocalInvocationIndex == 0){
-            dd.skipped = 1;
-            debug[atomicAdd(counters.debug_id, 1)] = dd;
-            //            debugPrintfEXT("block: %d, already processe, skipping\ns", block_index);
-        }
         return;
     }
 
@@ -135,31 +117,17 @@ void main() {
         uint vOffset = atomicAdd(drawCmd.vertexCount, numVertices);
 
         if(once()) {
-            //            debugPrintfEXT("free slots id %d \n", counters.free_slots);
             if(counters.free_slots > 0) {
                 int acquire_slot = atomicAdd(counters.free_slots, -1);
                 if(acquire_slot > 0) {
                     slot = atomicAdd(counters.slots_used, 1);
                 }
             }else {
-                //                debugPrintfEXT("block: %d, no free slots will try to evict\n", block_index);
                 int eviction_index = atomicAdd(counters.eviction_id, -1);
-                //                debugPrintfEXT("eviction id %d \n", eviction_index);
-                dd.evicted = 1;
                 if(eviction_index > -1){
-                    //                    debugPrintfEXT("block: %d, eviction id: %d\n", block_index, eviction_index);
                     const float my_distance = computeDistanceToCamera(world_position.xyz);
                     float eviction_candidate_distance = uintBitsToFloat(distance_to_camera[0].data[eviction_index]);
 
-                    dd.their_block = draw[eviction_index].aabb.xyz;
-                    dd.my_distance = my_distance;
-                    dd.their_distance = eviction_candidate_distance;
-                    dd.eviction_id = eviction_index;
-
-                    vec3 x = world_position;
-                    vec3 y = dd.their_block;
-                    debugPrintfEXT("block: %d, eviction id: %d, me: [%f, %f, %f] %f, them: [%f, %f, %f] %f, expected %f\n", block_index, eviction_index,
-                    x.x, x.y, x.z, my_distance, y.x, y.y, y.z, eviction_candidate_distance, draw[eviction_index].aabb.w);
 
                     if ((sign(eviction_candidate_distance) < 0 || my_distance < eviction_candidate_distance)) {
                         DrawCommand eviction_candidate = draw[eviction_index];
@@ -173,7 +141,6 @@ void main() {
 
         }
         barrier();
-        dd.slot = slot;
         if(slot == -1) break;
 
         drawCmd.vertex_id = draw[slot].vertex_id;
@@ -185,30 +152,18 @@ void main() {
 
     barrier();
     if(gl_LocalInvocationIndex == 0) {
-        if(key == 256513) {
-            vec3 x = world_position;
-            debugPrintfEXT("[%f, %f, %f] key: %d vertexCount: %d, evictionID: %d\n", x.x, x.y, x.z, int(key), drawCmd.vertexCount, dd.eviction_id);
-        }
         if(slot != -1){
             if(drawCmd.vertexCount > 0) {
                 draw[slot] = drawCmd;
-                block[block_index].vertex_id = pass;
 
                 const uint processed_block_add_id = atomicAdd(counters.processed_block_add_id, 1);
                 processed_block_keys[processed_block_add_id] = key;
             }else {
-                //               const uint empty_block_add_id = atomicAdd(counters.empty_block_add_id, 1);
-                //               empty_block_keys[empty_block_add_id] = key;
+               const uint empty_block_add_id = atomicAdd(counters.empty_block_add_id, 1);
+               empty_block_keys[empty_block_add_id] = key;
             }
         }
-        //        if(drawCmd.vertexCount > 0){
-        //            debug[atomicAdd(counters.debug_id, 1)] = dd;
-        //        }
-        dd.vertex_count = int(drawCmd.vertexCount);
-        debug[atomicAdd(counters.debug_id, 1)] = dd;
     }
-
-
 }
 
 
@@ -233,12 +188,4 @@ vec3 getVertex(vec3 center, int edgeIndex) {
 
 bool once() {
     return atomicCompSwap(mutex, 0, 1) == 0;
-}
-
-void take_lock() {
-    do { } while (atomicCompSwap(mutex, 0, 1) == 0);
-}
-
-void release_lock() {
-    mutex = 0;
 }

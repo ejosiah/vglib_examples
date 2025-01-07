@@ -671,17 +671,17 @@ void TerrainMC::newFrame() {
 //    spdlog::info("free slots: {}", counters->free_slots);
 //    updateVisibilityList();
 
-    static std::vector<DebugData> fdd;
-    fdd.clear();
-    fdd.reserve(counters->blocks);
-    for(auto i = 0; i < counters->blocks; ++i) {
-        if(dd[i].my_block.y == 0) {
-            fdd.push_back(dd[i]);
-        }
-    }
-    if(!fdd.empty()) {
-        auto first = fdd.front();
-    }
+//    static std::vector<DebugData> fdd;
+//    fdd.clear();
+//    fdd.reserve(counters->blocks);
+//    for(auto i = 0; i < counters->blocks; ++i) {
+//        if(dd[i].my_block.y == 0) {
+//            fdd.push_back(dd[i]);
+//        }
+//    }
+//    if(!fdd.empty()) {
+//        auto first = fdd.front();
+//    }
 }
 
 void TerrainMC::computeCameraBounds() {
@@ -840,8 +840,8 @@ void TerrainMC::initBlockData() {
     distance_to_camera = gpuData.distanceToCamera[0].span<float>();
 
     size = sizeof(DebugData) * 100'000;
-    gpuData.debugBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_TO_CPU, size, "debug_buffer");
-    dd = gpuData.debugBuffer.span<DebugData>();
+    gpuData.debugBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "debug_buffer");
+//    dd = gpuData.debugBuffer.span<DebugData>();
 
     gridBoundsBuffer = device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(Vertex) * 24, "grid_bound_lines");
 }

@@ -18,23 +18,17 @@ void main() {
 
     const mat4 grid_to_world = camera_info.grid_to_world;
     const vec4 frustum[6] = camera_info.frustum;
-//    const vec3 camera_position = camera_info.position + vec3(0, 0, camera_info.offset);
     const vec3 camera_position = aabbMin;
     const vec3 center_block = floor(camera_position) + vec3(0.5, 0, 0.5);
 
     vec4 position = vec4(1);
-//    position.xyz = center_block + vec3(gid) - vec3(dim)/2;
     position.xyz = center_block + vec3(gid);
 
     const vec3 world_position = (grid_to_world * position).xyz;
 
-//    const uint key = (gid.z * dim.y + gid.y) * dim.x + gid.x;
     const uint key = compute_hash_key(position.xyz);
-    if(skip_block(key)) {
-//        vec3 x = world_position;
-//        debugPrintfEXT("[%f, %f, %f] key: %d already processed, skipping block generation\n", x.x, x.y, x.z, int(key));
-        return;
-    }
+    if(skip_block(key)) return;
+
     if(box_in_frustum_test(frustum, world_position.xyz)) {
         uint index = atomicAdd(counters.blocks, 1);
         block[index].aabb = position.xyz;

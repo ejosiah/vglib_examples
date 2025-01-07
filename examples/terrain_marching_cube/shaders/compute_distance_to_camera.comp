@@ -12,12 +12,6 @@ void main() {
     const vec3 position = draw[index].aabb.xyz;
     const float distance_to_cam =  computeDistanceToCamera(position);
 
-    if(isnan(distance_to_cam)) {
-        vec3 x = camera_info.position;
-        vec3 y = position;
-        debugPrintfEXT("cam: [%f, %f, %f], position: [%f, %f, %f]", x.x, x.y, x.z, y.x, y.y, y.z);
-    }
-
     distance_to_camera[0].data[index] = floatBitsToUint(distance_to_cam);
     draw[index].aabb.w = distance_to_cam;
 }

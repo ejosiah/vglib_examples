@@ -30,11 +30,7 @@ struct CameraInfo {
 
 struct BlockData {
     glm::vec3 aabb{};
-    uint32_t vertex_id{};
     uint32_t voxel_id{};
-    uint32_t vertex_count{};
-    uint32_t state{};
-    float time_stamp{};
 };
 
 struct BlockVertex {
