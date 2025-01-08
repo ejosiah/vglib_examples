@@ -7,7 +7,9 @@ class TerrainCompute : public ComputePipelines {
 public:
     TerrainCompute() = default;
 
-    TerrainCompute(VulkanDevice& device, std::vector<VulkanDescriptorSetLayout*> descriptorSetLayouts);
+    TerrainCompute(VulkanDevice& device,
+                   std::vector<VulkanDescriptorSetLayout*> descriptorSetLayouts,
+                   VulkanDescriptorSetLayout* noiseDescriptorSetLayout);
 
     void init();
 
@@ -16,5 +18,6 @@ protected:
 
 private:
     std::vector<VulkanDescriptorSetLayout*> descriptorSetLayouts_;
+    VulkanDescriptorSetLayout* noiseDescriptorSetLayout_;
 
 };

@@ -35,7 +35,7 @@ struct BlockData {
 
 struct BlockVertex {
     glm::vec3 position;
-    glm::vec2 normal;
+    glm::vec3 normal;
     float ambient_occlusion;
 };
 
@@ -44,6 +44,7 @@ struct GpuData {
     std::vector<VulkanBuffer> vertices;
     std::vector<Texture> voxels;
     std::array<VulkanBuffer, 2> distanceToCamera;
+    std::array<Texture, 3> noise;
     VulkanBuffer blockData;
     VulkanBuffer counters;
     VulkanBuffer processed_blocks;

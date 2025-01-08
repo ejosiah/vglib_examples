@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <vector>
 #include <glm/glm.hpp>
+#include "vol_loader.hpp"
 
 using namespace glm;
 
@@ -13,13 +14,9 @@ float densityFunction(vec3 x) {
 }
 
 int main() {
-    const vec3 position{3, 0, 1};
-    const vec3 camera_position{0.0421436876, 0.679705858, 2.06078792};
-    const vec3 camera_direction{0.0418740623, -0.00889993645, -0.99908328};
-    vec3 cam_to_position = position - camera_position;
+    auto path = R"(C:\Users\joebh\Downloads\GPU Gems 3 code\content\01\demo\textures\packednoise_half_16cubed_mips_01.vol)";
 
-    auto sign_ =  sign(dot(camera_direction, cam_to_position));
-    auto distance_ = distance(camera_position, position);
-    auto res = sign_ * distance_;
-    fmt::print("{}\n", res);
+    auto format = vol_load(path);
+
+    fmt::print("{}\n", format.header.title);
 }

@@ -13,6 +13,11 @@ const float scale = 1/32.0;
 
 float densityFunction(vec3 x) {
     float d = -x.y;
+    d +=  texture(noise[0], x * 4.03).r * 0.25;
+//    d +=  texture(noise[0], x * 1.96).g * 0.50;
+//    d +=  texture(noise[0], x * 1.01).b * 1.00;
+//    d +=  remap(texture(noise[0], x).g, -0.55, 0.55, 0.1, 0.5);
+//    d += texture(noise[0], x * 0.41 * 1.01).b * 1.00;
     return d;
 }
 

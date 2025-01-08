@@ -1,0 +1,68 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#include "perlin_worley.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(set = 0, binding = 0) uniform writeonly image3D noise[];
+
+ const float frequency = 2;
+
+void main() {
+    vec3 size = vec3(gl_NumWorkGroups * gl_WorkGroupSize);
+    vec3 uv = vec3(gl_GlobalInvocationID)/size;
+    uv *= 2.5;
+
+    float freq = frequency;
+    vec3 p = uv * freq;
+    float f0 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f1 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f2 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f3 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f4 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f5 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f6 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f7 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f8 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f9 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f10 = gradientNoise(p, freq);
+
+    freq *= 2;
+    p = uv * freq;
+    float f11 = gradientNoise(p, freq);
+
+    imageStore(noise[0], ivec3(gl_GlobalInvocationID), vec4(f0, f1, f2, f3));
+    imageStore(noise[1], ivec3(gl_GlobalInvocationID), vec4(f4, f5, f6, f7));
+    imageStore(noise[2], ivec3(gl_GlobalInvocationID), vec4(f8, f9, f10, f11));
+}

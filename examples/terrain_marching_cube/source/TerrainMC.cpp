@@ -22,6 +22,7 @@ void TerrainMC::initApp() {
     initBlockData();
     initLuts();
     initVoxels();
+    createNoiseTextures();
     createCube();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
@@ -31,7 +32,7 @@ void TerrainMC::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
-//    generateTerrain();
+    generateNoise();
 }
 
 void TerrainMC::checkInvariants() {
@@ -71,10 +72,10 @@ void TerrainMC::initCamera() {
 
     cameraBounds.vertices = device.createDeviceLocalBuffer(cBounds.vertices.data(), BYTE_SIZE(cBounds.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-//    gpuData.cameraInfo.resize(MAX_IN_FLIGHT_FRAMES);
-    gpuData.cameraInfo.resize(2);
+//    gpu.cameraInfo.resize(MAX_IN_FLIGHT_FRAMES);
+    gpu.cameraInfo.resize(2);
     for(auto i = 0; i <2; ++i) {
-        gpuData.cameraInfo[i] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+        gpu.cameraInfo[i] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
                                                             , VMA_MEMORY_USAGE_GPU_ONLY, sizeof(CameraInfo), "camera_info");
     }
 }
@@ -150,6 +151,15 @@ void TerrainMC::createDescriptorSetLayouts() {
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
 
+    noiseDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("noise_descriptor_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(3)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .createLayout();
+
     marchingCubeLutSetLayout =
         device.descriptorSetLayoutBuilder()
             .name("marching_cube_lut_descriptor_set_layout")
@@ -214,6 +224,10 @@ void TerrainMC::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(12)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(3)
+                .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 }
 
@@ -221,12 +235,13 @@ void TerrainMC::updateDescriptorSets(){
     cameraDescriptorSet.resize(2);
     auto sets = descriptorPool.allocate({ cameraDescriptorSetLayout, cameraDescriptorSetLayout, 
                                           terrainDescriptorSetLayout, indirectDescriptorSetLayout,
-                                          marchingCubeLutSetLayout});
+                                          marchingCubeLutSetLayout, noiseDescriptorSetLayout});
     cameraDescriptorSet[0] = sets[0];
     cameraDescriptorSet[1] = sets[1];
     terrainDescriptorSet = sets[2];
     indirectDescriptorSet = sets[3];
     marchingCubeLutSet = sets[4];
+    noiseDescriptorSet = sets[5];
 
     device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("camera_descriptor_set_0", cameraDescriptorSet[0]);
     device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("camera_descriptor_set_1", cameraDescriptorSet[1]);
@@ -234,20 +249,20 @@ void TerrainMC::updateDescriptorSets(){
     device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("indirect_descriptor_set", indirectDescriptorSet);
     device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("marching_cube_lut_descriptor_set", marchingCubeLutSet);
 
-    auto writes = initializers::writeDescriptorSets<14>();
+    auto writes = initializers::writeDescriptorSets<16>();
     
     writes[0].dstSet = cameraDescriptorSet[0];
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
-    VkDescriptorBufferInfo cameraInfo0 { gpuData.cameraInfo[0], 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo cameraInfo0 { gpu.cameraInfo[0], 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &cameraInfo0;
 
     writes[1].dstSet = cameraDescriptorSet[1];
     writes[1].dstBinding = 0;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo cameraInfo1 { gpuData.cameraInfo[1], 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo cameraInfo1 { gpu.cameraInfo[1], 0, VK_WHOLE_SIZE };
     writes[1].pBufferInfo = &cameraInfo1;
 
     writes[2].dstSet = terrainDescriptorSet;
@@ -257,7 +272,7 @@ void TerrainMC::updateDescriptorSets(){
     std::vector<VkDescriptorBufferInfo> vertexInfos;
 
     vertexInfos.reserve(poolSize);
-    for(auto& buffer : gpuData.vertices) {
+    for(auto& buffer : gpu.vertices) {
         vertexInfos.emplace_back(buffer, 0, VK_WHOLE_SIZE);
     }
     writes[2].pBufferInfo = vertexInfos.data();
@@ -267,7 +282,7 @@ void TerrainMC::updateDescriptorSets(){
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[3].descriptorCount = 1;
 
-    VkDescriptorBufferInfo blockInfo{ gpuData.blockData, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo blockInfo{ gpu.blockData, 0, VK_WHOLE_SIZE };
     writes[3].pBufferInfo = &blockInfo;
     
     writes[4].dstSet = terrainDescriptorSet;
@@ -275,35 +290,35 @@ void TerrainMC::updateDescriptorSets(){
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 2;
     std::vector<VkDescriptorBufferInfo> distanceInfo{
-        {gpuData.distanceToCamera[0], 0, VK_WHOLE_SIZE},
-        {gpuData.distanceToCamera[1], 0, VK_WHOLE_SIZE} };
+        {gpu.distanceToCamera[0], 0, VK_WHOLE_SIZE},
+        {gpu.distanceToCamera[1], 0, VK_WHOLE_SIZE} };
     writes[4].pBufferInfo = distanceInfo.data();
     
     writes[5].dstSet = terrainDescriptorSet;
     writes[5].dstBinding = 3;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[5].descriptorCount = 1;
-    VkDescriptorBufferInfo countersInfo{ gpuData.counters, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo countersInfo{ gpu.counters, 0, VK_WHOLE_SIZE };
     writes[5].pBufferInfo = &countersInfo;
 
     writes[6].dstSet = terrainDescriptorSet;
     writes[6].dstBinding = 4;
     writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[6].descriptorCount = 1;
-    VkDescriptorBufferInfo blockHashInfo{gpuData.processed_blocks, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo blockHashInfo{gpu.processed_blocks, 0, VK_WHOLE_SIZE };
     writes[6].pBufferInfo = &blockHashInfo;
 
     writes[7].dstSet = terrainDescriptorSet;
     writes[7].dstBinding = 5;
     writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[7].descriptorCount = 1;
-    VkDescriptorBufferInfo emptyBlockHashInfo{gpuData.empty_blocks, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo emptyBlockHashInfo{gpu.empty_blocks, 0, VK_WHOLE_SIZE };
     writes[7].pBufferInfo = &emptyBlockHashInfo;
 
     std::vector<VkDescriptorImageInfo> voxelInfo;
     voxelInfo.reserve(scratchTextureCount);
 
-    for(auto& voxel : gpuData.voxels) {
+    for(auto& voxel : gpu.voxels) {
         voxelInfo.push_back({voxel.sampler.handle, voxel.imageView.handle, VK_IMAGE_LAYOUT_GENERAL} );
     }
 
@@ -319,36 +334,57 @@ void TerrainMC::updateDescriptorSets(){
     writes[9].dstBinding = 0;
     writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[9].descriptorCount = 1;
-    VkDescriptorBufferInfo dispatchInfo{ gpuData.dispatchIndirectBuffer, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo dispatchInfo{ gpu.dispatchIndirectBuffer, 0, VK_WHOLE_SIZE };
     writes[9].pBufferInfo = &dispatchInfo;
 
     writes[10].dstSet = indirectDescriptorSet;
     writes[10].dstBinding = 1;
     writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[10].descriptorCount = 1;
-    VkDescriptorBufferInfo drawInfo{ gpuData.drawIndirectBuffer, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo drawInfo{ gpu.drawIndirectBuffer, 0, VK_WHOLE_SIZE };
     writes[10].pBufferInfo = &drawInfo;
 
     writes[11].dstSet = marchingCubeLutSet;
     writes[11].dstBinding = 0;
     writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[11].descriptorCount = 1;
-    VkDescriptorBufferInfo edgeLutInfo{ gpuData.edgeLUT, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo edgeLutInfo{ gpu.edgeLUT, 0, VK_WHOLE_SIZE };
     writes[11].pBufferInfo = &edgeLutInfo;
 
     writes[12].dstSet = marchingCubeLutSet;
     writes[12].dstBinding = 1;
     writes[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[12].descriptorCount = 1;
-    VkDescriptorBufferInfo triangleLutInfo{ gpuData.triangleLUT, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo triangleLutInfo{ gpu.triangleLUT, 0, VK_WHOLE_SIZE };
     writes[12].pBufferInfo = &triangleLutInfo;
 
     writes[13].dstSet = terrainDescriptorSet;
     writes[13].dstBinding = 11;
     writes[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[13].descriptorCount = 1;
-    VkDescriptorBufferInfo debugInfo{ gpuData.debugBuffer, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo debugInfo{ gpu.debugBuffer, 0, VK_WHOLE_SIZE };
     writes[13].pBufferInfo = &debugInfo;
+
+    writes[14].dstSet = noiseDescriptorSet;
+    writes[14].dstBinding = 0;
+    writes[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[14].descriptorCount = 3;
+    std::vector<VkDescriptorImageInfo> noiseInfo{
+            { gpu.noise[0].sampler.handle, gpu.noise[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL },
+            { gpu.noise[1].sampler.handle, gpu.noise[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL },
+            { gpu.noise[2].sampler.handle, gpu.noise[2].imageView.handle, VK_IMAGE_LAYOUT_GENERAL },
+    };
+    writes[14].pImageInfo = noiseInfo.data();
+
+//    noiseInfo[0].imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+//    noiseInfo[1].imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+//    noiseInfo[2].imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+
+    writes[15].dstSet = terrainDescriptorSet;
+    writes[15].dstBinding = 12;
+    writes[15].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[15].descriptorCount = 3;
+    writes[15].pImageInfo = noiseInfo.data();
 
     std::vector<VkCopyDescriptorSet> copySets(4, { .sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET } );
 
@@ -421,7 +457,7 @@ void TerrainMC::createRenderPipeline() {
                 .vertexInputState().clear()
                     .addVertexBindingDescription(0, sizeof(BlockVertex), VK_VERTEX_INPUT_RATE_VERTEX)
                     .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(BlockVertex, position))
-                    .addVertexAttributeDescription(1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(BlockVertex, normal))
+                    .addVertexAttributeDescription(1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(BlockVertex, normal))
                     .addVertexAttributeDescription(2, 0, VK_FORMAT_R32_SFLOAT, offsetof(BlockVertex, ambient_occlusion))
                 .shaderStage()
                     .vertexShader(resource("render.vert.spv"))
@@ -429,7 +465,7 @@ void TerrainMC::createRenderPipeline() {
                 .inputAssemblyState()
                     .triangles()
                 .rasterizationState()
-                    .polygonModeLine()
+//                    .polygonModeLine()
                 .name("render")
             .build(render.layout);
 
@@ -502,9 +538,9 @@ VkCommandBuffer *TerrainMC::buildCommandBuffers(uint32_t imageIndex, uint32_t &n
 //        renderCube(commandBuffer, camera->camera, transform, true);
 //    }
 
-//    renderScene(commandBuffer, camera->cam());
+    renderScene(commandBuffer, camera->cam());
 //    renderBlocks(commandBuffer, camera->cam());
-    renderDebug(commandBuffer);
+//    renderDebug(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
 
@@ -521,8 +557,8 @@ void TerrainMC::renderScene(VkCommandBuffer commandBuffer, const Camera& camera)
     vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &camera);
 
     for(auto i = 0; i < numBuffers; ++i) {
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, gpuData.vertices[i], &offset);
-        vkCmdDrawIndirect(commandBuffer, gpuData.drawIndirectBuffer, sizeof(DrawCommand) * i, 1, sizeof(DrawCommand));
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, gpu.vertices[i], &offset);
+        vkCmdDrawIndirect(commandBuffer, gpu.drawIndirectBuffer, sizeof(DrawCommand) * i, 1, sizeof(DrawCommand));
     }
 }
 
@@ -587,8 +623,8 @@ void TerrainMC::updateVisibilityList() {
     cube.instances.clear();
     skipList.clear();
 
-//    static auto bd = gpuData.blockData.span<BlockData>(poolSize * 10);
-//    static auto cs = reinterpret_cast<Counters*>(gpuData.counters.map());
+//    static auto bd = gpu.blockData.span<BlockData>(poolSize * 10);
+//    static auto cs = reinterpret_cast<Counters*>(gpu.counters.map());
 //    auto counters = *cs;
 //    static std::vector<BlockData> blockData;
 //    blockData.clear();
@@ -662,11 +698,8 @@ void TerrainMC::newFrame() {
     cameraInfo.aabbMin -= near;
     cameraInfo.aabbMax += near;
 //    debugScene();
-
-    static bool once = true;
-    if(once) {
+    if(camera->moved()) {
         generateTerrain();
-//        once = false;
     }
 //    spdlog::info("free slots: {}", counters->free_slots);
 //    updateVisibilityList();
@@ -682,6 +715,7 @@ void TerrainMC::newFrame() {
 //    if(!fdd.empty()) {
 //        auto first = fdd.front();
 //    }
+    camera->newFrame();
 }
 
 void TerrainMC::computeCameraBounds() {
@@ -790,9 +824,9 @@ void TerrainMC::initBlockData() {
 
     VkBufferUsageFlags transferReadWrite = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
-    gpuData.vertices.resize(poolSize);
+    gpu.vertices.resize(poolSize);
     for(auto i = 0; i < poolSize; ++i) {
-        gpuData.vertices[i] = device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        gpu.vertices[i] = device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                            VMA_MEMORY_USAGE_GPU_ONLY, size, fmt::format("block_vertex_{}", i));
     }
     glm::vec3 cMin, cMax;
@@ -800,48 +834,48 @@ void TerrainMC::initBlockData() {
     glm::uvec3 cDim = glm::uvec3(cMax - cMin);
     auto numBlocks = cDim.x * cDim.y * cDim.z *5;
     std::vector<BlockData> blockDataAlloc(numBlocks);
-    gpuData.blockData = device.createDeviceLocalBuffer(blockDataAlloc.data(), BYTE_SIZE(blockDataAlloc), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("block_data", gpuData.blockData.buffer);
-//    gpuData.blockData = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "block_data");
+    gpu.blockData = device.createDeviceLocalBuffer(blockDataAlloc.data(), BYTE_SIZE(blockDataAlloc), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("block_data", gpu.blockData.buffer);
+//    gpu.blockData = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "block_data");
 
     std::vector<uint32_t> allocation(poolSize, 0xffffffff);
-    gpuData.distanceToCamera[0] = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("distance_to_camera_draw", gpuData.distanceToCamera[0].buffer);
+    gpu.distanceToCamera[0] = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("distance_to_camera_draw", gpu.distanceToCamera[0].buffer);
 
     allocation = std::vector<uint32_t>(numBlocks, 0xffffffff);
-    gpuData.distanceToCamera[1] = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("distance_to_camera_blocks", gpuData.distanceToCamera[1].buffer);
+    gpu.distanceToCamera[1] = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("distance_to_camera_blocks", gpu.distanceToCamera[1].buffer);
 
     size = sizeof(Counters);
-    gpuData.counters = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, size, "atomic_counters");
-    counters = reinterpret_cast<Counters*>(gpuData.counters.map());
+    gpu.counters = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, size, "atomic_counters");
+    counters = reinterpret_cast<Counters*>(gpu.counters.map());
     counters->free_slots = poolSize;
     counters->slots_used = 0;
     counters->eviction_id = poolSize - 1;
 //    counters->blocks = 9;
 
     size = sizeof(uint32_t) * (1 << 20);
-    gpuData.processed_blocks = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "processed_blocks");
+    gpu.processed_blocks = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "processed_blocks");
 
     size = sizeof(uint32_t) * (1 << 20);
-    gpuData.empty_blocks = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "empty_blocks");
+    gpu.empty_blocks = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "empty_blocks");
 
     size = sizeof(VkDispatchIndirectCommand);
-    gpuData.dispatchIndirectBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "dispatch_indirect");
+    gpu.dispatchIndirectBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "dispatch_indirect");
 
     std::vector<DrawCommand> drawAllocations(poolSize + 1);
     std::ranges::generate(drawAllocations, [vid=0u]() mutable  { return DrawCommand{ .vertex_id = vid++ }; });
     debugDrawOffset = sizeof(DrawCommand) * poolSize;
-    gpuData.drawIndirectBuffer = device.createDeviceLocalBuffer(drawAllocations.data(), BYTE_SIZE(drawAllocations), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("draw_indirect", gpuData.drawIndirectBuffer.buffer);
+    gpu.drawIndirectBuffer = device.createDeviceLocalBuffer(drawAllocations.data(), BYTE_SIZE(drawAllocations), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("draw_indirect", gpu.drawIndirectBuffer.buffer);
     cpuBuffer = device.createStagingBuffer((10 << 20));
 
-    drawCmds = gpuData.drawIndirectBuffer.span<DrawCommand>();
-    distance_to_camera = gpuData.distanceToCamera[0].span<float>();
+    drawCmds = gpu.drawIndirectBuffer.span<DrawCommand>();
+    distance_to_camera = gpu.distanceToCamera[0].span<float>();
 
     size = sizeof(DebugData) * 100'000;
-    gpuData.debugBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "debug_buffer");
-//    dd = gpuData.debugBuffer.span<DebugData>();
+    gpu.debugBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, size, "debug_buffer");
+//    dd = gpu.debugBuffer.span<DebugData>();
 
     gridBoundsBuffer = device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | transferReadWrite, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(Vertex) * 24, "grid_bound_lines");
 }
@@ -857,12 +891,12 @@ void TerrainMC::initVoxels() {
     imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
     glm::uvec3 dim{33};
-    gpuData.voxels.resize(scratchTextureCount);
+    gpu.voxels.resize(scratchTextureCount);
     std::vector<VkImageMemoryBarrier2> barriers;
     for(auto i = 0; i < scratchTextureCount; ++i) {
-        textures::createNoTransition(device, gpuData.voxels[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER);
+        textures::createNoTransition(device, gpu.voxels[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER);
 
-        imageMemoryBarrier.image = gpuData.voxels[i].image.image;
+        imageMemoryBarrier.image = gpu.voxels[i].image.image;
         barriers.push_back(imageMemoryBarrier);
     }
 
@@ -873,6 +907,33 @@ void TerrainMC::initVoxels() {
     });
     dependencyInfo.imageMemoryBarrierCount = 0;
 
+}
+
+void TerrainMC::createNoiseTextures() {
+
+    imageMemoryBarrier.srcStageMask = VK_PIPELINE_STAGE_NONE;
+    imageMemoryBarrier.srcAccessMask = VK_ACCESS_NONE;
+    imageMemoryBarrier.dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+    glm::uvec3 dim{16};
+    std::vector<VkImageMemoryBarrier2> barriers;
+    for(auto i = 0; i < 3; ++i) {
+        textures::createNoTransition(device, gpu.noise[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT, dim);
+
+        imageMemoryBarrier.image = gpu.noise[i].image.image;
+        barriers.push_back(imageMemoryBarrier);
+    }
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        dependencyInfo.imageMemoryBarrierCount = COUNT(barriers);
+        dependencyInfo.pImageMemoryBarriers = barriers.data();
+        vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+    });
+    dependencyInfo.imageMemoryBarrierCount = 0;
 }
 
 void TerrainMC::generateTerrain() {
@@ -892,8 +953,8 @@ void TerrainMC::generateTerrain(VkCommandBuffer commandBuffer) {
     computeDistanceToCamera(commandBuffer);
     sortDrawCommands(commandBuffer);
 
-    processed_blocks.insert(commandBuffer, gpuData.processed_blocks.region(0));
-    empty_blocks.insert(commandBuffer, gpuData.empty_blocks.region(0));
+    processed_blocks.insert(commandBuffer, gpu.processed_blocks.region(0));
+    empty_blocks.insert(commandBuffer, gpu.empty_blocks.region(0));
 
     computeDrawBlocks(commandBuffer);
     computeToRenderBarrier(commandBuffer);
@@ -908,26 +969,26 @@ void TerrainMC::prepareBuffers(VkCommandBuffer commandBuffer) {
     counters->empty_block_add_id = 0;
     counters->eviction_id = counters->slots_used - 1;
     counters->debug_id = 0;
-    vkCmdFillBuffer(commandBuffer, gpuData.processed_blocks, 0, gpuData.processed_blocks.size, ~0u);
-    vkCmdFillBuffer(commandBuffer, gpuData.empty_blocks, 0, gpuData.empty_blocks.size, ~0u);
-    vkCmdUpdateBuffer(commandBuffer, gpuData.cameraInfo[0], 0, sizeof(CameraInfo), &cameraInfo);
-    vkCmdUpdateBuffer(commandBuffer, gpuData.dispatchIndirectBuffer, 0, sizeof(VkDispatchIndirectCommand), &dispatchCmd);
-    vkCmdUpdateBuffer(commandBuffer, gpuData.drawIndirectBuffer, debugDrawOffset, sizeof(DrawCommand), &drawCmd);
-    vkCmdFillBuffer(commandBuffer, gpuData.debugBuffer, 0, gpuData.debugBuffer.size, 0u);
+    vkCmdFillBuffer(commandBuffer, gpu.processed_blocks, 0, gpu.processed_blocks.size, ~0u);
+    vkCmdFillBuffer(commandBuffer, gpu.empty_blocks, 0, gpu.empty_blocks.size, ~0u);
+    vkCmdUpdateBuffer(commandBuffer, gpu.cameraInfo[0], 0, sizeof(CameraInfo), &cameraInfo);
+    vkCmdUpdateBuffer(commandBuffer, gpu.dispatchIndirectBuffer, 0, sizeof(VkDispatchIndirectCommand), &dispatchCmd);
+    vkCmdUpdateBuffer(commandBuffer, gpu.drawIndirectBuffer, debugDrawOffset, sizeof(DrawCommand), &drawCmd);
+    vkCmdFillBuffer(commandBuffer, gpu.debugBuffer, 0, gpu.debugBuffer.size, 0u);
     transferToComputeBarrier(commandBuffer);
 }
 
 void TerrainMC::debugScene() {
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        vkCmdFillBuffer(commandBuffer, gpuData.processed_blocks, 0, gpuData.processed_blocks.size, ~0u);
-        vkCmdUpdateBuffer(commandBuffer, gpuData.cameraInfo[0], 0, sizeof(CameraInfo), &cameraInfo);
+        vkCmdFillBuffer(commandBuffer, gpu.processed_blocks, 0, gpu.processed_blocks.size, ~0u);
+        vkCmdUpdateBuffer(commandBuffer, gpu.cameraInfo[0], 0, sizeof(CameraInfo), &cameraInfo);
 
         transferToComputeBarrier(commandBuffer);
 
         blockInCameraTest(commandBuffer);
         computeToComputeBarrier(commandBuffer);
 
-        processed_blocks.insert(commandBuffer, gpuData.processed_blocks.region(0));
+        processed_blocks.insert(commandBuffer, gpu.processed_blocks.region(0));
         computeDistanceToCamera(commandBuffer);
 
 //        computeToComputeBarrier(commandBuffer);
@@ -969,7 +1030,7 @@ void TerrainMC::generateBlocks() {
 
         vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
-        vkCmdFillBuffer(commandBuffer, gpuData.processed_blocks, 0, gpuData.processed_blocks.size, ~0u);
+        vkCmdFillBuffer(commandBuffer, gpu.processed_blocks, 0, gpu.processed_blocks.size, ~0u);
     });
 }
 
@@ -988,7 +1049,7 @@ void TerrainMC::renderBlocks(VkCommandBuffer commandBuffer, const Camera& camera
     vkCmdPushConstants(commandBuffer, blockRender.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &camera);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.outline.vertices, &offset);
 
-    vkCmdDrawIndirect(commandBuffer, gpuData.drawIndirectBuffer, debugDrawOffset, 1, sizeof(DrawCommand));
+    vkCmdDrawIndirect(commandBuffer, gpu.drawIndirectBuffer, debugDrawOffset, 1, sizeof(DrawCommand));
 //    vkCmdDraw(commandBuffer, cube.outline.vertices.sizeAs<Vertex>(), counters->slots_used, 0, 0);
 }
 
@@ -1004,17 +1065,17 @@ void TerrainMC::renderGridBounds(VkCommandBuffer commandBuffer, const Camera &ca
 void TerrainMC::initHelpers() {
     compute = TerrainCompute{ device, {
         &cameraDescriptorSetLayout, &terrainDescriptorSetLayout,
-        &indirectDescriptorSetLayout, &marchingCubeLutSetLayout} };
+        &indirectDescriptorSetLayout, &marchingCubeLutSetLayout}, &noiseDescriptorSetLayout};
     compute.init();
     sort = RadixSort{ &device };
     sort.init();
     sort.enableOrderChecking();
 
-    uint32_t tableSize = gpuData.processed_blocks.size * 2;
+    uint32_t tableSize = gpu.processed_blocks.size * 2;
     processed_blocks = gpu::HashSet{device, descriptorPool, tableSize};
     processed_blocks.init();
 
-    tableSize = gpuData.empty_blocks.size * 2;
+    tableSize = gpu.empty_blocks.size * 2;
     empty_blocks = gpu::HashSet{device, descriptorPool, tableSize};
     empty_blocks.init();
 }
@@ -1093,21 +1154,21 @@ void TerrainMC::computeToTransferBarrier(VkCommandBuffer commandBuffer) {
 
 void TerrainMC::sortDrawCommands(VkCommandBuffer commandBuffer) {
     static Records blockRecords {
-        .buffer = gpuData.drawIndirectBuffer,
+        .buffer = gpu.drawIndirectBuffer,
         .size = sizeof(DrawCommand),
     };
 
-    sort(commandBuffer, gpuData.distanceToCamera[0], blockRecords);
+    sort(commandBuffer, gpu.distanceToCamera[0], blockRecords);
     computeToComputeBarrier(commandBuffer);
 }
 
 void TerrainMC::sortBlocks(VkCommandBuffer commandBuffer) {
     static Records blockRecords {
-        .buffer = gpuData.blockData,
+        .buffer = gpu.blockData,
         .size = sizeof(BlockData),
     };
 
-    sort(commandBuffer, gpuData.distanceToCamera[1], blockRecords);
+    sort(commandBuffer, gpu.distanceToCamera[1], blockRecords);
     computeToComputeBarrier(commandBuffer);
 }
 
@@ -1127,7 +1188,7 @@ void TerrainMC::generateTextures(VkCommandBuffer commandBuffer, int pass) {
 }
 
 void TerrainMC::generateVoxels(VkCommandBuffer commandBuffer) {
-    const int numBlocks = gpuData.blockData.sizeAs<BlockData>();
+    const int numBlocks = gpu.blockData.sizeAs<BlockData>();
     const int passes = numBlocks/scratchTextureCount + glm::sign(numBlocks - (numBlocks/scratchTextureCount) * scratchTextureCount);
 //    const int passes = 1;
     voxelGenConstants.blocksPerPass = scratchTextureCount;
@@ -1143,6 +1204,31 @@ void TerrainMC::generateVoxels(VkCommandBuffer commandBuffer) {
     computeToComputeBarrier(commandBuffer);
 }
 
+void TerrainMC::generateNoise() {
+    imageMemoryBarrier.srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    imageMemoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    imageMemoryBarrier.dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+    glm::uvec3 dim{16};
+    std::vector<VkImageMemoryBarrier2> barriers(3, imageMemoryBarrier);
+    barriers[0].image = gpu.noise[0].image;
+    barriers[1].image = gpu.noise[1].image;
+    barriers[2].image = gpu.noise[2].image;
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("noise_generator"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("noise_generator"), 0, 1, &noiseDescriptorSet, 0, VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer, 2, 2, 2);
+        dependencyInfo.imageMemoryBarrierCount = COUNT(barriers);
+        dependencyInfo.pImageMemoryBarriers = barriers.data();
+    });
+    dependencyInfo.imageMemoryBarrierCount = 0;
+}
+
 void TerrainMC::marchTextures(VkCommandBuffer commandBuffer, int pass) {
     const auto gc = scratchTextureCount;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("march_voxels"));
@@ -1153,8 +1239,8 @@ void TerrainMC::marchTextures(VkCommandBuffer commandBuffer, int pass) {
 
 
 void TerrainMC::initLuts() {
-    gpuData.edgeLUT = device.createDeviceLocalBuffer(EdgeTable.data(), BYTE_SIZE(EdgeTable), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    gpuData.triangleLUT = device.createDeviceLocalBuffer(TriangleTable.data(), BYTE_SIZE(TriangleTable), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    gpu.edgeLUT = device.createDeviceLocalBuffer(EdgeTable.data(), BYTE_SIZE(EdgeTable), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    gpu.triangleLUT = device.createDeviceLocalBuffer(TriangleTable.data(), BYTE_SIZE(TriangleTable), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 }
 
 void TerrainMC::copyBuffersToCpu(VkCommandBuffer commandBuffer) {
@@ -1196,9 +1282,12 @@ void TerrainMC::renderDebug(VkCommandBuffer commandBuffer) {
 
 /************************************** TerrainCompute ***********************************************************/
 
-TerrainCompute::TerrainCompute(VulkanDevice &device, std::vector<VulkanDescriptorSetLayout*> descriptorSetLayouts)
+TerrainCompute::TerrainCompute(VulkanDevice &device,
+                               std::vector<VulkanDescriptorSetLayout*> descriptorSetLayouts,
+                               VulkanDescriptorSetLayout* noiseDescriptorSetLayout)
 : ComputePipelines(&device)
 , descriptorSetLayouts_(std::move(descriptorSetLayouts))
+, noiseDescriptorSetLayout_(noiseDescriptorSetLayout)
 {}
 
 void TerrainCompute::init() {
@@ -1234,6 +1323,12 @@ std::vector<PipelineMetaData> TerrainCompute::pipelineMetaData() {
             .layouts = descriptorSetLayouts_,
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VoxelGenConstants) }}
         },
+        {
+            .name = "noise_generator",
+            .shadePath = FileManager::resource("noise_generator.comp.spv"),
+            .layouts =  { noiseDescriptorSetLayout_ },
+            .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VoxelGenConstants) }}
+        },
     };
 }
 
@@ -1242,7 +1337,7 @@ int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 800;
+        settings.width = 720;
         settings.height = 720;
         settings.depthTest = true;
         settings.queueFlags |= VK_QUEUE_COMPUTE_BIT;

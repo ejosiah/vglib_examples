@@ -59,7 +59,7 @@ struct BlockData {
 
 struct Vertex {
     vec3 position;
-    vec2 normal;
+    vec3 normal;
     float ambient_occulsion;
 };
 
@@ -110,6 +110,8 @@ layout(set = 1, binding = 6, r32f) uniform image3D voxels[];
 layout(set = 1, binding = 11, scalar) buffer DebugSsbo {
     DebugData debug[];
 };
+
+layout(set = 1, binding = 12) uniform sampler3D noise[3];
 
 layout(set = 2, binding = 0, scalar) buffer DispatchIndirectSsbo {
     DispatchCommand dispatch[];

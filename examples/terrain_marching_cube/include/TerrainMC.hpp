@@ -43,6 +43,8 @@ protected:
 
     void initVoxels();
 
+    void createNoiseTextures();
+
     void beforeDeviceCreation() override;
 
     void createDescriptorPool();
@@ -123,6 +125,8 @@ protected:
 
     void generateVoxels(VkCommandBuffer commandBuffer);
 
+    void generateNoise();
+
     void marchTextures(VkCommandBuffer commandBuffer, int pass);
 
     void generateBlocks();
@@ -187,16 +191,18 @@ protected:
     glm::mat4 tinyCube;
     CameraInfo cameraInfo{};
     static const int poolSize{300};
-    static const int scratchTextureCount{300};
-    GpuData gpuData;
+    static const int scratchTextureCount{30};
+    GpuData gpu;
     VulkanDescriptorSetLayout terrainDescriptorSetLayout;
     VulkanDescriptorSetLayout cameraDescriptorSetLayout;
     VulkanDescriptorSetLayout indirectDescriptorSetLayout;
     VulkanDescriptorSetLayout marchingCubeLutSetLayout;
+    VulkanDescriptorSetLayout noiseDescriptorSetLayout;
     std::vector<VkDescriptorSet> cameraDescriptorSet;
     VkDescriptorSet terrainDescriptorSet;
     VkDescriptorSet indirectDescriptorSet;
     VkDescriptorSet marchingCubeLutSet;
+    VkDescriptorSet noiseDescriptorSet;
     TerrainCompute compute;
     VkMemoryBarrier2 memoryBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
     VkImageMemoryBarrier2 imageMemoryBarrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
