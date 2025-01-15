@@ -238,4 +238,8 @@ void AppContext::addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std
             , 0, nullptr, COUNT(barriers), barriers.data());
 }
 
+void AppContext::updateSunDirection(glm::vec3 direction) {
+    instance._atmosphere.info.cpu->sunDirection = glm::vec4(direction, 1);
+}
+
 AppContext AppContext::instance;

@@ -10,6 +10,9 @@
 #define POOL_SIZE 300
 
 #define DISPATCH_GEN_3D_TEXTURE 0
+#define GID gl_GlobalInvocationID
+#define SIZE (gl_NumWorkGroups * gl_WorkGroupSize)
+#define GI_INDEX ((GID.z * SIZE.y + GID.y) * SIZE.x + GID.x)
 
 struct DebugData {
     vec3 my_block;
@@ -62,6 +65,9 @@ struct Vertex {
     vec3 normal;
     float ambient_occulsion;
 };
+
+layout(constant_id = 0) const float BLOCK_SIZE = 1;
+float HALF_BLOCK_SIZE = BLOCK_SIZE * 0.5;
 
 layout(set = 0, binding = 0, scalar) buffer CameraInfoUbo {
     mat4 view_projection;
@@ -121,11 +127,13 @@ layout(set = 2, binding = 1, scalar) buffer DrawIndirectSsbo {
     DrawCommand draw[];
 };
 
-const vec4 corners[8] = vec4[8](
-    vec4( -0.5, -0.5, -0.5, 0.5 ), vec4(0.5, -0.5, -0.5, 0.5 ),
-    vec4(0.5, -0.5, 0.5, 0.5 ), vec4(-0.5, -0.5, 0.5, 0.5 ),
-    vec4( -0.5, 0.5, -0.5, 0.5 ), vec4(0.5, 0.5, -0.5, 0.5 ),
-    vec4(0.5, 0.5, 0.5, 0.5 ), vec4(-0.5, 0.5, 0.5, 0.5 )
+float cb = HALF_BLOCK_SIZE;
+
+vec4 corners[8] = vec4[8](
+    vec4( -cb, -cb, -cb, 0.5 ), vec4(cb, -cb, -cb, 0.5 ),
+    vec4(cb, -cb, cb, 0.5 ), vec4(-cb, -cb, cb, 0.5 ),
+    vec4( -cb, cb, -cb, 0.5 ), vec4(cb, cb, -cb, 0.5 ),
+    vec4(cb, cb, cb, 0.5 ), vec4(-cb, cb, cb, 0.5 )
 );
 
 bool box_in_frustum_test(vec4 frustum[6], vec3 center) {
@@ -151,7 +159,7 @@ uint compute_hash_key(vec3 p) {
     vec3 dim = vec3(128, 32, 256);
 //    p = mod(p, vec3(1000)); // I'm assuming grid volume is 1km^3
 //   return uint(p.z * 163 + p.y * 397 + p.x * 509);
-    p = mod(p, dim);
+    p = mod(p/BLOCK_SIZE, dim);
     dim *= 0.5;
     return uint((p.z * dim.y + p.y) * dim.x + p.x);
 }

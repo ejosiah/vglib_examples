@@ -18,6 +18,9 @@ struct VoxelGenConstants {
     uint32_t blocksPerPass{};
 };
 
+static constexpr float BLOCK_SIZE = 4;
+static constexpr float HALF_BLOCK_SIZE = BLOCK_SIZE * 0.5;
+
 class TerrainMC : public VulkanBaseApp {
 public:
     explicit TerrainMC(const Settings& settings = {});

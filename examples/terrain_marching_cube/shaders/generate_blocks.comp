@@ -9,7 +9,7 @@ void main() {
     const vec3 aabbMax = camera_info.aabbMax;
     const vec3 aabbMin = camera_info.aabbMin;
 
-    const uvec3 dim = uvec3(aabbMax - aabbMin);
+    const uvec3 dim = uvec3(ceil((aabbMax - aabbMin)/BLOCK_SIZE));
 
     const uvec3 gid = uvec3(gl_GlobalInvocationID);
     const vec3 last = vec3(dim - uvec3(1));
@@ -19,10 +19,11 @@ void main() {
     const mat4 grid_to_world = camera_info.grid_to_world;
     const vec4 frustum[6] = camera_info.frustum;
     const vec3 camera_position = aabbMin;
-    const vec3 center_block = floor(camera_position) + vec3(0.5, 0, 0.5);
+    const vec3 center_block = floor(aabbMin/BLOCK_SIZE) * BLOCK_SIZE
+                                + vec3(HALF_BLOCK_SIZE, 0, HALF_BLOCK_SIZE);
 
     vec4 position = vec4(1);
-    position.xyz = center_block + vec3(gid);
+    position.xyz = center_block + vec3(gid * BLOCK_SIZE);
 
     const vec3 world_position = (grid_to_world * position).xyz;
 

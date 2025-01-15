@@ -12,7 +12,7 @@ layout(set = 0, binding = 0) uniform writeonly image3D noise[];
 void main() {
     vec3 size = vec3(gl_NumWorkGroups * gl_WorkGroupSize);
     vec3 uv = vec3(gl_GlobalInvocationID)/size;
-    uv *= 2.5;
+    uv *= 3;
 
     float freq = frequency;
     vec3 p = uv * freq;

@@ -4,15 +4,15 @@
 #include "gpu/algorithm.h"
 
 Smoke2D::Smoke2D(const Settings& settings) : VulkanBaseApp("2D Smoke Simulation", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/smoke_sim_2d");
-    fileManager.addSearchPath("../../examples/smoke_sim_2d/spv");
-    fileManager.addSearchPath("../../examples/smoke_sim_2d/models");
-    fileManager.addSearchPath("../../examples/smoke_sim_2d/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("smoke_sim_2d");
+    fileManager().addSearchPath("smoke_sim_2d/spv");
+    fileManager().addSearchPath("smoke_sim_2d/models");
+    fileManager().addSearchPath("smoke_sim_2d/textures");
+    fileManager().addSearchPath("data/shaders");
+    fileManager().addSearchPath("data/models");
+    fileManager().addSearchPath("data/textures");
+    fileManager().addSearchPath("data");
 }
 
 void Smoke2D::initApp() {
@@ -255,7 +255,7 @@ VkCommandBuffer *Smoke2D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-//    fluidSolver.renderVectorField(commandBuffer);
+    fluidSolver.renderVectorField(commandBuffer);
 //    renderSource(commandBuffer);
     renderSmoke(commandBuffer);
 //    renderTemperature(commandBuffer);
@@ -373,7 +373,7 @@ void Smoke2D::initTemperatureAndDensityField() {
 
 void Smoke2D::initSolver() {
     initTemperatureAndDensityField();
-    fluidSolver = FluidSolver2D{&device, &descriptorPool, &renderPass, &fileManager, {width, height}};
+    fluidSolver = FluidSolver2D{&device, &descriptorPool, &renderPass, &fileManager(), {width, height}};
     fluidSolver.init();
     fluidSolver.showVectors(true);
     fluidSolver.applyVorticity(true);
@@ -434,6 +434,7 @@ void Smoke2D::copy(VkCommandBuffer commandBuffer, Texture &source, const VulkanB
 
 int main(){
     try{
+        fs::current_path("../../../../examples/");
 
         Settings settings;
         settings.width = 600;

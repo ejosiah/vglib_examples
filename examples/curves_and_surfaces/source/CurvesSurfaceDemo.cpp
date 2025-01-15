@@ -7,16 +7,17 @@
 #include "teapot.h"
 
 CurvesSurfaceDemo::CurvesSurfaceDemo(const Settings& settings) : VulkanBaseApp("Curves and Surfaces", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/curves_and_surfaces");
-    fileManager.addSearchPath("../../examples/curves_and_surfaces/spv");
-    fileManager.addSearchPath("../../examples/curves_and_surfaces/models");
-    fileManager.addSearchPath("../../examples/curves_and_surfaces/patches");
-    fileManager.addSearchPath("../../examples/curves_and_surfaces/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("curves_and_surfaces");
+    fileManager().addSearchPath("curves_and_surfaces/spv");
+    fileManager().addSearchPath("curves_and_surfaces/models");
+    fileManager().addSearchPath("curves_and_surfaces/patches");
+    fileManager().addSearchPath("curves_and_surfaces/textures");
+    fileManager().addSearchPath("data/shaders");
+    fileManager().addSearchPath("data/models");
+    fileManager().addSearchPath("data/textures");
+    fileManager().addSearchPath("data");
+    fileManager().addSearchPath("data/bezier");
     movePointAction = &mapToMouse(0, "move_point", Action::normal());
     addPointAction = &mapToMouse(0, "add_point", Action::detectInitialPressOnly());
 }
@@ -137,7 +138,7 @@ void CurvesSurfaceDemo::updateDescriptorSets() {
     writes[2].dstBinding = 0;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo vulkanImageInfo{vulkanImage.texture.sampler, vulkanImage.texture.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo vulkanImageInfo{vulkanImage.texture.sampler.handle, vulkanImage.texture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[2].pImageInfo = &vulkanImageInfo;
     
     writes[3].dstSet = profileCurve.descriptorSet;
@@ -417,16 +418,16 @@ void CurvesSurfaceDemo::createRenderPipeline() {
 }
 
 void CurvesSurfaceDemo::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule(resource("pass_through.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -644,9 +645,9 @@ void CurvesSurfaceDemo::renderBezierSurface(VkCommandBuffer commandBuffer){
 
 void CurvesSurfaceDemo::renderBezierSurface(VkCommandBuffer commandBuffer, Patch &patch) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pBezierSurface.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pBezierSurface.layout, 0, COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, pBezierSurface.layout, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pBezierSurface.constants), &pBezierSurface.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pBezierSurface.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pBezierSurface.layout.handle, 0, COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pBezierSurface.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pBezierSurface.constants), &pBezierSurface.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, patch.indices, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, patch.indices.size/sizeof(int16_t), 1, 0, 0, 0);
@@ -657,14 +658,14 @@ void CurvesSurfaceDemo::renderSphereSurface(VkCommandBuffer commandBuffer) {
 
     if(pSphereSurface.xray.enabled){
         static std::array<int, 2> levels{10, 360};
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.xray.pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.xray.layout, 0,1,    &mvp.descriptorSet, 0, VK_NULL_HANDLE);
-        vkCmdPushConstants(commandBuffer, pSphereSurface.xray.layout, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0,sizeof(levels), levels.data());
-        vkCmdPushConstants(commandBuffer, pSphereSurface.xray.layout, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, sizeof(levels),sizeof(pSphereSurface.constants), &pSphereSurface.constants);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.xray.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.xray.layout.handle, 0,1,    &mvp.descriptorSet, 0, VK_NULL_HANDLE);
+        vkCmdPushConstants(commandBuffer, pSphereSurface.xray.layout.handle, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0,sizeof(levels), levels.data());
+        vkCmdPushConstants(commandBuffer, pSphereSurface.xray.layout.handle, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, sizeof(levels),sizeof(pSphereSurface.constants), &pSphereSurface.constants);
     }else {
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.layout, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
-        vkCmdPushConstants(commandBuffer, pSphereSurface.layout, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pSphereSurface.constants), &pSphereSurface.constants);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSphereSurface.layout.handle, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
+        vkCmdPushConstants(commandBuffer, pSphereSurface.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pSphereSurface.constants), &pSphereSurface.constants);
     }
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, sphere.indices, 0, VK_INDEX_TYPE_UINT16);
@@ -673,9 +674,9 @@ void CurvesSurfaceDemo::renderSphereSurface(VkCommandBuffer commandBuffer) {
 
 void CurvesSurfaceDemo::renderTorusSurface(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTorusSurface.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTorusSurface.layout, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, pTorusSurface.layout, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pTorusSurface.constants), &pTorusSurface.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTorusSurface.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTorusSurface.layout.handle, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pTorusSurface.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pTorusSurface.constants), &pTorusSurface.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, sphere.indices, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, sphere.indices.size/sizeof(int16_t), 1, 0, 0, 0);
@@ -683,9 +684,9 @@ void CurvesSurfaceDemo::renderTorusSurface(VkCommandBuffer commandBuffer) {
 
 void CurvesSurfaceDemo::renderCylinderSurface(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCylinder.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCylinder.layout, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, pCylinder.layout, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pCylinder.constants), &pCylinder.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCylinder.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCylinder.layout.handle, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pCylinder.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pCylinder.constants), &pCylinder.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, sphere.indices, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, sphere.indices.size/sizeof(int16_t), 1, 0, 0, 0);
@@ -693,9 +694,9 @@ void CurvesSurfaceDemo::renderCylinderSurface(VkCommandBuffer commandBuffer) {
 
 void CurvesSurfaceDemo::renderCone(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCone.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCylinder.layout, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, pCone.layout, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pCone.constants), &pCone.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCone.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCylinder.layout.handle, 0,COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pCone.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0,sizeof(pCone.constants), &pCone.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, sphere.indices, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, sphere.indices.size/sizeof(int16_t), 1, 0, 0, 0);
@@ -703,9 +704,9 @@ void CurvesSurfaceDemo::renderCone(VkCommandBuffer commandBuffer) {
 
 void CurvesSurfaceDemo::renderIcoSphereSurface(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pIcoSphereSurface.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pIcoSphereSurface.layout, 0, COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, pIcoSphereSurface.layout, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pIcoSphereSurface.constants), &pIcoSphereSurface.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pIcoSphereSurface.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pIcoSphereSurface.layout.handle, 0, COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pIcoSphereSurface.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pIcoSphereSurface.constants), &pIcoSphereSurface.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, icoSphere.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, icoSphere.indices, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, icoSphere.indices.size/sizeof(int16_t), 1, 0, 0, 0);
@@ -713,17 +714,17 @@ void CurvesSurfaceDemo::renderIcoSphereSurface(VkCommandBuffer commandBuffer) {
 
 void CurvesSurfaceDemo::renderCubeSurface(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCubeSurface.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCubeSurface.layout, 0, COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, pCubeSurface.layout, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pCubeSurface.constants), &pCubeSurface.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCubeSurface.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pCubeSurface.layout.handle, 0, COUNT(descriptorSets), descriptorSets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pCubeSurface.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pCubeSurface.constants), &pCubeSurface.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, cube.indices, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, cube.indices.size/sizeof(int16_t), 1, 0, 0, 0);
 }
 
 void CurvesSurfaceDemo::renderControlPoints(VkCommandBuffer commandBuffer,  Patch& patch)  {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pPoints.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pPoints.layout, 0, 1, &mvp.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pPoints.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pPoints.layout.handle, 0, 1, &mvp.descriptorSet, 0, VK_NULL_HANDLE);
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch.points, &offset);
     vkCmdDraw(commandBuffer, patch.numPoints, 1, 0, 0);
@@ -733,8 +734,8 @@ void CurvesSurfaceDemo::renderTangentLines(VkCommandBuffer commandBuffer, Patch 
     indices = indices ? indices : &patch.indices;
     indexCount = indexCount != 0 ? indexCount : indices->size/sizeof(int16_t);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTangentLines.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTangentLines.layout, 0, 1, &mvp.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTangentLines.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pTangentLines.layout.handle, 0, 1, &mvp.descriptorSet, 0, VK_NULL_HANDLE);
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch.points, &offset);
     vkCmdDraw(commandBuffer, indices->size/sizeof(int16_t), 1, 0, 0);
@@ -891,29 +892,35 @@ void CurvesSurfaceDemo::createPatches() {
 }
 
 void CurvesSurfaceDemo::loadBezierPatches() {
-//    loadPatch("teapot", teapot);
 //    auto [nodes, indices] = teapotPatch();
 //    teapot.points = device.createDeviceLocalBuffer(nodes.data(), BYTE_SIZE(nodes), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 //    teapot.indices = device.createDeviceLocalBuffer(indices.data(), BYTE_SIZE(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
     loadPatch("teapot", teapot);
     loadPatch("teacup", teacup);
     loadPatch("teaspoon", teaspoon);
-    loadProfile();
+//    loadProfile();
 }
 
 void CurvesSurfaceDemo::loadPatch(const std::string &name, Patch &patch) {
     spdlog::info("loading patch: {}", name);
-    auto nodePath = resource(fmt::format("{}.txt", name));
+    auto nodePath = resource(fmt::format("{}.bpt", name));
     std::ifstream fin(nodePath.data());
-    if(!fin.good()) throw  std::runtime_error{fmt::format("unable to open {}}", nodePath)};
+    if(!fin.good()) throw  std::runtime_error{fmt::format("unable to open {}", nodePath)};
 
     std::vector<glm::vec3> nodes;
-    while(!fin.eof()){
-        glm::vec3 node{0};
-        fin >> node.x >> node.y >> node.z;
-        nodes.push_back(node);
+
+    int numPatches;
+    fin >> numPatches;
+
+    float skip;
+    for(auto i = 0; i < numPatches; ++i) {
+        fin >> skip >> skip;
+        for(auto j = 0; j < 16; ++j) {
+            glm::vec3 node{0};
+            fin >> node.x >> node.y >> node.z;
+            nodes.push_back(node);
+        }
     }
-    fin.close();
 
     patch.points = device.createCpuVisibleBuffer(nodes.data(), BYTE_SIZE(nodes), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
@@ -1025,7 +1032,7 @@ void CurvesSurfaceDemo::createCubePatch() {
 }
 
 void CurvesSurfaceDemo::loadTexture() {
-    textures::fromFile(device, vulkanImage.texture, resource("albedo.png"), true);
+    textures::fromFile(device, vulkanImage.texture, resource("vulkan.png"), true);
 }
 
 void CurvesSurfaceDemo::createArcPatch() {
@@ -1082,10 +1089,10 @@ void
 CurvesSurfaceDemo::renderCurve(VkCommandBuffer commandBuffer, VulkanPipeline &pipeline, VulkanPipelineLayout &layout,
                                Patch &patch, void *constants, uint32_t constantsSize, VkShaderStageFlags shaderStageFlags, int numIndices) {
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &mvp.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout.handle, 0, 1, &mvp.descriptorSet, 0, VK_NULL_HANDLE);
     if(constants){
-        vkCmdPushConstants(commandBuffer, layout, shaderStageFlags, 0, constantsSize, constants);
+        vkCmdPushConstants(commandBuffer, layout.handle, shaderStageFlags, 0, constantsSize, constants);
     }
     numIndices = numIndices == 0 ? patch.indices.size/sizeof(uint16_t) : numIndices;
     VkDeviceSize offset = 0;
@@ -1107,7 +1114,7 @@ void CurvesSurfaceDemo::createHermitePatch() {
 
     auto vasePath = resource("mushroom.txt");
     std::ifstream fin(vasePath);
-    if(!fin.good()) throw  std::runtime_error{fmt::format("unable to open {}}", vasePath)};
+    if(!fin.good()) throw  std::runtime_error{fmt::format("unable to open {}", vasePath)};
 
     int numPoints = -1;
     while(!fin.eof()){
@@ -1203,9 +1210,9 @@ void CurvesSurfaceDemo::renderSweptSurface(VkCommandBuffer commandBuffer) {
     sets[2] = descriptorSets[2];
     sets[3] = profileCurve.descriptorSet;
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSurfaceRevolution.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSurfaceRevolution.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdPushConstants(commandBuffer, pSurfaceRevolution.layout, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pSurfaceRevolution.constants), &pSurfaceRevolution.constants);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSurfaceRevolution.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pSurfaceRevolution.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pSurfaceRevolution.layout.handle, TESSELLATION_SHADER_STAGES_ALL, 0, sizeof(pSurfaceRevolution.constants), &pSurfaceRevolution.constants);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, sweptSurface.points, &offset);
     vkCmdBindIndexBuffer(commandBuffer, sweptSurface.indices, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, sweptSurface.indices.size/sizeof(int16_t), 1, 0, 0, 0);
@@ -1214,7 +1221,7 @@ void CurvesSurfaceDemo::renderSweptSurface(VkCommandBuffer commandBuffer) {
 void CurvesSurfaceDemo::loadProfile() {
     auto vasePath = resource("mushroom.txt");
     std::ifstream fin(vasePath);
-    if(!fin.good()) throw  std::runtime_error{fmt::format("unable to open {}}", vasePath)};
+    if(!fin.good()) throw  std::runtime_error{fmt::format("unable to open {}", vasePath)};
 
     std::vector<glm::vec4> points(64);
     int numPoints = -1;
@@ -1253,6 +1260,7 @@ void CurvesSurfaceDemo::loadProfile() {
 
 int main(){
     try{
+        fs::current_path("../../../../examples/");
 
         Settings settings;
         settings.depthTest = true;

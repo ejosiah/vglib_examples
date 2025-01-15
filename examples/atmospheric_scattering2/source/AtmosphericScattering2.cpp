@@ -6,11 +6,12 @@
 
 AtmosphericScattering2::AtmosphericScattering2(const Settings& settings) : VulkanBaseApp("atmospheric scattering", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/data");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/spv");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/models");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering2/textures");
+    fileManager().addSearchPathFront("atmospheric_scattering2");
+    fileManager().addSearchPathFront("atmospheric_scattering2/data");
+    fileManager().addSearchPathFront("atmospheric_scattering2/spv");
+    fileManager().addSearchPathFront("atmospheric_scattering2/models");
+    fileManager().addSearchPathFront("atmospheric_scattering2/textures");
+    fileManager().addSearchPathFront("common/data");
 }
 
 void AtmosphericScattering2::initApp() {
@@ -450,6 +451,8 @@ void AtmosphericScattering2::onPause() {
 
 int main(){
     try{
+
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
 

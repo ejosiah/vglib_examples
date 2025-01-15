@@ -7,11 +7,12 @@
 
 test_graphics::test_graphics(const Settings& settings) : VulkanRayTraceBaseApp("test_graphics", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/test_graphics");
-    fileManager().addSearchPathFront("../../examples/test_graphics/data");
-    fileManager().addSearchPathFront("../../examples/test_graphics/spv");
-    fileManager().addSearchPathFront("../../examples/test_graphics/models");
-    fileManager().addSearchPathFront("../../examples/test_graphics/textures");
+    fileManager().addSearchPathFront("test_graphics");
+    fileManager().addSearchPathFront("test_graphics/data");
+    fileManager().addSearchPathFront("test_graphics/spv");
+    fileManager().addSearchPathFront("test_graphics/models");
+    fileManager().addSearchPathFront("test_graphics/textures");
+    fileManager().addSearchPathFront("data/shaders");
 }
 
 void test_graphics::initApp() {
@@ -20,7 +21,7 @@ void test_graphics::initApp() {
     createPrimitive();
     createInverseCam();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
-    loadTexture();
+//    loadTexture();
     initCanvas();
     initLoader();
     createDescriptorSetLayouts();
@@ -30,7 +31,7 @@ void test_graphics::initApp() {
     createRenderPipeline();
     createComputePipeline();
     createRayTracingPipeline();
-    initFFT();
+//    initFFT();
 //
 //    runFFT();
 //    runFFT();
@@ -546,7 +547,7 @@ void test_graphics::endFrame() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 512;
         settings.height = 512;

@@ -360,7 +360,7 @@ protected:
     static constexpr int SURFACE_PLANE = 1 << 10;
     static constexpr int SURFACE_BEZIER = (SURFACE_TEAPOT | SURFACE_TEASPOON | SURFACE_TEACUP  | SURFACE_PLANE);
     static constexpr VkShaderStageFlags TESSELLATION_SHADER_STAGES_ALL = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-    int surface{SURFACE_SWEPT};
+    int surface{SURFACE_TEAPOT};
     bool dirty{false};
 
     struct{

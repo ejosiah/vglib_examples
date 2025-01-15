@@ -4,15 +4,17 @@
 #include "vulkan_image_ops.h"
 
 FluidSimulation::FluidSimulation(const Settings& settings) : VulkanBaseApp("Fluid Simulation", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/fluid_simulation");
-    fileManager.addSearchPath("../../examples/fluid_simulation/spv");
-    fileManager.addSearchPath("../../examples/fluid_simulation/models");
-    fileManager.addSearchPath("../../examples/fluid_simulation/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("fluid_simulation");
+    fileManager().addSearchPath("fluid_simulation/spv");
+    fileManager().addSearchPath("fluid_simulation/models");
+    fileManager().addSearchPath("fluid_simulation/textures");
+    fileManager().addSearchPath("data/shaders");
+    fileManager().addSearchPath("data/models");
+    fileManager().addSearchPath("data/textures");
+    fileManager().addSearchPath("data");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data/shaders/fluid_2d");
     constants.epsilon = 1.0f/float(width);    // TODO 2d epsilon
 }
 
@@ -53,7 +55,7 @@ void FluidSimulation::initFluidSolver() {
     auto stagingBuffer = device.createStagingBuffer(BYTE_SIZE(field));
     stagingBuffer.copy(field);
 
-    fluidSolver = FluidSolver2D{&device, &descriptorPool, &renderPass, &fileManager, {width, height}};
+    fluidSolver = FluidSolver2D{&device, &descriptorPool, &renderPass, &fileManager(), {width, height}};
     fluidSolver.init();
     fluidSolver.set(stagingBuffer);
     fluidSolver.add(color);
@@ -297,8 +299,8 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
 void FluidSimulation::renderColorField(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad.vertices, &offset);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout.handle
             , 0, 1, &color.field.descriptorSet[in], 0
             , VK_NULL_HANDLE);
 
@@ -321,9 +323,9 @@ void FluidSimulation::runSimulation() {
 ExternalForce FluidSimulation::userInputForce() {
     return [&](VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet){
         forceGen.constants.dt = fluidSolver.dt();
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, forceGen.pipeline);
-        vkCmdPushConstants(commandBuffer, forceGen.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(forceGen.constants), &forceGen.constants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, forceGen.layout, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, forceGen.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, forceGen.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(forceGen.constants), &forceGen.constants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, forceGen.layout.handle, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
         forceGen.constants.force.x = 0;
         forceGen.constants.force.y = 0;
@@ -336,9 +338,9 @@ void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, Field &field, 
     dyeSource.constants.color.rgb = color;
     dyeSource.constants.source = source;
     fluidSolver.withRenderPass(commandBuffer, field.framebuffer[out], [&](auto commandBuffer){
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.pipeline);
-        vkCmdPushConstants(commandBuffer, dyeSource.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(dyeSource.constants), &dyeSource.constants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.layout, 0, 1, &field.descriptorSet[in], 0, VK_NULL_HANDLE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, dyeSource.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(dyeSource.constants), &dyeSource.constants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.layout.handle, 0, 1, &field.descriptorSet[in], 0, VK_NULL_HANDLE);
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
     });
     field.swap();
@@ -394,7 +396,7 @@ void FluidSimulation::createSamplers() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 600;
         settings.height = 600;

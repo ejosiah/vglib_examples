@@ -10,11 +10,12 @@
 FFTOcean::FFTOcean(const Settings& settings)
 : VulkanBaseApp("FFT Ocean", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/fft_ocean");
-    fileManager().addSearchPathFront("../../examples/fft_ocean/data");
-    fileManager().addSearchPathFront("../../examples/fft_ocean/spv");
-    fileManager().addSearchPathFront("../../examples/fft_ocean/models");
-    fileManager().addSearchPathFront("../../examples/fft_ocean/textures");
+    fileManager().addSearchPathFront("fft_ocean");
+    fileManager().addSearchPathFront("fft_ocean/data");
+    fileManager().addSearchPathFront("fft_ocean/spv");
+    fileManager().addSearchPathFront("fft_ocean/models");
+    fileManager().addSearchPathFront("fft_ocean/textures");
+    fileManager().addSearchPathFront("data/shaders");
 }
 
 void FFTOcean::initApp() {
@@ -36,7 +37,7 @@ void FFTOcean::initApp() {
     initLoader();
     initCanvas();
     initTextures();
-    loadInputSignal();
+//    loadInputSignal();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     createCommandPool();
@@ -1007,7 +1008,7 @@ void FFTOcean::initAtmosphere() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width =  1440;
         settings.height =  1280;

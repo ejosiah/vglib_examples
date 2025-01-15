@@ -103,6 +103,8 @@ public:
 
     static void shutdown();
 
+    static void updateSunDirection(glm::vec3 direction);
+
 private:
     void createDescriptorSets();
 

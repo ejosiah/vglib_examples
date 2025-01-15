@@ -9,11 +9,12 @@ layout(push_constant) uniform Constants {
     uint pass;
     uint blocksPerPass;
 };
-const float scale = 1/32.0;
+float scale = BLOCK_SIZE/32.0;
 
 float densityFunction(vec3 x) {
     float d = -x.y;
-    d +=  texture(noise[0], x * 4.03).r * 0.25;
+    d += texture(noise[0], x).r;
+//    d +=  texture(noise[0], x * 4.03).r * 0.25;
 //    d +=  texture(noise[0], x * 1.96).g * 0.50;
 //    d +=  texture(noise[0], x * 1.01).b * 1.00;
 //    d +=  remap(texture(noise[0], x).g, -0.55, 0.55, 0.1, 0.5);
@@ -36,8 +37,7 @@ void main() {
     const mat4 grid_to_world = camera_info.grid_to_world;
     const vec3 world_position = (grid_to_world * vec4(box_center, 1)).xyz;
 
-    const vec3 origin = world_position - vec3(0.5);
-    const ivec3 texOffset = ivec3(1, 0, 1);
+    const vec3 origin = world_position - vec3(HALF_BLOCK_SIZE);
 
     int layers = 33;
     for(int y = 0; y < layers; ++y) {
