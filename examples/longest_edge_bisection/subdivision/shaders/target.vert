@@ -4,7 +4,6 @@ layout(push_constant) uniform Cosntants {
     vec2 target;
 };
 
-
 layout(location = 0) out vec2 uv;
 
 void main(){

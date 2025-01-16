@@ -26,6 +26,7 @@ void SubdivisionDemo::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+    createComputePipeline();
 }
 
 void SubdivisionDemo::initCamera() {
@@ -82,13 +83,25 @@ void SubdivisionDemo::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
-            .createLayout();
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
 }
 
 void SubdivisionDemo::updateDescriptorSets(){
     leb.descriptorSet = descriptorPool.allocate({ leb.descriptorSetLayout }).front();
     
-    auto writes = initializers::writeDescriptorSets();
+    auto writes = initializers::writeDescriptorSets<4>();
     
     writes[0].dstSet = leb.descriptorSet;
     writes[0].dstBinding = 0;
@@ -96,6 +109,27 @@ void SubdivisionDemo::updateDescriptorSets(){
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo lebInfo{ leb.gpu, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &lebInfo;
+
+    writes[1].dstSet = leb.descriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo drawInfo{ drawBuffer, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &drawInfo;
+
+    writes[2].dstSet = leb.descriptorSet;
+    writes[2].dstBinding = 2;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].descriptorCount = 1;
+    VkDescriptorBufferInfo dispatchInfo{ dispatchBuffer, 0, VK_WHOLE_SIZE };
+    writes[2].pBufferInfo = &dispatchInfo;
+
+    writes[3].dstSet = leb.descriptorSet;
+    writes[3].dstBinding = 3;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[3].descriptorCount = 1;
+    VkDescriptorBufferInfo cbtInfo{ cbtInfoBuffer, 0, VK_WHOLE_SIZE };
+    writes[3].pBufferInfo = &cbtInfo;
     
     device.updateDescriptorSets(writes);
 }
@@ -151,6 +185,133 @@ void SubdivisionDemo::createRenderPipeline() {
     //    @formatter:on
 }
 
+void SubdivisionDemo::createComputePipeline() {
+    static int CbtID = 0;
+    static int WorkGroupSize = 256;
+    static std::vector<int> constantData;
+    auto mapEntries = std::vector<VkSpecializationMapEntry>{};
+
+    constantData.clear();
+    mapEntries.clear();
+
+    constantData.emplace_back(CbtID);
+
+    mapEntries.emplace_back(0, 0, sizeof(int));
+
+    auto specializationInfo = VkSpecializationInfo{
+        .mapEntryCount = 1,
+        .pMapEntries = mapEntries.data(),
+        .dataSize = constantData.size() * sizeof(int),
+        .pData = constantData.data()
+    };
+
+    // LEB dispatch
+    auto module = device.createShaderModule(resource("leb_dispatcher.comp.spv"));
+    auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
+
+    compute.lebDispatcher.layout = device.createPipelineLayout({ leb.descriptorSetLayout });
+
+    auto computeCreateInfo = initializers::computePipelineCreateInfo();
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.lebDispatcher.layout.handle;
+
+    compute.lebDispatcher.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("leb_dispatcher_layout", compute.lebDispatcher.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("leb_dispatcher_pipeline", compute.lebDispatcher.pipeline.handle);
+
+    // CBT dispatch
+    module = device.createShaderModule(resource("cbt_dispatcher.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
+
+    compute.cbtDispatcher.layout = device.createPipelineLayout({ leb.descriptorSetLayout });
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.cbtDispatcher.layout.handle;
+    compute.cbtDispatcher.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("cbt_dispatcher_layout", compute.cbtDispatcher.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("cbt_dispatcher_pipeline", compute.cbtDispatcher.pipeline.handle);
+
+    // CBT Info
+    module = device.createShaderModule(resource("cbt_info.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
+
+    compute.cbtInfo.layout = device.createPipelineLayout({ leb.descriptorSetLayout });
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.cbtInfo.layout.handle;
+    compute.cbtInfo.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("cbt_info_layout", compute.cbtInfo.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("cbt_info_pipeline", compute.cbtInfo.pipeline.handle);
+
+    // Sum reduce pre-pass
+    mapEntries.emplace_back(1, sizeof(int), sizeof(int));
+    constantData.emplace_back(WorkGroupSize);
+    specializationInfo.mapEntryCount = mapEntries.size();
+    specializationInfo.pMapEntries = mapEntries.data();
+    specializationInfo.pData = constantData.data();
+    specializationInfo.dataSize = constantData.size() * sizeof(int);
+
+    module = device.createShaderModule(resource("cbt_sum_reduce_prepass.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.sumReducePrepass.layout.handle;
+    compute.sumReducePrepass.layout = device.createPipelineLayout(
+            { leb.descriptorSetLayout }
+            , { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute.sumReducePrepass.pass) } });
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.sumReducePrepass.layout.handle;
+    compute.sumReducePrepass.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("sum_reduce_prepass_layout", compute.sumReducePrepass.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("sum_reduce_prepass_pipeline", compute.sumReducePrepass.pipeline.handle);
+
+    // Sum reduce
+    module = device.createShaderModule(resource("cbt_sum_reduce.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.sumReduce.layout.handle;
+    compute.sumReduce.layout = device.createPipelineLayout(
+            { leb.descriptorSetLayout }
+            , { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute.sumReduce.pass) } });
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.sumReduce.layout.handle;
+    compute.sumReduce.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("sum_reduce_layout", compute.sumReduce.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("sum_reduce_pipeline", compute.sumReduce.pipeline.handle);
+
+
+    // Subdivision
+    mapEntries.emplace_back(2, sizeof(int) * 2, sizeof(int));
+    constantData.emplace_back(static_cast<int>(mode));
+
+    specializationInfo.mapEntryCount = mapEntries.size();
+    specializationInfo.pMapEntries = mapEntries.data();
+    specializationInfo.pData = constantData.data();
+    specializationInfo.dataSize = constantData.size() * sizeof(int);
+
+    module = device.createShaderModule(resource("subdivision.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    stage.pSpecializationInfo = &specializationInfo;
+    compute.subdivision.layout = device.createPipelineLayout(
+            { leb.descriptorSetLayout }
+            , { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute.subdivision.constants) } });
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = compute.subdivision.layout.handle;
+    compute.subdivision.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("subdivision_layout", compute.subdivision.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("subdivision_pipeline", compute.subdivision.pipeline.handle);
+
+}
+
 
 void SubdivisionDemo::onSwapChainDispose() {
     dispose(render.target.pipeline);
@@ -161,6 +322,7 @@ void SubdivisionDemo::onSwapChainRecreation() {
     initCBT();
     updateDescriptorSets();
     createRenderPipeline();
+    createComputePipeline();
 }
 
 VkCommandBuffer *SubdivisionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -171,6 +333,7 @@ VkCommandBuffer *SubdivisionDemo::buildCommandBuffers(uint32_t imageIndex, uint3
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     transferCBT(commandBuffer);
+    lebDispatcher(commandBuffer);
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {1, 1, 1, 1};
@@ -213,15 +376,16 @@ void SubdivisionDemo::renderUI(VkCommandBuffer commandBuffer) {
     {
         ImGui::SetWindowSize({0, 0});
         should_reload |= ImGui::Combo("Mode", &iMode, modes_labels.data(), modes_labels.size());
-        ImGui::Combo("Backend", &iBackend, backend_labels.data(), backend_labels.size());
+        should_reload |= ImGui::Combo("Backend", &iBackend, backend_labels.data(), backend_labels.size());
 
-        ImGui::SliderFloat2("target", &target.x, -0.1, 1.1);
+        ImGui::SliderFloat("targetX", &target.x, -0.1, 1.1);
+        ImGui::SliderFloat("targetY", &target.y, -0.1, 1.1);
 
         should_reload |= ImGui::SliderFloat("MaxDepth", &maxDepth, 6, 30, "%.0f");
         should_reload |= ImGui::Button("Reset");
 
         ImGui::Separator();
-        ImGui::Text("Nodes: %lld", leb.cbt.nodeCount());
+        ImGui::Text("Nodes: %u", leb.cbt_info.nodeCount);
 
     }
     ImGui::End();
@@ -268,11 +432,14 @@ void SubdivisionDemo::renderTriangle(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.triangle.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.triangle.layout.handle, 0, 1, &leb.descriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, dummyBuffer , &offset);
-    vkCmdDraw(commandBuffer, 3, leb.cbt.nodeCount(), 0, 0);
+    vkCmdDrawIndirect(commandBuffer, drawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
 }
 
 void SubdivisionDemo::createBuffers() {
+    auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     dummyBuffer = device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int) * 3, "dummy_buffer");
+    drawBuffer = device.createBuffer(usage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(VkDrawIndirectCommand), "draw_triangle");
+    dispatchBuffer = device.createBuffer(usage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(VkDispatchIndirectCommand), "dispatch_buffer");
 }
 
 void SubdivisionDemo::initCBT() {
@@ -280,7 +447,11 @@ void SubdivisionDemo::initCBT() {
     auto heap = leb.cbt.getHeap();
     leb.gpu = device.createDeviceLocalBuffer(heap.data(), heap.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     device.setName<VK_OBJECT_TYPE_BUFFER>("cbt_heap", leb.gpu.buffer);
-    transferBuffer = device.createStagingBuffer(leb.cbt.getHeap().size());
+    transferBuffer = device.createStagingBuffer(std::max(sizeof(CbtInfo), leb.cbt.getHeap().size()));
+    transferLink = transferBuffer.map();
+
+    auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    cbtInfoBuffer = device.createBuffer(usage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(CbtInfo), "cbt_info");
 }
 
 void SubdivisionDemo::mergeCallback(cbt::Tree & cbt, const cbt::Node &node, const void *userData) {
@@ -372,6 +543,22 @@ void SubdivisionDemo::updateSubdivision() {
         }
         auto heap = leb.cbt.getHeap();
         transferBuffer.copy(heap.data(), heap.size());
+        leb.cbt_info.nodeCount = leb.cbt.nodeCount();
+    }else {
+        // subdivide
+        device.graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
+            cbtDispatch(commandBuffer);
+            lebSubdivision(commandBuffer, pingPong);
+            getCbtInfo(commandBuffer);
+        });
+
+        std::memcpy(&leb.cbt_info, transferLink, sizeof(CbtInfo));
+
+        // sum reduction
+        device.graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
+            sumReducePrePass(commandBuffer);
+            sumReduceCbt(commandBuffer);
+        });
     }
 
     pingPong = 1 - pingPong;
@@ -380,24 +567,145 @@ void SubdivisionDemo::updateSubdivision() {
 void SubdivisionDemo::transferCBT(VkCommandBuffer commandBuffer) {
     if(backend != Backend::CPU) return;
 
-    static VkMemoryBarrier2 memoryBarrier{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-    };
-
-    static VkDependencyInfo dependencyInfo{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &memoryBarrier
-    };
-
     static VkBufferCopy region{0, 0};
     region.size = leb.gpu.size;
     vkCmdCopyBuffer(commandBuffer, transferBuffer, leb.gpu, 1, &region);
+    hostToGpuTransferBarrier(commandBuffer);
+
+}
+
+void SubdivisionDemo::transferCBTToHost(VkCommandBuffer commandBuffer) {
+    static VkBufferCopy region{0, 0};
+    region.size = sizeof(CbtInfo);
+    vkCmdCopyBuffer(commandBuffer, cbtInfoBuffer, transferBuffer, 1, &region);
+    gpuToHostTransferBarrier(commandBuffer);
+}
+
+void SubdivisionDemo::lebDispatcher(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.lebDispatcher.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.lebDispatcher.layout.handle, 0, 1, &leb.descriptorSet, 0,nullptr);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+    computeToDrawBarrier(commandBuffer);
+}
+
+void SubdivisionDemo::computeToDrawBarrier(VkCommandBuffer commandBuffer) {
+    static VkMemoryBarrier2 memoryBarrier{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+            .dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+    };
+
+    static VkDependencyInfo dependencyInfo{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &memoryBarrier
+    };
     vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+}
+
+void SubdivisionDemo::hostToGpuTransferBarrier(VkCommandBuffer commandBuffer) {
+    static VkMemoryBarrier2 memoryBarrier{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+    };
+
+    static VkDependencyInfo dependencyInfo{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &memoryBarrier
+    };
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+}
+
+void SubdivisionDemo::gpuToHostTransferBarrier(VkCommandBuffer commandBuffer) {
+    static VkMemoryBarrier2 memoryBarrier{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_HOST_BIT,
+            .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+    };
+
+    static VkDependencyInfo dependencyInfo{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &memoryBarrier
+    };
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+}
+
+void SubdivisionDemo::computeToComputeBarrier(VkCommandBuffer commandBuffer) {
+    static VkMemoryBarrier2 memoryBarrier{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+    };
+
+    static VkDependencyInfo dependencyInfo{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &memoryBarrier
+    };
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+}
+
+void SubdivisionDemo::cbtDispatch(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.cbtDispatcher.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.cbtDispatcher.layout.handle, 0, 1, &leb.descriptorSet, 0,nullptr);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+    computeToComputeBarrier(commandBuffer);
+}
+
+void SubdivisionDemo::lebSubdivision(VkCommandBuffer commandBuffer, int pingPong) {
+    compute.subdivision.constants.target = target;
+    compute.subdivision.constants.updateFlag = pingPong;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.subdivision.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.subdivision.layout.handle, 0, 1, &leb.descriptorSet, 0,nullptr);
+    vkCmdPushConstants(commandBuffer, compute.subdivision.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute.subdivision.constants), &compute.subdivision.constants);
+    vkCmdDispatchIndirect(commandBuffer, dispatchBuffer, 0);
+    computeToComputeBarrier(commandBuffer);
+}
+
+void SubdivisionDemo::getCbtInfo(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.cbtInfo.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.cbtInfo.layout.handle, 0, 1, &leb.descriptorSet, 0,nullptr);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+    transferCBTToHost(commandBuffer);
+}
+
+
+void SubdivisionDemo::sumReducePrePass(VkCommandBuffer commandBuffer) {
+    auto itr = leb.cbt_info.maxDepth;
+    auto cnt = ((1 << itr) >> 5);
+    auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
+    compute.sumReducePrepass.pass = itr;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.sumReducePrepass.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.sumReducePrepass.layout.handle, 0, 1, &leb.descriptorSet, 0,nullptr);
+    vkCmdPushConstants(commandBuffer, compute.sumReducePrepass.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute.sumReducePrepass.pass), &compute.sumReducePrepass.pass);
+    vkCmdDispatch(commandBuffer, numGroup, 1, 1);
+    computeToComputeBarrier(commandBuffer);
+}
+
+void SubdivisionDemo::sumReduceCbt(VkCommandBuffer commandBuffer) {
+    for(int itr = leb.cbt_info.maxDepth - 6; itr >= 0; --itr) {
+        auto cnt = 1 << itr;
+        auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
+        compute.sumReduce.pass = itr;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.sumReduce.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.sumReduce.layout.handle, 0, 1, &leb.descriptorSet, 0,nullptr);
+        vkCmdPushConstants(commandBuffer, compute.sumReduce.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(compute.sumReduce.pass), &compute.sumReduce.pass);
+        vkCmdDispatch(commandBuffer, numGroup, 1, 1);
+        computeToComputeBarrier(commandBuffer);
+    }
 }
 
 int main(){

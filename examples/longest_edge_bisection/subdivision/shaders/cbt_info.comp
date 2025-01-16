@@ -1,0 +1,24 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define CBT_HEAP_BUFFER_BINDING 0
+#include "cbt.glsl"
+
+struct CbtInfo {
+    uint maxDepth;
+    uint nodeCount;
+};
+
+layout(set = 0, binding = 3, scalar) buffer SsboCbtInfo {
+    CbtInfo info;
+};
+
+layout(constant_id = 0) const int cbtID = 0;
+
+layout(local_size_x = 1) in;
+
+void main() {
+    info.maxDepth = cbt_MaxDepth(cbtID);
+    info.nodeCount = cbt_NodeCount(cbtID);
+}

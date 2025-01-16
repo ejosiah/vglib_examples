@@ -1,0 +1,87 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CBT_HEAP_BUFFER_BINDING 0
+#include "cbt.glsl"
+#include "leb.glsl"
+
+#define MODE_TRIANGLE 0
+#define MODE_SQUARE 1
+
+#define UPDATE_FLAG_SPLIT 0
+#define UPDATE_FLAG_MERGE 1
+
+layout(constant_id = 0) const int cbtID = 0;
+layout(local_size_x_id = 1) in;
+layout(constant_id = 2) const int mode = MODE_TRIANGLE;
+
+
+layout(push_constant) uniform Cosntants {
+    vec2 target;
+    int updateFlag;
+};
+
+float Wedge(vec2 a, vec2 b){
+    return a.x * b.y - a.y * b.x;
+}
+
+bool IsInside(mat2x3 faceVertices){
+    vec2 v1 = vec2(faceVertices[0][0], faceVertices[1][0]);
+    vec2 v2 = vec2(faceVertices[0][1], faceVertices[1][1]);
+    vec2 v3 = vec2(faceVertices[0][2], faceVertices[1][2]);
+    float w1 = Wedge(v2 - v1, target - v1);
+    float w2 = Wedge(v3 - v2, target - v2);
+    float w3 = Wedge(v1 - v3, target - v3);
+    vec3 w = vec3(w1, w2, w3);
+    bvec3 wb = greaterThanEqual(w, vec3(0.0f));
+
+    return all(wb);
+}
+
+mat2x3 DecodeFaceVertices(cbt_Node node){
+    mat2x3 faceVertices = mat2x3(vec3(0, 0, 1), vec3(1, 0, 0));
+
+    if (mode == MODE_TRIANGLE){
+        faceVertices = leb_DecodeNodeAttributeArray(node, faceVertices);
+    } else if (mode == MODE_SQUARE){
+        faceVertices = leb_DecodeNodeAttributeArray_Square(node, faceVertices);
+    }
+
+    return faceVertices;
+}
+
+
+void main(){
+    uint threadID = gl_GlobalInvocationID.x;
+
+    if (threadID < cbt_NodeCount(cbtID)) {
+        cbt_Node node = cbt_DecodeNode(cbtID, threadID);
+
+        if (updateFlag == UPDATE_FLAG_SPLIT) {
+            mat2x3 faceVertices = DecodeFaceVertices(node);
+
+            if (IsInside(faceVertices)) {
+                if (mode == MODE_TRIANGLE){
+                    leb_SplitNode(cbtID, node);
+                } else if (mode == MODE_SQUARE) {
+                    leb_SplitNode_Square(cbtID, node);
+                }
+            }
+        } else if (updateFlag == UPDATE_FLAG_MERGE) {
+            leb_DiamondParent diamondParent =
+                (mode == MODE_TRIANGLE) ? leb_DecodeDiamondParent(node) : leb_DecodeDiamondParent_Square(node);
+
+            mat2x3 baseFaceVertices = DecodeFaceVertices(diamondParent.base);
+            mat2x3 topFaceVertices = DecodeFaceVertices(diamondParent.top);
+
+            if (!IsInside(baseFaceVertices) && !IsInside(topFaceVertices)) {
+                if (mode == MODE_TRIANGLE){
+                    leb_MergeNode(cbtID, node, diamondParent);
+                } else if (mode == MODE_SQUARE){
+                    leb_MergeNode_Square(cbtID, node, diamondParent);
+                }
+            }
+        }
+    }
+}
