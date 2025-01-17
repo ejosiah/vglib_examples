@@ -54,65 +54,18 @@ void MarchingCubes2::initCamera() {
 }
 
 void MarchingCubes2::loadVoxel() {
-    openvdb::io::File file(resource("cow.vdb"));
 
-    file.open();
+    auto volume = Volume::loadFromVdb(resource("cow.vdb"));
+    voxels.dim = volume.dim;
+    voxels.bounds.min = volume.bounds.min;
+    voxels.bounds.max = volume.bounds.max;
+    voxels.voxelSize = volume.voxelSize;
+    voxels.transform = volume.worldToVoxelTransform;
 
-    auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
-    openvdb::Vec3i boxMax = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_max")->value();
-    int64_t numVoxels = grid->activeVoxelCount();
-    auto bounds = grid->evalActiveVoxelBoundingBox();
-    auto dim = grid->evalActiveVoxelDim();
-
-    spdlog::info("num active voxels: {}", numVoxels);
-    spdlog::info("dim: [{}, {}, {}]", dim.x(), dim.y(), dim.z());
-    spdlog::info("bounds: [{}, {}, {}], [{}, {}, {}]"
-                 , bounds.min().x(), bounds.min().y(), bounds.min().z()
-                 , bounds.max().x(), bounds.max().y(), bounds.max().z());
+    textures::create(device, voxels.texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, volume.data.data(), voxels.dim);
 
 
-    voxels.dim = { dim.x(), dim.y(), dim.z() };
-
-    openvdb::Vec3d bMin = grid->indexToWorld(bounds.min());
-    openvdb::Vec3d bMax = grid->indexToWorld(bounds.max());
-    voxels.bounds.min = { bMin.x(), bMin.y(), bMin.z() };
-    voxels.bounds.max = { bMax.x(), bMax.y(), bMax.z() };
-    voxels.voxelSize = grid->voxelSize().x();
-
-    std::vector<float> data(dim.x() * dim.y() * dim.z(), grid->background());
-
-    auto iBoxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
-
-    auto value = grid->beginValueOn();
-   do {
-       auto coord = value.getCoord();
-       auto x = coord.x() + std::abs(iBoxMin.x());
-       auto y = coord.y() + std::abs(iBoxMin.y());
-       auto z = coord.z() + std::abs(iBoxMin.z());
-
-       auto index = (z * dim.y() + y) * dim.x() + x;
-       data[index] = *value;
-//      spdlog::info("index : {} coords: [{}, {}, {}] value: {}", index, x, y, z, *value);
-   }while(value.next());
-
-
-    textures::create(device, voxels.texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, data.data(), voxels.dim);
-
-    file.close();
-
-//    auto offset = -voxels.bounds.min.y;
-//    voxels.bounds.min.y += offset;
-//    voxels.bounds.max.y += offset;
-    auto fdim = voxels.bounds.max - voxels.bounds.min;
-    auto invMaxAxis = 1.f/fdim;
-    voxels.transform = glm::scale(glm::mat4{1}, invMaxAxis);
-    voxels.transform = glm::translate(voxels.transform, -voxels.bounds.min);
-
-    auto tmin = voxels.transform * glm::vec4(voxels.bounds.min, 1);
-    auto tmax = voxels.transform * glm::vec4(voxels.bounds.max, 1);
-    spdlog::info("bounds [min : {}, max: {} ]", tmin.xyz(), tmax.xyz());
-
-    VoxelData voxelData{voxels.transform, glm::inverse(voxels.transform), static_cast<int>(numVoxels)};
+    VoxelData voxelData{voxels.transform, glm::inverse(voxels.transform), static_cast<int>(volume.numVoxels)};
     voxels.dataBuffer = device.createCpuVisibleBuffer(&voxelData, sizeof(voxelData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     voxels.data = reinterpret_cast<VoxelData*>(voxels.dataBuffer.map());
 

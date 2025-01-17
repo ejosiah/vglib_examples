@@ -1,6 +1,7 @@
 #include "VulkanBaseApp.h"
 #include "Floor.hpp"
 #include "Voxel.hpp"
+#include "Volume.hpp"
 #include "Marcher.hpp"
 
 
