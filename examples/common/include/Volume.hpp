@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <numeric>
 #include <glm/gtc/epsilon.hpp>
+#include <map>
+#include <string>
 
 struct Volume {
     enum class Type{ LEVEL_SET, FOG };
@@ -27,5 +29,7 @@ struct Volume {
 
     std::vector<float> data;
 
-    static Volume loadFromVdb(const std::filesystem::path& path);
+    static std::map<std::string, Volume> loadFromVdb(const std::filesystem::path& path);
 };
+
+using VolumeSet = std::map<std::string, Volume>;

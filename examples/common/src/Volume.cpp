@@ -6,11 +6,8 @@ Volume::Type valueOf(openvdb::GridClass gridClass) {
     throw std::runtime_error{"unsupported volume type"};
 }
 
-Volume Volume::loadFromVdb(const std::filesystem::path& path) {
-    openvdb::io::File file(path.string());
-    file.open();
 
-    auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
+Volume load(auto grid) {
     auto numVoxels = grid->activeVoxelCount();
     auto bounds = grid->evalActiveVoxelBoundingBox();
     auto dim = grid->evalActiveVoxelDim();
@@ -38,7 +35,7 @@ Volume Volume::loadFromVdb(const std::filesystem::path& path) {
         volume.data[index] = *value;
     } while (value.next());
 
-    file.close();
+
 
     auto invMaxAxis = 1.f/(volume.bounds.max - volume.bounds.min);
     auto model = glm::mat4{1};
@@ -56,4 +53,19 @@ Volume Volume::loadFromVdb(const std::filesystem::path& path) {
     assert(glm::all(glm::epsilonEqual(tmax, glm::vec3(1), 0.0001f)));
 
     return volume;
+}
+
+std::map<std::string, Volume> Volume::loadFromVdb(const std::filesystem::path& path) {
+    openvdb::io::File file(path.string());
+    file.open();
+    auto volumes = std::map<std::string, Volume>{};
+
+    for( auto nameItr = file.beginName(); nameItr != file.endName(); ++nameItr) {
+        auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(nameItr.gridName()));
+        auto volume = load(grid);
+        volumes.insert({ grid->getName(), volume});
+    }
+    file.close();
+
+    return volumes;
 }

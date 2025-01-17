@@ -55,7 +55,7 @@ void MarchingCubes2::initCamera() {
 
 void MarchingCubes2::loadVoxel() {
 
-    auto volume = Volume::loadFromVdb(resource("cow.vdb"));
+    auto volume = Volume::loadFromVdb(resource("cow.vdb")).begin()->second;
     voxels.dim = volume.dim;
     voxels.bounds.min = volume.bounds.min;
     voxels.bounds.max = volume.bounds.max;

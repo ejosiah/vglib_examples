@@ -16,6 +16,7 @@ openexr/3.3.2
 taskflow/3.4.0
 zlib/1.2.13
 tinygltf/2.8.19
+gsl-lite/0.42.0
 
 [generators]
 CMakeDeps
