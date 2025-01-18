@@ -17,7 +17,7 @@ struct Volume {
     enum class Type{ LEVEL_SET, FOG };
 
     glm::mat4 worldToVoxelTransform{1};
-    glm::mat4 voxelToWordTransform{1};
+    glm::mat4 voxelToWorldTransform{1};
     uint64_t numVoxels{};
     glm::ivec3 dim{1};
     double voxelSize{1};

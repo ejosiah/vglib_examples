@@ -1036,6 +1036,12 @@ operator()(const tbb::blocked_range<size_t>& range) const
                         for (Real sT = sStep*ceil(sT0/sStep); sT <= sT1; sT+= sStep) {
 #else
                     mShadow->hits(sTS);
+                    if(!sTS.empty()) {
+                        for(auto s = 0; s < sTS.size(); ++s){
+                            std::cout << "s[" << s << "] => t0: " << sTS[s].t0 << ", t1: " << sTS[s].t0 << "\n";
+                        }
+                        std::cout << "\n";
+                    }
                     for (size_t l=0; l<sTS.size(); ++l) {
                         Real sT = sStep*ceil(sTS[l].t0/sStep), sT1=sTS[l].t1;
                         for (; sT <= sT1; sT+= sStep) {

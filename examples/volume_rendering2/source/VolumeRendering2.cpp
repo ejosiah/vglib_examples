@@ -18,6 +18,7 @@ VolumeRendering2::VolumeRendering2(const Settings& settings) : VulkanBaseApp("Vo
 
 void VolumeRendering2::initApp() {
     openvdb::initialize();
+    initScene();
     loadVolume();
     initCamera();
     createDescriptorPool();
@@ -107,6 +108,10 @@ void VolumeRendering2::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
         .createLayout();
     
     volumeInfoSetLayout =
@@ -125,7 +130,7 @@ void VolumeRendering2::updateDescriptorSets(){
     volumeDensitySet = sets[0];
     volumeInfoSet = sets[1];
     
-    auto writes = initializers::writeDescriptorSets<2>();
+    auto writes = initializers::writeDescriptorSets<3>();
     
     writes[0].dstSet = volumeInfoSet;
     writes[0].dstBinding = 0;
@@ -133,13 +138,20 @@ void VolumeRendering2::updateDescriptorSets(){
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo vInfo{ volumeInfo, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &vInfo;
-    
+
     writes[1].dstSet = volumeDensitySet;
-    writes[1].dstBinding = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].dstBinding = 2;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo sceneInfo{ scene.gpu, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &sceneInfo;
+    
+    writes[2].dstSet = volumeDensitySet;
+    writes[2].dstBinding = 0;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].descriptorCount = 1;
     VkDescriptorImageInfo densityInfo{ densityVolume.sampler.handle, densityVolume.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    writes[1].pImageInfo = &densityInfo;
+    writes[2].pImageInfo = &densityInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -176,6 +188,34 @@ void VolumeRendering2::createRenderPipeline() {
                     .addDescriptorSetLayout(volumeInfoSetLayout)
                 .name("level_set")
                 .build(render.level_set.layout);
+
+        render.fog.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("volume.vert.spv"))
+                    .fragmentShader(resource("fog.frag.spv"))
+                .vertexInputState().clear()
+                    .addVertexBindingDescriptions(ClipSpace::bindingDescription())
+                    .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())
+                .inputAssemblyState()
+                    .triangleStrip()
+                .rasterizationState()
+                    .cullNone()
+                .colorBlendState()
+                    .attachment().clear()
+                    .enableBlend()
+                    .colorBlendOp().add()
+                    .alphaBlendOp().add()
+                    .srcColorBlendFactor().srcAlpha()
+                    .dstColorBlendFactor().oneMinusSrcAlpha()
+                    .srcAlphaBlendFactor().zero()
+                    .dstAlphaBlendFactor().one()
+                    .add()
+                .layout()
+                    .addDescriptorSetLayout(volumeDensitySetLayout)
+                    .addDescriptorSetLayout(volumeInfoSetLayout)
+                .name("fog")
+                .build(render.fog.layout);
     //    @formatter:on
 }
 
@@ -211,7 +251,8 @@ VkCommandBuffer *VolumeRendering2::buildCommandBuffers(uint32_t imageIndex, uint
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     AppContext::renderFloor(commandBuffer, *camera);
-    renderLevelSet(commandBuffer);
+//    renderLevelSet(commandBuffer);
+    renderFogVolume(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -223,6 +264,7 @@ VkCommandBuffer *VolumeRendering2::buildCommandBuffers(uint32_t imageIndex, uint
 void VolumeRendering2::update(float time) {
     camera->update(time);
     auto cam = camera->cam();
+    setTitle(fmt::format("{}, FPS - {}, cam: {}", title, framePerSecond, camera->position()));
 }
 
 void VolumeRendering2::checkAppInputs() {
@@ -239,16 +281,20 @@ void VolumeRendering2::onPause() {
 }
 
 void VolumeRendering2::loadVolume() {
-    volume = Volume::loadFromVdb(resource("cow.vdb"));
+//    volume = Volume::loadFromVdb(resource("smoke_002_0.10_0067.vdb"));
+    volume = Volume::loadFromVdb(resource("ground_explosion_0100.vdb"));
     auto& dvolume = volume.begin()->second;
     VolumeInfo info{};
-    info.voxelToWordTransform = dvolume.voxelToWordTransform;
-    info.worldToVoxelTransform = dvolume.worldToVoxelTransform;
-    info.bmin = dvolume.bounds.min;
-    info.bmax = dvolume.bounds.max;
-
+    info.voxelToWordTransform = glm::scale(glm::mat4{1}, glm::vec3(0.05)) * glm::translate(glm::mat4{1}, {0, -dvolume.bounds.min.y, 0}) * dvolume.voxelToWorldTransform;
+//    info.voxelToWordTransform =  dvolume.voxelToWorldTransform;
+    info.worldToVoxelTransform = glm::inverse(info.voxelToWordTransform);
+    for(auto& point : box) {
+        info.bmin = glm::min(info.bmin, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
+        info.bmax = glm::max(info.bmax, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
+    }
+    spdlog::info("volume: [{}, {}]", info.bmin, info.bmax);
     volumeInfo = device.createDeviceLocalBuffer(&info, sizeof(VolumeInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    textures::create(device, densityVolume, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dvolume.data.data(), dvolume.dim);
+    textures::create(device, densityVolume, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dvolume.data.data(), dvolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
 }
 
@@ -261,6 +307,28 @@ void VolumeRendering2::renderLevelSet(VkCommandBuffer commandBuffer) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.level_set.layout.handle, 0, sets.size(), sets.data(), 0, 0);
     camera->push(commandBuffer, render.level_set.layout);
     AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void VolumeRendering2::renderFogVolume(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 2> sets{};
+    sets[0] = volumeDensitySet;
+    sets[1] = volumeInfoSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.layout.handle, 0, sets.size(), sets.data(), 0, 0);
+    camera->push(commandBuffer, render.fog.layout);
+    AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void VolumeRendering2::initScene() {
+    auto initData = SceneData{};
+    initData.extinction = initData.scattering + initData.absorption;
+    scene.gpu = device.createCpuVisibleBuffer(&initData, sizeof(SceneData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    scene.cpu = reinterpret_cast<SceneData*>(scene.gpu.map());
+}
+
+void VolumeRendering2::newFrame() {
+    scene.cpu->cameraPosition = camera->position();
 }
 
 

@@ -1,21 +1,51 @@
 #ifndef VOLUME_RENDERING_COMMONG_GLSL
 #define VOLUME_RENDERING_COMMONG_GLSL
 
+struct Scene {
+    vec3 lightDirection;
+    vec3 lightColor;
+    vec3 scattering;
+    vec3 absorption;
+    vec3 extinction;
+    vec3 cameraPosition;
+    float primaryStepSize;
+    float shadowStepSize;
+    float gain;
+    float cutoff;
+    float isoLevel;
+    int shadow;
+    float lightConeSpread;
+};
+
 struct VolumeInfo {
     mat4 worldToVoxelTransform;
-    mat4 voxelToWordTransform;
+    mat4 voxelToWorldTransform;
     vec3 bmin;
     vec3 bmax;
 };
 
-layout(set = 0, binding = 0) uniform sampler3D density;
-layout(set = 0, binding = 1) uniform sampler3D emission;
+struct Span {
+    float t0;
+    float t1;
+};
+
+float length(Span span) {
+    return span.t1 - span.t0;
+}
+
+
+layout(set = 0, binding = 0) uniform sampler3D densityVolume;
+layout(set = 0, binding = 1) uniform sampler3D emissionVolume;
+
+layout(set = 0, binding = 2, scalar) buffer ssboScene {
+    Scene scene;
+};
 
 layout(set = 1, binding = 0, scalar) buffer Info {
     VolumeInfo info;
 };
 
-bool test(vec3 o, vec3 rd, out vec3 pos, vec3 bmin, vec3 bmax) {
+bool test(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out Span span) {
     float tmin = 0;
     float tmax = 1e10;
 
@@ -38,7 +68,8 @@ bool test(vec3 o, vec3 rd, out vec3 pos, vec3 bmin, vec3 bmax) {
             if(tmin > tmax) return false;
         }
     }
-    pos = o + rd * tmin;
+    span.t0 = tmin;
+    span.t1 = tmax;
     return true;
 }
 
@@ -50,13 +81,13 @@ bool outOfBounds(vec3 pos) {
 }
 
 float F(vec3 x) {
-    return texture(density, x).r;
+    return texture(densityVolume, x).r;
 }
 
 vec3 bisection(vec3 left, vec3 right, float iso) {
     for(int i = 0; i < 4; ++i) {
         vec3 midpoint = (right + left) * 0.5;
-        float cM = texture(density, midpoint).x;
+        float cM = texture(densityVolume, midpoint).x;
         if(cM < iso){
             left = midpoint;
         }else {
@@ -70,7 +101,7 @@ vec3 computeNormal(vec3 p0, vec3 p1, float isoValue) {
 
     vec3 p = bisection(p0, p1, isoValue);
 
-    vec3 d = 1/vec3(textureSize(density, 0));
+    vec3 d = 1/vec3(textureSize(densityVolume, 0));
     float dx = (F(vec3(p.x + d.x, p.yz)) - F(vec3(p.x - d.x, p.yz))) * 0.5 ;
     float dy = (F(vec3(p.x, p.y + d.y, p.z)) - F(vec3(p.x, p.y - d.y, d.z))) * 0.5 ;
     float dz = (F(vec3(p.xy, p.z + d.z)) - F(vec3(p.xy, p.z - d.z))) * 0.5;
@@ -78,6 +109,21 @@ vec3 computeNormal(vec3 p0, vec3 p1, float isoValue) {
     return normalize(vec3(dx, dy, dz));
 }
 
+vec3 worldToVoxel(vec3 pos, vec3 direction) {
+    return (info.worldToVoxelTransform * vec4(pos, 1)).xyz + sign(direction) * 0.5/vec3(textureSize(densityVolume, 0));
+}
+
+vec3 voxelToWorld(vec3 pos) {
+    return (info.voxelToWorldTransform * vec4(pos, 1)).xyz;
+}
+
+float sampleDensity(vec3 pos) {
+    return texture(densityVolume, pos).r;
+}
+
+float sampleEmission(vec3 pos) {
+    return texture(emissionVolume, pos).r;
+}
 
 
 #endif // VOLUME_RENDERING_COMMONG_GLSL
