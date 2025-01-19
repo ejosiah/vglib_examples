@@ -12,6 +12,7 @@ Volume load(auto grid) {
 
     if(volume.numVoxels == 0) {
         volume.data.push_back(0);
+        volume.dim = glm::vec3(1);
         return volume;
     }
 

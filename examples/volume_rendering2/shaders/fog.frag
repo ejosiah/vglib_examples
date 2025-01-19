@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #include "common.glsl"
 
@@ -18,7 +19,7 @@ layout(location = 0) in struct {
 layout(location = 0) out vec4 fragColor;
 
 vec3 extinction = -scene.scattering - scene.absorption;
-vec3 albedo = scene.lightColor * scene.scattering/(scene.scattering * scene.absorption);
+vec3 albedo = scene.lightColor * scene.scattering/(scene.scattering + scene.absorption);
 float isoValue = scene.isoLevel;
 float pStepSize = scene.primaryStepSize;
 float sStepSize = scene.shadowStepSize;
@@ -38,7 +39,7 @@ void main() {
     Span pTS;
     if(test(o, rd, info.bmin, info.bmax, pTS)) {
         vec3 wPos = o + rd * pTS.t0;
-        ivec3 voxelDim = textureSize(densityVolume, 0);
+        ivec3 voxelDim = textureSize(densityVolume[0], 0);
         int maxDim = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
         float delta = pStepSize/float(maxDim);
 
@@ -53,8 +54,10 @@ void main() {
 
             if(outOfBounds(pos)) break;
 
-            float density = texture(densityVolume, pos).r;
+            float density = sampleDensity(pos);
             if (density < cutoff ) continue;
+
+            pLumi += vec3(0.9, 0.5, 0.01) * sampleEmission(pos);
 
             vec3 dT = exp(extinction * density * delta);
 

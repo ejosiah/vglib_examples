@@ -21,39 +21,47 @@ public:
 
     constexpr void push(const T& entry) {
         ensureCapacity();
-        _data[++_writeIndex % _capacity] = entry;
+        auto wIndex  = _writeIndex.load(std::memory_order_acquire);
+        ++wIndex;
+        _data[wIndex % _capacity] = entry;
+
+        _writeIndex.store(wIndex, std::memory_order_release);
     }
 
     constexpr void push(T&& entry) {
         ensureCapacity();
-        _data[++_writeIndex % _capacity] = std::move(entry);
+        auto wIndex  = _writeIndex.load(std::memory_order_acquire);
+        ++wIndex;
+        _data[++wIndex % _capacity] = std::move(entry);
+        _writeIndex.store(wIndex, std::memory_order_release);
     }
 
     T pop() {
         ensureCapacity();
-        return std::move(_data[_readIndex++ % _capacity]);
+        auto rIndex = _readIndex.fetch_add(1, std::memory_order_acq_rel);
+        return std::move(_data[rIndex % _capacity]);
     }
 
     [[nodiscard]]
     bool empty() const {
-        const auto writeIndex = _writeIndex.load();
-        const auto readIndex = _readIndex.load();
+        const auto writeIndex = _writeIndex.load(std::memory_order_acquire);
+        const auto readIndex = _readIndex.load(std::memory_order_acquire);
 
         return writeIndex < readIndex;
     }
 
     [[nodiscard]]
     bool full() const {
-        const auto writeIndex = _writeIndex.load();
-        const auto readIndex = _readIndex.load();
+        const auto writeIndex = _writeIndex.load(std::memory_order_acquire);
+        const auto readIndex = _readIndex.load(std::memory_order_acquire);
 
         auto size = (writeIndex - readIndex) + 1;
         return size == _capacity;
     }
 
     size_t size() const {
-        const auto writeIndex = _writeIndex.load();
-        const auto readIndex = _readIndex.load();
+        const auto writeIndex = _writeIndex.load(std::memory_order_acquire);
+        const auto readIndex = _readIndex.load(std::memory_order_acquire);
         return (writeIndex - readIndex) + 1;
     }
 

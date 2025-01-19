@@ -9,6 +9,14 @@ struct VolumeInfo {
     glm::vec3 bmax{MIN_FLOAT};
 };
 
+struct VolumeFrame {
+    VolumeSet volumeSet;
+    VulkanBuffer info;
+    VkDescriptorSet descriptorSet{};
+};
+
+using VolumeAnimation = Animation<VolumeFrame>;
+
 struct SceneData {
     glm::vec3 lightDirection{1};
     glm::vec3 lightColor{1};
@@ -16,13 +24,14 @@ struct SceneData {
     glm::vec3 absorption{100};
     glm::vec3 extinction;
     glm::vec3 cameraPosition;
-    float primaryStepSize{1};
+    float primaryStepSize{0.25};
     float shadowStepSize{1};
     float gain{0.2};
-    float cutoff{0.005};
+    float cutoff{0.000};
     float isoLevel{0};
     int shadow{0};
     float lightConeSpread{0.1};
+    int currentFrame{0};
 };
 
 struct Scene {
@@ -45,6 +54,8 @@ protected:
 
     void loadVolume();
 
+    void loadAnimation();
+
     void beforeDeviceCreation() override;
 
     void createDescriptorPool();
@@ -52,6 +63,8 @@ protected:
     void createDescriptorSetLayouts();
 
     void updateDescriptorSets();
+
+    void updateAnimationDescriptorSets();
 
     void createCommandPool();
 
@@ -114,4 +127,12 @@ protected:
             {0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1},
             {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1},
     };
+    VolumeAnimation animation;
+    static constexpr int poolSize = 10;
+    static constexpr int frameCount = 10;
+    struct {
+        std::array<Texture, poolSize> density;
+        std::array<Texture, poolSize> emission;
+        int used{0};
+    } pool;
 };

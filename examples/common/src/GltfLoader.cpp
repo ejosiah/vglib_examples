@@ -1601,6 +1601,8 @@ namespace gltf {
         res.y = q[1];
         res.z = q[2];
         res.w = q[3];
+
+        return res;
     }
 
     std::tuple<glm::vec3, glm::vec3>

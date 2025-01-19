@@ -15,6 +15,7 @@ struct Scene {
     float isoLevel;
     int shadow;
     float lightConeSpread;
+    int currentFrame;
 };
 
 struct VolumeInfo {
@@ -34,8 +35,8 @@ float length(Span span) {
 }
 
 
-layout(set = 0, binding = 0) uniform sampler3D densityVolume;
-layout(set = 0, binding = 1) uniform sampler3D emissionVolume;
+layout(set = 0, binding = 0) uniform sampler3D densityVolume[];
+layout(set = 0, binding = 1) uniform sampler3D emissionVolume[];
 
 layout(set = 0, binding = 2, scalar) buffer ssboScene {
     Scene scene;
@@ -81,13 +82,13 @@ bool outOfBounds(vec3 pos) {
 }
 
 float F(vec3 x) {
-    return texture(densityVolume, x).r;
+    return texture(densityVolume[0], x).r;
 }
 
 vec3 bisection(vec3 left, vec3 right, float iso) {
     for(int i = 0; i < 4; ++i) {
         vec3 midpoint = (right + left) * 0.5;
-        float cM = texture(densityVolume, midpoint).x;
+        float cM = texture(densityVolume[0], midpoint).x;
         if(cM < iso){
             left = midpoint;
         }else {
@@ -101,7 +102,7 @@ vec3 computeNormal(vec3 p0, vec3 p1, float isoValue) {
 
     vec3 p = bisection(p0, p1, isoValue);
 
-    vec3 d = 1/vec3(textureSize(densityVolume, 0));
+    vec3 d = 1/vec3(textureSize(densityVolume[0], 0));
     float dx = (F(vec3(p.x + d.x, p.yz)) - F(vec3(p.x - d.x, p.yz))) * 0.5 ;
     float dy = (F(vec3(p.x, p.y + d.y, p.z)) - F(vec3(p.x, p.y - d.y, d.z))) * 0.5 ;
     float dz = (F(vec3(p.xy, p.z + d.z)) - F(vec3(p.xy, p.z - d.z))) * 0.5;
@@ -110,7 +111,7 @@ vec3 computeNormal(vec3 p0, vec3 p1, float isoValue) {
 }
 
 vec3 worldToVoxel(vec3 pos, vec3 direction) {
-    return (info.worldToVoxelTransform * vec4(pos, 1)).xyz + sign(direction) * 0.5/vec3(textureSize(densityVolume, 0));
+    return (info.worldToVoxelTransform * vec4(pos, 1)).xyz + sign(direction) * 0.5/vec3(textureSize(densityVolume[scene.currentFrame], 0));
 }
 
 vec3 voxelToWorld(vec3 pos) {
@@ -118,11 +119,11 @@ vec3 voxelToWorld(vec3 pos) {
 }
 
 float sampleDensity(vec3 pos) {
-    return texture(densityVolume, pos).r;
+    return texture(densityVolume[scene.currentFrame], pos).r;
 }
 
 float sampleEmission(vec3 pos) {
-    return texture(emissionVolume, pos).r;
+    return texture(emissionVolume[scene.currentFrame], pos).r;
 }
 
 

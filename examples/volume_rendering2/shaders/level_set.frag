@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #include "common.glsl"
 
@@ -28,7 +29,7 @@ void main() {
     Span span;
     if(test(o, rd, info.bmin, info.bmax, span)) {
         vec3 pos = o * rd * span.t0;
-        ivec3 voxelDim = textureSize(densityVolume, 0);
+        ivec3 voxelDim = textureSize(densityVolume[0], 0);
         int maxSteps = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
         float delta = 1/float(maxSteps);
 
@@ -42,8 +43,8 @@ void main() {
             if(outOfBounds(pos0)) break;
 
             vec3 pos1 = pos + rd;
-            float val = texture(densityVolume, pos0).r;
-            float val1 = texture(densityVolume, pos0 + rd).r;
+            float val = sampleDensity(pos0);
+            float val1 = sampleDensity(pos0 + rd);
 
             if((val - isoValue) > 0 && (val1 - isoValue) <= 0) {
                 pos = (info.voxelToWorldTransform * vec4(pos0, 1)).xyz;
