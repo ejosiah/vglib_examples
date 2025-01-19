@@ -11,8 +11,7 @@ Volume load(auto grid) {
     volume.numVoxels = grid->activeVoxelCount();
 
     if(volume.numVoxels == 0) {
-        volume.data.push_back(0);
-        volume.dim = glm::vec3(1);
+        volume.voxels.emplace_back(glm::vec3{0}, 0);
         return volume;
     }
 
@@ -27,17 +26,22 @@ Volume load(auto grid) {
     volume.bounds.max = { bMax.x(), bMax.y(), bMax.z() };
     volume.voxelSize = grid->voxelSize().x();
     volume.type = valueOf(grid->getGridClass());
-    volume.data = std::vector<float>(dim.x() * dim.y() * dim.z(), grid->background());
+    volume.background = grid->background();
+    volume.voxels.reserve(volume.numVoxels);
 
     auto value = grid->beginValueOn();
     do {
-        auto coord = value.getCoord();
-        auto x = coord.x() - iBoxMin.x();
-        auto y = coord.y() - iBoxMin.y();
-        auto z = coord.z() - iBoxMin.z();
+
+        auto cd = value.getCoord();
+        auto x = cd.x() - iBoxMin.x();
+        auto y = cd.y() - iBoxMin.y();
+        auto z = cd.z() - iBoxMin.z();
 
         auto index = (z * dim.y() + y) * dim.x() + x;
-        volume.data[index] = *value;
+
+        auto coord = grid->indexToWorld(value.getCoord());
+        auto position = glm::vec3{coord.x(), coord.y(), coord.z()};
+        volume.voxels.emplace_back(position, *value);
     } while (value.next());
 
 
@@ -73,4 +77,25 @@ std::map<std::string, Volume> Volume::loadFromVdb(const std::filesystem::path& p
     file.close();
 
     return volumes;
+}
+
+std::vector<float> Volume::placeIn(glm::vec3 bmin, glm::vec3 bmax) {
+    if(numVoxels == 0) {
+        return {{}};
+    }
+    const auto ibmax = glm::ivec3(glm::floor(bmax/voxelSize));
+    const auto ibmin = glm::ivec3(glm::floor(bmin/voxelSize));
+    const auto center = (ibmax + ibmin)/2;
+    const auto dim = ibmax - ibmin + 1;
+
+    std::vector<float> result(dim.z * dim.y * dim.x, background);
+    auto count = 0;
+    for(auto& voxel : voxels) {
+        auto i = glm::ivec3(glm::floor((voxel.position - bmin)/voxelSize));
+        result[(i.z * dim.y + i.y) * dim.x + i.x] = voxel.value;
+        ++count;
+
+    }
+
+    return result;
 }

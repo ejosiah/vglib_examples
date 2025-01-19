@@ -345,22 +345,24 @@ void VolumeRendering2::loadVolume() {
     }
     spdlog::info("volume: [{}, {}]", info.bmin, info.bmax);
     volumeInfo = device.createDeviceLocalBuffer(&info, sizeof(VolumeInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    textures::create(device, densityVolume, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dvolume.data.data(), dvolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+    auto data = dvolume.placeIn(dvolume.bounds.min, dvolume.bounds.max);
+    textures::create(device, densityVolume, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, data.data(), dvolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
 }
 
 void VolumeRendering2::loadAnimation() {
-    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)"};
+//    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)"};
+    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\GroundExplosionVDB\ground_explosion\ground_explosion_VDB)"};
     animation = VolumeAnimation {frameCount};
 
     using namespace std::chrono_literals;
     for(auto i = 0; i < frameCount; ++i) {
-        auto volume = Volume::loadFromVdb(path / fmt::format("smoke_044_0.10_{:04}.vdb", i + 1));
+        auto volume = Volume::loadFromVdb(path / fmt::format("ground_explosion_{:04}.vdb", i));
         auto& dvolume = volume.begin()->second;
-        Volume evolume{ .data = std::vector<float>(1, 0)};
+        Volume evolume{ };
 
         if(volume.contains("flames")) {
-            volume["flames"];
+            evolume = volume["flames"];
         }
 
         auto center = (dvolume.bounds.min + dvolume.bounds.max) * 0.5f;
@@ -380,8 +382,10 @@ void VolumeRendering2::loadAnimation() {
         }
 
         if(pool.used < poolSize) {
-            textures::create(device, pool.density[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dvolume.data.data(), dvolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-            textures::create(device, pool.emission[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, evolume.data.data(), evolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            auto dData = dvolume.placeIn(dvolume.bounds.min, dvolume.bounds.max);
+            auto eData = evolume.placeIn(evolume.bounds.min, evolume.bounds.max);
+            textures::create(device, pool.density[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dData.data(), dvolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            textures::create(device, pool.emission[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, eData.data(), evolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             ++pool.used;
         }
         auto bufInfo = device.createDeviceLocalBuffer(&info, sizeof(VolumeInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);

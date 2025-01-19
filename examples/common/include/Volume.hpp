@@ -22,16 +22,19 @@ struct Volume {
     glm::mat4 voxelToWorldTransform{1};
     uint64_t numVoxels{};
     glm::ivec3 dim{1};
-    double voxelSize{1};
+    float voxelSize{1};
     struct {
         glm::vec3 min{std::numeric_limits<float>::max()};
         glm::vec3 max{std::numeric_limits<float>::lowest()};
     } bounds;
     Type type{};
 
-    std::vector<float> data;
+    std::vector<Voxel> voxels{};
+    float background{};
 
     static std::map<std::string, Volume> loadFromVdb(const std::filesystem::path& path);
+
+    std::vector<float> placeIn(glm::vec3 bmin, glm::vec3 bmax);
 };
 
 using VolumeSet = std::map<std::string, Volume>;

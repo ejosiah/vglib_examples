@@ -119,11 +119,11 @@ vec3 voxelToWorld(vec3 pos) {
 }
 
 float sampleDensity(vec3 pos) {
-    return texture(densityVolume[scene.currentFrame], pos).r;
+    return texture(densityVolume[scene.currentFrame], pos.xzy).r;
 }
 
 float sampleEmission(vec3 pos) {
-    return texture(emissionVolume[scene.currentFrame], pos).r;
+    return texture(emissionVolume[scene.currentFrame], pos.xzy).r;
 }
 
 

@@ -128,8 +128,8 @@ protected:
             {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1},
     };
     VolumeAnimation animation;
-    static constexpr int poolSize = 10;
-    static constexpr int frameCount = 10;
+    static constexpr int poolSize = 200;
+    static constexpr int frameCount = 200;
     struct {
         std::array<Texture, poolSize> density;
         std::array<Texture, poolSize> emission;
