@@ -32,6 +32,7 @@ struct SceneData {
     int shadow{0};
     float lightConeSpread{0.1};
     int currentFrame{0};
+    int texturePoolSize{};
 };
 
 struct Scene {

@@ -1,6 +1,9 @@
 #ifndef VOLUME_RENDERING_COMMONG_GLSL
 #define VOLUME_RENDERING_COMMONG_GLSL
 
+#define DENSITY_TEXTURE (global_textures[scene.currentFrame])
+#define EMISSION_TEXTURE (global_textures[scene.texturePoolSize + scene.currentFrame])
+
 struct Scene {
     vec3 lightDirection;
     vec3 lightColor;
@@ -16,6 +19,7 @@ struct Scene {
     int shadow;
     float lightConeSpread;
     int currentFrame;
+    int texturePoolSize;
 };
 
 struct VolumeInfo {
@@ -45,6 +49,9 @@ layout(set = 0, binding = 2, scalar) buffer ssboScene {
 layout(set = 1, binding = 0, scalar) buffer Info {
     VolumeInfo info;
 };
+
+layout(set = 2, binding = 10) uniform sampler3D global_textures[];
+
 
 bool test(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out Span span) {
     float tmin = 0;
@@ -82,13 +89,13 @@ bool outOfBounds(vec3 pos) {
 }
 
 float F(vec3 x) {
-    return texture(densityVolume[0], x).r;
+    return texture(DENSITY_TEXTURE, x).r;
 }
 
 vec3 bisection(vec3 left, vec3 right, float iso) {
     for(int i = 0; i < 4; ++i) {
         vec3 midpoint = (right + left) * 0.5;
-        float cM = texture(densityVolume[0], midpoint).x;
+        float cM = texture(DENSITY_TEXTURE, midpoint).x;
         if(cM < iso){
             left = midpoint;
         }else {
@@ -102,7 +109,7 @@ vec3 computeNormal(vec3 p0, vec3 p1, float isoValue) {
 
     vec3 p = bisection(p0, p1, isoValue);
 
-    vec3 d = 1/vec3(textureSize(densityVolume[0], 0));
+    vec3 d = 1/vec3(textureSize(DENSITY_TEXTURE, 0));
     float dx = (F(vec3(p.x + d.x, p.yz)) - F(vec3(p.x - d.x, p.yz))) * 0.5 ;
     float dy = (F(vec3(p.x, p.y + d.y, p.z)) - F(vec3(p.x, p.y - d.y, d.z))) * 0.5 ;
     float dz = (F(vec3(p.xy, p.z + d.z)) - F(vec3(p.xy, p.z - d.z))) * 0.5;
@@ -111,7 +118,7 @@ vec3 computeNormal(vec3 p0, vec3 p1, float isoValue) {
 }
 
 vec3 worldToVoxel(vec3 pos, vec3 direction) {
-    return (info.worldToVoxelTransform * vec4(pos, 1)).xyz + sign(direction) * 0.5/vec3(textureSize(densityVolume[scene.currentFrame], 0));
+    return (info.worldToVoxelTransform * vec4(pos, 1)).xyz + sign(direction) * 0.5/vec3(textureSize(DENSITY_TEXTURE, 0));
 }
 
 vec3 voxelToWorld(vec3 pos) {
@@ -119,11 +126,11 @@ vec3 voxelToWorld(vec3 pos) {
 }
 
 float sampleDensity(vec3 pos) {
-    return texture(densityVolume[scene.currentFrame], pos.xzy).r;
+    return texture(DENSITY_TEXTURE, pos.xzy).r;
 }
 
 float sampleEmission(vec3 pos) {
-    return texture(emissionVolume[scene.currentFrame], pos.xzy).r;
+    return texture(EMISSION_TEXTURE, pos.xzy).r;
 }
 
 

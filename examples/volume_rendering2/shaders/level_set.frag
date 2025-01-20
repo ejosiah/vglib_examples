@@ -29,7 +29,7 @@ void main() {
     Span span;
     if(test(o, rd, info.bmin, info.bmax, span)) {
         vec3 pos = o * rd * span.t0;
-        ivec3 voxelDim = textureSize(densityVolume[0], 0);
+        ivec3 voxelDim = textureSize(DENSITY_TEXTURE, 0);
         int maxSteps = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
         float delta = 1/float(maxSteps);
 

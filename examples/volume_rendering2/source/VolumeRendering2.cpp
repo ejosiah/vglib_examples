@@ -23,6 +23,7 @@ void VolumeRendering2::initApp() {
     loadAnimation();
     initCamera();
     createDescriptorPool();
+    initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     initLoader();
     createDescriptorSetLayouts();
@@ -48,8 +49,7 @@ void VolumeRendering2::initCamera() {
 
 void VolumeRendering2::initBindlessDescriptor() {
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0);
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, poolSize * 2);
 }
 
 void VolumeRendering2::beforeDeviceCreation() {
@@ -154,9 +154,11 @@ void VolumeRendering2::updateDescriptorSets(){
 
     std::vector<VkDescriptorImageInfo> densityInfo(poolSize + 1);
     std::vector<VkDescriptorImageInfo> emissionInfo(poolSize);
-    for(auto i = 0; i < poolSize; ++i) {
+    for(auto i = 0u; i < poolSize; ++i) {
         densityInfo[i] = {pool.density[i].sampler.handle, pool.density[i].imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         emissionInfo[i] = {pool.emission[i].sampler.handle, pool.emission[i].imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        bindlessDescriptor.update({ &pool.density[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, i});
+        bindlessDescriptor.update({ &pool.emission[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, poolSize + i});
     }
 
     densityInfo.back() = { densityVolume.sampler.handle, densityVolume.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
@@ -230,6 +232,7 @@ void VolumeRendering2::createRenderPipeline() {
                     .addPushConstantRange(Camera::pushConstant(VK_SHADER_STAGE_ALL_GRAPHICS))
                     .addDescriptorSetLayout(volumeDensitySetLayout)
                     .addDescriptorSetLayout(volumeInfoSetLayout)
+                    .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                 .name("level_set")
                 .build(render.level_set.layout);
 
@@ -259,6 +262,7 @@ void VolumeRendering2::createRenderPipeline() {
                     .addPushConstantRange(Camera::pushConstant(VK_SHADER_STAGE_ALL_GRAPHICS))
                     .addDescriptorSetLayout(volumeDensitySetLayout)
                     .addDescriptorSetLayout(volumeInfoSetLayout)
+                    .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                 .name("fog")
                 .build(render.fog.layout);
     //    @formatter:on
@@ -397,9 +401,10 @@ void VolumeRendering2::loadAnimation() {
 
 
 void VolumeRendering2::renderLevelSet(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets{};
+    static std::array<VkDescriptorSet, 3> sets{};
     sets[0] = volumeDensitySet;
     sets[1] = volumeInfoSet;
+    sets[2] = bindlessDescriptor.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.level_set.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.level_set.layout.handle, 0, sets.size(), sets.data(), 0, 0);
@@ -408,9 +413,10 @@ void VolumeRendering2::renderLevelSet(VkCommandBuffer commandBuffer) {
 }
 
 void VolumeRendering2::renderFogVolume(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets{};
+    static std::array<VkDescriptorSet, 3> sets{};
     sets[0] = volumeDensitySet;
     sets[1] = animation.current().descriptorSet;
+    sets[2] = bindlessDescriptor.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.layout.handle, 0, sets.size(), sets.data(), 0, 0);
@@ -423,6 +429,7 @@ void VolumeRendering2::initScene() {
     initData.extinction = initData.scattering + initData.absorption;
     scene.gpu = device.createCpuVisibleBuffer(&initData, sizeof(SceneData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     scene.cpu = reinterpret_cast<SceneData*>(scene.gpu.map());
+    scene.cpu->texturePoolSize = poolSize;
 }
 
 void VolumeRendering2::newFrame() {
