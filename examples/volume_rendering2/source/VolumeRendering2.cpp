@@ -79,6 +79,9 @@ void VolumeRendering2::beforeDeviceCreation() {
     static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
     dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
     deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+
+    plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).addBinding({ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL_GRAPHICS });
+
 }
 
 void VolumeRendering2::createDescriptorPool() {
@@ -101,23 +104,6 @@ void VolumeRendering2::initLoader() {
 }
 
 void VolumeRendering2::createDescriptorSetLayouts() {
-    volumeDensitySetLayout =
-        device.descriptorSetLayoutBuilder()
-            .name("volume_density")
-            .binding(0)
-                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                .descriptorCount(poolSize + 1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
-            .binding(1)
-                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                .descriptorCount(poolSize)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
-            .binding(2)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
-        .createLayout();
-    
     volumeInfoSetLayout =
         device.descriptorSetLayoutBuilder()
             .name("volume_info")
@@ -130,13 +116,11 @@ void VolumeRendering2::createDescriptorSetLayouts() {
 }
 
 void VolumeRendering2::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ volumeDensitySetLayout, volumeInfoSetLayout });
-    volumeDensitySet = sets[0];
-    volumeInfoSet = sets[1];
+    auto sets = descriptorPool.allocate({ volumeInfoSetLayout });
+    volumeInfoSet = sets[0];
 
-    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("volume_density_descriptor_set", volumeDensitySet);
-    
-    auto writes = initializers::writeDescriptorSets<4>();
+
+    auto writes = initializers::writeDescriptorSets<2>();
     
     writes[0].dstSet = volumeInfoSet;
     writes[0].dstBinding = 0;
@@ -145,37 +129,19 @@ void VolumeRendering2::updateDescriptorSets(){
     VkDescriptorBufferInfo vInfo{ volumeInfo, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &vInfo;
 
-    writes[1].dstSet = volumeDensitySet;
-    writes[1].dstBinding = 2;
+    writes[1].dstSet = bindlessDescriptor.descriptorSet;
+    writes[1].dstBinding = 0;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
     VkDescriptorBufferInfo sceneInfo{ scene.gpu, 0, VK_WHOLE_SIZE };
     writes[1].pBufferInfo = &sceneInfo;
 
-    std::vector<VkDescriptorImageInfo> densityInfo(poolSize + 1);
-    std::vector<VkDescriptorImageInfo> emissionInfo(poolSize);
+    device.updateDescriptorSets(writes);
+
     for(auto i = 0u; i < poolSize; ++i) {
-        densityInfo[i] = {pool.density[i].sampler.handle, pool.density[i].imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        emissionInfo[i] = {pool.emission[i].sampler.handle, pool.emission[i].imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         bindlessDescriptor.update({ &pool.density[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, i});
         bindlessDescriptor.update({ &pool.emission[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, poolSize + i});
     }
-
-    densityInfo.back() = { densityVolume.sampler.handle, densityVolume.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    writes[2].dstSet = volumeDensitySet;
-    writes[2].dstBinding = 0;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = densityInfo.size();
-    writes[2].pImageInfo = densityInfo.data();
-
-    writes[3].dstSet = volumeDensitySet;
-    writes[3].dstBinding = 1;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[3].descriptorCount = emissionInfo.size();
-    writes[3].pImageInfo = emissionInfo.data();
-
-    device.updateDescriptorSets(writes);
-
 
 }
 
@@ -230,9 +196,8 @@ void VolumeRendering2::createRenderPipeline() {
                     .compareOpLess()
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant(VK_SHADER_STAGE_ALL_GRAPHICS))
-                    .addDescriptorSetLayout(volumeDensitySetLayout)
-                    .addDescriptorSetLayout(volumeInfoSetLayout)
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
+                    .addDescriptorSetLayout(volumeInfoSetLayout)
                 .name("level_set")
                 .build(render.level_set.layout);
 
@@ -260,9 +225,8 @@ void VolumeRendering2::createRenderPipeline() {
                     .add()
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant(VK_SHADER_STAGE_ALL_GRAPHICS))
-                    .addDescriptorSetLayout(volumeDensitySetLayout)
-                    .addDescriptorSetLayout(volumeInfoSetLayout)
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
+                    .addDescriptorSetLayout(volumeInfoSetLayout)
                 .name("fog")
                 .build(render.fog.layout);
     //    @formatter:on
@@ -401,10 +365,9 @@ void VolumeRendering2::loadAnimation() {
 
 
 void VolumeRendering2::renderLevelSet(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 3> sets{};
-    sets[0] = volumeDensitySet;
+    static std::array<VkDescriptorSet, 2> sets{};
+    sets[0] = bindlessDescriptor.descriptorSet;
     sets[1] = volumeInfoSet;
-    sets[2] = bindlessDescriptor.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.level_set.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.level_set.layout.handle, 0, sets.size(), sets.data(), 0, 0);
@@ -413,10 +376,9 @@ void VolumeRendering2::renderLevelSet(VkCommandBuffer commandBuffer) {
 }
 
 void VolumeRendering2::renderFogVolume(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 3> sets{};
-    sets[0] = volumeDensitySet;
+    static std::array<VkDescriptorSet, 2> sets{};
+    sets[0] = bindlessDescriptor.descriptorSet;
     sets[1] = animation.current().descriptorSet;
-    sets[2] = bindlessDescriptor.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.layout.handle, 0, sets.size(), sets.data(), 0, 0);

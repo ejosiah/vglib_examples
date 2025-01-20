@@ -39,7 +39,7 @@ void main() {
     Span pTS;
     if(test(o, rd, info.bmin, info.bmax, pTS)) {
         vec3 wPos = o + rd * pTS.t0;
-        ivec3 voxelDim = textureSize(densityVolume[0], 0);
+        ivec3 voxelDim = textureSize(DENSITY_TEXTURE0, 0);
         int maxDim = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
         float delta = pStepSize/float(maxDim);
 

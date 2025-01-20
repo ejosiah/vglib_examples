@@ -119,9 +119,7 @@ protected:
     VolumeSet volume;
     Texture densityVolume;
 
-    VulkanDescriptorSetLayout volumeDensitySetLayout;
     VulkanDescriptorSetLayout volumeInfoSetLayout;
-    VkDescriptorSet volumeDensitySet{};
     VkDescriptorSet volumeInfoSet{};
     Scene scene{};
     std::vector<glm::vec3> box {

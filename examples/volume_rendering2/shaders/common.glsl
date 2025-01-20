@@ -1,6 +1,7 @@
 #ifndef VOLUME_RENDERING_COMMONG_GLSL
 #define VOLUME_RENDERING_COMMONG_GLSL
 
+#define DENSITY_TEXTURE0 (global_textures[0])
 #define DENSITY_TEXTURE (global_textures[scene.currentFrame])
 #define EMISSION_TEXTURE (global_textures[scene.texturePoolSize + scene.currentFrame])
 
@@ -39,18 +40,15 @@ float length(Span span) {
 }
 
 
-layout(set = 0, binding = 0) uniform sampler3D densityVolume[];
-layout(set = 0, binding = 1) uniform sampler3D emissionVolume[];
+layout(set = 0, binding = 10) uniform sampler3D global_textures[];
 
-layout(set = 0, binding = 2, scalar) buffer ssboScene {
+layout(set = 0, binding = 0, scalar) buffer ssboScene {
     Scene scene;
 };
 
 layout(set = 1, binding = 0, scalar) buffer Info {
     VolumeInfo info;
 };
-
-layout(set = 2, binding = 10) uniform sampler3D global_textures[];
 
 
 bool test(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out Span span) {
