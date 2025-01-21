@@ -21,11 +21,17 @@ struct VolumeInfo {
 struct VolumeFrame {
     VulkanBuffer density;
     VulkanBuffer emission;
+};
+
+struct VolumeMetadata {
     VulkanBuffer info;
+    glm::vec3 bmin{MAX_FLOAT};
+    glm::vec3 bmax{MIN_FLOAT};
+    glm::uvec3 dimensions;
     VkDescriptorSet descriptorSet{};
 };
 
-using VolumeAnimation = Animation<VolumeFrame, VolumeInfo>;
+using VolumeAnimation = Animation<VolumeFrame, VolumeMetadata>;
 
 struct SceneData {
     glm::vec3 lightDirection{1};
@@ -143,7 +149,7 @@ protected:
     };
     VolumeAnimation animation;
     static constexpr int poolSize = 10;
-    static constexpr int aframeCount = 50;
+    static constexpr int aframeCount = 20;
     static constexpr int batchSize = 6;
     std::array<CopyBufferToImage, batchSize> regions{};
     struct {
@@ -156,7 +162,6 @@ protected:
     bool copyPending{};
     std::array<VkImageMemoryBarrier2, batchSize * 2> imageBarriersToTransfer{};
     std::array<VkImageMemoryBarrier2, batchSize * 2> imageBarriersToShaderRead{};
-    VkMemoryBarrier2 memoryBarrier{};
     VkDependencyInfo tDependencyInfo{};
     VkDependencyInfo sDependencyInfo{};
 

@@ -147,23 +147,18 @@ void VolumeRendering2::updateDescriptorSets(){
 }
 
 void VolumeRendering2::updateAnimationDescriptorSets() {
-    auto sets = descriptorPool.allocate(std::vector<VulkanDescriptorSetLayout>(aframeCount, volumeInfoSetLayout));
+    animation.metadata.descriptorSet = descriptorPool.allocate( {volumeInfoSetLayout} ).front();
 
     auto writes = initializers::writeDescriptorSets<>();
-    std::vector<VkDescriptorBufferInfo> infos(aframeCount);
-    writes.resize(aframeCount);
-    for(auto i = 0; i < aframeCount; ++ i) {
-        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstSet = sets[i];
-        writes[i].dstBinding = 0;
-        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[i].descriptorCount = 1;
-        infos[i] = { animation[i].info, 0, VK_WHOLE_SIZE };
-        writes[i].pBufferInfo = &infos[i];
-        animation[i].descriptorSet = sets[i];
-        device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("volume_info_descriptor_set_{}", i), sets[i]);
+    VkDescriptorBufferInfo infos{ animation.metadata.info, 0, VK_WHOLE_SIZE };
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = animation.metadata.descriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &infos;
 
-    }
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("volume_info_descriptor_set", animation.metadata.descriptorSet);
 
     device.updateDescriptorSets(writes);
 }
@@ -399,7 +394,8 @@ void VolumeRendering2::loadAnimation() {
     const auto ibmin = glm::ivec3(glm::floor(bmin/voxelSize));
     const auto dim = ibmax - ibmin + 1;
     info.dimensions = dim;
-    animation.metadata = info;
+    animation.metadata.dimensions = dim;
+    animation.metadata.info = device.createDeviceLocalBuffer(&info, sizeof(VolumeInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     using namespace std::chrono_literals;
     for(auto i = 0; i < aframeCount; ++i) {
@@ -422,8 +418,7 @@ void VolumeRendering2::loadAnimation() {
         VulkanBuffer emissionBuffer = device.createStagingBuffer(BYTE_SIZE(eData));
         emissionBuffer.copy(eData);
 
-        auto bufInfo = device.createDeviceLocalBuffer(&info, sizeof(VolumeInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-        animation.addFrame({ std::move(densityBuffer), std::move(emissionBuffer), std::move(bufInfo) }, 30ms);
+        animation.addFrame({ std::move(densityBuffer), std::move(emissionBuffer)}, 30ms);
 
     }
     pendingFrameOffset = pool.used;
@@ -445,7 +440,7 @@ void VolumeRendering2::renderLevelSet(VkCommandBuffer commandBuffer) {
 void VolumeRendering2::renderFogVolume(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 2> sets{};
     sets[0] = bindlessDescriptor.descriptorSet;
-    sets[1] = animation.current().descriptorSet;
+    sets[1] = animation.metadata.descriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.fog.layout.handle, 0, sets.size(), sets.data(), 0, 0);
