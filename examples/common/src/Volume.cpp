@@ -52,11 +52,11 @@ Volume load(auto grid) {
     model = glm::scale(model, invMaxAxis);
     model = glm::translate(model, -volume.bounds.min);
 
-    volume.worldToVoxelTransform = model;
-    volume.voxelToWorldTransform = glm::inverse(model);
+    volume.localToVoxelTransform = model;
+    volume.voxelToLocalTransform = glm::inverse(model);
 
-    const auto tmin = (volume.worldToVoxelTransform * glm::vec4(volume.bounds.min, 1)).xyz();
-    const auto tmax = (volume.worldToVoxelTransform * glm::vec4(volume.bounds.max, 1)).xyz();
+    const auto tmin = (volume.localToVoxelTransform * glm::vec4(volume.bounds.min, 1)).xyz();
+    const auto tmax = (volume.localToVoxelTransform * glm::vec4(volume.bounds.max, 1)).xyz();
 
     assert(glm::all(glm::epsilonEqual(tmin, glm::vec3(0), 0.0001f)));
     assert(glm::all(glm::epsilonEqual(tmax, glm::vec3(1), 0.0001f)));

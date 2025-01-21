@@ -38,8 +38,8 @@ void VolumeRendering2::initCamera() {
     OrbitingCameraSettings cameraSettings;
 //    FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.orbitMinZoom = 0.1;
-    cameraSettings.orbitMaxZoom = 512.0f;
-    cameraSettings.offsetDistance = 1.0f;
+    cameraSettings.orbitMaxZoom = 1000.0f;
+    cameraSettings.offsetDistance = 50.f;
     cameraSettings.modelHeight = 0.5;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
@@ -304,8 +304,8 @@ void VolumeRendering2::loadVolume() {
     volume = Volume::loadFromVdb(resource("ground_explosion_0100.vdb"));
     auto& dvolume = volume.begin()->second;
     VolumeInfo info{};
-    info.voxelToWordTransform = glm::scale(glm::mat4{1}, glm::vec3(0.05)) * glm::translate(glm::mat4{1}, {0, -dvolume.bounds.min.y, 0}) * dvolume.voxelToWorldTransform;
-//    info.voxelToWordTransform =  dvolume.voxelToWorldTransform;
+    info.voxelToWordTransform = glm::scale(glm::mat4{1}, glm::vec3(0.05)) * glm::translate(glm::mat4{1}, {0, -dvolume.bounds.min.y, 0}) * dvolume.voxelToLocalTransform;
+//    info.voxelToWordTransform =  dvolume.voxelToLocalTransform;
     info.worldToVoxelTransform = glm::inverse(info.voxelToWordTransform);
     for(auto& point : box) {
         info.bmin = glm::min(info.bmin, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
@@ -336,18 +336,23 @@ void VolumeRendering2::loadAnimation() {
         auto center = (dvolume.bounds.min + dvolume.bounds.max) * 0.5f;
         auto offset = -center;
 
+        auto localToWorld = glm::mat4{1};
+//                glm::scale(glm::mat4{1}, glm::vec3(0.05));
+//                * glm::translate(glm::mat4{1}, offset)
+
         VolumeInfo info{};
-        info.voxelToWordTransform =
-                glm::scale(glm::mat4{1}, glm::vec3(0.05))
-                * glm::translate(glm::mat4{1}, offset)
-                * dvolume.voxelToWorldTransform;
-
-
-        info.worldToVoxelTransform = glm::inverse(info.voxelToWordTransform);
+        info.worldToVoxelTransform = dvolume.localToVoxelTransform * glm::inverse(localToWorld);
+        info.voxelToWordTransform = localToWorld * dvolume.voxelToLocalTransform;
         for(auto& point : box) {
             info.bmin = glm::min(info.bmin, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
             info.bmax = glm::max(info.bmax, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
         }
+
+        const auto tmin = (info.worldToVoxelTransform * glm::vec4(info.bmin, 1)).xyz();
+        const auto tmax = (info.worldToVoxelTransform * glm::vec4(info.bmax, 1)).xyz();
+
+        assert(glm::all(glm::epsilonEqual(tmin, glm::vec3(0), 0.0001f)));
+        assert(glm::all(glm::epsilonEqual(tmax, glm::vec3(1), 0.0001f)));
 
         if(pool.used < poolSize) {
             auto dData = dvolume.placeIn(dvolume.bounds.min, dvolume.bounds.max);

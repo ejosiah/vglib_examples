@@ -18,8 +18,8 @@ struct Volume {
     enum class Type{ LEVEL_SET, FOG };
     struct Voxel{ glm::vec3 position{}; float value{}; };
 
-    glm::mat4 worldToVoxelTransform{1};
-    glm::mat4 voxelToWorldTransform{1};
+    glm::mat4 localToVoxelTransform{1};
+    glm::mat4 voxelToLocalTransform{1};
     uint64_t numVoxels{};
     glm::ivec3 dim{1};
     float voxelSize{1};
