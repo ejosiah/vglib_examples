@@ -39,7 +39,7 @@ void VolumeRendering2::initCamera() {
 //    FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.orbitMinZoom = 0.1;
     cameraSettings.orbitMaxZoom = 1000.0f;
-    cameraSettings.offsetDistance = 50.f;
+    cameraSettings.offsetDistance = 1.f;
     cameraSettings.modelHeight = 0.5;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
@@ -146,12 +146,12 @@ void VolumeRendering2::updateDescriptorSets(){
 }
 
 void VolumeRendering2::updateAnimationDescriptorSets() {
-    auto sets = descriptorPool.allocate(std::vector<VulkanDescriptorSetLayout>(frameCount, volumeInfoSetLayout));
+    auto sets = descriptorPool.allocate(std::vector<VulkanDescriptorSetLayout>(aframeCount, volumeInfoSetLayout));
 
     auto writes = initializers::writeDescriptorSets<>();
-    std::vector<VkDescriptorBufferInfo> infos(frameCount);
-    writes.resize(frameCount);
-    for(auto i = 0; i < frameCount; ++ i) {
+    std::vector<VkDescriptorBufferInfo> infos(aframeCount);
+    writes.resize(aframeCount);
+    for(auto i = 0; i < aframeCount; ++ i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = sets[i];
         writes[i].dstBinding = 0;
@@ -321,44 +321,75 @@ void VolumeRendering2::loadVolume() {
 void VolumeRendering2::loadAnimation() {
 //    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)"};
     fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\GroundExplosionVDB\ground_explosion\ground_explosion_VDB)"};
-    animation = VolumeAnimation {frameCount};
+    animation = VolumeAnimation {aframeCount};
 
-    using namespace std::chrono_literals;
-    for(auto i = 0; i < frameCount; ++i) {
+    glm::vec3 bmin{MAX_FLOAT};
+    glm::vec3 bmax{MIN_FLOAT};
+
+    std::vector<VolumeSet> volumes;
+    for(auto i = 0; i < aframeCount; ++i) {
         auto volume = Volume::loadFromVdb(path / fmt::format("ground_explosion_{:04}.vdb", i));
         auto& dvolume = volume.begin()->second;
-        Volume evolume{ };
+        auto& evolume = volume["flames"];
 
-        if(volume.contains("flames")) {
-            evolume = volume["flames"];
-        }
+        volumes.push_back(std::move(volume));
+        if(dvolume.numVoxels == 0  && evolume.numVoxels == 0);
 
-        auto center = (dvolume.bounds.min + dvolume.bounds.max) * 0.5f;
-        auto offset = -center;
+        bmin = glm::min(dvolume.bounds.min, bmin);
+        bmax = glm::max(dvolume.bounds.max, bmax);
 
-        auto localToWorld = glm::mat4{1};
-//                glm::scale(glm::mat4{1}, glm::vec3(0.05));
-//                * glm::translate(glm::mat4{1}, offset)
+        bmin = glm::min(evolume.bounds.min, bmin);
+        bmax = glm::max(evolume.bounds.max, bmax);
 
-        VolumeInfo info{};
-        info.worldToVoxelTransform = dvolume.localToVoxelTransform * glm::inverse(localToWorld);
-        info.voxelToWordTransform = localToWorld * dvolume.voxelToLocalTransform;
-        for(auto& point : box) {
-            info.bmin = glm::min(info.bmin, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
-            info.bmax = glm::max(info.bmax, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
-        }
+    }
 
-        const auto tmin = (info.worldToVoxelTransform * glm::vec4(info.bmin, 1)).xyz();
-        const auto tmax = (info.worldToVoxelTransform * glm::vec4(info.bmax, 1)).xyz();
+    auto invMaxAxis = 1.f/(bmax - bmin);
+    auto model = glm::mat4{1};
 
-        assert(glm::all(glm::epsilonEqual(tmin, glm::vec3(0), 0.0001f)));
-        assert(glm::all(glm::epsilonEqual(tmax, glm::vec3(1), 0.0001f)));
+    model = glm::scale(model, invMaxAxis);
+    model = glm::translate(model, -bmin);
+
+    auto localToVoxelTransform = model;
+    auto voxelToLocalTransform = glm::inverse(model);
+
+    auto center = (bmin + bmax) * 0.5f;
+    auto offset = -center;
+
+    auto localToWorld = glm::mat4{1};
+    localToWorld = glm::scale(localToWorld, glm::vec3(0.05));
+    localToWorld = glm::translate(localToWorld, offset);
+
+    VolumeInfo info{};
+    info.worldToVoxelTransform = localToVoxelTransform * glm::inverse(localToWorld);
+    info.voxelToWordTransform = localToWorld * voxelToLocalTransform;
+    for(auto& point : box) {
+        info.bmin = glm::min(info.bmin, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
+        info.bmax = glm::max(info.bmax, (info.voxelToWordTransform * glm::vec4(point, 1)).xyz());
+    }
+
+    const auto tmin = (info.worldToVoxelTransform * glm::vec4(info.bmin, 1)).xyz();
+    const auto tmax = (info.worldToVoxelTransform * glm::vec4(info.bmax, 1)).xyz();
+
+    assert(glm::all(glm::epsilonEqual(tmin, glm::vec3(0), 0.0001f)));
+    assert(glm::all(glm::epsilonEqual(tmax, glm::vec3(1), 0.0001f)));
+
+    const auto voxelSize = 1.f;
+    const auto ibmax = glm::ivec3(glm::floor(bmax/voxelSize));
+    const auto ibmin = glm::ivec3(glm::floor(bmin/voxelSize));
+    const auto dim = ibmax - ibmin + 1;
+
+    using namespace std::chrono_literals;
+    for(auto i = 0; i < aframeCount; ++i) {
+        auto volume = volumes[i];
+        auto& dvolume = volume["density"];
+        auto& evolume = volume["flames"];
 
         if(pool.used < poolSize) {
-            auto dData = dvolume.placeIn(dvolume.bounds.min, dvolume.bounds.max);
-            auto eData = evolume.placeIn(evolume.bounds.min, evolume.bounds.max);
-            textures::create(device, pool.density[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dData.data(), dvolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-            textures::create(device, pool.emission[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, eData.data(), evolume.dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            auto dData = dvolume.placeIn(bmin, bmax);
+            auto eData = evolume.placeIn(bmin, bmax);
+//            auto eData = std::vector<float>{1.0f};
+            textures::create(device, pool.density[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dData.data(), dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            textures::create(device, pool.emission[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, eData.data(), dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             ++pool.used;
         }
         auto bufInfo = device.createDeviceLocalBuffer(&info, sizeof(VolumeInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);

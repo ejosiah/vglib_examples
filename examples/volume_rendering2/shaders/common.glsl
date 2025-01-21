@@ -21,6 +21,7 @@ struct Scene {
     float lightConeSpread;
     int currentFrame;
     int texturePoolSize;
+    int numSteps;
 };
 
 struct VolumeInfo {

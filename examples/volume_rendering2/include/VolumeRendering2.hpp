@@ -33,6 +33,7 @@ struct SceneData {
     float lightConeSpread{0.1};
     int currentFrame{0};
     int texturePoolSize{};
+    int numSteps{13};
 };
 
 struct Scene {
@@ -127,8 +128,8 @@ protected:
             {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1},
     };
     VolumeAnimation animation;
-    static constexpr int poolSize = 200;
-    static constexpr int frameCount = 200;
+    static constexpr int poolSize = 60;
+    static constexpr int aframeCount = 60;
     struct {
         std::array<Texture, poolSize> density;
         std::array<Texture, poolSize> emission;

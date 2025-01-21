@@ -40,7 +40,8 @@ void main() {
     if(test(o, rd, info.bmin, info.bmax, pTS)) {
         vec3 wPos = o + rd * pTS.t0;
         ivec3 voxelDim = textureSize(DENSITY_TEXTURE0, 0);
-        int maxDim = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
+//        int maxDim = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
+        int maxDim = scene.numSteps;
         float delta = pStepSize/float(maxDim);
 
         int pMaxSteps = int(1/delta);
