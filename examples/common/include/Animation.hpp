@@ -13,9 +13,11 @@ struct Frame {
     std::chrono::milliseconds duration;
 };
 
-template<typename T>
+template<typename T, typename Metadata>
 class Animation {
 public:
+    Metadata metadata{};
+
     Animation() = default;
 
     explicit Animation(size_t numFrames)

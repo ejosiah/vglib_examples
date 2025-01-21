@@ -2,20 +2,30 @@
 #include "VulkanBaseApp.h"
 #include "Volume.hpp"
 
+struct CopyBufferToImage {
+    VkBuffer srcBuffer{};
+    VkBuffer eSrcBuffer{};
+    VkImage dstImage{};
+    VkImage eDstImage{};
+    VkBufferImageCopy region{};
+};
+
 struct VolumeInfo {
     glm::mat4 worldToVoxelTransform;
     glm::mat4 voxelToWordTransform;
     glm::vec3 bmin{MAX_FLOAT};
     glm::vec3 bmax{MIN_FLOAT};
+    glm::uvec3 dimensions;
 };
 
 struct VolumeFrame {
-    VolumeSet volumeSet;
+    VulkanBuffer density;
+    VulkanBuffer emission;
     VulkanBuffer info;
     VkDescriptorSet descriptorSet{};
 };
 
-using VolumeAnimation = Animation<VolumeFrame>;
+using VolumeAnimation = Animation<VolumeFrame, VolumeInfo>;
 
 struct SceneData {
     glm::vec3 lightDirection{1};
@@ -50,6 +60,8 @@ protected:
 
     void initScene();
 
+    void initTextureCopyData();
+
     void initCamera();
 
     void initBindlessDescriptor();
@@ -65,6 +77,8 @@ protected:
     void createDescriptorSetLayouts();
 
     void updateDescriptorSets();
+
+    void transferFramesToGpu(VkCommandBuffer commandBuffer);
 
     void updateAnimationDescriptorSets();
 
@@ -128,11 +142,22 @@ protected:
             {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1},
     };
     VolumeAnimation animation;
-    static constexpr int poolSize = 60;
-    static constexpr int aframeCount = 60;
+    static constexpr int poolSize = 10;
+    static constexpr int aframeCount = 50;
+    static constexpr int batchSize = 6;
+    std::array<CopyBufferToImage, batchSize> regions{};
     struct {
         std::array<Texture, poolSize> density;
         std::array<Texture, poolSize> emission;
         int used{0};
+        int freeHead{0};
     } pool;
+    int pendingFrameOffset{};
+    bool copyPending{};
+    std::array<VkImageMemoryBarrier2, batchSize * 2> imageBarriersToTransfer{};
+    std::array<VkImageMemoryBarrier2, batchSize * 2> imageBarriersToShaderRead{};
+    VkMemoryBarrier2 memoryBarrier{};
+    VkDependencyInfo tDependencyInfo{};
+    VkDependencyInfo sDependencyInfo{};
+
 };

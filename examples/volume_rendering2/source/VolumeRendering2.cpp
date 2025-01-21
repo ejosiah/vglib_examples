@@ -21,6 +21,7 @@ void VolumeRendering2::initApp() {
     initScene();
     loadVolume();
     loadAnimation();
+    initTextureCopyData();
     initCamera();
     createDescriptorPool();
     initBindlessDescriptor();
@@ -249,6 +250,8 @@ VkCommandBuffer *VolumeRendering2::buildCommandBuffers(uint32_t imageIndex, uint
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
+    transferFramesToGpu(commandBuffer);
+
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0.2, 0.2, 0.2, 1};
     clearValues[1].depthStencil = {1.0, 0u};
@@ -280,7 +283,25 @@ void VolumeRendering2::update(float time) {
     auto cam = camera->cam();
 
     if(count > 10 && animation.next(time)) {
-        scene.cpu->currentFrame = (++scene.cpu->currentFrame % animation.frameCount());
+        scene.cpu->currentFrame = (++scene.cpu->currentFrame % poolSize);
+        pool.used--;
+
+        static auto freeSlots = 0;
+        freeSlots = poolSize - pool.used;
+
+        if(freeSlots == batchSize) {
+            for(auto i = 0; i < freeSlots; ++i) {
+                regions[i].srcBuffer = animation[pendingFrameOffset].density;
+                regions[i].eSrcBuffer = animation[pendingFrameOffset].emission;
+                regions[i].dstImage = pool.density[pool.freeHead].image;
+                regions[i].eDstImage = pool.emission[pool.freeHead].image;
+
+                pendingFrameOffset = (++pendingFrameOffset) % animation.frameCount();
+                pool.freeHead = (++pool.freeHead) % poolSize;
+                pool.used++;
+            }
+            copyPending = true;
+        }
     }
     setTitle(fmt::format("{}, FPS - {}, cam: {}", title, framePerSecond, camera->position()));
     ++count;
@@ -373,10 +394,12 @@ void VolumeRendering2::loadAnimation() {
     assert(glm::all(glm::epsilonEqual(tmin, glm::vec3(0), 0.0001f)));
     assert(glm::all(glm::epsilonEqual(tmax, glm::vec3(1), 0.0001f)));
 
-    const auto voxelSize = 1.f;
+    const auto voxelSize = volumes.front().begin()->second.voxelSize;
     const auto ibmax = glm::ivec3(glm::floor(bmax/voxelSize));
     const auto ibmin = glm::ivec3(glm::floor(bmin/voxelSize));
     const auto dim = ibmax - ibmin + 1;
+    info.dimensions = dim;
+    animation.metadata = info;
 
     using namespace std::chrono_literals;
     for(auto i = 0; i < aframeCount; ++i) {
@@ -384,18 +407,26 @@ void VolumeRendering2::loadAnimation() {
         auto& dvolume = volume["density"];
         auto& evolume = volume["flames"];
 
+        auto dData = dvolume.placeIn(bmin, bmax);
+        auto eData = evolume.placeIn(bmin, bmax);
+
         if(pool.used < poolSize) {
-            auto dData = dvolume.placeIn(bmin, bmax);
-            auto eData = evolume.placeIn(bmin, bmax);
 //            auto eData = std::vector<float>{1.0f};
             textures::create(device, pool.density[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dData.data(), dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             textures::create(device, pool.emission[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, eData.data(), dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             ++pool.used;
         }
+        VulkanBuffer densityBuffer = device.createStagingBuffer(BYTE_SIZE(dData));
+        densityBuffer.copy(dData);
+
+        VulkanBuffer emissionBuffer = device.createStagingBuffer(BYTE_SIZE(eData));
+        emissionBuffer.copy(eData);
+
         auto bufInfo = device.createDeviceLocalBuffer(&info, sizeof(VolumeInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-        animation.addFrame({ std::move(volume), std::move(bufInfo) }, 30ms);
+        animation.addFrame({ std::move(densityBuffer), std::move(emissionBuffer), std::move(bufInfo) }, 30ms);
 
     }
+    pendingFrameOffset = pool.used;
     animation.toggleLoop();
 }
 
@@ -432,6 +463,80 @@ void VolumeRendering2::initScene() {
 
 void VolumeRendering2::newFrame() {
     scene.cpu->cameraPosition = camera->position();
+}
+
+void VolumeRendering2::initTextureCopyData() {
+    for(auto i = 0; i < batchSize * 2; ++i) {
+        if(i < batchSize) {
+            auto &copyCmd = regions[i];
+            copyCmd.region.bufferOffset = 0;
+            copyCmd.region.bufferRowLength = 0;
+            copyCmd.region.bufferImageHeight = 0;
+            copyCmd.region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copyCmd.region.imageSubresource.mipLevel = 0;
+            copyCmd.region.imageSubresource.baseArrayLayer = 0;
+            copyCmd.region.imageSubresource.layerCount = 1;
+            copyCmd.region.imageOffset = {0, 0, 0};
+            copyCmd.region.imageExtent = {animation.metadata.dimensions.x, animation.metadata.dimensions.y,
+                                          animation.metadata.dimensions.z};
+        }
+
+        auto& tBarrier = imageBarriersToTransfer[i];
+        tBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        tBarrier.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        tBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        tBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        tBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        tBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        tBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        tBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        tBarrier.subresourceRange.baseMipLevel = 0;
+        tBarrier.subresourceRange.levelCount = 1;
+        tBarrier.subresourceRange.baseArrayLayer = 0;
+        tBarrier.subresourceRange.layerCount = 1;
+
+        auto& sBarrier = imageBarriersToShaderRead[i];
+        sBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        sBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        sBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        sBarrier.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        sBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        sBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        sBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        sBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        sBarrier.subresourceRange.baseMipLevel = 0;
+        sBarrier.subresourceRange.levelCount = 1;
+        sBarrier.subresourceRange.baseArrayLayer = 0;
+        sBarrier.subresourceRange.layerCount = 1;
+    }
+    tDependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    tDependencyInfo.imageMemoryBarrierCount = batchSize * 2;
+    tDependencyInfo.pImageMemoryBarriers = imageBarriersToTransfer.data();
+
+    sDependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    sDependencyInfo.imageMemoryBarrierCount = batchSize * 2;
+    sDependencyInfo.pImageMemoryBarriers = imageBarriersToShaderRead.data();
+}
+
+void VolumeRendering2::transferFramesToGpu(VkCommandBuffer commandBuffer) {
+    if(!copyPending) return;
+
+    copyPending = false;
+
+    for(auto i = 0; i < batchSize; ++i) {
+        imageBarriersToTransfer[i].image = regions[i].dstImage;
+        imageBarriersToTransfer[i + batchSize].image = regions[i].eDstImage;
+        imageBarriersToShaderRead[i].image = regions[i].dstImage;
+        imageBarriersToShaderRead[i + batchSize].image = regions[i].eDstImage;
+    }
+    vkCmdPipelineBarrier2(commandBuffer, &tDependencyInfo);
+
+    for(auto& copy : regions) {
+        vkCmdCopyBufferToImage(commandBuffer, copy.srcBuffer, copy.dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy.region);
+        vkCmdCopyBufferToImage(commandBuffer, copy.eSrcBuffer, copy.eDstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy.region);
+    }
+
+    vkCmdPipelineBarrier2(commandBuffer, &sDependencyInfo);
 }
 
 int main(){
