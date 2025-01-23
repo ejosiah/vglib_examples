@@ -135,9 +135,18 @@ layout(location = 3) out vec4 metalRoughnessAmb;
 
 
 void main() {
+    vec4 baseColor = getBaseColor();
+
+    if(MATERIAL.alphaMode == ALPHA_MODE_MASK)  {
+        if(baseColor.a < MATERIAL.alphaCutOff){
+            discard;
+        }
+        baseColor.a = 1;
+    }
+
     position.xyz = fs_in.position;
     normal = vec4(getNormalInfo().N, MATERIAL.alphaCutOff);
-    color = getBaseColor();
+    color = baseColor;
     metalRoughnessAmb = vec4(getMRO(), MATERIAL.alphaMode);
 }
 

@@ -69,24 +69,36 @@ namespace gltf {
     }
 
     template<typename T>
-    std::span<const T> getAttributeData(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const std::string& attribute) {
+    std::vector<T> getAttributeData(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const std::string& attribute) {
         if(!primitive.attributes.contains(attribute)){
             return {};
         }
 
         auto& accessor = model.accessors[primitive.attributes.at(attribute)];
 
-        if(accessor.count == 0) {
-            return {};
+        const auto count = accessor.count;
+        if(count == 0) {
+            return std::vector<T>{};
         }
+
+        std::vector<T> result(count);
 
         auto& bufferView = model.bufferViews[accessor.bufferView];
         auto& buffer = model.buffers[bufferView.buffer];
 
-        auto start = reinterpret_cast<const T*>(buffer.data.data() + bufferView.byteOffset + accessor.byteOffset);
-        auto size = bufferView.byteLength/sizeof(T);
+        auto bufferPtr = const_cast<unsigned char*>(buffer.data.data() + bufferView.byteOffset + accessor.byteOffset);
 
-        return { start, size };
+        if(bufferView.byteStride == 0) {
+            auto size = accessor.count * sizeof(T);
+            std::memcpy(result.data(), bufferPtr, size);
+        }else {
+            for(auto i = 0; i < count; ++i) {
+                result[i] = *reinterpret_cast<T*>(bufferPtr);
+                bufferPtr += bufferView.byteStride;
+            }
+        }
+
+        return result;
     }
 
 

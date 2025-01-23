@@ -147,7 +147,7 @@ void VolumetricIntegration::createRenderPipeline() {
         render.gbuffer.pipeline =
             builder
                 .shaderStage()
-                    .vertexShader(resource("g_buffer.vert.spv"))
+                    .vertexShader(resource("render.vert.spv"))
                     .fragmentShader(resource("g_buffer.frag.spv"))
                 .vertexInputState().clear()
                     .addVertexBindingDescription(VertexMultiAttributes::bindingDescription())
@@ -269,9 +269,11 @@ VkCommandBuffer *VolumetricIntegration::buildCommandBuffers(uint32_t imageIndex,
     rPassInfo.renderPass = renderPass;
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-//    evaluateLighting(commandBuffer);
-    renderScene(commandBuffer, render.forward);
+    if(renderMode == RenderMode::Deferred) {
+        evaluateLighting(commandBuffer);
+    }else {
+        renderScene(commandBuffer, render.forward);
+    }
     renderLight(commandBuffer);
     renderUI(commandBuffer);
 
@@ -383,12 +385,24 @@ void VolumetricIntegration::createLights() {
 
 void VolumetricIntegration::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Begin("Settings");
-    ImGui::SetWindowSize({200, 200});
+    ImGui::SetWindowSize({0, 0});
     if(ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen)){
         ImGui::SliderFloat("x", &lights[0].position.x, -10, 10);
         ImGui::SliderFloat("y", &lights[0].position.y, -10, 10);
         ImGui::SliderFloat("z", &lights[0].position.z, -10, 10);
     }
+
+    if(ImGui::CollapsingHeader("rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
+        static int mode = to<int>(renderMode);
+        ImGui::Text("Render Mode: ");
+        ImGui::Indent(16);
+        ImGui::RadioButton("forward", &mode, to<int>(RenderMode::Forward));
+        ImGui::SameLine();
+        ImGui::RadioButton("deferred", &mode, to<int>(RenderMode::Deferred));
+        ImGui::Indent(-16);
+        renderMode = to<RenderMode>(mode);
+    }
+
     ImGui::End();
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
@@ -454,10 +468,11 @@ void VolumetricIntegration::createGBuffer() {
 }
 
 void VolumetricIntegration::endFrame() {
-//    updateGBuffer();
+    updateGBuffer();
 }
 
 void VolumetricIntegration::updateGBuffer() {
+    if(renderMode != RenderMode::Deferred) return;
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         offscreen.render(commandBuffer, gbuffer.renderInfo, [&]{
             renderScene(commandBuffer, render.gbuffer);

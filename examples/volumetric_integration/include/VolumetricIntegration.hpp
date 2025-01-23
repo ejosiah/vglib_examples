@@ -7,6 +7,8 @@ struct RenderPipeline {
     VulkanPipeline pipeline;
 };
 
+enum class RenderMode :int { Forward, Deferred };
+
 class VolumetricIntegration : public VulkanBaseApp{
 public:
     explicit VolumetricIntegration(const Settings& settings = {});
@@ -100,6 +102,8 @@ protected:
         Offscreen::RenderInfo renderInfo{};
     } gbuffer;
     Offscreen offscreen{};
+
+    RenderMode renderMode{RenderMode::Forward};
 
     static constexpr uint32_t RESERVED_TEXTURE_SLOTS = 5;
 
