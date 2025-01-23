@@ -36,8 +36,8 @@ using VolumeAnimation = Animation<VolumeFrame, VolumeMetadata>;
 struct SceneData {
     glm::vec3 lightDirection{1};
     glm::vec3 lightColor{1};
-    glm::vec3 scattering{0.1};
-    glm::vec3 absorption{100};
+    glm::vec3 scattering{50};
+    glm::vec3 absorption{0.1};
     glm::vec3 extinction;
     glm::vec3 cameraPosition;
     float primaryStepSize{0.25};

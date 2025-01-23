@@ -186,7 +186,7 @@ namespace gltf {
         }
 
         auto gltf  = std::make_unique<tinygltf::Model>();
-        tinyGltfLoad(*gltf, path.string());
+        tinyGltfLoad(*gltf, path.string());  // FIXME this is slow, write multi threaded loader
         const auto counts = getCounts(*gltf);
 
         const auto textureBindingOffset = _bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, gltf->textures.size());
