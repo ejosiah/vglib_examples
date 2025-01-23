@@ -184,12 +184,12 @@ protected:
         VulkanBuffer indices;
     } skyBox;
     const std::vector<const char*> environmentPaths {
-        "LA_Downtown_Helipad_GoldenHour_3k.hdr",
-        "BasketballCourt_3k.hdr",
-        "old_hall_4k.hdr",
+//        "LA_Downtown_Helipad_GoldenHour_3k.hdr",
+//        "BasketballCourt_3k.hdr",
+//        "old_hall_4k.hdr",
         "HdrOutdoorFrozenCreekWinterDayClear001_JPG_3K.jpg",
-        "HdrOutdoorCityCondoCourtyardEveningClear001_3K.JPG",
-        "HdrOutdoorSnowMountainsEveningClear001_3K.jpg",
+//        "HdrOutdoorCityCondoCourtyardEveningClear001_3K.JPG",
+//        "HdrOutdoorSnowMountainsEveningClear001_3K.jpg",
     };
     struct {
         int environment{0};

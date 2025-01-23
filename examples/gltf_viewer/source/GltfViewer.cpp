@@ -10,14 +10,15 @@
 
 GltfViewer::GltfViewer(const Settings& settings) : VulkanBaseApp("Gltf Viewer", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/gltf_viewer");
-    fileManager().addSearchPathFront("../../examples/gltf_viewer/data");
-    fileManager().addSearchPathFront("../../examples/gltf_viewer/spv");
-    fileManager().addSearchPathFront("../../examples/gltf_viewer/models");
-    fileManager().addSearchPathFront("../../examples/gltf_viewer/textures");
-    fileManager().addSearchPathFront("../../dependencies/glTF-Sample-Assets");
-    fileManager().addSearchPathFront("../../dependencies/glTF-Sample-Assets/Models");
-    fileManager().addSearchPathFront("../../examples/common/data");
+    fileManager().addSearchPathFront("../../glTF-Sample-Assets");
+    fileManager().addSearchPathFront("data");
+    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("gltf_viewer");
+    fileManager().addSearchPathFront("gltf_viewer/data");
+    fileManager().addSearchPathFront("gltf_viewer/spv");
+    fileManager().addSearchPathFront("gltf_viewer/models");
+    fileManager().addSearchPathFront("gltf_viewer/textures");
+    fileManager().addSearchPathFront("examples/common/data");
 }
 
 void GltfViewer::initApp() {
@@ -1147,7 +1148,7 @@ void GltfViewer::constructModelPaths() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1440;
         settings.height = 1280;

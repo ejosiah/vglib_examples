@@ -21,6 +21,8 @@
 - KHR_materials_iridescence
 
 ## TODO
+- use GL_EXT_scalar_block_layout extension to avoid padding structs for alignment
+- add animation support
 - implement more robust Tone mapping
 - implement path traced renderer
 - Allow users to use their own environment maps
@@ -36,7 +38,9 @@
   - ond the order hand multiple worker threads do not preserve this order
   - pass in meshId when processing, use to determine position in GPU mesh buffer 
 ### Fixes
-- fix - descriptorPool memory leak (imageDescriptorSet not freed after use)
-- fix - free up texture binding points used by a model when its disposed
-- fix - app fails on exit during async loads
-- fix - KHR_materials_anisotropy tangent rotation
+- loading of interleaved buffer
+- fork tinygltf loader and remove upfront image loads as this a serialization point
+- descriptorPool memory leak (imageDescriptorSet not freed after use)
+- free up texture binding points used by a model when its disposed
+- app fails on exit during async loads
+- KHR_materials_anisotropy tangent rotation
