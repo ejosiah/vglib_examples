@@ -38,7 +38,7 @@
   - ond the order hand multiple worker threads do not preserve this order
   - pass in meshId when processing, use to determine position in GPU mesh buffer 
 ### Fixes
-- loading of interleaved buffer
+- reset camera selection on new model load
 - fork tinygltf loader and remove upfront image loads as this a serialization point
 - descriptorPool memory leak (imageDescriptorSet not freed after use)
 - free up texture binding points used by a model when its disposed
