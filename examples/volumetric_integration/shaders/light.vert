@@ -36,7 +36,7 @@ layout(set = 0, binding = 0) buffer PunctualLights {
 
 
 void main(){
-    vColor = color;
+    vColor.rgb = lights[0].color;
     vUv = uv;
     gl_PointSize = 2.0;
     vec4 lightPosition = vec4(lights[0].position + position.xyz, 1);

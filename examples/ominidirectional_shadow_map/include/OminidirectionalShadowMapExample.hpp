@@ -135,7 +135,7 @@ protected:
     std::unique_ptr<FirstPersonCameraController> camera;
     std::unique_ptr<asyncml::Loader> m_loader;
     BindlessDescriptor m_bindLessDescriptor;
-//    std::shared_ptr<asyncml::Model> m_model;
+    std::shared_ptr<asyncml::Model> m_model;
     VulkanDescriptorSetLayout m_meshSetLayout;
     VkDescriptorSet m_meshDescriptorSet;
     ImTextureID m_vulkanImageTexId{};

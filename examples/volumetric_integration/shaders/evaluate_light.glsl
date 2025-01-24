@@ -76,5 +76,16 @@ vec3 evaluateLight(LightingParams lp) {
     return color;
 }
 
+vec3 evaluateLight(in vec3 pos) {
+    Light light = slights[0];
+
+    vec3 pointToLight = light.direction;
+    if(light.type == LightType_Point){
+        pointToLight = light.position - pos;
+    }
+
+    return getLighIntensity(light, pointToLight);
+}
+
 
 #endif // GLSL_EVALUATE_LIGHTS

@@ -47,13 +47,13 @@ void OminiDirectionalShadowMap::capture(Scene&& scene, VkCommandBuffer commandBu
 //    vkCmdUpdateBuffer(commandBuffer, _cameras.gpu, 0, _cameras.gpu.size, _cameras.cpu.data());
 //    Barrier::transferWriteToFragmentRead(commandBuffer, _cameras.gpu);
 
-    VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
+    static VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
     info.flags = 0;
     info.renderArea = {{0, 0}, {_size, _size}};
     info.layerCount = 1;
     info.colorAttachmentCount = 1;
 
-    VkRenderingAttachmentInfo colorAttachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    static VkRenderingAttachmentInfo colorAttachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
     colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment.resolveMode = VK_RESOLVE_MODE_NONE;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -61,7 +61,7 @@ void OminiDirectionalShadowMap::capture(Scene&& scene, VkCommandBuffer commandBu
     colorAttachment.clearValue.color = {1.0f, 1.0f, 1.0f, 1.0f};
     info.pColorAttachments = &colorAttachment;
 
-    VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    static VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
     attachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     attachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
     attachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;

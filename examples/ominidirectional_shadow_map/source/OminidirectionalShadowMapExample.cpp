@@ -7,11 +7,14 @@
 
 OminidirectionalShadowMapExample::OminidirectionalShadowMapExample(const Settings& settings) : VulkanBaseApp("Omini Directional Shadow maps", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/ominidirectional_shadow_map");
-    fileManager().addSearchPathFront("../../examples/ominidirectional_shadow_map/data");
-    fileManager().addSearchPathFront("../../examples/ominidirectional_shadow_map/spv");
-    fileManager().addSearchPathFront("../../examples/ominidirectional_shadow_map/models");
-    fileManager().addSearchPathFront("../../examples/ominidirectional_shadow_map/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("data/models");
+    fileManager().addSearchPathFront("ominidirectional_shadow_map");
+    fileManager().addSearchPathFront("ominidirectional_shadow_map/data");
+    fileManager().addSearchPathFront("ominidirectional_shadow_map/spv");
+    fileManager().addSearchPathFront("ominidirectional_shadow_map/models");
+    fileManager().addSearchPathFront("ominidirectional_shadow_map/textures");
 }
 
 void OminidirectionalShadowMapExample::initApp() {
@@ -512,9 +515,11 @@ void OminidirectionalShadowMapExample::beforeDeviceCreation() {
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
     if(devFeatures12.has_value()) {
         devFeatures12.value()->shaderOutputLayer = VK_TRUE;
+        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
     }else {
         static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
         devFeatures12.shaderOutputLayer = VK_TRUE;
+        devFeatures12.scalarBlockLayout = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
     };
 
@@ -522,10 +527,12 @@ void OminidirectionalShadowMapExample::beforeDeviceCreation() {
     if(devFeatures13.has_value()) {
         devFeatures13.value()->synchronization2 = VK_TRUE;
         devFeatures13.value()->dynamicRendering = VK_TRUE;
+        devFeatures13.value()->maintenance4 = VK_TRUE;
     }else {
         static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
         devFeatures13.synchronization2 = VK_TRUE;
         devFeatures13.dynamicRendering = VK_TRUE;
+        devFeatures13.maintenance4 = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
     };
 
@@ -537,13 +544,14 @@ void OminidirectionalShadowMapExample::beforeDeviceCreation() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1920;
         settings.height = 1080;
         settings.depthTest = true;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_KHR_MULTIVIEW_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
 
 //        settings.deviceExtensions.push_back(VK_EXT_TOOLING_INFO_EXTENSION_NAME);

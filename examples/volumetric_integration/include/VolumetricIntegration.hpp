@@ -1,6 +1,7 @@
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 #include "Offscreen.hpp"
+#include "PointShadowMap.hpp"
 
 struct RenderPipeline {
     VulkanPipelineLayout layout;
@@ -25,6 +26,12 @@ protected:
     void initBindlessDescriptor();
 
     void loadModel();
+
+    void loadTextures();
+
+    void initShadowMap();
+
+    void updateTextureBinding(std::shared_ptr<gltf::TextureUploadStatus> status);
 
     void beforeDeviceCreation() override;
 
@@ -52,11 +59,15 @@ protected:
 
     void evaluateLighting(VkCommandBuffer commandBuffer);
 
+    void rayMarch(VkCommandBuffer commandBuffer);
+
     void updateGBuffer();
 
     void endFrame() override;
 
     void renderLight(VkCommandBuffer commandBuffer);
+
+    void renderSceneToShadowMap(VkCommandBuffer commandBuffer);
 
     void renderUI(VkCommandBuffer commandBuffer);
 
@@ -74,13 +85,14 @@ protected:
         RenderPipeline forward;
         RenderPipeline eval_lighting;
         RenderPipeline light;
+        RenderPipeline ray_march;
     } render;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
-    std::unique_ptr<OrbitingCameraController> camera;
+    std::unique_ptr<BaseCameraController> camera;
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
     std::shared_ptr<gltf::Model> model;
@@ -102,9 +114,28 @@ protected:
         Offscreen::RenderInfo renderInfo{};
     } gbuffer;
     Offscreen offscreen{};
+    Texture grayNoise;
+
+    struct {
+        glm::mat4 model{};
+        glm::mat4 view{};
+        glm::mat4 projection{};
+        glm::vec3 camera_position{};
+        float time{};
+        float fog_strength{0};
+        float stepScale{0.25};
+        int fog_noise{1};
+        int enable_volume_shadow{1};
+        int use_improved_integration{1};
+        int update_transmission_first{0};
+        int constantFog{1};
+        int heightFog{};
+        int boxFog{};
+    } fogConstants{};
 
     RenderMode renderMode{RenderMode::Forward};
+    PointShadowMap shadowMap;
 
-    static constexpr uint32_t RESERVED_TEXTURE_SLOTS = 5;
+    static constexpr uint32_t RESERVED_TEXTURE_SLOTS = 8;
 
 };

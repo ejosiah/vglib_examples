@@ -144,7 +144,7 @@ void main() {
         baseColor.a = 1;
     }
 
-    position.xyz = fs_in.position;
+    position = vec4(fs_in.position, distance(fs_in.position, fs_in.eyes));
     normal = vec4(getNormalInfo().N, MATERIAL.alphaCutOff);
     color = baseColor;
     metalRoughnessAmb = vec4(getMRO(), MATERIAL.alphaMode);
