@@ -4,6 +4,7 @@
 #define N (Num_Groups)
 #define COUNTS 0
 #define SUMS 1
+#define ORDER_CHECKING 2
 #define NEXT_ID 0
 #define RADICES_PER_WG 4
 #define NUM_RADICES 256
@@ -29,7 +30,7 @@ layout(push_constant) uniform Consts{
 	uint Num_Elements;
 	uint Num_Radices_Per_WorkGroup;
 	uint Num_Groups;
-	uint reorderIndices;
+	uint recordSize;
 };
 
 layout(set = 0, binding=COUNTS) buffer Counts{
@@ -38,6 +39,10 @@ layout(set = 0, binding=COUNTS) buffer Counts{
 
 layout(set = 0, binding=SUMS) buffer Sums{
 	uint sums[];
+};
+
+layout(set = 0, binding=ORDER_CHECKING) buffer OrderChecking{
+	uint isOrdered;
 };
 
 shared uint local_counts[MAX_N];
@@ -64,6 +69,8 @@ void prefixScan(inout uvec4 v, out uint sum){
 
 
 void main(){
+	if(isOrdered == 0) return;
+
 	uint thid = gl_LocalInvocationIndex;
 	
 	for(int i = 0; i < Num_Radices_Per_WorkGroup; i++){	// TODO split into 4 group of 256 threads 

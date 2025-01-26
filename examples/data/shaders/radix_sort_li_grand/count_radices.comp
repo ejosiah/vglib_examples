@@ -4,7 +4,8 @@
 #define WORKGROUP_SIZE 1024
 #define DATA 0
 #define COUNTS 0
-#define VALUE_ID 0
+#define ORDER_CHECKING 2
+#define KEY_ID 0
 #define INDEX_ID 1
 #define NUM_DATA_ELEMENTS 1
 #define BYTE_SIZE 8
@@ -24,7 +25,7 @@ layout(push_constant) uniform Consts{
 	uint Num_Elements;
 	uint Num_Radices_Per_WorkGroup;
 	uint Num_Groups;
-	uint reorderIndices;
+	uint recordSize;
 };
 
 layout(set = 0, binding=DATA) buffer Data{
@@ -35,9 +36,15 @@ layout(set = 1, binding=COUNTS) buffer Counts{
 	uint counts[];
 };
 
+layout(set = 1, binding=ORDER_CHECKING) buffer OrderChecking{
+	uint isOrdered;
+};
+
 shared uint local_counts[NUM_COUNTERS];
 
 void main(){
+	if(isOrdered == 0) return;
+
 	uint thid = gl_LocalInvocationIndex;
 	uint group = thid/R;
 
@@ -52,7 +59,7 @@ void main(){
 
 		if(idx >= Num_Elements) break;
 			
-			uint word = data[VALUE_ID].buf[idx];
+			uint word = data[KEY_ID].buf[idx];
 			uint bit = DIGIT(word, block, Radix);
 			uint bitIdx = bit * Num_Groups_per_WorkGroup + group;
 

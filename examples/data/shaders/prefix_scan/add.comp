@@ -11,16 +11,16 @@ layout(set = 0, binding = 1) buffer SUMS {
 };
 
 layout(push_constant) uniform Constants{
-    int itemsPerWorkGroup;
-    int N;
+    uint itemsPerWorkGroup;
+    uint N;
 };
 
 void main(){
     int sum = g_sums[gl_WorkGroupID.x];
-    int offset = int(gl_WorkGroupID.x * itemsPerWorkGroup);
-    int i = int(offset + gl_LocalInvocationIndex);
-    int step = int(gl_WorkGroupSize.x);
-    int n = offset + itemsPerWorkGroup;
+    uint offset = gl_WorkGroupID.x * itemsPerWorkGroup;
+    uint i = offset + gl_LocalInvocationIndex;
+    uint step = gl_WorkGroupSize.x;
+    uint n = offset + itemsPerWorkGroup;
 
     for(i ; i < n; i += step){
         g_data[i] += sum;

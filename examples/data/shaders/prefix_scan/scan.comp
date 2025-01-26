@@ -8,7 +8,9 @@
 #define CONFLICT_FREE_OFFSET(n) (((n) >> LOG_BANKS))
 #define NUM_SMEM_ELEMENTS SHARED_STORAGE_SIZE + CONFLICT_FREE_OFFSET(SHARED_STORAGE_SIZE)
 #define CONFLICT_FREE_ID(n) (n) + CONFLICT_FREE_OFFSET(n)
-#define GET(DATA, INDEX)
+#define GET_DATA(INDEX) (INDEX < N ? g_data[INDEX] : 0)
+#define SET_DATA(INDEX, VALUE) \
+if(INDEX < N){ g_data[INDEX] = VALUE; }
 
 layout(local_size_x = 1024) in;
 
@@ -18,6 +20,11 @@ layout(set = 0, binding = 0) buffer DATA {
 
 layout(set = 0, binding = 1) buffer SUMS {
   int g_sums[];
+};
+
+layout(push_constant) uniform Constants{
+  uint itemsPerWorkGroup;
+  uint N;
 };
 
 shared int data[NUM_SMEM_ELEMENTS];
@@ -31,11 +38,9 @@ void main(){
   int gOffset = int(gl_WorkGroupID.x * DATA_ITERMS_PER_WORKGROUP/2);
   int n = SHARED_STORAGE_SIZE;
 
-  // FIXME out of bounds data access
   // sequencial memory access
-  ivec4 temp0 = ivec4(g_data[4 * gthid + 0 + gOffset], g_data[4 * gthid + 1 + gOffset], g_data[4 * gthid + 2 + gOffset], g_data[4 * gthid + 3 + gOffset]);
-  ivec4 temp1 = ivec4(g_data[4 * gthid2 + 0 + gOffset], g_data[4 * gthid2 + 1 + gOffset], g_data[4 * gthid2 + 2 + gOffset], g_data[4 * gthid2 + 3 + gOffset]);
-
+  ivec4 temp0 = ivec4(GET_DATA(4 * gthid + 0 + gOffset), GET_DATA(4 * gthid + 1 + gOffset), GET_DATA(4 * gthid + 2 + gOffset), GET_DATA(4 * gthid + 3 + gOffset));
+  ivec4 temp1 = ivec4(GET_DATA(4 * gthid2 + 0 + gOffset), GET_DATA(4 * gthid2 + 1 + gOffset), GET_DATA(4 * gthid2 + 2 + gOffset), GET_DATA(4 * gthid2 + 3 + gOffset));
   int sum = 0;
   int ai = CONFLICT_FREE_ID(thid);
   scan(temp0, sum);
@@ -85,17 +90,15 @@ void main(){
   temp0 += ivec4(sum0);
   temp1 += ivec4(sum1);
 
-  // FIXME out of bounds data access
-  g_data[4 * gthid + 0 + gOffset] = temp0.x;
-  g_data[4 * gthid + 1 + gOffset] = temp0.y;
-  g_data[4 * gthid + 2 + gOffset] = temp0.z;
-  g_data[4 * gthid + 3 + gOffset] = temp0.w;
+  SET_DATA(4 * gthid + 0 + gOffset, temp0.x)
+  SET_DATA(4 * gthid + 1 + gOffset, temp0.y)
+  SET_DATA(4 * gthid + 2 + gOffset, temp0.z)
+  SET_DATA(4 * gthid + 3 + gOffset, temp0.w)
 
-  // FIXME out of bounds data access
-  g_data[4 * gthid2 + 0 + gOffset] = temp1.x;
-  g_data[4 * gthid2 + 1 + gOffset] = temp1.y;
-  g_data[4 * gthid2 + 2 + gOffset] = temp1.z;
-  g_data[4 * gthid2 + 3 + gOffset] = temp1.w;
+  SET_DATA(4 * gthid2 + 0 + gOffset, temp1.x)
+  SET_DATA(4 * gthid2 + 1 + gOffset, temp1.y)
+  SET_DATA(4 * gthid2 + 2 + gOffset, temp1.z)
+  SET_DATA(4 * gthid2 + 3 + gOffset, temp1.w)
 }
 
 void scan(inout ivec4 v, out int sum){

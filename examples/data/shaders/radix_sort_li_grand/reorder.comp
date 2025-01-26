@@ -3,9 +3,12 @@
 #define WORKGROUP_SIZE 1024
 #define COUNTS 0
 #define SUMS 1
+#define ORDER_CHECKING 2
 #define DATA 0
+#define INDICES 1
+#define RECORDS 2
 #define NUM_DATA_ELEMENTS 1
-#define VALUE_ID 0
+#define KEY_ID 0
 #define INDEX_ID 1
 #define BYTE_SIZE 8
 #define DIGIT(WORD, BLOCK, RADIX) ((WORD >> BLOCK * BYTE_SIZE) & (RADIX-1))
@@ -23,7 +26,7 @@ layout(push_constant) uniform Consts{
 	uint Num_Elements;
 	uint Num_Radices_Per_WorkGroup;
 	uint Num_Groups;
-	uint reorderIndices;
+	uint recordSize;
 };
 
 
@@ -35,6 +38,22 @@ layout(set = 1, binding=DATA) buffer DataOut{
 	uint buf[];
 } data_out[NUM_DATA_ELEMENTS];
 
+layout(set = 0, binding=INDICES) buffer IndexIn{
+	uint buf[];
+} index_in[NUM_DATA_ELEMENTS];
+
+layout(set = 1, binding=INDICES) buffer IndexOut{
+	uint buf[];
+} index_out[NUM_DATA_ELEMENTS];
+
+layout(set = 0, binding=RECORDS) buffer RecordsIn{
+	uint buf[];
+} record_in[NUM_DATA_ELEMENTS];
+
+layout(set = 1, binding=RECORDS) buffer RecordsOut{
+	uint buf[];
+} record_out[NUM_DATA_ELEMENTS];
+
 layout(set = 2, binding=COUNTS) buffer Counts{
 	uint counts[];
 };
@@ -43,11 +62,17 @@ layout(set = 2, binding=SUMS) buffer Sums{
 	uint sums[];
 };
 
+layout(set = 2, binding=ORDER_CHECKING) buffer OrderChecking{
+	uint isOrdered;
+};
+
 
 shared uint local_counts[8192];
 shared uint local_sum[256];
 
 void main(){
+	if(isOrdered == 0) return;
+
 	uint thid = gl_LocalInvocationIndex;
 	uint group = thid/R;
 	
@@ -76,7 +101,7 @@ void main(){
 
 		if(idx >= Num_Elements) break;
 			
-			uint word = data_in[VALUE_ID].buf[idx];
+			uint word = data_in[KEY_ID].buf[idx];
 			uint bit = DIGIT(word, block, Radix);
 			uint bitIdx = bit * Num_Groups_per_WorkGroup + group;
 
@@ -85,8 +110,9 @@ void main(){
 				if(thid%R == i) {
 					uint localOffset = local_counts[bitIdx]++;
 					uint globalOffset = local_sum[bit];
-					data_out[VALUE_ID].buf[localOffset + globalOffset] = data_in[VALUE_ID].buf[idx];
-					
+					uint oIdx = localOffset + globalOffset;
+					if(oIdx >= Num_Elements) continue;
+					data_out[KEY_ID].buf[oIdx] = data_in[KEY_ID].buf[idx];
 				}
 				barrier();
 			}

@@ -1,3 +1,5 @@
+#version 460
+
 layout(local_size_x = 10, local_size_y = 10) in;
 
 struct Particle{
@@ -32,7 +34,7 @@ layout(set = 2, binding = 2) buffer TRI_INDEX_DATA{
     int indices[];
 };
 
-bool triangleLineTest(vec3 a, vec3 b, vec3 c, vec3 p, vec3 q, out float t){
+bool triangleLineTest(vec3 a, vec3 b, vec3 c, vec3 p, vec3 q, out float t, out vec3 uvw){
     vec3 ab = b - a;
     vec3 ac = c - a;
     vec3 qp = p - q;
@@ -53,6 +55,8 @@ bool triangleLineTest(vec3 a, vec3 b, vec3 c, vec3 p, vec3 q, out float t){
     if(v < 0 || v > d) return false;
     float w = -dot(ab, e);
     if(w < 0 || v + w > d) return false;
+
+    uvw = vec3(1 - v - w, v, w);
 
     return true;
 
