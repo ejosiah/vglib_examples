@@ -81,18 +81,15 @@ namespace gltf {
     using Meshes = Buffer;
 
     struct Light {
+        glm::vec3 position{};
         glm::vec3 direction{0, 0, -1};
-        float range{0};
-
         glm::vec3 color{1};
+        float range{};
         float intensity{1};
-
-        glm::vec3 position{0};
-        float innerConeCos{0};
-
-        float outerConeCos{0};
+        float innerConeCos{};
+        float outerConeCos{};
         int type{to<int>(LightType::DIRECTIONAL)};
-        glm::vec2 padding;
+        int shadowMapIndex{-1};
     };
 
     struct Model {
@@ -127,6 +124,10 @@ namespace gltf {
         }
 
         ~Model();
+
+        void render(VkCommandBuffer commandBuffer, VulkanPipelineLayout& layout, uint32_t meshDescriptorOffset = 0);
+
+        void renderWithMaterial(VkCommandBuffer commandBuffer, VulkanPipelineLayout& layout, uint32_t firstSet = 0, bool blend = false);
 
     private:
         Condition _loaded;

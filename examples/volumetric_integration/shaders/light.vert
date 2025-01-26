@@ -1,4 +1,5 @@
 #version 460 core
+#extension GL_EXT_scalar_block_layout : enable
 
 layout(location = 0) in vec4 position;
 layout(location = 1) in vec3 normal;
@@ -17,20 +18,18 @@ layout(location = 0) out vec4 vColor;
 layout(location = 1) out vec2 vUv;
 
 struct Light{
-    vec3 direction;
-    float range;
-
-    vec3 color;
-    float intensity;
-
     vec3 position;
+    vec3 direction;
+    vec3 color;
+    float range;
+    float intensity;
     float innerConeCos;
-
     float outerConeCos;
     int type;
+    int shadowMapIndex;
 };
 
-layout(set = 0, binding = 0) buffer PunctualLights {
+layout(set = 0, binding = 0, scalar) buffer PunctualLights {
     Light lights[];
 };
 

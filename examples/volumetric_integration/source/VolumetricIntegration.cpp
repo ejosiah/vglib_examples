@@ -8,8 +8,8 @@
 VolumetricIntegration::VolumetricIntegration(const Settings& settings) : VulkanBaseApp("Volumetric Integration", settings) {
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../../glTF-Sample-Assets/Models");
-    fileManager().addSearchPathFront("../data/textures");
     fileManager().addSearchPathFront("data");
+    fileManager().addSearchPathFront("data/textures");
     fileManager().addSearchPathFront("data/shaders");
     fileManager().addSearchPathFront("volumetric_integration");
     fileManager().addSearchPathFront("volumetric_integration/data");
@@ -291,12 +291,12 @@ VkCommandBuffer *VolumetricIntegration::buildCommandBuffers(uint32_t imageIndex,
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     if(renderMode == RenderMode::Deferred) {
-//        evaluateLighting(commandBuffer);
-        rayMarch(commandBuffer);
+        evaluateLighting(commandBuffer);
+//        rayMarch(commandBuffer);
     }else {
         renderScene(commandBuffer, render.forward);
     }
-//    renderLight(commandBuffer);
+    renderLight(commandBuffer);
     renderUI(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -393,6 +393,7 @@ void VolumetricIntegration::rayMarch(VkCommandBuffer commandBuffer) {
 
 
 void VolumetricIntegration::renderLight(VkCommandBuffer commandBuffer) {
+    if(!showLight) return;
     VkDeviceSize offset = 0;
     camera->push(commandBuffer, render.light.layout);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.light.pipeline.handle);
@@ -409,6 +410,7 @@ void VolumetricIntegration::createLights() {
     aloc[0].intensity = 600;
     aloc[0].color = {1, 0.9, 0.5};
     aloc[0].type = to<int>(gltf::LightType::POINT);
+    aloc[0].shadowMapIndex = 6;
 
     aloc[1].position = glm::vec3(0);
     aloc[1].direction = glm::vec3(1);
@@ -435,6 +437,8 @@ void VolumetricIntegration::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::SliderFloat("z", &lights[0].position.z, -10, 10);
         ImGui::SliderFloat("Intensity", &lights[0].intensity, 10, 600);
         ImGui::SliderFloat("Range", &lights[0].range, 1, 20);
+        ImGui::Checkbox("enable shadow", &shadow);
+        ImGui::Checkbox("Show light marker", &showLight);
     }
 
     if(ImGui::CollapsingHeader("rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -552,6 +556,10 @@ void VolumetricIntegration::endFrame() {
     fogConstants.view = camera->camera.view;
     fogConstants.projection = camera->camera.proj;
     fogConstants.camera_position = camera->position();
+
+    int nexFrame = (currentFrame + 1) % MAX_IN_FLIGHT_FRAMES;
+    bindlessDescriptor.update({ &shadowMap.shadowMap(nexFrame), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6 });
+
 }
 
 void VolumetricIntegration::updateGBuffer() {
@@ -583,27 +591,15 @@ void VolumetricIntegration::initShadowMap() {
     shadowMap = PointShadowMap{ device, descriptorPool, MAX_IN_FLIGHT_FRAMES, VK_FORMAT_D16_UNORM };
     shadowMap.init();
     bindlessDescriptor.update({ &shadowMap.shadowMap(0), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6 });
-    bindlessDescriptor.update({ &shadowMap.shadowMap(1), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7 });
 }
 
 void VolumetricIntegration::renderSceneToShadowMap(VkCommandBuffer commandBuffer) {
-    shadowMap.capture([this, commandBuffer](auto layout) {
-
-        VkDeviceSize offset = 0;
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &model->meshDescriptorSet.u16.handle, 0, VK_NULL_HANDLE);
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, model->vertices, &offset);
-
-//    vkCmdSetColorBlendEnableEXT(commandBuffer, 0, 1, &blendingEnabled);
-        vkCmdBindIndexBuffer(commandBuffer, model->indices.u16.handle, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexedIndirect(commandBuffer, model->draw.u16.handle, 0, model->draw.u16.count, sizeof(VkDrawIndexedIndirectCommand));
-
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &model->meshDescriptorSet.u32.handle, 0, VK_NULL_HANDLE);
-        vkCmdBindIndexBuffer(commandBuffer, model->indices.u32.handle, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexedIndirect(commandBuffer, model->draw.u32.handle, 0, model->draw.u32.count, sizeof(VkDrawIndexedIndirectCommand));
-
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &model->meshDescriptorSet.u8.handle, 0, VK_NULL_HANDLE);
-        vkCmdBindIndexBuffer(commandBuffer, model->indices.u8.handle, 0, VK_INDEX_TYPE_UINT8_EXT);
-        vkCmdDrawIndexedIndirect(commandBuffer, model->draw.u8.handle, 0, model->draw.u8.count, sizeof(VkDrawIndexedIndirectCommand));
+    if(!shadow) {
+        clear(commandBuffer, shadowMap.shadowMap(currentFrame), glm::vec4(MAX_FLOAT), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        return;
+    }
+    shadowMap.capture([this, commandBuffer](auto& layout) {
+        model->render(commandBuffer, layout, 1);
     }, commandBuffer, currentFrame);
 }
 
@@ -611,8 +607,8 @@ int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width =  1024; //1440;
-        settings.height = 720; //1280;
+        settings.width =  1440;
+        settings.height = 1280;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;
@@ -622,7 +618,6 @@ int main(){
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
-        settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
 
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();

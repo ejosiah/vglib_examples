@@ -110,7 +110,7 @@ layout(set = MATERIAL_SET, binding = TEXTURE_INFO_BINDING_POINT) buffer TextureI
     TextureInfo textureInfos[];
 };
 
-layout(set = 3, binding = 0) buffer SceneLights {
+layout(set = 3, binding = 0, scalar) buffer SceneLights {
     Light slights[];
 };
 

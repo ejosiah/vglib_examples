@@ -1,4 +1,5 @@
 #pragma once
+#include "AbstractCamera.hpp"
 #include "Offscreen.hpp"
 #include <functional>
 
@@ -10,7 +11,7 @@ public:
         Texture color;
         Texture depth;
     };
-    using Scene = std::function<void(VkPipelineLayout)>;
+    using Scene = std::function<void(VulkanPipelineLayout&)>;
 
     PointShadowMap() = default;
 
@@ -30,7 +31,13 @@ public:
 
     void capture(const Scene& scene, VkCommandBuffer commandBuffer, int currentFrame);
 
+    void render(VkCommandBuffer commandBuffer, const Camera& camera);
+
     const Texture& shadowMap(int index) const;
+
+    void addBarrier(VkCommandBuffer commandBuffer);
+
+    void setRenderPass(VulkanRenderPass& renderPass, glm::uvec2 resolution);
 
 private:
     void createShadowMapTexture();
@@ -45,12 +52,14 @@ private:
 
     void createPipeline();
 
+    void createCube();
+
     VulkanDevice& device();
 
 
     Offscreen::RenderInfo& renderInfo(int index);
 
-private:
+public:
     VulkanDevice* _device{};
     VulkanDescriptorPool* _descriptorPool{};
     Offscreen _offscreen;
@@ -61,6 +70,7 @@ private:
     VkDescriptorSet _descriptorSet{};
     VkFormat _depthFormat{VK_FORMAT_UNDEFINED};
     uint32_t _size{};
+    glm::uvec2 _screenResolution;
     struct {
         glm::mat4 worldTransform{1};
         glm::vec3 lightPosition{};
@@ -72,6 +82,19 @@ private:
     } _uniforms;
     VulkanPipeline _pipeline;
     VulkanPipelineLayout _layout;
+    VulkanRenderPass* _renderPass{};
+
+    struct {
+        VulkanPipeline pipeline;
+        VulkanPipelineLayout layout;
+    } debug;
+
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer indexes;
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } cube;
 
     struct Face {
         glm::vec3 direction;
@@ -82,5 +105,5 @@ private:
 
     static constexpr int PROJECTION_MATRIX = 0;
     static constexpr int VIEW_MATRIX_START = 1;
-    static constexpr int DEFAULT_RANGE = 1024;
+    static constexpr float DEFAULT_RANGE = 1024;
 };

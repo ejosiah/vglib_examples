@@ -11,11 +11,15 @@ $else$
 $classname$::$classname$(const Settings& settings) : VulkanBaseApp("$title$", settings) {
 $endif$
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/$name$");
-    fileManager().addSearchPathFront("../../examples/$name$/data");
-    fileManager().addSearchPathFront("../../examples/$name$/spv");
-    fileManager().addSearchPathFront("../../examples/$name$/models");
-    fileManager().addSearchPathFront("../../examples/$name$/textures");
+    fileManager().addSearchPathFront("../../glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("data");
+    fileManager().addSearchPathFront("data/textures");
+    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("$name$");
+    fileManager().addSearchPathFront("$name$/data");
+    fileManager().addSearchPathFront("$name$/spv");
+    fileManager().addSearchPathFront("$name$/models");
+    fileManager().addSearchPathFront("$name$/textures");
 }
 
 void $classname$::initApp() {
@@ -279,8 +283,8 @@ void $classname$::createRenderPipeline() {
         render.pipeline =
             builder
                 .shaderStage()
-                    .vertexShader(resource("shaders/pass_through.vert.spv"))
-                    .fragmentShader(resource("shaders/pass_through.frag.spv"))
+                    .vertexShader(resource("pass_through.vert.spv"))
+                    .fragmentShader(resource("pass_through.frag.spv"))
                 .name("render")
                 .build(render.layout);
     //    @formatter:on
@@ -394,7 +398,7 @@ void $classname$::onPause() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1440;
         settings.height = 1280;

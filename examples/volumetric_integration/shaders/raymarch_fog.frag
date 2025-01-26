@@ -25,10 +25,15 @@
 #define DEPTH_BUFFER_TEXTURE global_textures[DEPTH_BUFFER_INDEX]
 #define NOISE_TEXTURE global_textures[NOISE_TEXTURE_INDEX]
 
+#include "punctual_lights.glsl"
+
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
-#include "punctual_lights.glsl"
+layout(set = 3, binding = 0, scalar) buffer SceneLights {
+    Light slights[];
+};
+
 #include "evaluate_light.glsl"
 
 layout(location = 0) in struct {
@@ -184,7 +189,8 @@ void main() {
         position.xyz,
         normal,
         mro,
-        u.camera_position
+        u.camera_position,
+        0
     );
 
     traceScene(rO, rD, position.w, scatTrans);

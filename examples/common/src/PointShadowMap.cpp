@@ -3,6 +3,7 @@
 #include "filemanager.hpp"
 #include "Vertex.h"
 #include "halfedge.hpp"
+#include "primitives.h"
 
 #include <cassert>
 #include <utility>
@@ -27,6 +28,7 @@ void PointShadowMap::init() {
     createShadowMapTexture();
     createRenderInfo();
     createUniforms();
+    createCube();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     createPipeline();
@@ -45,7 +47,7 @@ void PointShadowMap::updateWorldMatrix(const glm::mat4 &matrix) {
 }
 
 void PointShadowMap::setRange(float range) const {
-    _uniforms.cpu[PROJECTION_MATRIX] = vkn::perspective(glm::half_pi<float>(), 1.0f, 0.1f, range);
+    _uniforms.cpu[PROJECTION_MATRIX] = glm::perspective(glm::half_pi<float>(), 1.0f, 0.1f, range);
 }
 
 void PointShadowMap::capture(const PointShadowMap::Scene& scene, VkCommandBuffer commandBuffer, int currentFrame) {
@@ -56,7 +58,7 @@ void PointShadowMap::capture(const PointShadowMap::Scene& scene, VkCommandBuffer
         vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
 
-        scene(_layout.handle);
+        scene(_layout);
     });
 }
 
@@ -84,6 +86,7 @@ void PointShadowMap::createShadowMapTexture() {
         VkImageSubresourceRange resourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6};
         shadowMap.color.imageView = shadowMap.color.image.createView(VK_FORMAT_R32_SFLOAT, VK_IMAGE_VIEW_TYPE_CUBE, resourceRange);
         shadowMap.color.spec = imageInfo;
+        shadowMap.color.layers = 6;
 
         shadowMap.color.image.transitionLayout(device().graphicsCommandPool(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, resourceRange);
         shadowMap.color.image.transitionLayout(device().graphicsCommandPool(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, resourceRange);
@@ -114,7 +117,7 @@ void PointShadowMap::createShadowMapTexture() {
 void PointShadowMap::createRenderInfo() {
     for(auto& shadowMap : _shadowMap) {
         _renderInfo.push_back({
-            .colorAttachments = { { &shadowMap.color, VK_FORMAT_R32_SFLOAT } },
+            .colorAttachments = { { &shadowMap.color, VK_FORMAT_R32_SFLOAT, glm::vec4(MAX_FLOAT) } },
             .depthAttachment = { { &shadowMap.depth, _depthFormat } },
             .renderArea = { _size, _size },
             .numLayers = 6,
@@ -131,6 +134,10 @@ void PointShadowMap::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_VERTEX_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
         .createLayout();
 
     _meshDescriptorSetLayout =
@@ -146,21 +153,30 @@ void PointShadowMap::createDescriptorSetLayouts() {
 void PointShadowMap::updateDescriptorSets() {
     _descriptorSet = _descriptorPool->allocate({ _descriptorSetLayout }).front();
     
-    auto writes = initializers::writeDescriptorSets();
+    auto writes = initializers::writeDescriptorSets<2>();
     writes[0].dstSet = _descriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo info{ _uniforms.gpu, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &info;
-
+   
+    writes[1].dstSet = _descriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorImageInfo imageInfo{
+        _shadowMap[0].color.sampler.handle
+        , _shadowMap[0].color.imageView.handle
+        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    writes[1].pImageInfo = &imageInfo;
 
     device().updateDescriptorSets(writes);
 }
 
 void PointShadowMap::createUniforms() {
     std::vector<glm::mat4> lightMatrix(7, glm::mat4{1});
-    lightMatrix[PROJECTION_MATRIX] = vkn::perspective(glm::half_pi<float>(), 1.0f, 0.1f, DEFAULT_RANGE);
+    lightMatrix[PROJECTION_MATRIX] = glm::perspective(glm::half_pi<float>(), 1.0f, 0.1f, DEFAULT_RANGE);
     _uniforms.gpu = device().createCpuVisibleBuffer(lightMatrix.data(), BYTE_SIZE(lightMatrix), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     _uniforms.cpu = _uniforms.gpu.span<glm::mat4>();
     device().setName<VK_OBJECT_TYPE_BUFFER>("shadow_map_light_matrices", _uniforms.gpu.buffer);
@@ -171,7 +187,7 @@ void PointShadowMap::createPipeline() {
         device().graphicsPipelineBuilder()
             .allowDerivatives()
             .shaderStage()
-                .vertexShader(FileManager::resource("gltf_poitn_shadow_map.vert.spv"))
+                .vertexShader(FileManager::resource("gltf_point_shadow_map.vert.spv"))
                 .fragmentShader(FileManager::resource("point_shadow_map.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescription(VertexMultiAttributes::bindingDescription())
@@ -215,6 +231,49 @@ void PointShadowMap::createPipeline() {
             .subpass(0)
             .name("point_shadow_map")
         .build(_layout);
+
+    if(_renderPass) {
+    debug.pipeline =
+        device().graphicsPipelineBuilder()
+            .shaderStage()
+                .vertexShader(FileManager::resource("point_shadow_map_debug.vert.spv"))
+                .fragmentShader(FileManager::resource("point_shadow_map_debug.frag.spv"))
+                .vertexInputState()
+                    .addVertexBindingDescription(0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX)
+                    .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0)
+                .inputAssemblyState()
+                    .triangles()
+                .viewportState()
+                    .viewport()
+                        .origin(0, 0)
+                        .dimension(_screenResolution.x, _screenResolution.y)
+                        .minDepth(0)
+                        .maxDepth(1)
+                    .scissor()
+                        .offset(0, 0)
+                        .extent(_screenResolution.x, _screenResolution.y)
+                    .add()
+                .rasterizationState()
+                    .cullFrontFace()
+                    .frontFaceCounterClockwise()
+                    .polygonModeFill()
+                .depthStencilState()
+                    .enableDepthWrite()
+                    .enableDepthTest()
+                    .compareOpLessOrEqual()
+                    .minDepthBounds(0)
+                    .maxDepthBounds(1)
+                .colorBlendState()
+                    .attachment()
+                    .add()
+                .layout()
+                    .addPushConstantRange(Camera::pushConstant())
+                    .addDescriptorSetLayout(_descriptorSetLayout)
+                .renderPass(_renderPass->renderPass)
+                .subpass(0)
+            .name("debug_point_shadow_map")
+        .build(debug.layout);
+    }
 }
 
 Offscreen::RenderInfo &PointShadowMap::renderInfo(int index) {
@@ -234,3 +293,48 @@ std::array<PointShadowMap::Face, 6>PointShadowMap::faces = {{
          {{0.0, 0.0, 1.0}, {0.0,-1.0, 0.0}},
          {{0.0, 0.0, -1.0}, {0.0,-1.0, 0.0}}
  }};
+
+void PointShadowMap::addBarrier(VkCommandBuffer commandBuffer) {
+    static VkMemoryBarrier2 barrier {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT
+    };
+
+    static VkDependencyInfo info{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier
+    };
+
+    vkCmdPipelineBarrier2(commandBuffer, &info);
+
+}
+
+void PointShadowMap::createCube() {
+    auto prim = primitives::cube({1, 0, 0, 1});
+    std::vector<glm::vec3> vertices;
+    for(const auto& vertex : prim.vertices){
+        vertices.push_back(vertex.position.xyz());
+    }
+    cube.vertices = device().createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices)
+            , VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    cube.indexes = device().createDeviceLocalBuffer(prim.indices.data(), BYTE_SIZE(prim.indices)
+            , VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+}
+
+void PointShadowMap::render(VkCommandBuffer commandBuffer, const Camera &camera) {
+    static VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.layout.handle, 0, 1, &_descriptorSet, 0, nullptr);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &cube.vertices.buffer, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, cube.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, cube.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
+}
+
+void PointShadowMap::setRenderPass(VulkanRenderPass &renderPass, glm::uvec2 resolution) {
+    _renderPass = &renderPass;
+    _screenResolution = resolution;
+}

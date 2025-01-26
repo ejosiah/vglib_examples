@@ -27,10 +27,14 @@
 #define METAL_ROUGHNESS_AO_TEXTURE global_textures[MRO_INDEX]
 #define DEPTH_BUFFER_TEXTURE global_textures[DEPTH_BUFFER_INDEX]
 
+#include "punctual_lights.glsl"
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
-#include "punctual_lights.glsl"
+layout(set = 3, binding = 0, scalar) buffer SceneLights {
+    Light slights[];
+};
+
 
 #include "evaluate_light.glsl"
 
@@ -64,7 +68,8 @@ void main() {
         position,
         normal,
         mro,
-        eyes
+        eyes,
+        0
     );
 
     vec3 color = evaluateLight(lp);

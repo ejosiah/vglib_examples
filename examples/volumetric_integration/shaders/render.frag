@@ -94,6 +94,7 @@
 #define MODEL_MATRIX (model * meshes[nonuniformEXT(drawId)].model)
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
+layout(set = 2, binding = 10) uniform samplerCube global_textures_cubemap[];
 
 #include "gltf.glsl"
 #include "punctual_lights.glsl"
@@ -110,7 +111,18 @@ layout(set = MATERIAL_SET, binding = TEXTURE_INFO_BINDING_POINT) buffer TextureI
     TextureInfo textureInfos[];
 };
 
+#define EPSILON 0.15
+#define SHADOW_OPACITY 0.1
+
+layout(set = 3, binding = 0, scalar) buffer SceneLights {
+    Light slights[];
+};
+
 #include "evaluate_light.glsl"
+
+float sampleShadowMap(vec3 position, int id) {
+    return texture(global_textures_cubemap[nonuniformEXT(id)], position).r;
+}
 
 layout(location = 0) in struct {
     vec4 color;
@@ -138,15 +150,24 @@ void main() {
         baseColor.a = 1;
     }
 
+    vec3 mro = getMRO();
+
     LightingParams lp = LightingParams(
         baseColor,
         fs_in.position,
         getNormalInfo().N,
-        getMRO(),
-        fs_in.eyes
+        mro,
+        fs_in.eyes,
+        0
     );
 
-    vec3 color = evaluateLight(lp);
+    vec3 lightVector = fs_in.position - slights[0].position;
+    float distanceToLight = length(lightVector);
+    float sampleDistance = sampleShadowMap(lightVector, slights[0].shadowMapIndex);
+    float visibility = distanceToLight <= (sampleDistance + EPSILON) ? 1 : SHADOW_OPACITY;
+    vec3 ambient = baseColor.rgb * 0.02 * mro.b;
+
+    vec3 color = ambient + evaluateLight(lp) * visibility;
 
     color.rgb /= 1 + color.rgb;
     color.rgb = pow(color.rgb, vec3(0.4545));

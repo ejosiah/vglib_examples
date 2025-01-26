@@ -1,10 +1,6 @@
 #ifndef GLSL_EVALUATE_LIGHTS
 #define GLSL_EVALUATE_LIGHTS
 
-layout(set = 3, binding = 0) buffer SceneLights {
-    Light slights[];
-};
-
 const vec3 F0 = vec3(0.04);
 const vec3 F90 = vec3(1);
 const float IOR = 1.5;
@@ -16,6 +12,7 @@ struct LightingParams {
     vec3 normal;
     vec3 metalRoughnessAmb;
     vec3 eyes;
+    int lightId;
 };
 
 vec3 evaluateLight(LightingParams lp) {
@@ -39,7 +36,7 @@ vec3 evaluateLight(LightingParams lp) {
     vec3 f_specular = vec3(0.0);
     vec3 f_diffuse = vec3(0.0);
 
-    Light light = slights[0];
+    Light light = slights[lp.lightId];
 
     vec3 pointToLight = light.direction;
     if(light.type == LightType_Point){

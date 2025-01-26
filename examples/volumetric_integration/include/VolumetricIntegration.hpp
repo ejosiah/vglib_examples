@@ -135,7 +135,9 @@ protected:
 
     RenderMode renderMode{RenderMode::Forward};
     PointShadowMap shadowMap;
+    bool showLight{};
+    bool shadow{true};
 
-    static constexpr uint32_t RESERVED_TEXTURE_SLOTS = 8;
+    static constexpr uint32_t RESERVED_TEXTURE_SLOTS = 7;
 
 };
