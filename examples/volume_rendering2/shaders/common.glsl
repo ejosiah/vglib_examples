@@ -1,6 +1,8 @@
 #ifndef VOLUME_RENDERING_COMMONG_GLSL
 #define VOLUME_RENDERING_COMMONG_GLSL
 
+#include "random.glsl"
+
 #define EPSILION_VEC3 vec3(0.0001)
 #define M_PI 3.1415926535897932384626433832795
 
@@ -64,7 +66,7 @@ layout(push_constant) uniform  Constants {
 
 
 bool test(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out TimeSpan span) {
-    float tmin = 0;
+    float tmin = -1e10;
     float tmax = 1e10;
 
     for(int i = 0; i < 3; ++i) {
@@ -140,10 +142,10 @@ vec3 voxelToWorld(vec3 pos) {
     return (info.voxelToWorldTransform * vec4(pos, 1)).xyz;
 }
 
-vec3 directionWorldToVoxel(vec3 dir, float offset) {
+vec3 directionWorldToVoxel(vec3 dir) {
     vec3 start = worldToVoxel(dir);
-    vec3 target = worldToVoxel(dir + dir * 0.5);
-    return target - start;
+    vec3 target = worldToVoxel(dir + dir);
+    return normalize(target - start);
 }
 
 float sampleDensity(vec3 pos) {
@@ -153,6 +155,8 @@ float sampleDensity(vec3 pos) {
 float sampleEmission(vec3 pos) {
     return texture(EMISSION_TEXTURE, pos).r;
 }
+
+float sampleDensityWithDeltaTracking(vec3 pos, TimeSpan ts, out float t);
 
 void writeDepthValue(vec3 pos) {
     vec4 clipPos = proj * view * model * vec4(pos, 1);

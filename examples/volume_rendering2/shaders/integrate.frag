@@ -23,37 +23,45 @@ vec3 light_color = scene.lightColor;
 float g = scene.asymmetric_factor;
 
 void main() {
-    vec3 rO = scene.cameraPosition;
-    vec3 rd = normalize(fs_in.direction);
+    vec3 wrO = scene.cameraPosition;
+    vec3 wrd = normalize(fs_in.direction);
+
+    vec3 rO = worldToVoxel(wrO);
+    vec3 rd = directionWorldToVoxel(wrd);
 
     TimeSpan pTS;
-    if(!test(rO, rd, info.bmin, info.bmax, pTS)) discard;
+    float phase_debug = 0;
+    if(!test(rO, rd, vec3(0), vec3(1), pTS)) discard;
 
-    vec3 world_position = rO + rd * pTS.t0;
+    vec3 entry_position = rO + rd * pTS.t0;
 
     float step_size = scene.primaryStepSize/float(scene.numSteps);
     const int num_steps = int(ceil(length(pTS)/step_size));
-//    const int num_steps = int(1/step_size);
     const float stride = length(pTS)/num_steps;
-//    const float stride = 1/num_steps;
 
     vec3 transmission = vec3(1);
     vec3 inScattering = vec3(0);
     vec3 sigma_a, sigma_s, sigma_t;
+    const float cos0 = dot(-wrd, light_dir);
 
-    vec3 start = worldToVoxel(world_position, rd);
-    vec3 target = worldToVoxel(world_position + rd, rd);
+    vec3 start = entry_position;
+    rd = rd * stride;
 
-    rd = normalize(target - start) * stride;
-
-    const float cos0 = dot(-rd, light_dir);
     float in_scatter_probablity = phaseHG(g, cos0);
+    phase_debug += in_scatter_probablity;
+    vec3 volume_entry_point;
+    bool first_hit = false;
 
     for(int t = 0; t < num_steps; ++t) {
         vec3 sample_position  = start + rd * t;
 
         float density = getPerticipatingMedia(sample_position, sigma_s, sigma_a, sigma_t);
         if (density < cutoff ) continue;
+
+        if(!first_hit) {
+            volume_entry_point = sample_position;
+            first_hit = true;
+        }
 
         vec3 sample_transmission = exp(-sigma_t * stride);
         transmission *= sample_transmission;
@@ -63,6 +71,8 @@ void main() {
         inScattering += transmission * sigma_s * in_scatter_probablity * light_intensity * stride;
 
     }
+
+    vec3 world_position = voxelToWorld(volume_entry_point);
 
     float alpha = 1 - dot(vec3(1), transmission/3);
     fragColor = vec4(inScattering, alpha);
@@ -75,18 +85,17 @@ float phaseHG(float g, float cos0) {
 }
 
 vec3 compute_light_attenuation(vec3 position, float primary_step_size) {
-    vec3 lo =  voxelToWorld(position);
-    vec3 ld = light_dir;
+    vec3 lo =  position;
+    vec3 ld = directionWorldToVoxel(light_dir);
 
     TimeSpan ts;
-    if(!test(lo, ld, info.bmin, info.bmax, ts)) return vec3(1);
+    if(!test(lo, ld, vec3(0), vec3(1), ts)) return vec3(1);
 
     const int num_steps = int(ceil(ts.t1/primary_step_size));
     const float stride = ts.t1/num_steps;
 
-    vec3 start = worldToVoxel(lo, ld);
-    vec3 target = worldToVoxel(start + ld, ld);
-    ld = normalize(target - start) * stride;
+    vec3 start = lo;
+    ld *= stride;
 
     vec3 tau = vec3(0);
     vec3 sigma_a, sigma_s, sigma_t;

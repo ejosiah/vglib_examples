@@ -37,7 +37,7 @@ struct SceneData {
     glm::vec3 lightDirection{1};
     glm::vec3 lightColor{20};
     glm::vec3 scattering{50};
-    glm::vec3 absorption{0.1};
+    glm::vec3 absorption{20};
     glm::vec3 extinction;
     glm::vec3 cameraPosition;
     float primaryStepSize{1};
@@ -49,7 +49,7 @@ struct SceneData {
     float lightConeSpread{0.1};
     int currentFrame{0};
     int texturePoolSize{};
-    int numSteps{200};
+    int numSteps{100};
     float asymmetric_factor{0};
 };
 

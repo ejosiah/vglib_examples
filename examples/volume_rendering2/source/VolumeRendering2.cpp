@@ -376,7 +376,7 @@ void VolumeRendering2::loadAnimation() {
     auto offset = glm::vec3{0, -bmin.y, 0};
 
     auto localToWorld = glm::mat4{1};
-    localToWorld = glm::scale(localToWorld, glm::vec3(0.05));
+    localToWorld = glm::scale(localToWorld, glm::vec3(0.1));
     localToWorld = glm::translate(localToWorld, offset);
 
     VolumeInfo info{};
