@@ -5,13 +5,6 @@
 
 #include "common.glsl"
 
-layout(push_constant) uniform  Constants {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-};
-
-
 layout(location = 0) in struct {
     vec3 direction;
 } fs_in;
@@ -26,7 +19,7 @@ void main() {
 
     const float isoValue = scene.isoLevel;
 
-    Span span;
+    TimeSpan span;
     if(test(o, rd, info.bmin, info.bmax, span)) {
         vec3 pos = o * rd * span.t0;
         ivec3 voxelDim = textureSize(DENSITY_TEXTURE, 0);

@@ -7,10 +7,10 @@
 
 VolumetricIntegration::VolumetricIntegration(const Settings& settings) : VulkanBaseApp("Volumetric Integration", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../glTF-Sample-Assets/Models");
-    fileManager().addSearchPathFront("data");
-    fileManager().addSearchPathFront("data/textures");
-    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("volumetric_integration");
     fileManager().addSearchPathFront("volumetric_integration/data");
     fileManager().addSearchPathFront("volumetric_integration/spv");
@@ -313,6 +313,7 @@ void VolumetricIntegration::update(float time) {
     auto cam = camera->cam();
     fogConstants.time += time;
     shadowMap.update(lights[0].position);
+    shadowMap.setRange(lights[0].range);
 
     setTitle(fmt::format("{}, FPS - {}, camera - {}", title, framePerSecond, camera->position()));
 }

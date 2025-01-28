@@ -5,13 +5,6 @@
 
 #include "common.glsl"
 
-layout(push_constant) uniform  Constants {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-};
-
-
 layout(location = 0) in struct {
     vec3 direction;
 } fs_in;
@@ -36,7 +29,7 @@ void main() {
     vec3 pLumi = vec3(0);
     bool rayTerminated = false;
 
-    Span pTS;
+    TimeSpan pTS;
     if(test(o, rd, info.bmin, info.bmax, pTS)) {
         vec3 wPos = o + rd * pTS.t0;
         ivec3 voxelDim = textureSize(DENSITY_TEXTURE0, 0);
@@ -64,7 +57,7 @@ void main() {
 
             // TODO shadow ray
             vec3 sTrans = vec3(1);
-            Span sTS;
+            TimeSpan sTS;
 
             vec3 so = voxelToWorld(pos);
             vec3 sRd = lightDir;

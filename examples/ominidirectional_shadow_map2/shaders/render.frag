@@ -44,7 +44,7 @@ void main() {
     vec3 lightVector = fs_in.position - lightPosition;
     float distanceToLight = length(lightVector);
     float sampleDistance = sampleShadowMap(lightVector);
-    float visibility = distanceToLight <= (sampleDistance + EPSILON) ? 1 : SHADOW_OPACITY;
+    float visibility = (distanceToLight - sampleDistance) <= EPSILON ? 1 : SHADOW_OPACITY;
 
     color  *= visibility;
 

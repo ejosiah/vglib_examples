@@ -4,12 +4,12 @@
 #include "DescriptorSetBuilder.hpp"
 
 ShadowMapping::ShadowMapping(const Settings& settings) : VulkanBaseApp("Shadow mapping", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/shadow_mapping/spv");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("shadow_mapping/spv");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data");
+    fileManager().addSearchPath("../data/models");
+    fileManager().addSearchPath("../data/textures");
 }
 
 void ShadowMapping::initApp() {
@@ -24,7 +24,6 @@ void ShadowMapping::initApp() {
     createRenderPipeline();
     createUboBuffer();
     updateDescriptorSets();
-    createComputePipeline();
 }
 
 void ShadowMapping::createDescriptorPool() {
@@ -141,7 +140,6 @@ void ShadowMapping::onSwapChainRecreation() {
     initFrustum();
     createRenderPipeline();
     updateShadowMapDescriptorSet();
-    createComputePipeline();
 }
 
 VkCommandBuffer *ShadowMapping::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -365,8 +363,8 @@ void ShadowMapping::initShadowMap() {
         shadowMap.pipeline =
             device.graphicsPipelineBuilder()
                 .shaderStage()
-                    .vertexShader(load("shadowmap.vert.spv"))
-                    .fragmentShader(load("shadowmap.frag.spv"))
+                    .vertexShader(resource("shadowmap.vert.spv"))
+                    .fragmentShader(resource("shadowmap.frag.spv"))
                 .vertexInputState()
                     .addVertexBindingDescription(0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX)
                     .addVertexBindingDescription(1, sizeof(glm::mat4), VK_VERTEX_INPUT_RATE_INSTANCE)
@@ -616,7 +614,7 @@ void ShadowMapping::updateUbo() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;

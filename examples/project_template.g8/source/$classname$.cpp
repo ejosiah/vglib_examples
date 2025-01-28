@@ -11,7 +11,7 @@ $else$
 $classname$::$classname$(const Settings& settings) : VulkanBaseApp("$title$", settings) {
 $endif$
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
     fileManager().addSearchPathFront("data");
     fileManager().addSearchPathFront("data/textures");
     fileManager().addSearchPathFront("data/shaders");

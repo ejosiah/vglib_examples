@@ -40,16 +40,17 @@ struct SceneData {
     glm::vec3 absorption{0.1};
     glm::vec3 extinction;
     glm::vec3 cameraPosition;
-    float primaryStepSize{0.25};
+    float primaryStepSize{1};
     float shadowStepSize{1};
     float gain{0.2};
-    float cutoff{0.000};
+    float cutoff{0.005};
     float isoLevel{0};
     int shadow{0};
     float lightConeSpread{0.1};
     int currentFrame{0};
     int texturePoolSize{};
-    int numSteps{13};
+    int numSteps{200};
+    float asymmetric_factor;
 };
 
 struct Scene {
@@ -148,8 +149,8 @@ protected:
             {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1},
     };
     VolumeAnimation animation;
-    static constexpr int poolSize = 10;
-    static constexpr int aframeCount = 20;
+    static constexpr int poolSize = 1;
+    static constexpr int aframeCount = 1;
     static constexpr int batchSize = 6;
     std::array<CopyBufferToImage, batchSize> regions{};
     struct {

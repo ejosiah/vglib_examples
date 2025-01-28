@@ -65,8 +65,7 @@ protected:
         glm::mat4 model{1};
     } light;
 
-//    glm::vec3 lightPosition{0.0f, -2.5f, 0.0};
-    glm::vec3 lightPosition{0.0f, 4, 0.0};
+    glm::vec3 lightPosition{0.0f, 1.5, 0.0};
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -82,5 +81,4 @@ protected:
         VulkanBuffer vertices;
         VulkanBuffer indexes;
     } lightObj;
-    int view = 1;
 };

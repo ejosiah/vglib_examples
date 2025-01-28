@@ -329,6 +329,7 @@ void PointShadowMap::render(VkCommandBuffer commandBuffer, const Camera &camera)
     static VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.layout.handle, 0, 1, &_descriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, debug.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &camera);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &cube.vertices.buffer, &offset);
     vkCmdBindIndexBuffer(commandBuffer, cube.indexes, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, cube.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);

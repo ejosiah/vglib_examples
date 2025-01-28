@@ -7,8 +7,8 @@
 
 VolumeRendering2::VolumeRendering2(const Settings& settings) : VulkanBaseApp("Volume Rendering", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("data");
-    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("volume_rendering2");
     fileManager().addSearchPathFront("volume_rendering2/data");
     fileManager().addSearchPathFront("volume_rendering2/spv");
@@ -261,7 +261,7 @@ VkCommandBuffer *VolumeRendering2::buildCommandBuffers(uint32_t imageIndex, uint
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-//    AppContext::renderFloor(commandBuffer, *camera);
+    AppContext::renderFloor(commandBuffer, *camera);
 //    renderLevelSet(commandBuffer);
     renderFogVolume(commandBuffer);
 
@@ -277,7 +277,7 @@ void VolumeRendering2::update(float time) {
     camera->update(time);
     auto cam = camera->cam();
 
-    if(count > 10 && animation.next(time)) {
+    if(count > 10 && animation.next(time) && animation.frameCount() > 1) {
         scene.cpu->currentFrame = (++scene.cpu->currentFrame % poolSize);
         pool.used--;
 
@@ -336,7 +336,10 @@ void VolumeRendering2::loadVolume() {
 
 void VolumeRendering2::loadAnimation() {
 //    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_044_Low_Res)"};
-    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\GroundExplosionVDB\ground_explosion\ground_explosion_VDB)"};
+//    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\VDB-Clouds-Pack-Pixel-Lab\VDB Cloud Files)"};
+//    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\GroundExplosionVDB\ground_explosion\ground_explosion_VDB)"};
+    fs::path path{R"(C:\Users\joebh\OneDrive\media\volumes\_VDB-Smoke-Pack\smoke_001_Low_Res)"};
+
     animation = VolumeAnimation {aframeCount};
 
     glm::vec3 bmin{MAX_FLOAT};
@@ -344,12 +347,13 @@ void VolumeRendering2::loadAnimation() {
 
     std::vector<VolumeSet> volumes;
     for(auto i = 0; i < aframeCount; ++i) {
-        auto volume = Volume::loadFromVdb(path / fmt::format("ground_explosion_{:04}.vdb", i));
+//        auto volume = Volume::loadFromVdb(path / fmt::format("ground_explosion_{:04}.vdb", i));
+        auto volume = Volume::loadFromVdb(path / "smoke_001_0.10_0001.vdb");
         auto& dvolume = volume.begin()->second;
         auto& evolume = volume["flames"];
 
         volumes.push_back(std::move(volume));
-        if(dvolume.numVoxels == 0  && evolume.numVoxels == 0);
+        if(dvolume.numVoxels == 0  && evolume.numVoxels == 0) continue;
 
         bmin = glm::min(dvolume.bounds.min, bmin);
         bmax = glm::max(dvolume.bounds.max, bmax);
@@ -369,7 +373,7 @@ void VolumeRendering2::loadAnimation() {
     auto voxelToLocalTransform = glm::inverse(model);
 
     auto center = (bmin + bmax) * 0.5f;
-    auto offset = -center;
+    auto offset = glm::vec3{0, -bmin.y, 0};
 
     auto localToWorld = glm::mat4{1};
     localToWorld = glm::scale(localToWorld, glm::vec3(0.05));
@@ -406,10 +410,12 @@ void VolumeRendering2::loadAnimation() {
         auto dData = dvolume.placeIn(bmin, bmax);
         auto eData = evolume.placeIn(bmin, bmax);
 
+        auto eDim = eData.size() == 1 ? glm::ivec3{1} : dim;
+
         if(pool.used < poolSize) {
 //            auto eData = std::vector<float>{1.0f};
             textures::create(device, pool.density[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, dData.data(), dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-            textures::create(device, pool.emission[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, eData.data(), dim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+            textures::create(device, pool.emission[pool.used], VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, eData.data(), eDim, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             ++pool.used;
         }
         VulkanBuffer densityBuffer = device.createStagingBuffer(BYTE_SIZE(dData));

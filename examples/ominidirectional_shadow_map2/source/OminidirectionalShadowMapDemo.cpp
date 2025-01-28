@@ -7,11 +7,11 @@
 
 OminidirectionalShadowMapDemo::OminidirectionalShadowMapDemo(const Settings& settings) : VulkanBaseApp("Ominidirectional shadow map", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../glTF-Sample-Assets/Models");
-    fileManager().addSearchPathFront("data");
-    fileManager().addSearchPathFront("data/textures");
-    fileManager().addSearchPathFront("data/shaders");
-    fileManager().addSearchPathFront("data/models");
+    fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("ominidirectional_shadow_map2");
     fileManager().addSearchPathFront("ominidirectional_shadow_map2/data");
     fileManager().addSearchPathFront("ominidirectional_shadow_map2/spv");
@@ -36,16 +36,16 @@ void OminidirectionalShadowMapDemo::initApp() {
 }
 
 void OminidirectionalShadowMapDemo::initCamera() {
-//    OrbitingCameraSettings cameraSettings;
-    FirstPersonSpectatorCameraSettings cameraSettings;
-//    cameraSettings.orbitMinZoom = 0.1;
-//    cameraSettings.orbitMaxZoom = 512.0f;
-//    cameraSettings.offsetDistance = 1.0f;
-//    cameraSettings.modelHeight = 0.5;
+    OrbitingCameraSettings cameraSettings;
+//    FirstPersonSpectatorCameraSettings cameraSettings;
+    cameraSettings.orbitMinZoom = 0.1;
+    cameraSettings.orbitMaxZoom = 512.0f;
+    cameraSettings.offsetDistance = 1.0f;
+    cameraSettings.modelHeight = 0.5;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
-    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 }
 
 void OminidirectionalShadowMapDemo::initBindlessDescriptor() {
@@ -207,17 +207,15 @@ VkCommandBuffer *OminidirectionalShadowMapDemo::buildCommandBuffers(uint32_t ima
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-//    static Camera aCamera{};
-//    aCamera.view =  shadowMap._uniforms.cpu[1];
-//    aCamera.proj = shadowMap._uniforms.cpu[0];
-    camera->push(commandBuffer, render.layout);
-//    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Camera), &aCamera);
-    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec3), &lightPosition);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 2, 1, &bindlessDescriptor.descriptorSet, 0, VK_NULL_HANDLE);
-    model->render(commandBuffer, render.layout);
+//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+//    camera->push(commandBuffer, render.layout);
+//    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec3), &lightPosition);
+//    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 2, 1, &bindlessDescriptor.descriptorSet, 0, VK_NULL_HANDLE);
+//    model->render(commandBuffer, render.layout);
+//
+//    renderLight(commandBuffer);
 
-    renderLight(commandBuffer);
+    shadowMap.render(commandBuffer, camera->camera);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -233,12 +231,6 @@ void OminidirectionalShadowMapDemo::update(float time) {
     static float elapsedTime = 0;
     elapsedTime += time;
 
-    if(elapsedTime > 0 && int(elapsedTime) % 5 == 0) {
-        ++view;
-        view = (view % 7) + (view/7) * 1;
-        spdlog::info("view: {}", view);
-    }
-
     lightPosition.x = sin(glm::radians(elapsedTime * 360.0f)) * 0.15f;
     lightPosition.z = cos(glm::radians(elapsedTime * 360.0f)) * 0.15f;
     light.model = glm::translate(glm::mat4{1}, lightPosition);
@@ -250,8 +242,8 @@ void OminidirectionalShadowMapDemo::checkAppInputs() {
 }
 
 void OminidirectionalShadowMapDemo::cleanup() {
-    loader->stop();
     AppContext::shutdown();
+    loader->stop();
 }
 
 void OminidirectionalShadowMapDemo::onPause() {
@@ -259,13 +251,13 @@ void OminidirectionalShadowMapDemo::onPause() {
 }
 
 void OminidirectionalShadowMapDemo::loadModel() {
-//    model = loader->loadGltf(resource("shadowscene_fire.gltf"));
-    model = loader->loadGltf(resource("Sponza/glTF/Sponza.gltf"));
+    model = loader->loadGltf(resource("shadowscene_fire.gltf"));
     model->sync();
 }
 
 void OminidirectionalShadowMapDemo::initShadowMap() {
     shadowMap = PointShadowMap{ device, descriptorPool, MAX_IN_FLIGHT_FRAMES, VK_FORMAT_D16_UNORM};
+    shadowMap.setRenderPass(renderPass, {width, height});
     shadowMap.init();
     shadowMap.setRange(50);
     bindlessDescriptor.update({ &shadowMap.shadowMap(0), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0 });
