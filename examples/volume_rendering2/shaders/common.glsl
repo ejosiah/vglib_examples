@@ -2,6 +2,7 @@
 #define VOLUME_RENDERING_COMMONG_GLSL
 
 #define EPSILION_VEC3 vec3(0.0001)
+#define M_PI 3.1415926535897932384626433832795
 
 #define DENSITY_TEXTURE0 (global_textures[0])
 #define DENSITY_TEXTURE (global_textures[scene.currentFrame])
@@ -137,6 +138,12 @@ vec3 worldToVoxel(vec3 pos) {
 
 vec3 voxelToWorld(vec3 pos) {
     return (info.voxelToWorldTransform * vec4(pos, 1)).xyz;
+}
+
+vec3 directionWorldToVoxel(vec3 dir, float offset) {
+    vec3 start = worldToVoxel(dir);
+    vec3 target = worldToVoxel(dir + dir * 0.5);
+    return target - start;
 }
 
 float sampleDensity(vec3 pos) {

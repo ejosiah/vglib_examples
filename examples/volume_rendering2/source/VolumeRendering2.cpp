@@ -201,7 +201,7 @@ void VolumeRendering2::createRenderPipeline() {
             prototypes->cloneGraphicsPipeline()
                 .shaderStage()
                     .vertexShader(resource("volume.vert.spv"))
-                    .fragmentShader(resource("fog.frag.spv"))
+                    .fragmentShader(resource("integrate.frag.spv"))
                 .vertexInputState().clear()
                     .addVertexBindingDescriptions(ClipSpace::bindingDescription())
                     .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())

@@ -35,7 +35,7 @@ using VolumeAnimation = Animation<VolumeFrame, VolumeMetadata>;
 
 struct SceneData {
     glm::vec3 lightDirection{1};
-    glm::vec3 lightColor{1};
+    glm::vec3 lightColor{20};
     glm::vec3 scattering{50};
     glm::vec3 absorption{0.1};
     glm::vec3 extinction;
@@ -50,7 +50,7 @@ struct SceneData {
     int currentFrame{0};
     int texturePoolSize{};
     int numSteps{200};
-    float asymmetric_factor;
+    float asymmetric_factor{0};
 };
 
 struct Scene {
