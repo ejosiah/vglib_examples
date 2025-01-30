@@ -12,9 +12,9 @@ $classname$::$classname$(const Settings& settings) : VulkanBaseApp("$title$", se
 $endif$
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
-    fileManager().addSearchPathFront("data");
-    fileManager().addSearchPathFront("data/textures");
-    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("$name$");
     fileManager().addSearchPathFront("$name$/data");
     fileManager().addSearchPathFront("$name$/spv");
