@@ -2,9 +2,7 @@
 
 #include <tiny_gltf.h>
 #include "gltf.hpp"
-#include "RingBuffer.hpp"
 #include "concurrency/BlockingQueue.hpp"
-#include "concurrency/Condition.hpp"
 #include "ObjectPool.hpp"
 #include "StagingBuffer.hpp"
 
@@ -313,23 +311,21 @@ namespace gltf {
         VulkanDescriptorPool* _descriptorPool{};
         BindlessDescriptor* _bindlessDescriptor{};
         BlockingQueue<std::shared_ptr<PendingModel>> _pendingModels;
-        RingBuffer<TextureUploadTask> _pendingTextureUploads;
-        SingleWriterManyReadersQueue<Task> _workerQueue;
-        ManyWritersSingleReaderQueue<SecondaryCommandBuffer> _commandBufferQueue;
+        BlockingQueue<TextureUploadTask> _pendingTextureUploads;
+        BlockingQueue<Task> _workerQueue;
+        BlockingQueue<SecondaryCommandBuffer> _commandBufferQueue;
         size_t _workerCount{};
         std::vector<WorkerCommandPools> _workerCommandPools;
         std::vector<VkCommandBuffer> _commandBuffers;
         VulkanCommandPool _graphicsCommandPool;
 
         std::vector<StagingBuffer> _stagingBuffers;
-        RingBuffer<GltfTextureUploadTask> _readyTextures;
-        RingBuffer<TextureUploadTask> _uploadedTextures;
+        BlockingQueue<GltfTextureUploadTask> _readyTextures;
+        BlockingQueue<TextureUploadTask> _uploadedTextures;
 
         std::thread _coordinator;
         std::vector<std::thread> _workers;
         VulkanFence _fence;
-        Condition _coordinatorWorkAvailable{};
-        Condition _taskPending{};
         std::atomic_bool _running{};
         Texture _placeHolderTexture;
         Texture _placeHolderNormalTexture;

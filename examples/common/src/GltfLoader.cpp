@@ -162,7 +162,7 @@ namespace gltf {
     , _descriptorPool{ descriptorPool }
     , _bindlessDescriptor{ bindlessDescriptor }
     , _pendingModels( 1024 )
-    , _workerQueue(numWorkers, 1024)
+    , _workerQueue(1024)
     , _commandBufferQueue(1024)
     , _workerCount(numWorkers)
     , _barrierObjectPools(numWorkers, BufferMemoryBarrierPool(128) )
@@ -335,7 +335,6 @@ namespace gltf {
         pendingModel->numLights = counts.numLights;
 
         _pendingModels.push(pendingModel);
-        _coordinatorWorkAvailable.notify();
 
         return model;
 
@@ -399,7 +398,6 @@ namespace gltf {
         auto status = std::make_shared<TextureUploadStatus>();
         status->texture = &texture;
         _pendingTextureUploads.push({ path.string(), channels, status});
-        _coordinatorWorkAvailable.notify();
 
         return status;
     }
@@ -446,26 +444,17 @@ namespace gltf {
         std::vector<VkCommandBuffer> commandBuffers;
 
         while(_running) {
-            _coordinatorWorkAvailable.wait([&]{
-                return !_pendingModels.empty()
-                || !_commandBufferQueue.empty()
-                || !_pendingTextureUploads.empty()
-                || !_running; });
-
             if(!_running) {
-                _workerQueue.broadcast(StopWorkerTask{});
-                _taskPending.notifyAll();
+                _workerQueue.push(StopWorkerTask{});
                 for(auto& worker : _workers) {
                     worker.join();
                 }
             }
 
-            auto availableCommands = _commandBufferQueue.size();
-            while(availableCommands > 0) {
-                auto result = _commandBufferQueue.pop();
+            while(auto maybe_command = _commandBufferQueue.try_pop()) {
+                auto result = *maybe_command;
                 commandBuffers.insert( commandBuffers.end(), result.commandBuffers.begin(), result.commandBuffers.end());
                 completedTasks.push(std::move(result.task));
-                --availableCommands;
             }
 
             if(!commandBuffers.empty()){
@@ -476,7 +465,6 @@ namespace gltf {
                     onComplete(task);
                     completedTasks.pop();
                 }
-                _taskPending.notifyAll();
             }
 
             commandBuffers.clear();
@@ -520,12 +508,10 @@ namespace gltf {
                     _workerQueue.push(LightInstanceUploadTask{ pending, node, nodeId, instanceId});
                 }
 
-                _taskPending.notifyAll();
             }
 
-            while(!_pendingTextureUploads.empty()) {
-                _workerQueue.push(_pendingTextureUploads.pop());
-                _taskPending.notifyAll();
+            while(auto pending = _pendingTextureUploads.try_pop()) {
+                _workerQueue.push(*pending);
             }
         }
         spdlog::info("GLTF async loader offline");
@@ -551,19 +537,14 @@ namespace gltf {
     }
 
     void Loader::workerLoop(int id) {
-        auto workQueue = _workerQueue.buffer(id);
+        auto& workQueue = _workerQueue;
         bool running = true;
 
         std::vector<SecondaryCommandBuffer> batch{};
         while(running) {
-            _taskPending.wait( [&]{ return !workQueue->empty(); } );
-
             batch.clear();
-            auto availableTasks = workQueue->size();
-            spdlog::info("available work: {}", availableTasks);
-            while(availableTasks > 0) {
-                auto task = workQueue->pop();
-                --availableTasks;
+            while(auto maybe_task = workQueue.try_pop()) {
+                auto task = *maybe_task;
                 if (std::get_if<StopWorkerTask>(&task)) {
                     running = false;
                     break;
@@ -580,14 +561,11 @@ namespace gltf {
 
                 if(batch.size() >= _commandBufferBatchSize) {
                     _commandBufferQueue.push(batch);
-                    _coordinatorWorkAvailable.notify();
                     batch.clear();
                 }
-                spdlog::info("available work left: {}", availableTasks);
             }
             if(!batch.empty()){
                 _commandBufferQueue.push(batch);
-                _coordinatorWorkAvailable.notify();
             }
         }
         spdlog::info("GLTF worker[{}] going offline", id);
@@ -1282,7 +1260,6 @@ namespace gltf {
 
     void Loader::stop() {
         _running = false;
-        _coordinatorWorkAvailable.notify();
         _coordinator.join();
     }
 
@@ -1368,8 +1345,8 @@ namespace gltf {
             std::vector<GltfTextureUploadTask> textureUploads;
             _graphicsCommandPool.oneTimeCommand([&](auto commandBuffer) {
 
-                while (!_readyTextures.empty()) {
-                    auto textureUpload = _readyTextures.pop();
+                while (auto readyTexture = _readyTextures.try_pop()) {
+                    auto textureUpload = *readyTexture;
                     auto &texture = textureUpload.pending->textures[textureUpload.textureId];
 
                     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
@@ -1403,8 +1380,8 @@ namespace gltf {
             std::vector<std::shared_ptr<TextureUploadStatus>> uploadedTextures;
 
             _graphicsCommandPool.oneTimeCommand([&](auto commandBuffer){
-                while(!_uploadedTextures.empty()){
-                    auto uploadedTexture = _uploadedTextures.pop();
+                while(auto maybeUpdatedTexture = _uploadedTextures.try_pop()){
+                    auto uploadedTexture = *maybeUpdatedTexture;
                     auto texture = uploadedTexture.status->texture;
 
                     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };

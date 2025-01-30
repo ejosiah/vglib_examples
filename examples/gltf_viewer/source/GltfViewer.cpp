@@ -169,12 +169,23 @@ void GltfViewer::createConstantTextures() {
 }
 
 void GltfViewer::beforeDeviceCreation() {
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    if(devFeatures12.has_value()) {
+        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        devFeatures12.scalarBlockLayout = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
+    }
+
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
     if(devFeatures13.has_value()) {
+        devFeatures13.value()->maintenance4 = VK_TRUE;
         devFeatures13.value()->synchronization2 = VK_TRUE;
         devFeatures13.value()->dynamicRendering = VK_TRUE;
     }else {
         static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        devFeatures13.maintenance4 = VK_TRUE;
         devFeatures13.synchronization2 = VK_TRUE;
         devFeatures13.dynamicRendering = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);

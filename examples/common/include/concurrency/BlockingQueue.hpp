@@ -1,9 +1,10 @@
 #pragma once
 
-#include <vector>
+#include <queue>
 #include <mutex>
 #include <condition_variable>
 #include <optional>
+#include <span>
 
 template<typename T>
 class BlockingQueue {
@@ -14,41 +15,61 @@ public:
 
     explicit BlockingQueue(size_t capacity)
     : _capacity{capacity}
-    , _data(capacity)
     {}
 
      void push(const T& entry) {
         std::unique_lock<std::mutex> lck{ _mtx };
-        if(_head == _capacity) {
-            _full.wait(lck, [this]{ return _head < _capacity; });
+        if(_data.size() == _capacity) {
+            _full.wait(lck, [this]{ return _data.size() < _capacity; });
         }
-        _data[_head++] = entry;
+        if(!_isActive) return;
+        _data.push(entry);
+         lck.unlock();
+
         _empty.notify_all();
     }
 
     void push(T&& entry) {
         std::unique_lock<std::mutex> lck{ _mtx };
-        if(_head == _capacity) {
-            _full.wait(lck, [this]{ return _head < _capacity; });
+        if(_data.size() == _capacity) {
+            _full.wait(lck, [this]{ return _data.size() < _capacity; });
         }
         if(!_isActive) return;
-        _data[_head++] = std::move(entry);
-        _full.notify_one();
+        _data.push(std::move(entry));
+        lck.unlock();
+
+        _empty.notify_all();
+    }
+
+    void push(std::span<T> entries) {
+        for(auto& entry : entries) {
+            push(entry);    // TODO rewrite, we currently locking for each entry
+        }
     }
 
     T pop() {
         std::unique_lock<std::mutex> lck{ _mtx };
-        if(_head < 0) {
-            _empty.wait([this]{ return _head > 0; });
+        if(_data.empty()) {
+            _empty.wait([this]{ return !_data.empty(); });
         }
         if(!_isActive) throw invalid_state{};
-        return _data[--_head];
+        auto result =  std::move(_data.front());
+        _data.pop();
+        lck.unlock();
+
+        _full.notify_one();
+        return result;
     }
 
     std::optional<T> try_pop() {
         std::unique_lock<std::mutex> lck{ _mtx, std::defer_lock };
-        if(lck.try_lock() && _head > 0 && _isActive) {
-            return _data[--_head];
+        if(lck.try_lock() && !_data.empty() && _isActive) {
+            auto result =  std::move(_data.front());
+            _data.pop();
+            lck.unlock();
+
+            _full.notify_one();
+            return result;
         }else {
             return {};
         }
@@ -63,13 +84,12 @@ public:
 
     bool empty() const {
         std::unique_lock<std::mutex> lck{ _mtx };
-        return _head == 0;
+        return _data.empty();
     };
 
 private:
-    std::vector<T> _data;
+    std::queue<T> _data;
     size_t _capacity{};
-    int _head{};
     mutable std::mutex _mtx;
     std::condition_variable _full;
     std::condition_variable _empty;
