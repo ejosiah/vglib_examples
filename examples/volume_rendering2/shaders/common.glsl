@@ -10,6 +10,8 @@
 #define DENSITY_TEXTURE (global_textures[scene.currentFrame])
 #define EMISSION_TEXTURE (global_textures[scene.texturePoolSize + scene.currentFrame])
 
+uint rngState;
+
 struct Scene {
     vec3 lightDirection;
     vec3 lightColor;
@@ -28,6 +30,10 @@ struct Scene {
     int texturePoolSize;
     int numSteps;
     float asymmetric_factor;
+    float invMaxDensity;
+    float time;
+    int width;
+    int height;
 };
 
 struct VolumeInfo {
@@ -63,6 +69,11 @@ layout(push_constant) uniform  Constants {
     mat4 proj;
 };
 
+float cutoff = scene.cutoff;
+
+vec3 light_dir = normalize(scene.lightDirection);
+vec3 light_color = scene.lightColor;
+float g = scene.asymmetric_factor;
 
 
 bool test(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out TimeSpan span) {
@@ -88,7 +99,7 @@ bool test(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out TimeSpan span) {
             if(tmin > tmax) return false;
         }
     }
-    span.t0 = tmin;
+    span.t0 = max(0, tmin);
     span.t1 = tmax;
     return true;
 }
@@ -156,7 +167,23 @@ float sampleEmission(vec3 pos) {
     return texture(EMISSION_TEXTURE, pos).r;
 }
 
-float sampleDensityWithDeltaTracking(vec3 pos, TimeSpan ts, out float t);
+float sampleDensityDT(vec3 rO, vec3 rD, TimeSpan ts, out float t) {
+    const float scale = length(ts);
+    const float tMax = ts.t1;
+    t = ts.t0;
+    while(t < tMax){
+        t -= log(1 - rand(rngState)) * scale * scene.invMaxDensity;
+        if(t >= tMax) {
+            break;
+        }
+        vec3 pos = rO + rD * t;
+        float density = sampleDensity(pos);
+        if(density * scene.invMaxDensity > rand(rngState)){
+            return density;
+        }
+    }
+    return 0;
+}
 
 void writeDepthValue(vec3 pos) {
     vec4 clipPos = proj * view * model * vec4(pos, 1);
@@ -185,6 +212,37 @@ float getPerticipatingMedia(vec3 pos, out vec3 sigma_s, out vec3 sigma_a, out ve
     sigma_t = max(EPSILION_VEC3, sigma_s + sigma_a);
 
     return density;
+}
+
+float phaseHG(float g, float cos0) {
+    return 1 / (4 * M_PI) * (1 - g * g) / pow(1 + g * g - 2 * g * cos0, 1.5);
+}
+
+vec3 compute_light_attenuation(vec3 position, float primary_step_size) {
+    vec3 lo =  position;
+    vec3 ld = directionWorldToVoxel(light_dir);
+
+    TimeSpan ts;
+    if(!test(lo, ld, vec3(0), vec3(1), ts)) return vec3(1);
+
+    const int num_steps = int(ceil(ts.t1/primary_step_size));
+    const float stride = ts.t1/num_steps;
+
+    vec3 start = lo;
+    ld *= stride;
+
+    vec3 tau = vec3(0);
+    vec3 sigma_a, sigma_s, sigma_t;
+    for(int t = 0; t < num_steps; ++t) {
+        vec3 sample_position  = start + ld * t;
+
+        float density = getPerticipatingMedia(sample_position, sigma_s, sigma_a, sigma_t);
+        if (density < cutoff ) continue;
+
+        tau += sigma_t;
+    }
+
+    return exp(-tau * stride);
 }
 
 #endif // VOLUME_RENDERING_COMMONG_GLSL

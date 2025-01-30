@@ -51,6 +51,10 @@ struct SceneData {
     int texturePoolSize{};
     int numSteps{100};
     float asymmetric_factor{0};
+    float invMaxDensity{1};
+    float time{};
+    int width{};
+    int height{};
 };
 
 struct Scene {
@@ -165,5 +169,5 @@ protected:
     std::array<VkImageMemoryBarrier2, batchSize * 2> imageBarriersToShaderRead{};
     VkDependencyInfo tDependencyInfo{};
     VkDependencyInfo sDependencyInfo{};
-
+    float invMaxDensity{MIN_FLOAT};
 };

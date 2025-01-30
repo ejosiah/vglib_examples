@@ -18,9 +18,9 @@ VolumeRendering2::VolumeRendering2(const Settings& settings) : VulkanBaseApp("Vo
 
 void VolumeRendering2::initApp() {
     openvdb::initialize();
-    initScene();
     loadVolume();
     loadAnimation();
+    initScene();
     initTextureCopyData();
     initCamera();
     createDescriptorPool();
@@ -201,7 +201,7 @@ void VolumeRendering2::createRenderPipeline() {
             prototypes->cloneGraphicsPipeline()
                 .shaderStage()
                     .vertexShader(resource("volume.vert.spv"))
-                    .fragmentShader(resource("integrate.frag.spv"))
+                    .fragmentShader(resource("integrate_dt.frag.spv"))
                 .vertexInputState().clear()
                     .addVertexBindingDescriptions(ClipSpace::bindingDescription())
                     .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())
@@ -276,6 +276,7 @@ void VolumeRendering2::update(float time) {
     static int count = 0;
     camera->update(time);
     auto cam = camera->cam();
+    scene.cpu->time += time;
 
     if(count > 10 && animation.next(time) && animation.frameCount() > 1) {
         scene.cpu->currentFrame = (++scene.cpu->currentFrame % poolSize);
@@ -351,6 +352,8 @@ void VolumeRendering2::loadAnimation() {
         auto volume = Volume::loadFromVdb(path / "smoke_001_0.10_0001.vdb");
         auto& dvolume = volume.begin()->second;
         auto& evolume = volume["flames"];
+
+        invMaxDensity = 1/dvolume.maxDensity;
 
         volumes.push_back(std::move(volume));
         if(dvolume.numVoxels == 0  && evolume.numVoxels == 0) continue;
@@ -460,6 +463,9 @@ void VolumeRendering2::initScene() {
     scene.gpu = device.createCpuVisibleBuffer(&initData, sizeof(SceneData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     scene.cpu = reinterpret_cast<SceneData*>(scene.gpu.map());
     scene.cpu->texturePoolSize = poolSize;
+    scene.cpu->width = width;
+    scene.cpu->height = height;
+    scene.cpu->invMaxDensity = invMaxDensity;
 }
 
 void VolumeRendering2::newFrame() {

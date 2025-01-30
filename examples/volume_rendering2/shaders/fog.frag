@@ -16,7 +16,6 @@ vec3 albedo = scene.lightColor * scene.scattering/(scene.scattering + scene.abso
 float isoValue = scene.isoLevel;
 float pStepSize = scene.primaryStepSize;
 float sStepSize = scene.shadowStepSize;
-float cutoff = scene.cutoff;
 vec3 lightDir = normalize(scene.lightDirection);
 
 

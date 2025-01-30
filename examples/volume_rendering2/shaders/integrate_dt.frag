@@ -22,51 +22,47 @@ void main() {
     vec3 rO = worldToVoxel(wrO);
     vec3 rd = directionWorldToVoxel(wrd);
 
-    TimeSpan pTS;
+    TimeSpan ts;
     float phase_debug = 0;
-    if(!test(rO, rd, vec3(0), vec3(1), pTS)) discard;
+    if(!test(rO, rd, vec3(0), vec3(1), ts)) discard;
 
-    vec3 entry_position = rO + rd * pTS.t0;
-    float voxel_center = length(0.5/volumeDim());
+    vec3 entry_position = rO + rd * ts.t0;
 
     float step_size = scene.primaryStepSize/float(scene.numSteps);
-    const int num_steps = int(ceil(length(pTS)/step_size));
-    const float stride = length(pTS)/num_steps;
+    const int num_steps = int(ceil(length(ts)/step_size));
 
     vec3 transmission = vec3(1);
     vec3 inScattering = vec3(0);
     vec3 sigma_a, sigma_s, sigma_t;
     const float cos0 = dot(-wrd, light_dir);
-
-    vec3 start = entry_position;
-    rd = rd * stride;
-
+    
     float in_scatter_probablity = phaseHG(g, cos0);
     phase_debug += in_scatter_probablity;
-    vec3 volume_entry_point;
-    bool first_hit = false;
 
-    for(int t = 0; t < num_steps; ++t) {
-        vec3 sample_position  = start + rd * (t + voxel_center * rand(rngState));
+    float tMin = ts.t0;
+    for(int i = 0; i < num_steps; ++i) {
 
-        float density = getPerticipatingMedia(sample_position, sigma_s, sigma_a, sigma_t);
-        if (density < cutoff ) continue;
+        float t;
+        float density = sampleDensityDT(rO, rd, ts, t);
+        sigma_a = scene.absorption * density;
+        sigma_s = scene.scattering * density;
+        sigma_t = max(EPSILION_VEC3, sigma_s + sigma_a);
 
-        if(!first_hit) {
-            volume_entry_point = sample_position;
-            first_hit = true;
-        }
+        tMin = min(tMin, t);
 
+        vec3 sample_position = rO + rd * t;
+
+        const float stride = ts.t1 - t;
         vec3 sample_transmission = exp(-sigma_t * stride);
-        transmission *= sample_transmission;
         vec3 light_attenuation = compute_light_attenuation(sample_position, step_size);
-        
+
         vec3 light_intensity = light_color * light_attenuation;
-        inScattering += transmission * sigma_s * in_scatter_probablity * light_intensity * stride;
+        inScattering += sample_transmission * sigma_s * in_scatter_probablity * light_intensity * stride;
+        transmission *= sample_transmission;
 
     }
 
-    vec3 world_position = voxelToWorld(volume_entry_point);
+    vec3 world_position = voxelToWorld(rO + rd * tMin);
 
     float alpha = 1 - dot(vec3(1), transmission/3);
     fragColor = vec4(inScattering, alpha);
