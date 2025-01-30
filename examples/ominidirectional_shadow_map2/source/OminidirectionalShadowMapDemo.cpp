@@ -207,15 +207,15 @@ VkCommandBuffer *OminidirectionalShadowMapDemo::buildCommandBuffers(uint32_t ima
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-//    camera->push(commandBuffer, render.layout);
-//    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec3), &lightPosition);
-//    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 2, 1, &bindlessDescriptor.descriptorSet, 0, VK_NULL_HANDLE);
-//    model->render(commandBuffer, render.layout);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    camera->push(commandBuffer, render.layout);
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec3), &lightPosition);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 2, 1, &bindlessDescriptor.descriptorSet, 0, VK_NULL_HANDLE);
+    model->render(commandBuffer, render.layout);
 //
-//    renderLight(commandBuffer);
+    renderLight(commandBuffer);
 
-    shadowMap.render(commandBuffer, camera->camera);
+//    shadowMap.render(commandBuffer, camera->camera);
 
     vkCmdEndRenderPass(commandBuffer);
 
