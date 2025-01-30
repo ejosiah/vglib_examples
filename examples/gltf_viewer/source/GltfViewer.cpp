@@ -10,15 +10,15 @@
 
 GltfViewer::GltfViewer(const Settings& settings) : VulkanBaseApp("Gltf Viewer", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../glTF-Sample-Assets");
-    fileManager().addSearchPathFront("data");
-    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("common/data");
     fileManager().addSearchPathFront("gltf_viewer");
     fileManager().addSearchPathFront("gltf_viewer/data");
     fileManager().addSearchPathFront("gltf_viewer/spv");
     fileManager().addSearchPathFront("gltf_viewer/models");
     fileManager().addSearchPathFront("gltf_viewer/textures");
-    fileManager().addSearchPathFront("examples/common/data");
+    fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets");
 }
 
 void GltfViewer::initApp() {

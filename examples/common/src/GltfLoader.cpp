@@ -192,11 +192,6 @@ namespace gltf {
     }
 
     std::shared_ptr<Model> Loader::loadGltf(const std::filesystem::path &path) {
-        if(_pendingModels.full()) {
-            spdlog::warn("loader at capacity");
-            return {};
-        }
-
         auto gltf  = std::make_unique<tinygltf::Model>();
         tinyGltfLoad(*gltf, path.string());  // FIXME this is slow, write multi threaded loader
         const auto counts = getCounts(*gltf);
@@ -486,9 +481,8 @@ namespace gltf {
 
             commandBuffers.clear();
 
-            while(!_pendingModels.empty()) {
-                auto pending = _pendingModels.pop();
-
+            while(auto opt_pending = _pendingModels.try_pop()) {
+                auto pending = *opt_pending;
                 computeOffsets(pending);
 
                 for(auto meshId = 0u; meshId < pending->gltf->meshes.size(); ++meshId) {

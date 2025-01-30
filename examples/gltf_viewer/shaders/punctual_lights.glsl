@@ -14,17 +14,15 @@
 // KHR_lights_punctual extension.
 // see https://github.com/KhronosGroup/glTF/tree/master/extensions/2.0/Khronos/KHR_lights_punctual
 struct Light{
-    vec3 direction;
-    float range;
-
-    vec3 color;
-    float intensity;
-
     vec3 position;
+    vec3 direction;
+    vec3 color;
+    float range;
+    float intensity;
     float innerConeCos;
-
     float outerConeCos;
     int type;
+    int shadowMapIndex;
 };
 
 struct LightInstance {
@@ -38,7 +36,7 @@ const int LightType_Directional = 0;
 const int LightType_Point = 1;
 const int LightType_Spot = 2;
 
-layout(set = MATERIAL_SET, binding = LIGHT_BINDING_POINT) buffer PunctualLights {
+layout(set = MATERIAL_SET, binding = LIGHT_BINDING_POINT, scalar) buffer PunctualLights {
     Light lights[];
 };
 

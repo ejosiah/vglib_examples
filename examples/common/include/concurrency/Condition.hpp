@@ -4,8 +4,8 @@
 #include <mutex>
 #include <condition_variable>
 
-struct Condition {
-
+class Condition {
+public:
     using Predicate = std::function<bool()>;
 
     void wait() {

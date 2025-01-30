@@ -3,7 +3,8 @@
 #include <tiny_gltf.h>
 #include "gltf.hpp"
 #include "RingBuffer.hpp"
-#include "Condition.hpp"
+#include "concurrency/BlockingQueue.hpp"
+#include "concurrency/Condition.hpp"
 #include "ObjectPool.hpp"
 #include "StagingBuffer.hpp"
 
@@ -311,7 +312,7 @@ namespace gltf {
         VulkanDevice* _device{};
         VulkanDescriptorPool* _descriptorPool{};
         BindlessDescriptor* _bindlessDescriptor{};
-        RingBuffer<std::shared_ptr<PendingModel>> _pendingModels;
+        BlockingQueue<std::shared_ptr<PendingModel>> _pendingModels;
         RingBuffer<TextureUploadTask> _pendingTextureUploads;
         SingleWriterManyReadersQueue<Task> _workerQueue;
         ManyWritersSingleReaderQueue<SecondaryCommandBuffer> _commandBufferQueue;

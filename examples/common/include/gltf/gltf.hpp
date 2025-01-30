@@ -3,7 +3,7 @@
 #include "Texture.h"
 #include "RingBuffer.hpp"
 #include "plugins/BindLessDescriptorPlugin.hpp"
-#include "Condition.hpp"
+#include "concurrency/Condition.hpp"
 
 #include <VulkanDevice.h>
 #include <VulkanBuffer.h>
