@@ -26,7 +26,7 @@ public:
         _data.push(entry);
          lck.unlock();
 
-        _empty.notify_all();
+        _empty.notify_one();
     }
 
     void push(T&& entry) {
@@ -38,13 +38,27 @@ public:
         _data.push(std::move(entry));
         lck.unlock();
 
-        _empty.notify_all();
+        _empty.notify_one();
     }
 
     void push(std::span<T> entries) {
-        for(auto& entry : entries) {
-            push(entry);    // TODO rewrite, we currently locking for each entry
-        }
+        std::unique_lock<std::mutex> lck{ _mtx };
+        auto count = std::min(entries.size(), availableSlots());
+        auto itr = entries.begin();
+        do {
+            for(auto i = 0; i < count; ++i) {
+                _data.push(*itr);
+                ++itr;
+            }
+            if(itr != entries.end()) {
+                // FIXME we are going to get stuck here if entries.size() > _capacity
+                _full.wait(lck, [&]{ return availableSlots() <= std::distance(itr, entries.end()); });
+            }
+        } while (itr != entries.end());
+        lck.unlock();
+
+        _empty.notify_one();
+
     }
 
     T pop() {
@@ -73,6 +87,10 @@ public:
         }else {
             return {};
         }
+    }
+
+    auto availableSlots() const {
+        return _capacity - _data.size();
     }
 
     void shutDown() {
