@@ -19,7 +19,6 @@ Volume load(auto grid) {
     auto dim = grid->evalActiveVoxelDim();
     auto bMin = grid->indexToWorld(bounds.min());
     auto bMax = grid->indexToWorld(bounds.max());
-    auto iBoxMin = grid->getMetadata<openvdb::Vec3IMetadata>("file_bbox_min")->value();
 
     volume.dim = {dim.x(), dim.y(), dim.z() };
     volume.bounds.min = { bMin.x(), bMin.y(), bMin.z() };
@@ -31,13 +30,7 @@ Volume load(auto grid) {
 
     auto value = grid->beginValueOn();
     do {
-
-        auto cd = value.getCoord();
-        auto x = cd.x() - iBoxMin.x();
-        auto y = cd.y() - iBoxMin.y();
-        auto z = cd.z() - iBoxMin.z();
-
-        auto index = (z * dim.y() + y) * dim.x() + x;
+        volume.maxDensity = std::max(volume.maxDensity, *value);
 
         auto coord = grid->indexToWorld(value.getCoord());
         auto position = glm::vec3{coord.x(), coord.y(), coord.z()};

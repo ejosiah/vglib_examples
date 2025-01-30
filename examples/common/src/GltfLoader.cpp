@@ -444,13 +444,6 @@ namespace gltf {
         std::vector<VkCommandBuffer> commandBuffers;
 
         while(_running) {
-            if(!_running) {
-                _workerQueue.push(StopWorkerTask{});
-                for(auto& worker : _workers) {
-                    worker.join();
-                }
-            }
-
             while(auto maybe_command = _commandBufferQueue.try_pop()) {
                 auto result = *maybe_command;
                 commandBuffers.insert( commandBuffers.end(), result.commandBuffers.begin(), result.commandBuffers.end());
@@ -514,6 +507,14 @@ namespace gltf {
                 _workerQueue.push(*pending);
             }
         }
+        for(auto i = 0; i < _workerCount; ++i) {
+            _workerQueue.push(StopWorkerTask{});
+        }
+        for(auto& worker : _workers) {
+            worker.join();
+
+        }
+
         spdlog::info("GLTF async loader offline");
     }
 

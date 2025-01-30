@@ -30,6 +30,7 @@ struct Volume {
     Type type{};
 
     std::vector<Voxel> voxels{};
+    float maxDensity{std::numeric_limits<float>::lowest()};
     float background{};
 
     static std::map<std::string, Volume> loadFromVdb(const std::filesystem::path& path);
