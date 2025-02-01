@@ -90,8 +90,8 @@ float computeVisibility(out uint cascadeIndex) {
 
     vec4 lightSpacePos = (cascadeViewProjMat[cascadeIndex] * vec4(fs_in.position, 1));
     float shadow = ubo.usePCF == 1 ?
-    pcfFilteredShadow(SHADOW_MAP, lightSpacePos, cascadeIndex)
-    : shadowCalculation(SHADOW_MAP, lightSpacePos, cascadeIndex);
+        pcfFilteredShadow(SHADOW_MAP, lightSpacePos, cascadeIndex)
+        : shadowCalculation(SHADOW_MAP, lightSpacePos, cascadeIndex);
 
     return 1 - shadow;
 }

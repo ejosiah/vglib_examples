@@ -117,7 +117,7 @@ void CascadeShadowMap::update(const AbstractCamera& camera, const glm::vec3 &lig
         }
 
         auto lightDir = normalize(lightDirection);
-        auto lightViewMatrix = glm::lookAt(frustumCenter - lightDir * -minExtents.z, frustumCenter, glm::vec3(0.0f, 1.0f, 0.0f));
+        auto lightViewMatrix = glm::lookAt(frustumCenter + lightDir * -minExtents.z, frustumCenter, glm::vec3(0.0f, 1.0f, 0.0f));
         auto lightOrthoMatrix = vkn::ortho(minExtents.x, maxExtents.x, minExtents.y, maxExtents.y, 0.0f, maxExtents.z - minExtents.z);
 
         // Store split distance and matrix in cascade
@@ -129,15 +129,31 @@ void CascadeShadowMap::update(const AbstractCamera& camera, const glm::vec3 &lig
 }
 
 void CascadeShadowMap::capture(const CascadeShadowMap::Scene &scene, VkCommandBuffer commandBuffer, int currentFrame) {
-    _offscreen.render(commandBuffer, _renderInfo[currentFrame], [&]{
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
-        vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
-        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
+//    _offscreen.render(commandBuffer, _renderInfo[currentFrame], [&]{
+//        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
+//        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
+//        vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
+//        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+//        vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
+//
+//        scene(_layout);
+//    });
 
-        scene(_layout);
-    });
+    auto& renderInfo = _renderInfo[currentFrame];
+    for(auto i = 0; i < _numCascades; ++i) {
+        renderInfo.depthAttachment->imageView = imageViews[currentFrame][i];
+        _constants.cascadeIndex = i;
+
+        _offscreen.render(commandBuffer, renderInfo, [&]{
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
+            vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
+            vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+            vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
+
+            scene(_layout);
+        });
+    }
 }
 
 const Texture &CascadeShadowMap::shadowMap(int index) const {
@@ -153,6 +169,7 @@ void CascadeShadowMap::createShadowMapTexture() {
     for(auto& shadowMap : _shadowMap) {
         VkImageCreateInfo imageInfo{};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.flags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
         imageInfo.format = _depthFormat;
         imageInfo.extent = {_size, _size, 1};
@@ -180,9 +197,9 @@ void CascadeShadowMap::createShadowMapTexture() {
         samplerInfo.magFilter = VK_FILTER_LINEAR;
         samplerInfo.minFilter = VK_FILTER_LINEAR;
         samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.mipLodBias = 0.0f;
         samplerInfo.maxAnisotropy = 1.0f;
         samplerInfo.minLod = 0.0f;
@@ -192,14 +209,25 @@ void CascadeShadowMap::createShadowMapTexture() {
         shadowMap.sampler = device().createSampler(samplerInfo);
 
     }
+    createImageViews();
+}
+
+void CascadeShadowMap::createImageViews() {
+    for(auto i = 0; i < 2; ++i) {
+        for(auto j = 0u; j < _numCascades; ++j) {
+            VkImageSubresourceRange resourceRange{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, j, 1};
+            auto imageView = _shadowMap[i].image.createView(_depthFormat, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
+            imageViews[i].push_back(imageView);
+        }
+    }
 }
 
 void CascadeShadowMap::createRenderInfo() {
     for(auto& shadowMap : _shadowMap) {
         _renderInfo.push_back({
-              .depthAttachment = { { &shadowMap, _depthFormat } },
+              .depthAttachment = { { shadowMap.imageView, _depthFormat } },
               .renderArea = { _size, _size },
-              .numLayers = _numCascades,
+              .numLayers = 1,
               .viewMask =  viewMask()
           });
     }
@@ -298,9 +326,9 @@ void CascadeShadowMap::createPipeline() {
                     .extent(_size, _size)
                 .add()
             .rasterizationState()
-                .enableDepthBias()
-                .depthBiasConstantFactor(_depthBiasConstant)
-                .depthBiasSlopeFactor(_depthBiasSlope)
+//                .enableDepthBias()
+//                .depthBiasConstantFactor(_depthBiasConstant)
+//                .depthBiasSlopeFactor(_depthBiasSlope)
                 .cullFrontFace()
                 .frontFaceCounterClockwise()
                 .polygonModeFill()
@@ -372,7 +400,8 @@ void CascadeShadowMap::createPipeline() {
 }
 
 uint32_t CascadeShadowMap::viewMask() const {
-    return (1u << _numCascades) - 1;
+//    return (1u << _numCascades) - 1;
+    return 0;
 }
 
 VulkanDevice &CascadeShadowMap::device() {

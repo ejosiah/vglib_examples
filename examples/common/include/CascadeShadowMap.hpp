@@ -8,7 +8,7 @@ class CascadeShadowMap {
 public:
     static constexpr uint32_t DEFAULT_SHADOW_MAP_SIZE = 4096;
     static constexpr uint32_t DEFAULT_CASCADE_COUNT = 4;
-    static constexpr float DEFAULT_CASCADE_SLIT_LAMBDA = 0.95f;
+    static constexpr float DEFAULT_CASCADE_SLIT_LAMBDA = 0.55f;
     using Scene = std::function<void(VulkanPipelineLayout&)>;
 
     CascadeShadowMap() = default;
@@ -46,6 +46,8 @@ public:
 private:
     void createShadowMapTexture();
 
+    void createImageViews();
+
     void createRenderInfo();
 
     void createUniforms();
@@ -77,9 +79,11 @@ private:
     glm::uvec2 _screenResolution{};
     float _depthBiasConstant{1.25f};
     float _depthBiasSlope{1.75f};
+    std::array<std::vector<VulkanImageView>, 2> imageViews;
 
     struct {
         glm::mat4 worldTransform{1};
+        int cascadeIndex{0};
     } _constants;
 
     struct {

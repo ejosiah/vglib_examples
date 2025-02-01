@@ -10,13 +10,13 @@
 class Offscreen {
 public:
     struct ColorAttachment {
-        Texture* texture;
+        VulkanImageView imageView;
         VkFormat format;
         glm::vec4 clearValue{0, 0, 0, 1};
     };
 
     struct DepthStencilAttachment {
-        Texture* texture;
+        VulkanImageView imageView;
         VkFormat format;
         glm::vec2 clearValue{1, 0};
     };
@@ -39,14 +39,14 @@ public:
         info.viewMask = renderInfo.viewMask;
 
         std::vector<VkRenderingAttachmentInfo> colorAttachments;
-        for(auto [texture, format, cv] : renderInfo.colorAttachments) {
+        for(auto [imageView, format, cv] : renderInfo.colorAttachments) {
             VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
             attachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             attachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
             attachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             attachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             attachmentInfo.clearValue.color = {cv.r, cv.g, cv.b, cv.a};
-            attachmentInfo.imageView = texture->imageView.handle;
+            attachmentInfo.imageView = imageView.handle;
 
             colorAttachments.push_back(attachmentInfo);
         }
@@ -56,21 +56,21 @@ public:
 
         VkRenderingAttachmentInfo depthAttachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
         if(renderInfo.depthAttachment.has_value()) {
-            auto [texture, format, cv] = *renderInfo.depthAttachment;
+            auto [imageView, format, cv] = *renderInfo.depthAttachment;
 
             depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
             depthAttachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
             depthAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             depthAttachmentInfo.clearValue.depthStencil = {cv.x, static_cast<uint32_t>(cv.y)};
-            depthAttachmentInfo.imageView = texture->imageView.handle;
+            depthAttachmentInfo.imageView = imageView.handle;
 
             info.pDepthAttachment = &depthAttachmentInfo;
         }
 
         VkRenderingAttachmentInfo stencilAttachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
         if(renderInfo.stencilAttachment.has_value()) {
-            auto [texture, format, cv] = *renderInfo.stencilAttachment;
+            auto [imageView, format, cv] = *renderInfo.stencilAttachment;
 
             VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
             stencilAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL;
@@ -78,7 +78,7 @@ public:
             stencilAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             stencilAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             stencilAttachmentInfo.clearValue.depthStencil = {cv.x, static_cast<uint32_t>(cv.y)};
-            stencilAttachmentInfo.imageView = texture->imageView.handle;
+            stencilAttachmentInfo.imageView = imageView.handle;
 
             info.pStencilAttachment = &stencilAttachmentInfo;
         }

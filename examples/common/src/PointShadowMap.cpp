@@ -117,8 +117,8 @@ void PointShadowMap::createShadowMapTexture() {
 void PointShadowMap::createRenderInfo() {
     for(auto& shadowMap : _shadowMap) {
         _renderInfo.push_back({
-            .colorAttachments = { { &shadowMap.color, VK_FORMAT_R32_SFLOAT, glm::vec4(MAX_FLOAT) } },
-            .depthAttachment = { { &shadowMap.depth, _depthFormat } },
+            .colorAttachments = { { shadowMap.color.imageView, VK_FORMAT_R32_SFLOAT, glm::vec4(MAX_FLOAT) } },
+            .depthAttachment = { { shadowMap.depth.imageView, _depthFormat } },
             .renderArea = { _size, _size },
             .numLayers = 6,
             .viewMask =  0b00111111

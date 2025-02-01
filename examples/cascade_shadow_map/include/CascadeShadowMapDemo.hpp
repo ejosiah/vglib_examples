@@ -108,7 +108,7 @@ protected:
     glm::vec3 lightDirection{1};
     std::span<float> splitDepth;
     VulkanBuffer splitDepthBuffer;
-    float splitLambda{0.95};
+    float splitLambda{CascadeShadowMap::DEFAULT_CASCADE_SLIT_LAMBDA};
 
     struct {
         VulkanBuffer gpu;

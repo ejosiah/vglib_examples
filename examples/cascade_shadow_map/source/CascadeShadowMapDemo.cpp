@@ -45,8 +45,8 @@ void CascadeShadowMapDemo::initCamera() {
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.acceleration = glm::vec3(10);
     cameraSettings.velocity = glm::vec3(50.f);
-    cameraSettings.zNear = 0.1;
-    cameraSettings.zFar = 50;
+    cameraSettings.zNear = 0.5;
+    cameraSettings.zFar = 100;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     sceneCamera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
@@ -438,6 +438,7 @@ void CascadeShadowMapDemo::endFrame() {
     render.frustum.constants.camera = camera->cam();
     if (freezePressed) {
         if (freezeShadowMap) {
+            debugCamera->target = sceneCamera->target;
             debugCamera->position(sceneCamera->position());
             camera = debugCamera.get();
         } else {
