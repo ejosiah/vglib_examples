@@ -26,6 +26,8 @@ protected:
 
     void initUniforms();
 
+    void createCube();
+
     void initShadowMaps();
 
     void beforeDeviceCreation() override;
@@ -52,6 +54,10 @@ protected:
 
     void renderScene(VkCommandBuffer commandBuffer, VulkanPipeline& pipeline, VulkanPipelineLayout& layout);
 
+    void renderFrustum(VkCommandBuffer commandBuffer);
+
+    void renderCamera(VkCommandBuffer commandBuffer);
+
     void renderUI(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
@@ -64,17 +70,35 @@ protected:
 
     void endFrame() override;
 
+    void computeCameraBounds();
+
 protected:
     struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+            struct {
+                Camera camera{};
+                int cascadeIndex{0};
+            } constants;
+        } frustum;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } model;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } camera;
     } render;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
-    std::unique_ptr<OrbitingCameraController> camera;
+    std::unique_ptr<FirstPersonCameraController> sceneCamera;
+    std::unique_ptr<FirstPersonCameraController> debugCamera;
+    FirstPersonCameraController* camera{};
     std::unique_ptr<gltf::Loader> loader;
     std::shared_ptr<gltf::Model> model;
     BindlessDescriptor bindlessDescriptor;
@@ -90,5 +114,20 @@ protected:
         VulkanBuffer gpu;
         UniformData* cpu;
     } ubo;
+
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer indexes;
+    } cube;
     bool showShadowMap{};
+    bool freezeShadowMap{};
+    bool showFrustum{};
+
+    struct {
+        VulkanBuffer vertices;
+        glm::mat4 transform{1};
+        glm::mat4 aabb{1};
+    } cameraBounds;
+    bool showCamera{};
+    bool freezePressed = false;
 };

@@ -51,6 +51,9 @@ void CascadeShadowMap::update(const AbstractCamera& camera, const glm::vec3 &lig
     const auto range = maxZ - minZ;
     const auto ratio = maxZ / minZ;
 
+    glm::vec3 sMin{-100, -2, -100};
+    glm::vec3 sMax{100, 20, 100};
+
     // Calculate split depths based on view camera frustum
     // Based on method presented in https://developer.nvidia.com/gpugems/GPUGems3/gpugems3_ch10.html
     for (uint32_t i = 0; i < _numCascades; i++) {
@@ -393,4 +396,12 @@ void CascadeShadowMap::splitLambda(float value) {
 
 VulkanBuffer CascadeShadowMap::cascadeViewProjection() const {
     return _uniforms.gpu;
+}
+
+VulkanDescriptorSetLayout CascadeShadowMap::descriptorSetLayout() const {
+    return _descriptorSetLayout;
+}
+
+VkDescriptorSet CascadeShadowMap::descriptorSet() const {
+    return _descriptorSet;
 }

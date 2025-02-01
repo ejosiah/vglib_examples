@@ -12,14 +12,18 @@ layout(location = 0) out vec4 fragColor;
 
 void main(){
 
-    float w = ceil(sqrt(numCascades));
-    float h = numCascades/w;
-    vec2 grid = vec2(w, h);
-    vec2 gid = floor(fuv * grid);
-    int id = int(gid.y * w + gid.x);
-    vec2 uv = fract(fuv * grid);
+    vec2 uv = fuv;
+    int id = 0;
+    if(numCascades > 1){
+        float w = ceil(sqrt(numCascades));
+        float h = numCascades/w;
+        vec2 grid = vec2(w, h);
+        vec2 gid = floor(fuv * grid);
+        id = int(gid.y * w + gid.x);
+        uv = fract(fuv * grid);
 
-    if(id >= numCascades) discard;
+        if (id >= numCascades) discard;
+    }
 
     fragColor = texture(shadowMap, vec3(uv, id)).rrrr;
 }

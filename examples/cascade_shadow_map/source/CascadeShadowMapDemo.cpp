@@ -21,6 +21,7 @@ CascadeShadowMapDemo::CascadeShadowMapDemo(const Settings& settings) : VulkanBas
 
 void CascadeShadowMapDemo::initApp() {
     initCamera();
+    createCube();
     createDescriptorPool();
     initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
@@ -36,20 +37,25 @@ void CascadeShadowMapDemo::initApp() {
 }
 
 void CascadeShadowMapDemo::initCamera() {
-//    FirstPersonSpectatorCameraSettings cameraSettings;
-    OrbitingCameraSettings cameraSettings;
-    cameraSettings.orbitMinZoom = 0.1;
-    cameraSettings.orbitMaxZoom = 512.0f;
-    cameraSettings.offsetDistance = 1.0f;
+    FirstPersonSpectatorCameraSettings cameraSettings;
+//    OrbitingCameraSettings cameraSettings;
+//    cameraSettings.orbitMinZoom = 0.1;
+//    cameraSettings.orbitMaxZoom = 512.0f;
+//    cameraSettings.offsetDistance = 1.0f;
     cameraSettings.fieldOfView = 60.0f;
-//    cameraSettings.zNear = 0.1;
-//    cameraSettings.zFar = 40;
-//    cameraSettings.zFar = 100;
+    cameraSettings.acceleration = glm::vec3(10);
+    cameraSettings.velocity = glm::vec3(50.f);
+    cameraSettings.zNear = 0.1;
+    cameraSettings.zFar = 50;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
-    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->lookAt({10, 10, 10}, glm::vec3(0), {0, 1, 0});
-    camera->zoomDelta = 10;
+    sceneCamera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    sceneCamera->lookAt({0, 1, 1}, glm::vec3(0, 1, 0), {0, 1, 0});
+    sceneCamera->zoomDelta = 10;
+
+    cameraSettings.zFar = 1000;
+    debugCamera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera = sceneCamera.get();
 }
 
 void CascadeShadowMapDemo::initBindlessDescriptor() {
@@ -185,7 +191,7 @@ void CascadeShadowMapDemo::createPipelineCache() {
 
 void CascadeShadowMapDemo::createRenderPipeline() {
     //    @formatter:off
-    render.pipeline =
+    render.model.pipeline =
 		prototypes->cloneGraphicsPipeline()
             .shaderStage()
                 .vertexShader(resource("gltf.vert.spv"))
@@ -211,13 +217,49 @@ void CascadeShadowMapDemo::createRenderPipeline() {
                 .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                 .addDescriptorSetLayout(lightDescriptorSetLayout)
             .name("render")
-        .build(render.layout);
+        .build(render.model.layout);
+    //    @formatter:off
+    render.frustum.pipeline =
+		prototypes->cloneGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(resource("frustum.vert.spv"))
+                .fragmentShader(resource("frustum.frag.spv"))
+            .rasterizationState()
+                .cullNone()
+            .colorBlendState()
+                .attachment().clear()
+                    .enableBlend()
+                    .colorBlendOp().add()
+                    .alphaBlendOp().add()
+                    .srcColorBlendFactor().srcAlpha()
+                    .dstColorBlendFactor().oneMinusSrcAlpha()
+                    .srcAlphaBlendFactor().zero()
+                    .dstAlphaBlendFactor().one()
+                .add()
+            .layout().clear()
+                .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(render.frustum.constants))
+                .addDescriptorSetLayout(shadowMap.descriptorSetLayout())
+            .name("frustum.render")
+        .build(render.frustum.layout);
+
+    render.camera.pipeline =
+        prototypes->cloneGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(resource("camera.vert.spv"))
+                .fragmentShader(resource("flat.frag.spv"))
+            .inputAssemblyState()
+                .lines()
+            .rasterizationState()
+                .lineWidth(2.5)
+            .depthStencilState()
+            .name("camera_render")
+        .build(render.camera.layout);
     //    @formatter:on
 }
 
 
 void CascadeShadowMapDemo::onSwapChainDispose() {
-    dispose(render.pipeline);
+    dispose(render.model.pipeline);
 }
 
 void CascadeShadowMapDemo::onSwapChainRecreation() {
@@ -232,10 +274,11 @@ VkCommandBuffer *CascadeShadowMapDemo::buildCommandBuffers(uint32_t imageIndex, 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    // capture shadow
-    shadowMap.capture([this, commandBuffer](auto& layout) {
-        model->render(commandBuffer, layout, 1);
-    }, commandBuffer, currentFrame);
+    if(!freezeShadowMap) {
+        shadowMap.capture([this, commandBuffer](auto &layout) {
+            model->render(commandBuffer, layout, 1);
+        }, commandBuffer, currentFrame);
+    }
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -252,7 +295,9 @@ VkCommandBuffer *CascadeShadowMapDemo::buildCommandBuffers(uint32_t imageIndex, 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     if(!showShadowMap) {
-        renderScene(commandBuffer, render.pipeline, render.layout);
+        renderScene(commandBuffer, render.model.pipeline, render.model.layout);
+        renderFrustum(commandBuffer);
+        renderCamera(commandBuffer);
     }else{
         shadowMap.render(commandBuffer);
     }
@@ -266,7 +311,7 @@ VkCommandBuffer *CascadeShadowMapDemo::buildCommandBuffers(uint32_t imageIndex, 
 }
 
 void CascadeShadowMapDemo::update(float time) {
-    if(!ImGui::IsAnyItemActive()) {
+    if (!ImGui::IsAnyItemActive()) {
         camera->update(time);
     }
     static auto elapsedTime = 0.f;
@@ -274,8 +319,11 @@ void CascadeShadowMapDemo::update(float time) {
     float angle = glm::radians(elapsedTime * 360.0f);
     float radius = 20.0f;
 //    lightDirection = glm::normalize(glm::vec3(cos(angle) * radius, -radius, sin(angle) * radius));
-    shadowMap.splitLambda(splitLambda);
-    shadowMap.update(*camera, lightDirection, splitDepth);
+
+    if (!freezeShadowMap) {
+        shadowMap.splitLambda(splitLambda);
+        shadowMap.update(*camera, lightDirection, splitDepth);
+    }
 }
 
 void CascadeShadowMapDemo::checkAppInputs() {
@@ -293,7 +341,7 @@ void CascadeShadowMapDemo::onPause() {
 
 void CascadeShadowMapDemo::loadModel() {
     model = loader->loadGltf(resource("SereneGrassFieldwithTree/SereneGrassFieldwithTree.gltf"));
-    camera->updateModel(model->bounds.min, model->bounds.max);
+//    camera->updateModel(model->bounds.min, model->bounds.max);
 }
 
 void CascadeShadowMapDemo::renderScene(VkCommandBuffer commandBuffer, VulkanPipeline& pipeline, VulkanPipelineLayout& layout) {
@@ -309,30 +357,48 @@ void CascadeShadowMapDemo::renderScene(VkCommandBuffer commandBuffer, VulkanPipe
     model->render(commandBuffer, layout);
 }
 
+void CascadeShadowMapDemo::renderFrustum(VkCommandBuffer commandBuffer) {
+    if(!showFrustum) return;
+    VkDeviceSize offset = 0;
+    static const auto descriptorSet = shadowMap.descriptorSet();
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.frustum.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.frustum.layout.handle, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, render.frustum.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(render.frustum.constants), &render.frustum.constants);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, cube.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, cube.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, cube.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
+}
+
 void CascadeShadowMapDemo::renderUI(VkCommandBuffer commandBuffer) {
     static bool color_cascades = false;
     static bool use_pcf_filtering = false;
     static bool show_extents = false;
-    static bool shadow_on = true;
 
     ImGui::Begin("CSM");
     ImGui::SetWindowSize({0, 0});
 
     if(ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Shadow On", &shadow_on);
+        freezePressed = ImGui::Checkbox("freeze shadow", &freezeShadowMap);
 
-        if(shadow_on) {
+        if(!freezeShadowMap) {
             ImGui::SliderFloat("Split lambda", &splitLambda, 0.1, 1.0);
-            ImGui::Checkbox("Color cascades", &color_cascades);
-
-            if (color_cascades) {
-                ImGui::SameLine();
-                ImGui::Checkbox("Show extents", &show_extents);
-            }
-
-            ImGui::Checkbox("PCF filtering", &use_pcf_filtering);
         }
+        ImGui::Checkbox("Color cascades", &color_cascades);
+
+        if (color_cascades) {
+            ImGui::SameLine();
+            ImGui::Checkbox("Show extents", &show_extents);
+        }
+
+        ImGui::Checkbox("PCF filtering", &use_pcf_filtering);
         ImGui::Checkbox("Show depth map", &showShadowMap);
+
+        ImGui::Checkbox("Show frustum", &showFrustum);
+        if(showFrustum) {
+            ImGui::SameLine();
+            ImGui::SliderInt("cascadeIndex", &render.frustum.constants.cascadeIndex, 0, shadowMap.cascadeCount() - 1);
+        }
+        ImGui::Checkbox("Show camera", &showCamera);
 
     }
 
@@ -341,13 +407,13 @@ void CascadeShadowMapDemo::renderUI(VkCommandBuffer commandBuffer) {
     ubo.cpu->colorCascades = color_cascades;
     ubo.cpu->usePCF = use_pcf_filtering;
     ubo.cpu->showExtents = show_extents;
-    ubo.cpu->shadowOn = shadow_on;
+    ubo.cpu->shadowOn = 1;
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
 void CascadeShadowMapDemo::initShadowMaps() {
-    shadowMap = CascadeShadowMap{ device, descriptorPool, MAX_IN_FLIGHT_FRAMES,  depthBuffer.format, 1};
+    shadowMap = CascadeShadowMap{ device, descriptorPool, MAX_IN_FLIGHT_FRAMES,  depthBuffer.format};
     shadowMap.setRenderPass(renderPass, { width, height});
     shadowMap.init();
     bindlessDescriptor.update({ &shadowMap.shadowMap(0), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0 });
@@ -364,9 +430,63 @@ void CascadeShadowMapDemo::initUniforms() {
 }
 
 void CascadeShadowMapDemo::endFrame() {
-    auto nextFrame = (currentFrame + 1) % MAX_IN_FLIGHT_FRAMES;
-    bindlessDescriptor.update({ &shadowMap.shadowMap(nextFrame), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0 });
-    ubo.cpu->lightDir = lightDirection;
+    if (!freezeShadowMap) {
+        auto nextFrame = (currentFrame + 1) % MAX_IN_FLIGHT_FRAMES;
+        bindlessDescriptor.update({&shadowMap.shadowMap(nextFrame), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0});
+        ubo.cpu->lightDir = lightDirection;
+    }
+    render.frustum.constants.camera = camera->cam();
+    if (freezePressed) {
+        if (freezeShadowMap) {
+            debugCamera->position(sceneCamera->position());
+            camera = debugCamera.get();
+        } else {
+            camera = sceneCamera.get();
+        }
+        freezePressed = false;
+    }
+    computeCameraBounds();
+}
+
+void CascadeShadowMapDemo::createCube() {
+    glm::mat4 transform = glm::translate(glm::mat4{1}, {0, 0, 0.5});
+    transform = glm::scale(transform, {1, 1, 0.5});
+
+    auto primitive = primitives::cube({1, 1, 0, 1}, transform);
+    cube.vertices = device.createDeviceLocalBuffer(primitive.vertices.data(), BYTE_SIZE(primitive.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    cube.indexes = device.createDeviceLocalBuffer(primitive.indices.data(), BYTE_SIZE(primitive.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+    primitive = primitives::cubeOutline(glm::vec4(0, 0, 0, 1), transform);
+    cameraBounds.vertices = device.createDeviceLocalBuffer(primitive.vertices.data(), BYTE_SIZE(primitive.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+}
+
+void CascadeShadowMapDemo::computeCameraBounds() {
+    static glm::vec3 aabbMin, aabbMax;
+    aabbMin = glm::vec3{MAX_FLOAT};
+    aabbMax = glm::vec3{MIN_FLOAT};
+    sceneCamera->extractAABB(aabbMin, aabbMax);
+
+    auto dim = glm::ceil(aabbMin - aabbMax);
+
+    const auto near = sceneCamera->near();
+    const auto far = sceneCamera->far();
+    const auto camPosOffset = glm::vec3(0, 0, -(far - near) * 0.5 - near);
+
+    cameraBounds.aabb = glm::mat4{1};
+    cameraBounds.aabb = glm::translate(cameraBounds.aabb, camPosOffset);
+    cameraBounds.aabb = glm::scale(cameraBounds.aabb, dim);
+    cameraBounds.aabb = glm::inverse(sceneCamera->camera.view) * cameraBounds.aabb;
+    cameraBounds.transform = glm::inverse(sceneCamera->camera.proj * sceneCamera->camera.view);
+}
+
+void CascadeShadowMapDemo::renderCamera(VkCommandBuffer commandBuffer) {
+    if(!showCamera) return;
+
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.camera.pipeline.handle);
+    camera->push(commandBuffer, render.camera.layout, cameraBounds.transform);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, cameraBounds.vertices, &offset);
+    vkCmdDraw(commandBuffer, cameraBounds.vertices.sizeAs<Vertex>(), 1, 0, 0);
 }
 
 

@@ -39,6 +39,9 @@ public:
 
     VulkanBuffer cascadeViewProjection() const;
 
+    VulkanDescriptorSetLayout  descriptorSetLayout() const;
+
+    VkDescriptorSet descriptorSet() const;
 
 private:
     void createShadowMapTexture();
