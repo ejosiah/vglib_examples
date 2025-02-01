@@ -108,7 +108,7 @@ protected:
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
-    std::unique_ptr<OrbitingCameraController> camera;
+    std::unique_ptr<BaseCameraController> camera;
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
 

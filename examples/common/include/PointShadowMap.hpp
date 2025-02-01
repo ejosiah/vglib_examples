@@ -3,10 +3,10 @@
 #include "Offscreen.hpp"
 #include <functional>
 
-static constexpr uint32_t DEFAULT_SHADOW_MAP_SIZE = 1024;
 
 class PointShadowMap {
 public:
+    static constexpr uint32_t DEFAULT_SHADOW_MAP_SIZE = 1024;
     struct ShadowMap {
         Texture color;
         Texture depth;
@@ -70,7 +70,7 @@ public:
     VkDescriptorSet _descriptorSet{};
     VkFormat _depthFormat{VK_FORMAT_UNDEFINED};
     uint32_t _size{};
-    glm::uvec2 _screenResolution;
+    glm::uvec2 _screenResolution{};
     struct {
         glm::mat4 worldTransform{1};
         glm::vec3 lightPosition{};

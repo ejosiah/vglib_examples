@@ -190,8 +190,6 @@ VkCommandBuffer *OminidirectionalShadowMapDemo::buildCommandBuffers(uint32_t ima
     shadowMap.capture([this, commandBuffer](auto& layout) {
         model->render(commandBuffer, layout, 1);
     }, commandBuffer, currentFrame);
-    shadowMap.addBarrier(commandBuffer);
-
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 0, 1};
@@ -298,6 +296,7 @@ int main(){
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_KHR_MULTIVIEW_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_SHADER_VIEWPORT_INDEX_LAYER_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;

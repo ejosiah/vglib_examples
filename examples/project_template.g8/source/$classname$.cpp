@@ -29,6 +29,7 @@ void $classname$::initApp() {
     createInverseCam();
     $endif$
     createDescriptorPool();
+    initBindlessDescriptor()
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     initLoader();
     createDescriptorSetLayouts();
@@ -80,6 +81,10 @@ void $classname$::beforeDeviceCreation() {
     static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
     dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
     deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+
+    static VkPhysicalDeviceIndexTypeUint8FeaturesEXT indexType8{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT };
+    indexType8.indexTypeUint8 = VK_TRUE;
+    deviceCreateNextChain = addExtension(deviceCreateNextChain, indexType8);
 }
 
 void $classname$::createDescriptorPool() {
@@ -407,6 +412,7 @@ int main(){
         settings.enableBindlessDescriptors = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
