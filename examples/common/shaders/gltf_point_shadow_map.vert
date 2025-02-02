@@ -1,6 +1,5 @@
 #version 460
 
-#extension GL_ARB_shader_viewport_layer_array : enable
 #extension GL_EXT_multiview : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
@@ -39,7 +38,6 @@ void main() {
 
     vec4 worldPos = meshModel * position;
 
-    gl_Layer = gl_ViewIndex;
     gl_Position = projection * view[gl_ViewIndex] * worldPos;
 
     vs_out.lightPos = lightPos;

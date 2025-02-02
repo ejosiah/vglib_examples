@@ -72,7 +72,6 @@ public:
         if(renderInfo.stencilAttachment.has_value()) {
             auto [imageView, format, cv] = *renderInfo.stencilAttachment;
 
-            VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
             stencilAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL;
             stencilAttachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
             stencilAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;

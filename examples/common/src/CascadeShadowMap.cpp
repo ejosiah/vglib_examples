@@ -129,31 +129,31 @@ void CascadeShadowMap::update(const AbstractCamera& camera, const glm::vec3 &lig
 }
 
 void CascadeShadowMap::capture(const CascadeShadowMap::Scene &scene, VkCommandBuffer commandBuffer, int currentFrame) {
-//    _offscreen.render(commandBuffer, _renderInfo[currentFrame], [&]{
-//        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
-//        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
-//        vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
-//        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//        vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
+    _offscreen.render(commandBuffer, _renderInfo[currentFrame], [&]{
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
+        vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
+        vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
+
+        scene(_layout);
+    });
+
+//    auto& renderInfo = _renderInfo[currentFrame];
+//    for(auto i = 0; i < _numCascades; ++i) {
+//        renderInfo.depthAttachment->imageView = imageViews[currentFrame][i];
+//        _constants.cascadeIndex = i;
 //
-//        scene(_layout);
-//    });
-
-    auto& renderInfo = _renderInfo[currentFrame];
-    for(auto i = 0; i < _numCascades; ++i) {
-        renderInfo.depthAttachment->imageView = imageViews[currentFrame][i];
-        _constants.cascadeIndex = i;
-
-        _offscreen.render(commandBuffer, renderInfo, [&]{
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
-            vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
-            vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-            vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
-
-            scene(_layout);
-        });
-    }
+//        _offscreen.render(commandBuffer, renderInfo, [&]{
+//            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
+//            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
+//            vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
+//            vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+//            vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
+//
+//            scene(_layout);
+//        });
+//    }
 }
 
 const Texture &CascadeShadowMap::shadowMap(int index) const {
@@ -227,7 +227,7 @@ void CascadeShadowMap::createRenderInfo() {
         _renderInfo.push_back({
               .depthAttachment = { { shadowMap.imageView, _depthFormat } },
               .renderArea = { _size, _size },
-              .numLayers = 1,
+              .numLayers = _numCascades,
               .viewMask =  viewMask()
           });
     }
@@ -400,8 +400,8 @@ void CascadeShadowMap::createPipeline() {
 }
 
 uint32_t CascadeShadowMap::viewMask() const {
-//    return (1u << _numCascades) - 1;
-    return 0;
+    return (1u << _numCascades) - 1;
+//    return 0;
 }
 
 VulkanDevice &CascadeShadowMap::device() {

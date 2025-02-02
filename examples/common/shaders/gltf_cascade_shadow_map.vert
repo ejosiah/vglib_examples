@@ -1,6 +1,5 @@
 #version 460
 
-#extension GL_ARB_shader_viewport_layer_array : enable
 #extension GL_EXT_multiview : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
@@ -35,8 +34,7 @@ void main() {
     mat4 meshModel = worldTransform * meshes[nonuniformEXT(gl_DrawID)].model;
     mat3 nModel = transpose(inverse(mat3(meshModel)));
 
-//    views[gl_ViewIndex] = gl_ViewIndex;
-//    gl_Layer = gl_ViewIndex;
-    gl_Position = cascadeViewProjMat[cascadeIndex] * meshModel * position;
+    views[gl_ViewIndex] = gl_ViewIndex;
+    gl_Position = cascadeViewProjMat[gl_ViewIndex] * meshModel * position;
 
 }
