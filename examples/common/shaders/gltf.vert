@@ -23,7 +23,8 @@ layout(location = 6) in vec2 uv[2];
 layout(location = 0) out struct {
     vec4 color;
     vec3 localPos;
-    vec3 position;
+    vec3 wordPos;
+    vec3 viewPos;
     vec3 normal;
     vec3 tangent;
     vec3 bitangent;
@@ -40,10 +41,12 @@ void main(){
     mat3 nModel = transpose(inverse(mat3(meshModel)));
 
     vec4 worldPos = meshModel * position;
+    vec4 viewPos = view * worldPos;
 
     vs_out.color = color[0];
     vs_out.localPos = position.xyz;
-    vs_out.position = worldPos.xyz;
+    vs_out.wordPos = worldPos.xyz;
+    vs_out.viewPos = viewPos.xyz;
     vs_out.normal = nModel * normal;
     vs_out.tangent = nModel * tanget;
     vs_out.bitangent = nModel * bitangent;
@@ -52,5 +55,5 @@ void main(){
     vs_out.uv[0] = uv[0];
     vs_out.uv[1] = uv[1];
     gl_PointSize = 5.0;
-    gl_Position = projection * view * worldPos;
+    gl_Position = projection * viewPos;
 }

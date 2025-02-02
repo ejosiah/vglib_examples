@@ -8,7 +8,7 @@ struct UniformData {
     int usePCF;
     int colorCascades;
     int showExtents;
-    int shadowOn;
+    int colorShadow;
 };
 
 class CascadeShadowMapDemo : public VulkanBaseApp{

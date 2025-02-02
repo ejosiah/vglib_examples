@@ -30,7 +30,7 @@ layout(set = 3, binding = 0, scalar) buffer SHAODW_MAP_DATA {
     int usePCF;
     int colorCascades;
     int showExtents;
-    int shadowOn;
+    int colorShadow;
 } ubo;
 
 layout(set = 3, binding = 1, std430) buffer Cascades {
@@ -44,7 +44,8 @@ layout(set = 3, binding = 2, scalar) buffer CascadesSplits {
 layout(location = 0) in struct {
     vec4 color;
     vec3 localPos;
-    vec3 position;
+    vec3 wordPos;
+    vec3 viewPos;
     vec3 normal;
     vec3 tangent;
     vec3 bitangent;
@@ -80,20 +81,21 @@ vec3 frustumCorners[8] = vec3[8](
     vec3(-1.0f, -1.0f,  1.0f)
 );
 
-float computeVisibility(out uint cascadeIndex) {
+vec3 computeVisibility(out uint cascadeIndex) {
     cascadeIndex = 0;
     for(int i = 0; i < ubo.numCascades - 1; ++i) {
-        if(fs_in.position.z < cascadeSplits[i]) {
+        if(fs_in.viewPos.z < cascadeSplits[i]) {
             cascadeIndex = i + 1;
         }
     }
 
-    vec4 lightSpacePos = (cascadeViewProjMat[cascadeIndex] * vec4(fs_in.position, 1));
+    vec4 lightSpacePos = (cascadeViewProjMat[cascadeIndex] * vec4(fs_in.wordPos, 1));
     float shadow = ubo.usePCF == 1 ?
         pcfFilteredShadow(SHADOW_MAP, lightSpacePos, cascadeIndex)
         : shadowCalculation(SHADOW_MAP, lightSpacePos, cascadeIndex);
 
-    return 1 - shadow;
+    float visibility = 1 - shadow;
+    return  ubo.colorShadow == 0 ? vec3(visibility) : mix(vec3(1), cascadeColors[cascadeIndex], shadow);
 }
 
 void main() {
@@ -107,27 +109,12 @@ void main() {
     vec3 color = (Ambient + diffuse) * albedo;
 
     uint cascadeIndex;
-    color *= ubo.shadowOn == 1 ? computeVisibility(cascadeIndex) : 1;
+    const vec3 visibility = computeVisibility(cascadeIndex);
+    color *=  visibility;
 
-    if(ubo.shadowOn == 1 && ubo.colorCascades == 1) {
-        if(ubo.showExtents == 1) {
-            vec3 bmin = vec3(1e10);
-            vec3 bmax = vec3(1e-10);
+    if(ubo.colorCascades == 1) {
+        color = cascadeColors[cascadeIndex] * visibility;
 
-            mat4 lightToWorld = inverse(cascadeViewProjMat[cascadeIndex]);
-            for(int i = 0; i < 8; ++i) {
-                vec4 p = lightToWorld * vec4(frustumCorners[i], 1);
-                p /= p.w;
-                bmin = min(bmin, p.xyz);
-                bmax = max(bmax, p.yxz);
-            }
-            if(all(greaterThan(fs_in.position, bmin)) && all(lessThan(fs_in.position, bmax))){
-                color = cascadeColors[cascadeIndex];
-            }
-        }else {
-            color = cascadeColors[cascadeIndex];
-
-        }
     }
 
     fragColor = vec4(color, 1);

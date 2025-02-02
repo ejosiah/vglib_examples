@@ -317,8 +317,8 @@ void CascadeShadowMapDemo::update(float time) {
     static auto elapsedTime = 0.f;
     elapsedTime += time * 0.1;
     float angle = glm::radians(elapsedTime * 360.0f);
-    float radius = 20.0f;
-//    lightDirection = glm::normalize(glm::vec3(cos(angle) * radius, -radius, sin(angle) * radius));
+    float radius = 0.5f;
+    lightDirection = glm::normalize(glm::vec3(cos(angle) * radius, radius, sin(angle) * radius));
 
     if (!freezeShadowMap) {
         shadowMap.splitLambda(splitLambda);
@@ -370,9 +370,10 @@ void CascadeShadowMapDemo::renderFrustum(VkCommandBuffer commandBuffer) {
 }
 
 void CascadeShadowMapDemo::renderUI(VkCommandBuffer commandBuffer) {
-    static bool color_cascades = false;
-    static bool use_pcf_filtering = false;
-    static bool show_extents = false;
+    static auto color_cascades = false;
+    static auto use_pcf_filtering = false;
+    static auto show_extents = false;
+    static auto color_shadow = false;
 
     ImGui::Begin("CSM");
     ImGui::SetWindowSize({0, 0});
@@ -389,6 +390,7 @@ void CascadeShadowMapDemo::renderUI(VkCommandBuffer commandBuffer) {
             ImGui::SameLine();
             ImGui::Checkbox("Show extents", &show_extents);
         }
+        ImGui::Checkbox("Color shadow", &color_shadow);
 
         ImGui::Checkbox("PCF filtering", &use_pcf_filtering);
         ImGui::Checkbox("Show depth map", &showShadowMap);
@@ -407,7 +409,7 @@ void CascadeShadowMapDemo::renderUI(VkCommandBuffer commandBuffer) {
     ubo.cpu->colorCascades = color_cascades;
     ubo.cpu->usePCF = use_pcf_filtering;
     ubo.cpu->showExtents = show_extents;
-    ubo.cpu->shadowOn = 1;
+    ubo.cpu->colorShadow = color_shadow;
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }

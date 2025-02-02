@@ -77,7 +77,7 @@ private:
     VulkanDescriptorSetLayout _meshDescriptorSetLayout;
     VkDescriptorSet _descriptorSet{};
     glm::uvec2 _screenResolution{};
-    float _depthBiasConstant{1.25f};
+    float _depthBiasConstant{0.5f};
     float _depthBiasSlope{1.75f};
     std::array<std::vector<VulkanImageView>, 2> imageViews;
 
