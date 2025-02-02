@@ -9,6 +9,7 @@ struct UniformData {
     int colorCascades;
     int showExtents;
     int colorShadow;
+    int cameraFrozen;
 };
 
 class CascadeShadowMapDemo : public VulkanBaseApp{

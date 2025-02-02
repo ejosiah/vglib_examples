@@ -78,12 +78,10 @@ void CascadeShadowMapDemo::beforeDeviceCreation() {
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
     if(devFeatures12.has_value()) {
         devFeatures12.value()->scalarBlockLayout = VK_TRUE;
-        devFeatures12.value()->shaderOutputLayer = VK_TRUE;
         devFeatures12.value()->shaderOutputViewportIndex = VK_TRUE;
     }else {
         static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
         devFeatures12.scalarBlockLayout = VK_TRUE;
-        devFeatures12.shaderOutputLayer = VK_TRUE;
         devFeatures12.shaderOutputViewportIndex = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
     }
@@ -410,6 +408,7 @@ void CascadeShadowMapDemo::renderUI(VkCommandBuffer commandBuffer) {
     ubo.cpu->usePCF = use_pcf_filtering;
     ubo.cpu->showExtents = show_extents;
     ubo.cpu->colorShadow = color_shadow;
+    ubo.cpu->cameraFrozen = freezeShadowMap;
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
@@ -440,8 +439,7 @@ void CascadeShadowMapDemo::endFrame() {
     render.frustum.constants.camera = camera->cam();
     if (freezePressed) {
         if (freezeShadowMap) {
-            debugCamera->target = sceneCamera->target;
-            debugCamera->position(sceneCamera->position());
+            debugCamera->lookAt(sceneCamera->position(), sceneCamera->target, sceneCamera->yAxis);
             camera = debugCamera.get();
         } else {
             camera = sceneCamera.get();
@@ -506,7 +504,6 @@ int main(){
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_KHR_MULTIVIEW_EXTENSION_NAME);
-        settings.deviceExtensions.push_back(VK_EXT_SHADER_VIEWPORT_INDEX_LAYER_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;

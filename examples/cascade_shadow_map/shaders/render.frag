@@ -31,6 +31,7 @@ layout(set = 3, binding = 0, scalar) buffer SHAODW_MAP_DATA {
     int colorCascades;
     int showExtents;
     int colorShadow;
+    int cameraFrozen;
 } ubo;
 
 layout(set = 3, binding = 1, std430) buffer Cascades {
@@ -113,7 +114,7 @@ void main() {
     color *=  visibility;
 
     if(ubo.colorCascades == 1) {
-        color = cascadeColors[cascadeIndex] * visibility;
+        color = mix(color, cascadeColors[cascadeIndex], 0.5);
 
     }
 

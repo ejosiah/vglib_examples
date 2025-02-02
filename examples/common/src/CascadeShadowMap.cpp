@@ -138,22 +138,6 @@ void CascadeShadowMap::capture(const CascadeShadowMap::Scene &scene, VkCommandBu
 
         scene(_layout);
     });
-
-//    auto& renderInfo = _renderInfo[currentFrame];
-//    for(auto i = 0; i < _numCascades; ++i) {
-//        renderInfo.depthAttachment->imageView = imageViews[currentFrame][i];
-//        _constants.cascadeIndex = i;
-//
-//        _offscreen.render(commandBuffer, renderInfo, [&]{
-//            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
-//            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, 1, &_descriptorSet, 0, VK_NULL_HANDLE);
-//            vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_FRONT_BIT);
-//            vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//            vkCmdPushConstants(commandBuffer, _layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_constants), &_constants);
-//
-//            scene(_layout);
-//        });
-//    }
 }
 
 const Texture &CascadeShadowMap::shadowMap(int index) const {
@@ -169,7 +153,6 @@ void CascadeShadowMap::createShadowMapTexture() {
     for(auto& shadowMap : _shadowMap) {
         VkImageCreateInfo imageInfo{};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.flags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
         imageInfo.format = _depthFormat;
         imageInfo.extent = {_size, _size, 1};
@@ -208,17 +191,6 @@ void CascadeShadowMap::createShadowMapTexture() {
 
         shadowMap.sampler = device().createSampler(samplerInfo);
 
-    }
-    createImageViews();
-}
-
-void CascadeShadowMap::createImageViews() {
-    for(auto i = 0; i < 2; ++i) {
-        for(auto j = 0u; j < _numCascades; ++j) {
-            VkImageSubresourceRange resourceRange{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, j, 1};
-            auto imageView = _shadowMap[i].image.createView(_depthFormat, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
-            imageViews[i].push_back(imageView);
-        }
     }
 }
 

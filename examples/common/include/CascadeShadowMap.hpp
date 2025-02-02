@@ -46,8 +46,6 @@ public:
 private:
     void createShadowMapTexture();
 
-    void createImageViews();
-
     void createRenderInfo();
 
     void createUniforms();
@@ -79,7 +77,6 @@ private:
     glm::uvec2 _screenResolution{};
     float _depthBiasConstant{0.005f};
     float _depthBiasSlope{0.05f};
-    std::array<std::vector<VulkanImageView>, 2> imageViews;
 
     struct {
         glm::mat4 worldTransform{1};
