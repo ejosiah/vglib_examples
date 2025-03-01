@@ -91,8 +91,8 @@ void main(){
         radiance = radiance + transmittance * GetSolarRadiance();
     }
 
-//    radiance = mix(radiance, sphere_radiance, sphere_alpha);
-//    radiance = mix(radiance, ground_radiance, ground_alpha);
+    radiance = mix(radiance, sphere_radiance, sphere_alpha);
+    radiance = mix(radiance, ground_radiance, ground_alpha);
 
     fragColor.rgb = pow(vec3(1.0) - exp(-radiance / white_point * exposure), vec3(1.0 / 2.2));
 }

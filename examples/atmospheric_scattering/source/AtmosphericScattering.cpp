@@ -5,11 +5,11 @@
 
 AtmosphericScattering::AtmosphericScattering(const Settings& settings) : VulkanBaseApp("Precomputed Atmospheric Scattering", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/data");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/spv");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/models");
-    fileManager().addSearchPathFront("../../examples/atmospheric_scattering/textures");
+    fileManager().addSearchPathFront("atmospheric_scattering");
+    fileManager().addSearchPathFront("atmospheric_scattering/data");
+    fileManager().addSearchPathFront("atmospheric_scattering/spv");
+    fileManager().addSearchPathFront("atmospheric_scattering/models");
+    fileManager().addSearchPathFront("atmospheric_scattering/textures");
 }
 
 void AtmosphericScattering::initApp() {
@@ -412,7 +412,7 @@ AtmosphericScattering::setView(float viewDistanceMeters, float viewZenithAngleRa
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1920;
         settings.height = 1080;
