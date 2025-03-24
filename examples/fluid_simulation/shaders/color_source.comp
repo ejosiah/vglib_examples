@@ -1,0 +1,37 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform texture2D source_field_in;
+layout(set = 1, binding = 0) uniform writeonly image2D source_field_out;
+layout(set = 2, binding = 0) uniform sampler aSampler;
+
+layout(push_constant, scalar) uniform Constants{
+    vec4 sourceColor;
+    vec2  source;
+    float radius;
+    float dt;
+};
+
+vec3 accumColor(vec2 coord){
+    return texture(sampler2D(source_field_in, aSampler), fract(coord)).rgb;
+}
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 grid_size = textureSize(source_field_in, 0);
+vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
+vec3 color = vec3(0);
+
+void main() {
+    if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
+
+    vec2 d = (source - uv);
+    color = sourceColor.rgb * exp(-dot(d, d)/radius);
+    color /= dt;
+    color += accumColor(uv);
+
+    imageStore(source_field_out, gid, vec4(color, 0));
+}

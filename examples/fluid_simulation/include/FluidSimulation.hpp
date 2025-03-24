@@ -1,5 +1,7 @@
 #include "VulkanBaseApp.h"
 #include "fluid_solver_2d.h"
+#include "fluid/FluidSolver2.hpp"
+
 
 using ColorField = Field;
 
@@ -14,6 +16,8 @@ protected:
 
     void initColorField();
 
+    void initColorQuantity();
+
     void initFullScreenQuad();
 
     void createDescriptorPool();
@@ -23,6 +27,8 @@ protected:
     void createCommandPool();
 
     void createPipelineCache();
+
+    void createComputePipeline();
 
     void createRenderPipeline();
 
@@ -34,13 +40,19 @@ protected:
 
     void renderColorField(VkCommandBuffer commandBuffer);
 
+    void renderDebugField(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void runSimulation();
 
     ExternalForce userInputForce();
 
+    eular::ExternalForce userInputForce2();
+
     void addDyeSource(VkCommandBuffer commandBuffer, Field& field, glm::vec3 color, glm::vec2 source);
+
+    void addDyeSource1(VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc, glm::vec3 color, glm::vec2 source);
 
     void checkAppInputs() override;
 
@@ -50,16 +62,13 @@ protected:
 
     void createSamplers();
 
+    void beforeDeviceCreation() override;
+
 protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
     } render;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } compute;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -72,6 +81,16 @@ protected:
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
     } screenQuad;
+
+    struct {
+        VulkanBuffer vertices;
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+        struct {
+            uint32_t texture_id{~0u};
+            uint32_t use_abs{0};
+        } constants;
+    } debug;
 
     struct {
         VulkanPipeline pipeline;
@@ -87,6 +106,16 @@ protected:
     struct {
         VulkanPipeline pipeline;
         VulkanPipelineLayout layout;
+    } forceGen2;
+
+    struct {
+        VulkanPipeline pipeline;
+        VulkanPipelineLayout layout;
+
+        struct {
+            VulkanPipeline pipeline;
+            VulkanPipelineLayout layout;
+        } compute;
         struct{
             glm::vec4 color;
             glm::vec2 source;
@@ -99,6 +128,7 @@ protected:
     static const int out{1};
 
     Quantity color;
+    eular::Quantity color1;
 
     struct {
         float dt{1.0f / 120.f};
@@ -110,4 +140,6 @@ protected:
     VulkanSampler valueSampler;
     VulkanSampler linearSampler;
     FluidSolver2D fluidSolver;
+    BindlessDescriptor bindLessDescriptor;
+    eular::FluidSolver fluidSolver2;
 };

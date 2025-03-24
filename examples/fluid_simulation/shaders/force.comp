@@ -1,0 +1,37 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform texture2D force_field_in;
+layout(set = 1, binding = 0) uniform writeonly image2D force_field_out;
+layout(set = 2, binding = 0) uniform sampler aSampler;
+
+layout(push_constant) uniform Constants {
+    vec2 force;
+    vec2 center;
+    float radius;
+    float dt;
+};
+
+vec2 accumForce(vec2 coord){
+    return texture(sampler2D(force_field_in, aSampler), fract(coord)).xy;
+}
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 grid_size = textureSize(force_field_in, 0);
+vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
+
+void main() {
+    if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
+
+    vec2 d = (center - uv);
+    vec2 du = force * exp(-dot(d, d)/radius);
+    du.xy /= dt;
+    du.xy += accumForce(uv);
+
+    imageStore(force_field_out, gid, vec4(du,  0, 0));
+}

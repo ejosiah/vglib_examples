@@ -2,6 +2,7 @@
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "vulkan_image_ops.h"
+#include "ExtensionChain.hpp"
 
 FluidSimulation::FluidSimulation(const Settings& settings) : VulkanBaseApp("Fluid Simulation", settings) {
     fileManager().addSearchPath(".");
@@ -26,9 +27,11 @@ void FluidSimulation::initApp() {
     createDescriptorSetLayouts();
 
     initColorField();
+    initColorQuantity();
     initFluidSolver();
     createPipelineCache();
     createRenderPipeline();
+    createComputePipeline();
 }
 
 
@@ -36,6 +39,7 @@ void FluidSimulation::initFluidSolver() {
 
     float dx = 1.0f/float(width);
     std::vector<glm::vec4> field;
+    eular::VectorFieldSource2D field2d;
     float maxLength = MIN_FLOAT;
     constexpr auto two_pi = glm::two_pi<float>();
     for(int i = 0; i < height; i++){
@@ -49,6 +53,7 @@ void FluidSimulation::initFluidSolver() {
 //            glm::vec2 u{y, x}; // divergent fields 3;
             maxLength = glm::max(glm::length(u), maxLength);
             field.emplace_back(u , 0, 0);
+            field2d.push_back(u);
         }
     }
 
@@ -63,6 +68,32 @@ void FluidSimulation::initFluidSolver() {
     fluidSolver.add(userInputForce());
     fluidSolver.showVectors(true);
 
+    static auto bindlessDescriptor =
+            plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(0);
+    glm::vec2 gridSize{ width, height};
+    fluidSolver2 = eular::FluidSolver ( &device, &descriptorPool, &bindlessDescriptor, gridSize );
+    fluidSolver2.init();
+    fluidSolver2.set(field2d);
+    fluidSolver2.add(userInputForce2());
+    fluidSolver2.add(color1);
+    fluidSolver2.dt((5.0f * dx)/maxLength);
+
+    auto nextId = bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2);
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2);
+
+    fluidSolver2._oldVectorField[0] = &fluidSolver.vectorField.texture[0];
+    fluidSolver2._oldVectorField[1] = &fluidSolver.vectorField.texture[1];
+
+    fluidSolver2._oldVectorField.in = nextId;
+    fluidSolver2._oldVectorField.out = ++nextId;
+
+    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, fluidSolver2._oldVectorField.in});
+    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[1], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, fluidSolver2._oldVectorField.out});
+
+    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, fluidSolver2._oldVectorField.in});
+    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[1], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, fluidSolver2._oldVectorField.out});
+
+    fluidSolver.delegate = &fluidSolver2;
 }
 
 void FluidSimulation::initColorField() {
@@ -115,31 +146,74 @@ void FluidSimulation::initColorField() {
     };
 }
 
+void FluidSimulation::initColorQuantity() {
+    auto checkerboard = [](int i, int j, float w, float h){
+        auto x = 2 * (float(j)/w) - 1;
+        auto y = 2 * (float(i)/h) - 1;
+        return glm::vec3{
+                glm::step(1.0, glm::mod(floor((x + 1.0) / 0.2) + floor((y + 1.0) / 0.2), 2.0)),
+                glm::step(1.0, glm::mod(floor((x + 1.0) / 0.3) + floor((y + 1.0) / 0.3), 2.0)),
+                glm::step(1.0, glm::mod(floor((x + 1.0) / 0.4) + floor((y + 1.0) / 0.4), 2.0))
+        };
+    };
+    std::vector<glm::vec4> field;
+    std::vector<glm::vec4> allocation(width * height);
+    for(auto i = 0; i < height; i++){
+        for(auto j = 0; j < width; j++){
+            auto color = checkerboard(j, i, float(width), float(height));
+            field.emplace_back(color, 1);
+        }
+    }
+//    field = allocation;
+
+    textures::create(device, color1.field[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+            , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+            , sizeof(float));
+    textures::create(device, color1.field[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+            , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+            , sizeof(float));
+
+
+    textures::create(device, color1.source[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+            , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+            , sizeof(float));
+    textures::create(device, color1.source[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+            , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+            , sizeof(float));
+
+    device.setName<VK_OBJECT_TYPE_IMAGE>(fmt::format("{}_{}", "color1_field", 0), color1.field[0].image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE>(fmt::format("{}_{}", "color1_field", 1), color1.field[1].image.image);
+
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color1_field", 0), color1.field[0].imageView.handle);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color1_field", 1), color1.field[1].imageView.handle);
+
+    color1.field[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    color1.field[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    color1.source[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    color1.source[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    color1.name = "dye";
+    color1.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
+        addDyeSource1(commandBuffer, field, gc, {0.004, -0.002, -0.002}, {0.2, 0.2});
+        addDyeSource1(commandBuffer, field, gc, {-0.002, -0.002, 0.004}, {0.5, 0.9});
+        addDyeSource1(commandBuffer, field, gc,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
+    };
+}
+
 void FluidSimulation::initFullScreenQuad() {
     auto quad = ClipSpace::Quad::positions;
     screenQuad.vertices = device.createDeviceLocalBuffer(quad.data(), BYTE_SIZE(quad), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
 void FluidSimulation::createDescriptorPool() {
-    constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 16> poolSizes{
+    constexpr uint32_t maxSets = 1000;
+    std::array<VkDescriptorPoolSize, 4> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
-                    { VK_DESCRIPTOR_TYPE_SAMPLER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets }
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
@@ -164,6 +238,32 @@ void FluidSimulation::createCommandPool() {
 
 void FluidSimulation::createPipelineCache() {
     pipelineCache = device.createPipelineCache();
+}
+
+void FluidSimulation::createComputePipeline() {
+    auto module = device.createShaderModule(resource("force.comp.spv"));
+    auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+
+    forceGen2.layout = device.createPipelineLayout( fluidSolver2.forceFieldSetLayouts(),
+                                                  { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen.constants) } } );
+
+    auto computeCreateInfo = initializers::computePipelineCreateInfo();
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = forceGen2.layout.handle;
+    forceGen2.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("force_generator", forceGen2.pipeline.handle);
+
+    // dye source
+    module = device.createShaderModule(resource("color_source.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+
+    dyeSource.compute.layout = device.createPipelineLayout( fluidSolver2.forceFieldSetLayouts(),
+                                                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants) } } );
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = dyeSource.compute.layout.handle;
+    dyeSource.compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("dye_source", dyeSource.compute.pipeline.handle);
 }
 
 
@@ -230,6 +330,23 @@ void FluidSimulation::createRenderPipeline() {
             .name("fullscreen_quad")
         .build(screenQuad.layout);
 
+    debug.pipeline =
+        builder
+            .basePipeline(render.pipeline)
+            .shaderStage()
+                .vertexShader(resource("quad.vert.spv"))
+                .fragmentShader(resource("debug_fields.frag.spv"))
+            .vertexInputState().clear()
+                .addVertexBindingDescriptions(ClipSpace::bindingDescription())
+                .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())
+            .inputAssemblyState()
+                .triangleStrip()
+            .layout().clear()
+                .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(debug.constants))
+                .addDescriptorSetLayout(*fluidSolver2.bindlessDescriptor().descriptorSetLayout)
+            .name("debug_field")
+        .build(debug.layout);
+
 
     forceGen.pipeline =
         builder
@@ -258,7 +375,7 @@ void FluidSimulation::createRenderPipeline() {
 
 void FluidSimulation::onSwapChainDispose() {
     dispose(render.pipeline);
-    dispose(compute.pipeline);
+    dispose(forceGen2.pipeline);
 }
 
 void FluidSimulation::onSwapChainRecreation() {
@@ -287,8 +404,9 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    fluidSolver.renderVectorField(commandBuffer);
+//    fluidSolver.renderVectorField(commandBuffer);
     renderColorField(commandBuffer);
+//    renderDebugField(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
     vkEndCommandBuffer(commandBuffer);
@@ -301,7 +419,23 @@ void FluidSimulation::renderColorField(VkCommandBuffer commandBuffer) {
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad.vertices, &offset);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout.handle
-            , 0, 1, &color.field.descriptorSet[in], 0
+            , 0, 1, &color1.field.textureDescriptorSets[in], 0
+            , VK_NULL_HANDLE);
+//    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout.handle
+//            , 0, 1, &fluidSolver.pressureField.descriptorSet[1], 0
+//            , VK_NULL_HANDLE);
+
+    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+}
+
+void FluidSimulation::renderDebugField(VkCommandBuffer commandBuffer) {
+    debug.constants.texture_id = fluidSolver2._pressureField.in;
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad.vertices, &offset);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, debug.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(debug.constants), &debug.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.layout.handle
+            , 0, 1, &fluidSolver2.bindlessDescriptor().descriptorSet, 0
             , VK_NULL_HANDLE);
 
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
@@ -315,7 +449,8 @@ void FluidSimulation::update(float time) {
 
 void FluidSimulation::runSimulation() {
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        fluidSolver.runSimulation(commandBuffer);
+//        fluidSolver.runSimulation(commandBuffer);
+        fluidSolver2.runSimulation(commandBuffer);
     });
 
 }
@@ -332,6 +467,18 @@ ExternalForce FluidSimulation::userInputForce() {
     };
 }
 
+eular::ExternalForce FluidSimulation::userInputForce2() {
+    return [&](VkCommandBuffer commandBuffer, std::span<VkDescriptorSet> forceFieldSets, glm::uvec3 gc){
+        forceGen.constants.dt = fluidSolver2.dt();
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen2.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, forceGen2.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen.constants), &forceGen.constants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen2.layout.handle, 0, COUNT(forceFieldSets), forceFieldSets.data(), 0, VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
+        forceGen.constants.force.x = 0;
+        forceGen.constants.force.y = 0;
+    };
+}
+
 void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, Field &field, glm::vec3 color, glm::vec2 source) {
 
     dyeSource.constants.dt = constants.dt;
@@ -343,6 +490,24 @@ void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, Field &field, 
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.layout.handle, 0, 1, &field.descriptorSet[in], 0, VK_NULL_HANDLE);
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
     });
+    field.swap();
+}
+
+void FluidSimulation::addDyeSource1(VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc, glm::vec3 color, glm::vec2 source) {
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = field.textureDescriptorSets[0];
+    sets[1] = field.imageDescriptorSets[1];
+    sets[2] = fluidSolver2._valueSamplerDescriptorSet;
+
+    dyeSource.constants.dt = fluidSolver2.dt();
+    dyeSource.constants.color.rgb = color;
+    dyeSource.constants.source = source;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, dyeSource.compute.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants), &dyeSource.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
+
     field.swap();
 }
 
@@ -392,6 +557,44 @@ void FluidSimulation::createSamplers() {
     samplerInfo.magFilter = VK_FILTER_LINEAR;
     samplerInfo.minFilter = VK_FILTER_LINEAR;
     linearSampler = device.createSampler(samplerInfo);
+}
+
+void FluidSimulation::beforeDeviceCreation() {
+    VkDescriptorSetLayoutBinding binding {
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
+    };
+
+    // FIXME binding should be per descriptor and not global
+    plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).addBinding(binding);
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+
+    if(devFeatures13.has_value()) {
+        devFeatures13.value()->maintenance4 = VK_TRUE;
+        devFeatures13.value()->synchronization2 = VK_TRUE;
+        devFeatures13.value()->dynamicRendering = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        devFeatures13.maintenance4 = VK_TRUE;
+        devFeatures13.synchronization2 = VK_TRUE;
+        devFeatures13.dynamicRendering = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
+    };
+
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    if(devFeatures12.has_value()) {
+        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        devFeatures12.scalarBlockLayout = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
+    };
+
+    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
+    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
+    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
 }
 
 int main(){
