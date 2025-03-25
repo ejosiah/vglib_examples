@@ -40,8 +40,6 @@ protected:
 
     void renderColorField(VkCommandBuffer commandBuffer);
 
-    void renderDebugField(VkCommandBuffer commandBuffer);
-
     void update(float time) override;
 
     void runSimulation();
@@ -81,16 +79,6 @@ protected:
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
     } screenQuad;
-
-    struct {
-        VulkanBuffer vertices;
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-        struct {
-            uint32_t texture_id{~0u};
-            uint32_t use_abs{0};
-        } constants;
-    } debug;
 
     struct {
         VulkanPipeline pipeline;
@@ -140,6 +128,5 @@ protected:
     VulkanSampler valueSampler;
     VulkanSampler linearSampler;
     FluidSolver2D fluidSolver;
-    BindlessDescriptor bindLessDescriptor;
     eular::FluidSolver fluidSolver2;
 };

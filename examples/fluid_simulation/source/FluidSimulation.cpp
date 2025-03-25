@@ -68,32 +68,13 @@ void FluidSimulation::initFluidSolver() {
     fluidSolver.add(userInputForce());
     fluidSolver.showVectors(true);
 
-    static auto bindlessDescriptor =
-            plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet(0);
     glm::vec2 gridSize{ width, height};
-    fluidSolver2 = eular::FluidSolver ( &device, &descriptorPool, &bindlessDescriptor, gridSize );
+    fluidSolver2 = eular::FluidSolver ( &device, &descriptorPool, gridSize );
     fluidSolver2.init();
     fluidSolver2.set(field2d);
     fluidSolver2.add(userInputForce2());
     fluidSolver2.add(color1);
     fluidSolver2.dt((5.0f * dx)/maxLength);
-
-    auto nextId = bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2);
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2);
-
-    fluidSolver2._oldVectorField[0] = &fluidSolver.vectorField.texture[0];
-    fluidSolver2._oldVectorField[1] = &fluidSolver.vectorField.texture[1];
-
-    fluidSolver2._oldVectorField.in = nextId;
-    fluidSolver2._oldVectorField.out = ++nextId;
-
-    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, fluidSolver2._oldVectorField.in});
-    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[1], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, fluidSolver2._oldVectorField.out});
-
-    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, fluidSolver2._oldVectorField.in});
-    fluidSolver2.bindlessDescriptor().update({&fluidSolver.vectorField.texture[1], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, fluidSolver2._oldVectorField.out});
-
-    fluidSolver.delegate = &fluidSolver2;
 }
 
 void FluidSimulation::initColorField() {
@@ -161,6 +142,7 @@ void FluidSimulation::initColorQuantity() {
     for(auto i = 0; i < height; i++){
         for(auto j = 0; j < width; j++){
             auto color = checkerboard(j, i, float(width), float(height));
+//            auto color = glm::vec3{0};
             field.emplace_back(color, 1);
         }
     }
@@ -257,7 +239,7 @@ void FluidSimulation::createComputePipeline() {
     module = device.createShaderModule(resource("color_source.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    dyeSource.compute.layout = device.createPipelineLayout( fluidSolver2.forceFieldSetLayouts(),
+    dyeSource.compute.layout = device.createPipelineLayout( fluidSolver2.sourceFieldSetLayouts(),
                                                     { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants) } } );
 
     computeCreateInfo.stage = stage;
@@ -269,7 +251,7 @@ void FluidSimulation::createComputePipeline() {
 
 void FluidSimulation::createRenderPipeline() {
     //    @formatter:off
-    auto& fluidSolverLayout = fluidSolver.textureSetLayout;
+    auto& fluidSolverLayout = fluidSolver2._fieldDescriptorSetLayout;
     auto& simRenderPass = fluidSolver.renderPass;
     auto builder = device.graphicsPipelineBuilder();
     render.pipeline =
@@ -329,24 +311,6 @@ void FluidSimulation::createRenderPipeline() {
                 .addDescriptorSetLayout(fluidSolverLayout)
             .name("fullscreen_quad")
         .build(screenQuad.layout);
-
-    debug.pipeline =
-        builder
-            .basePipeline(render.pipeline)
-            .shaderStage()
-                .vertexShader(resource("quad.vert.spv"))
-                .fragmentShader(resource("debug_fields.frag.spv"))
-            .vertexInputState().clear()
-                .addVertexBindingDescriptions(ClipSpace::bindingDescription())
-                .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())
-            .inputAssemblyState()
-                .triangleStrip()
-            .layout().clear()
-                .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(debug.constants))
-                .addDescriptorSetLayout(*fluidSolver2.bindlessDescriptor().descriptorSetLayout)
-            .name("debug_field")
-        .build(debug.layout);
-
 
     forceGen.pipeline =
         builder
@@ -419,24 +383,11 @@ void FluidSimulation::renderColorField(VkCommandBuffer commandBuffer) {
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad.vertices, &offset);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout.handle
-            , 0, 1, &color1.field.textureDescriptorSets[in], 0
+            , 0, 1, &color1.field.descriptorSet[in], 0
             , VK_NULL_HANDLE);
 //    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout.handle
 //            , 0, 1, &fluidSolver.pressureField.descriptorSet[1], 0
 //            , VK_NULL_HANDLE);
-
-    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
-}
-
-void FluidSimulation::renderDebugField(VkCommandBuffer commandBuffer) {
-    debug.constants.texture_id = fluidSolver2._pressureField.in;
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad.vertices, &offset);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.pipeline.handle);
-    vkCmdPushConstants(commandBuffer, debug.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(debug.constants), &debug.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, debug.layout.handle
-            , 0, 1, &fluidSolver2.bindlessDescriptor().descriptorSet, 0
-            , VK_NULL_HANDLE);
 
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
@@ -494,10 +445,9 @@ void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, Field &field, 
 }
 
 void FluidSimulation::addDyeSource1(VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc, glm::vec3 color, glm::vec2 source) {
-    static std::array<VkDescriptorSet, 3> sets;
-    sets[0] = field.textureDescriptorSets[0];
-    sets[1] = field.imageDescriptorSets[1];
-    sets[2] = fluidSolver2._valueSamplerDescriptorSet;
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = field.descriptorSet[0];
+    sets[1] = field.descriptorSet[1];
 
     dyeSource.constants.dt = fluidSolver2.dt();
     dyeSource.constants.color.rgb = color;
@@ -567,8 +517,6 @@ void FluidSimulation::beforeDeviceCreation() {
             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
     };
 
-    // FIXME binding should be per descriptor and not global
-    plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).addBinding(binding);
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
 
     if(devFeatures13.has_value()) {

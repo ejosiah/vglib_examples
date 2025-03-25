@@ -6,9 +6,8 @@
 
 layout(local_size_x = 32, local_size_y = 32) in;
 
-layout(set = 0, binding = 0) uniform texture2D force_field_in;
-layout(set = 1, binding = 0) uniform writeonly image2D force_field_out;
-layout(set = 2, binding = 0) uniform sampler aSampler;
+layout(set = 0, binding = 0) uniform sampler2D force_field_in;
+layout(set = 1, binding = 2) uniform writeonly image2D force_field_out;
 
 layout(push_constant) uniform Constants {
     vec2 force;
@@ -18,7 +17,7 @@ layout(push_constant) uniform Constants {
 };
 
 vec2 accumForce(vec2 coord){
-    return texture(sampler2D(force_field_in, aSampler), fract(coord)).xy;
+    return texture(force_field_in, fract(coord)).xy;
 }
 
 ivec2 gid = ivec2(gl_GlobalInvocationID);

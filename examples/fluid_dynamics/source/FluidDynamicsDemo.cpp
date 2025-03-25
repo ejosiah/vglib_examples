@@ -5,15 +5,15 @@
 #include "ImGuiPlugin.hpp"
 
 FluidDynamicsDemo::FluidDynamicsDemo(const Settings& settings) : VulkanBaseApp("Real-Time Fluid Dynamics", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/fluid_dynamics");
-    fileManager.addSearchPath("../../examples/fluid_dynamics/spv");
-    fileManager.addSearchPath("../../examples/fluid_dynamics/models");
-    fileManager.addSearchPath("../../examples/fluid_dynamics/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("fluid_dynamics");
+    fileManager().addSearchPath("fluid_dynamics/spv");
+    fileManager().addSearchPath("fluid_dynamics/models");
+    fileManager().addSearchPath("fluid_dynamics/textures");
+    fileManager().addSearchPath("data/shaders");
+    fileManager().addSearchPath("data/models");
+    fileManager().addSearchPath("data/textures");
+    fileManager().addSearchPath("data");
 }
 
 void FluidDynamicsDemo::initApp() {
@@ -265,16 +265,16 @@ void FluidDynamicsDemo::createRenderPipeline() {
 }
 
 void FluidDynamicsDemo::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule(resource("../../data/shaders/pass_through.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -327,9 +327,9 @@ void FluidDynamicsDemo::renderGrid(VkCommandBuffer commandBuffer) {
     if(!showGrid) return;
     int n = simData.N;
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, grid.pipeline);
-    vkCmdPushConstants(commandBuffer, grid.layout, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0, sizeof(int), &n);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, grid.layout, 0, 1, &cameraSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, grid.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, grid.layout.handle, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, 0, sizeof(int), &n);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, grid.layout.handle, 0, 1, &cameraSet, 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, grid.vertexBuffer, &offset);
     vkCmdDraw(commandBuffer, grid.vertexBuffer.sizeAs<PatchVertex>(), 1, 0, 0);
 }
@@ -342,9 +342,9 @@ void FluidDynamicsDemo::renderVectorField(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = cameraSet;
     sets[1] = simData.descriptorSets[fluidSim.v_in];
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vectorView.thin.pipeline);
-    vkCmdPushConstants(commandBuffer, vectorView.thin.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vectorView.thin.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vectorView.thin.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, vectorView.thin.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vectorView.thin.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vectorView.thin.vertexBuffer, &offset);
     vkCmdDraw(commandBuffer, vectorView.thin.vertexBuffer.sizeAs<glm::vec2>(), n * n, 0, 0);
 
@@ -358,9 +358,9 @@ void FluidDynamicsDemo::renderDensityField(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = cameraSet;
     sets[1] = simData.descriptorSets[0];
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, density.pipeline);
-    vkCmdPushConstants(commandBuffer, density.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, density.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, density.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, density.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, density.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, density.vertexBuffer, &offset);
     vkCmdDraw(commandBuffer, density.vertexBuffer.sizeAs<glm::vec2>(), n * n, 0, 0);
 }
@@ -374,9 +374,9 @@ void FluidDynamicsDemo::renderParticles(VkCommandBuffer commandBuffer) {
     sets[0] = cameraSet;
     sets[1] = simData.descriptorSets[0];
     sets[2] = particles.descriptorSet;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, particles.pipeline);
-    vkCmdPushConstants(commandBuffer, particles.layout, VK_SHADER_STAGE_GEOMETRY_BIT, 0, sizeof(constants), &constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, particles.layout, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, particles.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, particles.layout.handle, VK_SHADER_STAGE_GEOMETRY_BIT, 0, sizeof(constants), &constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, particles.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, particles.vertexBuffer, &offset);
     vkCmdDraw(commandBuffer, 1, n, 0, 0);
 }
@@ -384,9 +384,9 @@ void FluidDynamicsDemo::renderParticles(VkCommandBuffer commandBuffer) {
 void FluidDynamicsDemo::renderBrush(VkCommandBuffer commandBuffer) {
     if(!brush.active) return;
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brush.pipeline);
-    vkCmdPushConstants(commandBuffer, brush.layout, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, 0, sizeof(brush.constants), &brush.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brush.layout, 0, 1, &cameraSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brush.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, brush.layout.handle, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, 0, sizeof(brush.constants), &brush.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brush.layout.handle, 0, 1, &cameraSet, 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, brush.patch, &offset);
     vkCmdDraw(commandBuffer, 2, 1, 0, 0);
 
@@ -394,34 +394,34 @@ void FluidDynamicsDemo::renderBrush(VkCommandBuffer commandBuffer) {
 
 void FluidDynamicsDemo::renderImage(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout, 0, 1, &textureDescriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, 1, &textureDescriptorSet, 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, render.vertexBuffer, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
 
 void FluidDynamicsDemo::renderUI(VkCommandBuffer commandBuffer) {
-//    ImGui::Begin("Fluid Sim");
-//    ImGui::SetWindowSize({0, 0});
-//    ImGui::Checkbox("particles", &showParticles); ImGui::SameLine();
-//    ImGui::Checkbox("grid", &showGrid); ImGui::SameLine();
-//    ImGui::Checkbox("vector field", &showVectorField);
-//    ImGui::SliderFloat("speed", &speed, 0.01, 1.0);
-//
-//    bool open = true;
-//    brush.active = ImGui::CollapsingHeader("paint", &open, ImGuiTreeNodeFlags_DefaultOpen);
-//    if(brush.active){
-////        ImGui::RadioButton("vector field", &paintState, PAINT_VECTOR_FIELD);
-////        ImGui::RadioButton("density field", &paintState, PAINT_DENSITY_FIELD);
-//        ImGui::RadioButton("Vector Field", &paintState, 0); ImGui::SameLine();
-//        ImGui::RadioButton("Density Field", &paintState, 1); ImGui::SameLine();
-//        ImGui::Checkbox("erase", &brush.erase);
-//        ImGui::SliderFloat("brush size", &brush.constants.radius, 0.03, 0.25);
-//    }
-//    simStarted |= ImGui::Button("start sim");
-//    ImGui::End();
-//
-//    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+    ImGui::Begin("Fluid Sim");
+    ImGui::SetWindowSize({0, 0});
+    ImGui::Checkbox("particles", &showParticles); ImGui::SameLine();
+    ImGui::Checkbox("grid", &showGrid); ImGui::SameLine();
+    ImGui::Checkbox("vector field", &showVectorField);
+    ImGui::SliderFloat("speed", &speed, 0.01, 1.0);
+
+    bool open = true;
+    brush.active = ImGui::CollapsingHeader("paint", &open, ImGuiTreeNodeFlags_DefaultOpen);
+    if(brush.active){
+//        ImGui::RadioButton("vector field", &paintState, PAINT_VECTOR_FIELD);
+//        ImGui::RadioButton("density field", &paintState, PAINT_DENSITY_FIELD);
+        ImGui::RadioButton("Vector Field", &paintState, 0); ImGui::SameLine();
+        ImGui::RadioButton("Density Field", &paintState, 1); ImGui::SameLine();
+        ImGui::Checkbox("erase", &brush.erase);
+        ImGui::SliderFloat("brush size", &brush.constants.radius, 0.03, 0.25);
+    }
+    simStarted |= ImGui::Button("start sim");
+    ImGui::End();
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
 static bool first = true;
@@ -441,8 +441,8 @@ void FluidDynamicsDemo::update(float time) {
 
 void FluidDynamicsDemo::gpuSimulation() {
     simCommandPool.oneTimeCommand([&](auto commandBuffer){
-//        fluidSim.advectVectorField(commandBuffer);
-//        fluidSim.swapVectorFieldBuffers();
+        fluidSim.advectVectorField(commandBuffer);
+        fluidSim.swapVectorFieldBuffers();
         fluidSim.velocityStep(commandBuffer, 0, 0);
     });
 }
@@ -553,8 +553,8 @@ void FluidDynamicsDemo::initSimData() {
 //            float u = glm::cos(x) * glm::sin(y);
 //            float v = glm::sin(x) * glm::sin(y);
 
-            simData.u[0][id] = simData.u[1][id]  = y;
-            simData.v[0][id] = simData.v[1][id] = x;
+//            simData.u[0][id] = simData.u[1][id]  = y;
+//            simData.v[0][id] = simData.v[1][id] = x;
         }
     }
 
@@ -577,7 +577,7 @@ void FluidDynamicsDemo::initFluidSim() {
 //    auto dt = 1.0f/static_cast<float>(simData.N);
     float dt = 1.0f/static_cast<float>(simData.N) * 0.01;
     spdlog::info("dt: {}", dt);
-    fluidSim = FluidSim{ &device, fileManager, simData.uBuffer[0], simData.vBuffer[0]
+    fluidSim = FluidSim{ &device, fileManager(), simData.uBuffer[0], simData.vBuffer[0]
             , simData.uBuffer[1], simData.vBuffer[1], simData.N, dt, 1.0};
     fluidSim.init();
 //    fluidSim.set(colorTexture);
@@ -731,7 +731,7 @@ void FluidDynamicsDemo::updateDescriptorSets() {
     writes[8].dstBinding = 0;
     writes[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[8].descriptorCount = 1;
-    VkDescriptorImageInfo imageInfo{colorTexture.sampler, colorTexture.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo imageInfo{colorTexture.sampler.handle, colorTexture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     writes[8].pImageInfo = &imageInfo;
     
     device.updateDescriptorSets(writes);

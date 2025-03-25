@@ -5,9 +5,8 @@
 
 layout(local_size_x = 32, local_size_y = 32) in;
 
-layout(set = 0, binding = 0) uniform texture2D source_field_in;
-layout(set = 1, binding = 0) uniform writeonly image2D source_field_out;
-layout(set = 2, binding = 0) uniform sampler aSampler;
+layout(set = 0, binding = 0) uniform sampler2D source_field_in;
+layout(set = 1, binding = 2) uniform writeonly image2D source_field_out;
 
 layout(push_constant, scalar) uniform Constants{
     vec4 sourceColor;
@@ -17,7 +16,7 @@ layout(push_constant, scalar) uniform Constants{
 };
 
 vec3 accumColor(vec2 coord){
-    return texture(sampler2D(source_field_in, aSampler), fract(coord)).rgb;
+    return texture(source_field_in, fract(coord)).rgb;
 }
 
 ivec2 gid = ivec2(gl_GlobalInvocationID);

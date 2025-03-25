@@ -162,8 +162,8 @@ protected:
         VulkanBuffer patch;
         VulkanPipeline pipeline;
         VulkanPipelineLayout layout;
-        bool active{false};
-        bool erase{true};
+        bool active{true};
+        bool erase{false};
         struct {
             glm::vec2 position{0.5};
             float radius{0.0};
@@ -176,7 +176,7 @@ protected:
     bool showDensityField{false};
     bool showParticles{false};
     bool debug{true};
-    bool simStarted{true};
+    bool simStarted{false};
 
     static constexpr int PAINT_VECTOR_FIELD = 0;
     static constexpr int PAINT_DENSITY_FIELD = 1;

@@ -24,7 +24,7 @@ find_package(ZLIB)
 find_package(TinyGLTF)
 find_package(stb)
 
-set(CONAN_LIBS   assimp::assimp glm::glm glfw spdlog::spdlog Freetype::Freetype imgui::imgui boost::boost gtest::gtest
+set(CONAN_LIBS   assimp::assimp glm::glm glfw spdlog::spdlog Freetype::Freetype imgui::imgui gtest::gtest
                     argparse::argparse Bullet::Bullet EnTT::EnTT meshoptimizer::meshoptimizer openexr::openexr
                     Taskflow::Taskflow ZLIB::ZLIB TinyGLTF::TinyGLTF stb::stb)
 

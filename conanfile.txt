@@ -6,7 +6,6 @@ stb/cci.20230920
 spdlog/1.15.0
 freetype/2.12.1
 imgui/1.85
-boost/1.80.0
 gtest/1.15.0
 argparse/2.1
 bullet3/3.17

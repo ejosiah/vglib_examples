@@ -14,6 +14,7 @@ int main(){
         settings.msaaSamples = VK_SAMPLE_COUNT_8_BIT;
         settings.depthTest = true;
 
+        fs::current_path("../../../../examples/");
         auto app = FluidDynamicsDemo{ settings };
         std::unique_ptr<Plugin> plugin = std::make_unique<ImGuiPlugin>();
         app.addPlugin(plugin);
