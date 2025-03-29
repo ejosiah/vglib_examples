@@ -16,7 +16,7 @@ FluidSimulation::FluidSimulation(const Settings& settings) : VulkanBaseApp("Flui
     fileManager().addSearchPath("data");
     fileManager().addSearchPath("../data/shaders");
     fileManager().addSearchPath("../data/shaders/fluid_2d");
-    constants.epsilon = 1.0f/float(width);    // TODO 2d epsilon
+    constants.epsilon = 1.0f/float(width/2);    // TODO 2d epsilon
 }
 
 void FluidSimulation::initApp() {
@@ -36,6 +36,9 @@ void FluidSimulation::initApp() {
 
 
 void FluidSimulation::initFluidSolver() {
+    const auto width = this->width/2;
+//    const auto width = this->width;
+
 
     float dx = 1.0f/float(width);
     std::vector<glm::vec4> field;
@@ -88,11 +91,14 @@ void FluidSimulation::initColorField() {
                 glm::step(1.0, glm::mod(floor((x + 1.0) / 0.4) + floor((y + 1.0) / 0.4), 2.0))
         };
     };
+    const auto width = this->width/2;
+//    const auto width = this->width;
     std::vector<glm::vec4> field;
     std::vector<glm::vec4> allocation(width * height);
     for(auto i = 0; i < height; i++){
         for(auto j = 0; j < width; j++){
             auto color = checkerboard(j, i, float(width), float(height));
+//            auto color = glm::vec3(0);
             field.emplace_back(color, 1);
         }
     }
@@ -120,6 +126,7 @@ void FluidSimulation::initColorField() {
     device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color_field", 1), color.field.texture[1].imageView.handle);
 
     color.name = "color";
+    color.diffuseRate = diffuseRate;
     color.update = [&](VkCommandBuffer commandBuffer, Field& field){
         addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
         addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
@@ -137,6 +144,8 @@ void FluidSimulation::initColorQuantity() {
                 glm::step(1.0, glm::mod(floor((x + 1.0) / 0.4) + floor((y + 1.0) / 0.4), 2.0))
         };
     };
+    const auto width = this->width/2;
+//    const auto width = this->width;
     std::vector<glm::vec4> field;
     std::vector<glm::vec4> allocation(width * height);
     for(auto i = 0; i < height; i++){
@@ -176,6 +185,7 @@ void FluidSimulation::initColorQuantity() {
     color1.source[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 
     color1.name = "dye";
+    color1.diffuseRate = diffuseRate;
     color1.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
         addDyeSource1(commandBuffer, field, gc, {0.004, -0.002, -0.002}, {0.2, 0.2});
         addDyeSource1(commandBuffer, field, gc, {-0.002, -0.002, 0.004}, {0.5, 0.9});
@@ -251,7 +261,6 @@ void FluidSimulation::createComputePipeline() {
 
 void FluidSimulation::createRenderPipeline() {
     //    @formatter:off
-    auto& fluidSolverLayout = fluidSolver2._fieldDescriptorSetLayout;
     auto& simRenderPass = fluidSolver.renderPass;
     auto builder = device.graphicsPipelineBuilder();
     render.pipeline =
@@ -301,14 +310,15 @@ void FluidSimulation::createRenderPipeline() {
             .basePipeline(render.pipeline)
             .shaderStage()
                 .vertexShader(resource("quad.vert.spv"))
-                .fragmentShader(resource("quad.frag.spv"))
+                .fragmentShader(resource("render.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescriptions(ClipSpace::bindingDescription())
                 .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())
             .inputAssemblyState()
                 .triangleStrip()
-            .layout()
-                .addDescriptorSetLayout(fluidSolverLayout)
+            .layout().clear()
+                .addDescriptorSetLayout(fluidSolver.textureSetLayout)
+                .addDescriptorSetLayout(fluidSolver2._fieldDescriptorSetLayout)
             .name("fullscreen_quad")
         .build(screenQuad.layout);
 
@@ -317,7 +327,7 @@ void FluidSimulation::createRenderPipeline() {
             .shaderStage()
                 .fragmentShader(resource("force.frag.spv"))
             .layout().clear()
-                .addDescriptorSetLayouts({fluidSolverLayout})
+                .addDescriptorSetLayouts({ fluidSolver.textureSetLayout })
                 .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(forceGen.constants))
             .renderPass(simRenderPass)
             .name("force_generator")
@@ -328,7 +338,7 @@ void FluidSimulation::createRenderPipeline() {
             .shaderStage()
                 .fragmentShader(resource("color_source.frag.spv"))
             .layout().clear()
-                .addDescriptorSetLayouts({fluidSolverLayout})
+                .addDescriptorSetLayouts({ fluidSolver.textureSetLayout })
                 .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(dyeSource.constants))
             .renderPass(simRenderPass)
             .name("color_source")
@@ -380,10 +390,23 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
 
 void FluidSimulation::renderColorField(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
+
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = color.field.descriptorSet[in];
+    sets[1] = color1.field.descriptorSet[in];
+//    sets[0] = fluidSolver.divergenceField.descriptorSet[in];
+//    sets[1] = fluidSolver2._divergenceField.descriptorSet[in];
+
+//    sets[0] = fluidSolver.pressureField.descriptorSet[in];
+//    sets[1] = fluidSolver2._pressureField.descriptorSet[in];
+
+//    sets[0] = fluidSolver.vectorField.descriptorSet[in];
+//    sets[1] = fluidSolver2._combinedVectorField.descriptorSet[in];
+
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad.vertices, &offset);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout.handle
-            , 0, 1, &color1.field.descriptorSet[in], 0
+            , 0, COUNT(sets), sets.data(), 0
             , VK_NULL_HANDLE);
 //    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.layout.handle
 //            , 0, 1, &fluidSolver.pressureField.descriptorSet[1], 0
@@ -399,8 +422,11 @@ void FluidSimulation::update(float time) {
 }
 
 void FluidSimulation::runSimulation() {
+//    static int count = 0;
+//    if(count > 0) return;
+//    ++count;
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-//        fluidSolver.runSimulation(commandBuffer);
+        fluidSolver.runSimulation(commandBuffer);
         fluidSolver2.runSimulation(commandBuffer);
     });
 
@@ -420,13 +446,13 @@ ExternalForce FluidSimulation::userInputForce() {
 
 eular::ExternalForce FluidSimulation::userInputForce2() {
     return [&](VkCommandBuffer commandBuffer, std::span<VkDescriptorSet> forceFieldSets, glm::uvec3 gc){
-        forceGen.constants.dt = fluidSolver2.dt();
+        forceGen2.constants.dt = fluidSolver2.dt();
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen2.pipeline.handle);
-        vkCmdPushConstants(commandBuffer, forceGen2.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen.constants), &forceGen.constants);
+        vkCmdPushConstants(commandBuffer, forceGen2.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen2.constants), &forceGen2.constants);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen2.layout.handle, 0, COUNT(forceFieldSets), forceFieldSets.data(), 0, VK_NULL_HANDLE);
         vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
-        forceGen.constants.force.x = 0;
-        forceGen.constants.force.y = 0;
+        forceGen2.constants.force.x = 0;
+        forceGen2.constants.force.y = 0;
     };
 }
 
@@ -480,6 +506,7 @@ void FluidSimulation::checkAppInputs() {
         forceGen.constants.force = displacement;
         forceGen.constants.center = .5f * forceGen.constants.center + .5f;
     }
+    forceGen2.constants = forceGen.constants;
 }
 
 void FluidSimulation::cleanup() {
@@ -549,7 +576,7 @@ int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 600;
+        settings.width = 1200;
         settings.height = 600;
         settings.depthTest = true;
         settings.vSync = true;

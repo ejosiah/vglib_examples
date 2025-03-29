@@ -80,20 +80,23 @@ protected:
         VulkanPipeline pipeline;
     } screenQuad;
 
+    struct ForceConstants {
+        glm::vec2 force{0};
+        glm::vec2 center{0};
+        float radius{1};
+        float dt;
+    };
+
     struct {
         VulkanPipeline pipeline;
         VulkanPipelineLayout layout;
-        struct {
-            glm::vec2 force{0};
-            glm::vec2 center{0};
-            float radius{1};
-            float dt;
-        } constants;
+        ForceConstants constants;
     } forceGen;
 
     struct {
         VulkanPipeline pipeline;
         VulkanPipelineLayout layout;
+        ForceConstants constants;
     } forceGen2;
 
     struct {
@@ -129,4 +132,5 @@ protected:
     VulkanSampler linearSampler;
     FluidSolver2D fluidSolver;
     eular::FluidSolver fluidSolver2;
+    float diffuseRate = 0;
 };
