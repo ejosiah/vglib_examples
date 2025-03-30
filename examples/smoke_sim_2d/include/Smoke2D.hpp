@@ -28,6 +28,8 @@ protected:
 
     void initAmbientTempBuffer();
 
+    void beforeDeviceCreation() override;
+
     void initTemperatureAndDensityField();
 
     void initSolver();
@@ -98,9 +100,9 @@ protected:
             float tempTarget{TARGET_TEMP};
             float ambientTemp{AMBIENT_TEMP};
             float radius{0.001};
-            float tempRate{1}; // 1
-            float densityRate{1};
-            float decayRate{0};
+            float tempRate{0.1}; // 1
+            float densityRate{0.1};
+            float decayRate{5};
             float dt{TIME_STEP};
             float time{0};
         } constants;
