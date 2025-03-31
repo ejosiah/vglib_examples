@@ -18,23 +18,18 @@ float remap(float x, float a, float b, float c, float d) {
 const float ppm = 1E6;
 
 void main(){
-    float density = 0;
     vec4 debug;
     vec2 uv = vUv;
+
     if(uv.x < 0.5) {
         uv.x = remap(uv.x, 0, 0.5, 0, 1);
-        density = texture(smokeField, uv).y;
         debug = texture(smokeField, uv);
     }else {
         uv.x = remap(uv.x, 0.5, 1, 0, 1);
-        density = texture(smokeField1, uv).y;
         debug = texture(smokeField1, uv);
     }
-    density /= ppm;
 
-    vec3 smoke = dye * density;
-    fragColor = vec4(smoke, density);
     fragColor /= (1 + fragColor);
-//     fragColor = debug * 1000;
-//    fragColor /= (1 + fragColor);
+    fragColor = debug * 1000;
+    fragColor /= (1 + fragColor);
 }

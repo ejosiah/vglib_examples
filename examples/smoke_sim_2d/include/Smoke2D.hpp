@@ -1,7 +1,9 @@
 #include "VulkanBaseApp.h"
 #include "fluid_solver_2d.h"
+#include "fluid/FluidSolver2.hpp"
 
 using TemperatureAndDensity = Quantity;
+using TemperatureAndDensity1 = eular::Quantity;
 
 class Smoke2D : public VulkanBaseApp{
 public:
@@ -32,6 +34,8 @@ protected:
 
     void initTemperatureAndDensityField();
 
+    void initTemperatureAndDensityField1();
+
     void initSolver();
 
     void copy(VkCommandBuffer commandBuffer, Texture& source, const VulkanBuffer& destination);
@@ -44,7 +48,11 @@ protected:
 
     void emitSmoke(VkCommandBuffer commandBuffer, Field &field);
 
+    void emitSmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
+
     bool decaySmoke(VkCommandBuffer commandBuffer, Field &field);
+
+    bool decaySmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
 
     void renderTemperature(VkCommandBuffer commandBuffer);
 
@@ -62,9 +70,11 @@ protected:
 
     ExternalForce buoyancyForce();
 
+    eular::ExternalForce buoyancyForce1();
 
-//#define toKelvin(celsius) (273.15f + celsius)
-#define toKelvin(celsius) (celsius)
+
+#define toKelvin(celsius) (273.15f + celsius)
+//#define toKelvin(celsius) (celsius)
 
 
 protected:
@@ -95,13 +105,17 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } compute;
         struct{
-            glm::vec2 location{0.5, 0.98};
+            glm::vec2 location{0.5, 0.80};
             float tempTarget{TARGET_TEMP};
             float ambientTemp{AMBIENT_TEMP};
             float radius{0.001};
-            float tempRate{0.1}; // 1
-            float densityRate{0.1};
+            float tempRate{1e5}; // 1
+            float densityRate{1e5};
             float decayRate{5};
             float dt{TIME_STEP};
             float time{0};
@@ -111,6 +125,10 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } compute;
         struct{
             float densityDecayRate{0};
             float temperatureDecayRate{0};
@@ -129,6 +147,10 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } compute;
         struct{
             glm::vec2 up{0, 1};
             float tempFactor{0.1}; // 0.1
@@ -143,7 +165,9 @@ protected:
     VulkanBuffer screenQuad;
 
     TemperatureAndDensity temperatureAndDensity;
+    TemperatureAndDensity1 temperatureAndDensity1;
     FluidSolver2D fluidSolver;
+    eular::FluidSolver fluidSolver1;
     VulkanDescriptorSetLayout ambientTempSet;
     VkDescriptorSet ambientTempDescriptorSet;
     VulkanBuffer ambientTempBuffer;
@@ -152,6 +176,7 @@ protected:
     VulkanBuffer tempField;
     VulkanBuffer debugBuffer;
     bool dynamicAmbientTemp{false};
+    int fwidth{};
 
     static constexpr int in{0};
     static constexpr int out{1};

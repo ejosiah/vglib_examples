@@ -108,7 +108,7 @@ protected:
             VulkanPipelineLayout layout;
         } compute;
         struct{
-            glm::vec4 color;
+            glm::vec3 color{1};
             glm::vec2 source;
             float radius{0.01};
             float dt{1.0f/120.f};

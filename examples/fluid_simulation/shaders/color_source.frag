@@ -1,9 +1,10 @@
-#version 450 core
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
 
 layout(set = 0, binding = 0) uniform sampler2D sourceField;
 
-layout(push_constant) uniform Constants{
-    vec4 sourceColor;
+layout(push_constant, scalar) uniform Constants{
+    vec3 sourceColor;
     vec2  source;
     float radius;
     float dt;

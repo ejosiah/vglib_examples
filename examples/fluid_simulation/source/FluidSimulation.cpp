@@ -125,13 +125,13 @@ void FluidSimulation::initColorField() {
     device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color_field", 0), color.field.texture[0].imageView.handle);
     device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color_field", 1), color.field.texture[1].imageView.handle);
 
-    color.name = "color";
+    color.name = "dye";
     color.diffuseRate = diffuseRate;
-    color.update = [&](VkCommandBuffer commandBuffer, Field& field){
-        addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
-        addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
-        addDyeSource(commandBuffer, field,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
-    };
+//    color.update = [&](VkCommandBuffer commandBuffer, Field& field){
+//        addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
+//        addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
+//        addDyeSource(commandBuffer, field,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
+//    };
 }
 
 void FluidSimulation::initColorQuantity() {
@@ -186,11 +186,11 @@ void FluidSimulation::initColorQuantity() {
 
     color1.name = "dye";
     color1.diffuseRate = diffuseRate;
-    color1.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
-        addDyeSource1(commandBuffer, field, gc, {0.004, -0.002, -0.002}, {0.2, 0.2});
-        addDyeSource1(commandBuffer, field, gc, {-0.002, -0.002, 0.004}, {0.5, 0.9});
-        addDyeSource1(commandBuffer, field, gc,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
-    };
+//    color1.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
+//        addDyeSource1(commandBuffer, field, gc, {0.004, -0.002, -0.002}, {0.2, 0.2});
+//        addDyeSource1(commandBuffer, field, gc, {-0.002, -0.002, 0.004}, {0.5, 0.9});
+//        addDyeSource1(commandBuffer, field, gc,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
+//    };
 }
 
 void FluidSimulation::initFullScreenQuad() {
@@ -458,7 +458,7 @@ eular::ExternalForce FluidSimulation::userInputForce2() {
 
 void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, Field &field, glm::vec3 color, glm::vec2 source) {
 
-    dyeSource.constants.dt = constants.dt;
+    dyeSource.constants.dt = fluidSolver.dt();
     dyeSource.constants.color.rgb = color;
     dyeSource.constants.source = source;
     fluidSolver.withRenderPass(commandBuffer, field.framebuffer[out], [&](auto commandBuffer){

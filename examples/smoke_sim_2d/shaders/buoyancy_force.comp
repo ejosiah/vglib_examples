@@ -1,0 +1,36 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform sampler2D force_field_in;
+layout(set = 1, binding = 2) uniform writeonly image2D force_field_out;
+layout(set = 2, binding = 0) uniform sampler2D tempAndDensityField;
+
+layout(set = 3, binding = 1) buffer Ubo {
+    float ambientTemp;
+};
+
+layout(push_constant) uniform Constants {
+    vec2 up;
+    float tempFactor;
+    float densityFactory;
+};
+
+
+vec2 accumForce(vec2 coord){
+    return texture(force_field_in, fract(coord)).xy;
+}
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 grid_size = textureSize(force_field_in, 0);
+vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
+
+void main(){
+    if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
+
+    vec2 values = texture(tempAndDensityField, fract(uv)).xy;
+    float temp = values.x;
+    float density = values.x;
+    vec2 buoyancy =  (-densityFactory * density +  tempFactor * (temp - ambientTemp)) * up;
+    imageStore(force_field_out, gid, vec4(buoyancy, 0, 0));
+}

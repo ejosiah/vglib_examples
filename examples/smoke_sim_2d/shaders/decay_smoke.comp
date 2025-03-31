@@ -1,0 +1,33 @@
+#version 460
+#define PI 3.14159265358979323846
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform sampler2D tempAndDensity_field_in;
+layout(set = 1, binding = 2) uniform writeonly image2D tempAndDensity_field_out;
+
+layout(push_constant) uniform Constants {
+    float densityDecayRate;
+    float temperatureDecayRate;
+    float dt;
+};
+
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 grid_size = textureSize(tempAndDensity_field_in, 0);
+vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
+vec4 valuesOut = vec4(0);
+
+void main() {
+    if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
+
+    vec2 values = texture(tempAndDensity_field_in, fract(uv)).xy;
+    float temp = values.x;
+    float density = values.y;
+
+
+    valuesOut.x = temp * exp(-temperatureDecayRate * dt);
+    valuesOut.y = density * exp(-densityDecayRate * dt);
+
+    imageStore(tempAndDensity_field_out, gid, valuesOut);
+}

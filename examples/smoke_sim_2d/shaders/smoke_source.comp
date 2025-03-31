@@ -1,0 +1,46 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform sampler2D tempAndDensity_field_in;
+layout(set = 1, binding = 2) uniform writeonly image2D tempAndDensity_field_out;
+
+layout(push_constant) uniform Constants{
+    vec2  location;
+    float tempTarget;
+    float ambientTemp;
+    float radius;
+    float tempRate;
+    float densityRate;
+    float decayRate;
+    float dt;
+    float time;
+};
+
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 grid_size = textureSize(tempAndDensity_field_in, 0);
+vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
+vec4 valuesOut = vec4(0);
+
+float emitTemperature(float oldTemp){
+    return max(oldTemp, (tempTarget - ambientTemp));
+}
+
+void main() {
+    if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
+
+    vec2 values = texture(tempAndDensity_field_in, fract(uv)).xy;
+    float temp = values.x;
+    float newTemp = temp + (1 - exp(-tempRate * dt)) * (tempTarget - temp);
+
+    float density = values.y;
+    float newDensity = density + densityRate * dt;
+    //    newDensity *= exp(-decayRate * time);
+
+    vec2 d = (location - uv);
+    valuesOut.x = newTemp * exp(-dot(d, d)/radius);
+    valuesOut.y = newDensity  * exp(-dot(d, d)/radius);
+
+    imageStore(tempAndDensity_field_out, gid, valuesOut);
+}
