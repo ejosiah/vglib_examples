@@ -76,8 +76,8 @@ protected:
     eular::ExternalForce buoyancyForce1();
 
 
-#define toKelvin(celsius) (273.15f + celsius)
-//#define toKelvin(celsius) (celsius)
+//#define toKelvin(celsius) (273.15f + celsius)
+#define toKelvin(celsius) (celsius)
 
 
 protected:
