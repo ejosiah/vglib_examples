@@ -7,9 +7,11 @@ layout(set = 0, binding = 0) uniform sampler2D tempAndDensity_field_in;
 layout(set = 1, binding = 2) uniform writeonly image2D tempAndDensity_field_out;
 
 layout(push_constant) uniform Constants {
+    vec2  location;
     float densityDecayRate;
     float temperatureDecayRate;
     float dt;
+    float radius;
 };
 
 
@@ -25,9 +27,10 @@ void main() {
     float temp = values.x;
     float density = values.y;
 
-
-    valuesOut.x = temp * exp(-temperatureDecayRate * dt);
-    valuesOut.y = density * exp(-densityDecayRate * dt);
+    vec2 d = location - uv;
+    float mask = 1;
+    valuesOut.x = temp * exp(-temperatureDecayRate * dt) * mask;
+    valuesOut.y = density * exp(-densityDecayRate * dt) * mask;
 
     imageStore(tempAndDensity_field_out, gid, valuesOut);
 }

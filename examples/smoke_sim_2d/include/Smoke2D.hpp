@@ -54,6 +54,9 @@ protected:
 
     bool decaySmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
 
+
+    void updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
+
     void renderTemperature(VkCommandBuffer commandBuffer);
 
     void renderSmoke(VkCommandBuffer commandBuffer);
@@ -82,7 +85,7 @@ protected:
     static constexpr float AMBIENT_TEMP = toKelvin(0); // celsius
     static constexpr float MAX_TEMP = toKelvin(100); // celsius
     static constexpr float TARGET_TEMP = toKelvin(150); // celsius
-    static constexpr float TIME_STEP = 0.008333333333; // seconds
+    static constexpr float TIME_STEP = 0.004166666666; // seconds
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
@@ -110,12 +113,12 @@ protected:
             VulkanPipeline pipeline;
         } compute;
         struct{
-            glm::vec2 location{0.5, 0.80};
+            glm::vec2 location{0.5, 0.98};
             float tempTarget{TARGET_TEMP};
             float ambientTemp{AMBIENT_TEMP};
             float radius{0.001};
-            float tempRate{1e5}; // 1
-            float densityRate{1e5};
+            float tempRate{0.5}; // 1
+            float densityRate{0.3};
             float decayRate{5};
             float dt{TIME_STEP};
             float time{0};
@@ -130,11 +133,18 @@ protected:
             VulkanPipeline pipeline;
         } compute;
         struct{
-            float densityDecayRate{0};
-            float temperatureDecayRate{0};
+            glm::vec2 location{0.5, 0.98};
+            float densityDecayRate{0.1};
+            float temperatureDecayRate{0.001};
             float dt{TIME_STEP};
+            float radius{0.001};
         } constants;
     } smokeDecay;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } copyTemperatureField;
 
     struct {
         VulkanPipelineLayout layout;
@@ -152,9 +162,9 @@ protected:
             VulkanPipeline pipeline;
         } compute;
         struct{
-            glm::vec2 up{0, 1};
-            float tempFactor{0.1}; // 0.1
-            float densityFactory{0.1};
+            glm::vec2 up{0, -1};
+            float tempFactor{1}; // 0.1
+            float densityFactory{0};
         } constants;
     } buoyancyForceGen;
 

@@ -34,8 +34,8 @@ void Smoke2D::initApp() {
 
 void Smoke2D::initAmbientTempBuffer() {
     auto temp = AMBIENT_TEMP;
-    ambientTempBuffer = device.createCpuVisibleBuffer(&temp, sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    tempField = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+    ambientTempBuffer = device.createCpuVisibleBuffer(&temp, sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    tempField = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
             , VMA_MEMORY_USAGE_CPU_TO_GPU, fwidth * height * sizeof(float));
     debugBuffer = device.createStagingBuffer(sizeof(glm::vec4) * fwidth * height);
     ambientTemp = reinterpret_cast<float*>(ambientTempBuffer.map());
@@ -288,6 +288,16 @@ void Smoke2D::createComputePipeline() {
     buoyancyForceGen.compute.pipeline = device.createComputePipeline(createInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("buoyancy_force_layout", buoyancyForceGen.compute.layout.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("buoyancy_force_pipeline", buoyancyForceGen.compute.pipeline.handle);
+
+    // copy temparature
+    module = device.createShaderModule(resource("copy_temperature_field.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+    copyTemperatureField.layout = device.createPipelineLayout({ fluidSolver1.fieldDescriptorSetLayout(), ambientTempSet } );
+    createInfo.stage = stage;
+    createInfo.layout = copyTemperatureField.layout.handle;
+    copyTemperatureField.pipeline = device.createComputePipeline(createInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("copy_temperature_layout", copyTemperatureField.layout.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("copy_temperature_pipeline", copyTemperatureField.pipeline.handle);
 }
 
 
@@ -392,6 +402,8 @@ void Smoke2D::update(float time) {
        fluidSolver.runSimulation(commandBuffer);
        fluidSolver1.runSimulation(commandBuffer);
     });
+//    gpu::average(tempField, ambientTempBuffer);
+//    *ambientTemp /= static_cast<float>(fwidth * height);
 }
 
 void Smoke2D::checkAppInputs() {
@@ -450,9 +462,9 @@ void Smoke2D::initTemperatureAndDensityField() {
     temperatureAndDensity.update = [&](VkCommandBuffer commandBuffer, Field& field){
         emitSmoke(commandBuffer, field);
     };
-//    temperatureAndDensity.postAdvect = [&](VkCommandBuffer commandBuffer, Field& field){
-//        return decaySmoke(commandBuffer, field);
-//    };
+    temperatureAndDensity.postAdvect = [&](VkCommandBuffer commandBuffer, Field& field){
+        return decaySmoke(commandBuffer, field);
+    };
 
 }
 
@@ -487,9 +499,17 @@ void Smoke2D::initTemperatureAndDensityField1() {
     temperatureAndDensity1.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
         emitSmoke(commandBuffer, field, gc);
     };
-//    temperatureAndDensity1.postAdvect = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
-//        return decaySmoke(commandBuffer, field, gc);
-//    };
+
+    temperatureAndDensity1.postAdvectActions.emplace_back([&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
+        return decaySmoke(commandBuffer, field, gc);
+    });
+
+    temperatureAndDensity1.postAdvectActions.emplace_back(
+        [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
+            updateAmbientTemperature(commandBuffer, field, gc);
+            return false;
+        }
+    );
 }
 
 void Smoke2D::initSolver() {
@@ -499,12 +519,14 @@ void Smoke2D::initSolver() {
     fluidSolver.showVectors(true);
     fluidSolver.applyVorticity(true);
     fluidSolver.add(temperatureAndDensity);
+    fluidSolver.dt(TIME_STEP);
     fluidSolver.add(buoyancyForce());
 
     initTemperatureAndDensityField1();
     fluidSolver1 = eular::FluidSolver{&device, &descriptorPool, {fwidth, height}};
     fluidSolver1.init();
     fluidSolver1.enableVorticity(true);
+    fluidSolver1.dt(TIME_STEP);
     fluidSolver1.add(temperatureAndDensity1);
     fluidSolver1.add(buoyancyForce1());
 
@@ -632,6 +654,16 @@ void Smoke2D::beforeDeviceCreation() {
     dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
     deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
 
+}
+
+void Smoke2D::updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc) {
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = field.descriptorSet[in];
+    sets[1] = ambientTempDescriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, copyTemperatureField.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, copyTemperatureField.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
 }
 
 

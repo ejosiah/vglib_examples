@@ -1,0 +1,19 @@
+#version 460
+#define PI 3.14159265358979323846
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 2, rgba32f) uniform image2D tempAndDensity;
+layout(set = 1, binding = 0) buffer TempField {
+    float temperature[];
+};
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 grid_size = imageSize(tempAndDensity);
+
+void main() {
+    if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
+
+    int index = gid.y * grid_size.x + gid.x;
+    temperature[index] = imageLoad(tempAndDensity, gid).x;
+}

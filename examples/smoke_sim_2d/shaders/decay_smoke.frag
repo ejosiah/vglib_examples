@@ -4,9 +4,11 @@
 layout(binding = 0) uniform sampler2D tempAndDensityField;
 
 layout(push_constant) uniform Constants {
+    vec2  location;
     float densityDecayRate;
     float temperatureDecayRate;
     float dt;
+    float radius;
 };
 
 layout(location = 0) in vec2 uv;
@@ -18,6 +20,8 @@ void main(){
     float temp = values.x;
     float density = values.y;
 
-    valuesOut.x = temp * exp(-temperatureDecayRate * dt);
-    valuesOut.y = density * exp(-densityDecayRate * dt);
+    vec2 d = (location - uv);
+    float mask = 1;
+    valuesOut.x = temp * exp(-temperatureDecayRate * dt) * mask;
+    valuesOut.y = density * exp(-densityDecayRate * dt) * mask;
 }
