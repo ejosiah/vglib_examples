@@ -1,6 +1,9 @@
+#pragma once
+
 #include "VulkanBaseApp.h"
 #include "fluid_solver_2d.h"
 #include "fluid/FluidSolver2.hpp"
+#include "fluid/FieldVisualizer.hpp"
 
 
 using ColorField = Field;
@@ -19,6 +22,8 @@ protected:
     void initColorQuantity();
 
     void initFullScreenQuad();
+
+    void initializeFluidVisualizer();
 
     void createDescriptorPool();
 
@@ -132,5 +137,6 @@ protected:
     VulkanSampler linearSampler;
     FluidSolver2D fluidSolver;
     eular::FluidSolver fluidSolver2;
+    FieldVisualizer fieldVisualizer;
     float diffuseRate = 0;
 };

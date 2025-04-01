@@ -29,6 +29,7 @@ void FluidSimulation::initApp() {
     initColorField();
     initColorQuantity();
     initFluidSolver();
+    initializeFluidVisualizer();
     createPipelineCache();
     createRenderPipeline();
     createComputePipeline();
@@ -379,8 +380,9 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 //    fluidSolver.renderVectorField(commandBuffer);
-    renderColorField(commandBuffer);
+//    renderColorField(commandBuffer);
 //    renderDebugField(commandBuffer);
+    fieldVisualizer.renderStreamLines(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
     vkEndCommandBuffer(commandBuffer);
@@ -428,6 +430,7 @@ void FluidSimulation::runSimulation() {
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         fluidSolver.runSimulation(commandBuffer);
         fluidSolver2.runSimulation(commandBuffer);
+        fieldVisualizer.update(commandBuffer);
     });
 
 }
@@ -570,6 +573,16 @@ void FluidSimulation::beforeDeviceCreation() {
     static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
     dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
     deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+}
+
+void FluidSimulation::initializeFluidVisualizer() {
+    fieldVisualizer = FieldVisualizer{
+        &device, &descriptorPool, &renderPass, fluidSolver2.fieldDescriptorSetLayout(),
+        { width/2, height }, { width/2, height }
+    };
+
+    fieldVisualizer.init();
+    fieldVisualizer.add(&fluidSolver2._vectorField);
 }
 
 int main(){
