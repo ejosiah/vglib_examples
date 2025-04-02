@@ -25,6 +25,7 @@ void Smoke2D::initApp() {
     createDescriptorPool();
     createDescriptorSet();
     initSolver();
+    initFieldVisualizer();
     updateDescriptorSets();
     createCommandPool();
     createPipelineCache();
@@ -336,6 +337,7 @@ VkCommandBuffer *Smoke2D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 //    renderSource(commandBuffer);
     renderSmoke(commandBuffer);
 //    renderTemperature(commandBuffer);
+//    fieldVisualizer.renderStreamLines(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -401,6 +403,7 @@ void Smoke2D::update(float time) {
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
        fluidSolver.runSimulation(commandBuffer);
        fluidSolver1.runSimulation(commandBuffer);
+       fieldVisualizer.update(commandBuffer);
     });
 //    gpu::average(tempField, ambientTempBuffer);
 //    *ambientTemp /= static_cast<float>(fwidth * height);
@@ -664,6 +667,16 @@ void Smoke2D::updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Fie
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, copyTemperatureField.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, copyTemperatureField.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
+}
+
+void Smoke2D::initFieldVisualizer() {
+    fieldVisualizer = FieldVisualizer{
+            &device, &descriptorPool, &renderPass, fluidSolver1.fieldDescriptorSetLayout(),
+            { fwidth, height }, { fwidth, height }
+    };
+
+    fieldVisualizer.init();
+    fieldVisualizer.add(&fluidSolver1._vectorField);
 }
 
 

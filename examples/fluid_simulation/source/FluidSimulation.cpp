@@ -75,7 +75,7 @@ void FluidSimulation::initFluidSolver() {
     glm::vec2 gridSize{ width, height};
     fluidSolver2 = eular::FluidSolver ( &device, &descriptorPool, gridSize );
     fluidSolver2.init();
-    fluidSolver2.set(field2d);
+    fluidSolver2.generate([&](auto x, auto y){ return glm::vec2{ glm::sin(two_pi * y), glm::sin(two_pi * x) }; });
     fluidSolver2.add(userInputForce2());
     fluidSolver2.add(color1);
     fluidSolver2.dt((5.0f * dx)/maxLength);
@@ -380,9 +380,9 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 //    fluidSolver.renderVectorField(commandBuffer);
-//    renderColorField(commandBuffer);
+    renderColorField(commandBuffer);
 //    renderDebugField(commandBuffer);
-    fieldVisualizer.renderStreamLines(commandBuffer);
+//    fieldVisualizer.renderStreamLines(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
     vkEndCommandBuffer(commandBuffer);

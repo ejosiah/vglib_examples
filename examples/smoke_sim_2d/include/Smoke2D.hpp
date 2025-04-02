@@ -1,6 +1,7 @@
 #include "VulkanBaseApp.h"
 #include "fluid_solver_2d.h"
 #include "fluid/FluidSolver2.hpp"
+#include "fluid/FieldVisualizer.hpp"
 
 using TemperatureAndDensity = Quantity;
 using TemperatureAndDensity1 = eular::Quantity;
@@ -13,6 +14,8 @@ protected:
     void initApp() override;
 
     void initFullScreenQuad();
+
+    void initFieldVisualizer();
 
     void createDescriptorPool();
 
@@ -187,6 +190,7 @@ protected:
     VulkanBuffer debugBuffer;
     bool dynamicAmbientTemp{false};
     int fwidth{};
+    FieldVisualizer fieldVisualizer;
 
     static constexpr int in{0};
     static constexpr int out{1};
