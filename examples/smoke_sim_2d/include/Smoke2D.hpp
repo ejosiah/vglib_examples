@@ -180,7 +180,7 @@ protected:
     TemperatureAndDensity temperatureAndDensity;
     TemperatureAndDensity1 temperatureAndDensity1;
     FluidSolver2D fluidSolver;
-    eular::FluidSolver fluidSolver1;
+    std::unique_ptr<eular::FluidSolver> fluidSolver1;
     VulkanDescriptorSetLayout ambientTempSet;
     VkDescriptorSet ambientTempDescriptorSet;
     VulkanBuffer ambientTempBuffer;

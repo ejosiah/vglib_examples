@@ -148,7 +148,7 @@ void Smoke2D::createRenderPipeline() {
                     .add()
                 .layout()
                     .addDescriptorSetLayout(fluidSolver.textureSetLayout)
-                    .addDescriptorSetLayout(fluidSolver1.fieldDescriptorSetLayout())
+                    .addDescriptorSetLayout(fluidSolver1->fieldDescriptorSetLayout())
                     .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(temperatureRender.constants))
                 .renderPass(renderPass)
                 .subpass(0)
@@ -162,7 +162,7 @@ void Smoke2D::createRenderPipeline() {
                 .fragmentShader(resource("smoke_render.frag.spv"))
             .layout().clear()
                 .addDescriptorSetLayout(fluidSolver.textureSetLayout)
-                .addDescriptorSetLayout(fluidSolver1.fieldDescriptorSetLayout())
+                .addDescriptorSetLayout(fluidSolver1->fieldDescriptorSetLayout())
                 .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(smokeRender.constants))
             .name("smoke_render")
         .build(smokeRender.layout);
@@ -250,7 +250,7 @@ void Smoke2D::createComputePipeline() {
     module = device.createShaderModule(resource("smoke_source.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    auto sourceSets = fluidSolver1.sourceFieldSetLayouts();
+    auto sourceSets = fluidSolver1->sourceFieldSetLayouts();
     sourceSets.push_back(ambientTempSet);
     emitter.compute.layout = device.createPipelineLayout(
             sourceSets,
@@ -278,8 +278,8 @@ void Smoke2D::createComputePipeline() {
     module = device.createShaderModule(resource("buoyancy_force.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    auto forceSets = fluidSolver1.forceFieldSetLayouts();
-    forceSets.push_back(fluidSolver1.fieldDescriptorSetLayout());
+    auto forceSets = fluidSolver1->forceFieldSetLayouts();
+    forceSets.push_back(fluidSolver1->fieldDescriptorSetLayout());
     forceSets.push_back(ambientTempSet);
     buoyancyForceGen.compute.layout = device.createPipelineLayout(
             forceSets,
@@ -293,7 +293,7 @@ void Smoke2D::createComputePipeline() {
     // copy temparature
     module = device.createShaderModule(resource("copy_temperature_field.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-    copyTemperatureField.layout = device.createPipelineLayout({ fluidSolver1.fieldDescriptorSetLayout(), ambientTempSet } );
+    copyTemperatureField.layout = device.createPipelineLayout({ fluidSolver1->fieldDescriptorSetLayout(), ambientTempSet } );
     createInfo.stage = stage;
     createInfo.layout = copyTemperatureField.layout.handle;
     copyTemperatureField.pipeline = device.createComputePipeline(createInfo, pipelineCache.handle);
@@ -368,7 +368,7 @@ void Smoke2D::renderSmoke(VkCommandBuffer commandBuffer) {
     sets[1] = temperatureAndDensity1.field.descriptorSet[in];
 
 //    sets[0] = fluidSolver.forceField.descriptorSet[in];
-//    sets[1] = fluidSolver1._forceField.descriptorSet[in];
+//    sets[1] = fluidSolver1->_forceField.descriptorSet[in];
 
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
@@ -402,7 +402,7 @@ void Smoke2D::update(float time) {
     glfwSetWindowTitle(window, title.c_str());
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
        fluidSolver.runSimulation(commandBuffer);
-       fluidSolver1.runSimulation(commandBuffer);
+       fluidSolver1->runSimulation(commandBuffer);
        fieldVisualizer.update(commandBuffer);
     });
 //    gpu::average(tempField, ambientTempBuffer);
@@ -526,12 +526,14 @@ void Smoke2D::initSolver() {
     fluidSolver.add(buoyancyForce());
 
     initTemperatureAndDensityField1();
-    fluidSolver1 = eular::FluidSolver{&device, &descriptorPool, {fwidth, height}};
-    fluidSolver1.init();
-    fluidSolver1.enableVorticity(true);
-    fluidSolver1.dt(TIME_STEP);
-    fluidSolver1.add(temperatureAndDensity1);
-    fluidSolver1.add(buoyancyForce1());
+    fluidSolver1 =
+        eular::FluidSolver::Builder{ &device, &descriptorPool }
+            .gridSize({fwidth, height})
+            .vorticityConfinementScale(1)
+            .add(temperatureAndDensity1)
+            .add(buoyancyForce1())
+            .dt(TIME_STEP)
+        .build();
 
 }
 
@@ -549,8 +551,8 @@ void Smoke2D::emitSmoke(VkCommandBuffer commandBuffer, Field &field) {
 }
 
 void Smoke2D::emitSmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc) {
-    emitter.constants.dt = fluidSolver1.dt();
-    emitter.constants.time = fluidSolver1.elapsedTime();
+    emitter.constants.dt = fluidSolver1->dt();
+    emitter.constants.time = fluidSolver1->elapsedTime();
 
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = field.descriptorSet[in];
@@ -573,7 +575,7 @@ bool Smoke2D::decaySmoke(VkCommandBuffer commandBuffer, Field &field) {
 }
 
 bool Smoke2D::decaySmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc) {
-    smokeDecay.constants.dt = fluidSolver1.dt();
+    smokeDecay.constants.dt = fluidSolver1->dt();
 
     static std::array<VkDescriptorSet, 2> sets;
     sets[0] = field.descriptorSet[in];
@@ -671,12 +673,12 @@ void Smoke2D::updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Fie
 
 void Smoke2D::initFieldVisualizer() {
     fieldVisualizer = FieldVisualizer{
-            &device, &descriptorPool, &renderPass, fluidSolver1.fieldDescriptorSetLayout(),
+            &device, &descriptorPool, &renderPass, fluidSolver1->fieldDescriptorSetLayout(),
             { fwidth, height }, { fwidth, height }
     };
 
     fieldVisualizer.init();
-    fieldVisualizer.add(&fluidSolver1._vectorField);
+    fieldVisualizer.set(fluidSolver1.get());
 }
 
 

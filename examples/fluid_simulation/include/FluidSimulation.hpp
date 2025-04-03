@@ -136,7 +136,7 @@ protected:
     VulkanSampler valueSampler;
     VulkanSampler linearSampler;
     FluidSolver2D fluidSolver;
-    eular::FluidSolver fluidSolver2;
+    std::unique_ptr<eular::FluidSolver> fluidSolver2;
     FieldVisualizer fieldVisualizer;
     float diffuseRate = 0;
 };

@@ -71,14 +71,15 @@ void FluidSimulation::initFluidSolver() {
     fluidSolver.dt((5.0f * dx)/maxLength);
     fluidSolver.add(userInputForce());
     fluidSolver.showVectors(true);
-
-    glm::vec2 gridSize{ width, height};
-    fluidSolver2 = eular::FluidSolver ( &device, &descriptorPool, gridSize );
-    fluidSolver2.init();
-    fluidSolver2.generate([&](auto x, auto y){ return glm::vec2{ glm::sin(two_pi * y), glm::sin(two_pi * x) }; });
-    fluidSolver2.add(userInputForce2());
-    fluidSolver2.add(color1);
-    fluidSolver2.dt((5.0f * dx)/maxLength);
+    
+    fluidSolver2 = 
+        eular::FluidSolver::Builder{ &device, &descriptorPool }
+            .gridSize({ width, height})
+            .generate([&](auto x, auto y){ return glm::vec2{ glm::sin(two_pi * y), glm::sin(two_pi * x) }; })
+            .add(userInputForce2())
+            .add(color1)
+            .dt((5.0f * dx)/maxLength)
+        .build();
 }
 
 void FluidSimulation::initColorField() {
@@ -187,11 +188,11 @@ void FluidSimulation::initColorQuantity() {
 
     color1.name = "dye";
     color1.diffuseRate = diffuseRate;
-//    color1.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
-//        addDyeSource1(commandBuffer, field, gc, {0.004, -0.002, -0.002}, {0.2, 0.2});
-//        addDyeSource1(commandBuffer, field, gc, {-0.002, -0.002, 0.004}, {0.5, 0.9});
-//        addDyeSource1(commandBuffer, field, gc,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
-//    };
+    color1.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
+        addDyeSource1(commandBuffer, field, gc, {0.004, -0.002, -0.002}, {0.2, 0.2});
+        addDyeSource1(commandBuffer, field, gc, {-0.002, -0.002, 0.004}, {0.5, 0.9});
+        addDyeSource1(commandBuffer, field, gc,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
+    };
 }
 
 void FluidSimulation::initFullScreenQuad() {
@@ -237,7 +238,7 @@ void FluidSimulation::createComputePipeline() {
     auto module = device.createShaderModule(resource("force.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    forceGen2.layout = device.createPipelineLayout( fluidSolver2.forceFieldSetLayouts(),
+    forceGen2.layout = device.createPipelineLayout( fluidSolver2->forceFieldSetLayouts(),
                                                   { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen.constants) } } );
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
@@ -250,7 +251,7 @@ void FluidSimulation::createComputePipeline() {
     module = device.createShaderModule(resource("color_source.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    dyeSource.compute.layout = device.createPipelineLayout( fluidSolver2.sourceFieldSetLayouts(),
+    dyeSource.compute.layout = device.createPipelineLayout( fluidSolver2->sourceFieldSetLayouts(),
                                                     { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants) } } );
 
     computeCreateInfo.stage = stage;
@@ -319,7 +320,7 @@ void FluidSimulation::createRenderPipeline() {
                 .triangleStrip()
             .layout().clear()
                 .addDescriptorSetLayout(fluidSolver.textureSetLayout)
-                .addDescriptorSetLayout(fluidSolver2._fieldDescriptorSetLayout)
+                .addDescriptorSetLayout(fluidSolver2->fieldDescriptorSetLayout())
             .name("fullscreen_quad")
         .build(screenQuad.layout);
 
@@ -397,13 +398,13 @@ void FluidSimulation::renderColorField(VkCommandBuffer commandBuffer) {
     sets[0] = color.field.descriptorSet[in];
     sets[1] = color1.field.descriptorSet[in];
 //    sets[0] = fluidSolver.divergenceField.descriptorSet[in];
-//    sets[1] = fluidSolver2._divergenceField.descriptorSet[in];
+//    sets[1] = fluidSolver2->_divergenceField.descriptorSet[in];
 
 //    sets[0] = fluidSolver.pressureField.descriptorSet[in];
-//    sets[1] = fluidSolver2._pressureField.descriptorSet[in];
+//    sets[1] = fluidSolver2->_pressureField.descriptorSet[in];
 
 //    sets[0] = fluidSolver.vectorField.descriptorSet[in];
-//    sets[1] = fluidSolver2._combinedVectorField.descriptorSet[in];
+//    sets[1] = fluidSolver2->_combinedVectorField.descriptorSet[in];
 
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad.vertices, &offset);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, screenQuad.pipeline.handle);
@@ -429,7 +430,7 @@ void FluidSimulation::runSimulation() {
 //    ++count;
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
         fluidSolver.runSimulation(commandBuffer);
-        fluidSolver2.runSimulation(commandBuffer);
+        fluidSolver2->runSimulation(commandBuffer);
         fieldVisualizer.update(commandBuffer);
     });
 
@@ -449,7 +450,7 @@ ExternalForce FluidSimulation::userInputForce() {
 
 eular::ExternalForce FluidSimulation::userInputForce2() {
     return [&](VkCommandBuffer commandBuffer, std::span<VkDescriptorSet> forceFieldSets, glm::uvec3 gc){
-        forceGen2.constants.dt = fluidSolver2.dt();
+        forceGen2.constants.dt = fluidSolver2->dt();
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen2.pipeline.handle);
         vkCmdPushConstants(commandBuffer, forceGen2.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen2.constants), &forceGen2.constants);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen2.layout.handle, 0, COUNT(forceFieldSets), forceFieldSets.data(), 0, VK_NULL_HANDLE);
@@ -478,7 +479,7 @@ void FluidSimulation::addDyeSource1(VkCommandBuffer commandBuffer, eular::Field&
     sets[0] = field.descriptorSet[0];
     sets[1] = field.descriptorSet[1];
 
-    dyeSource.constants.dt = fluidSolver2.dt();
+    dyeSource.constants.dt = fluidSolver2->dt();
     dyeSource.constants.color.rgb = color;
     dyeSource.constants.source = source;
 
@@ -577,12 +578,12 @@ void FluidSimulation::beforeDeviceCreation() {
 
 void FluidSimulation::initializeFluidVisualizer() {
     fieldVisualizer = FieldVisualizer{
-        &device, &descriptorPool, &renderPass, fluidSolver2.fieldDescriptorSetLayout(),
+        &device, &descriptorPool, &renderPass, fluidSolver2->fieldDescriptorSetLayout(),
         { width/2, height }, { width/2, height }
     };
 
     fieldVisualizer.init();
-    fieldVisualizer.add(&fluidSolver2._vectorField);
+    fieldVisualizer.set(fluidSolver2.get());
 }
 
 int main(){
