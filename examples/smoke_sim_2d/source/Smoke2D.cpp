@@ -338,6 +338,7 @@ VkCommandBuffer *Smoke2D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     renderSmoke(commandBuffer);
 //    renderTemperature(commandBuffer);
 //    fieldVisualizer.renderStreamLines(commandBuffer);
+//    fieldVisualizer.renderPressure(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 

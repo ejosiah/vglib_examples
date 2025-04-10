@@ -384,6 +384,7 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
     renderColorField(commandBuffer);
 //    renderDebugField(commandBuffer);
 //    fieldVisualizer.renderStreamLines(commandBuffer);
+//    fieldVisualizer.renderPressure(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
     vkEndCommandBuffer(commandBuffer);
