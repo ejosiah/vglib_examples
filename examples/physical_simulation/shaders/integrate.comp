@@ -1,0 +1,51 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+
+layout(local_size_x = 128) in;
+
+layout(constant_id = 0) const uint MAX_ATTRACTORS = 64;
+
+layout(set = 0, binding = 0, scalar) buffer SSBO_POSITION {
+    vec4 positions[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer SSBO_VELOCITY {
+    vec3 velocities[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer SSBO_ATTRACTORS {
+    vec4 attractors[MAX_ATTRACTORS];
+};
+
+layout(set = 0, binding = 3, scalar) uniform Globals {
+    float time;
+    float delta_time;
+    float decay_rate;
+    int num_attractors;
+};
+
+void main() {
+    const float dt = time;
+    const int index = int(gl_GlobalInvocationID.x);
+
+    vec4 pos = positions[index];
+    vec3 vel = velocities[index];
+
+    pos.xyz += vel.xyz * dt;
+    pos.w -= 0.0001 * dt;
+
+    for (int i = 0; i < 4; i++){
+        vec3 dist = (attractors[i].xyz - pos.xyz);
+        vel.xyz += dt * dt * attractors[i].w * normalize(dist) / (dot(dist, dist) + 10.0);
+    }
+
+    if (pos.w <= 0.0)
+    {
+        pos.xyz = -pos.xyz * 0.01;
+        vel *= 0.0001;
+        pos.w = 1.0f;
+    }
+
+    positions[index] = pos;
+    velocities[index] = vel;
+}

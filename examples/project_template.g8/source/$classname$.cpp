@@ -29,7 +29,7 @@ void $classname$::initApp() {
     createInverseCam();
     $endif$
     createDescriptorPool();
-    initBindlessDescriptor()
+    initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     initLoader();
     createDescriptorSetLayouts();
@@ -71,10 +71,12 @@ void $classname$::beforeDeviceCreation() {
     if(devFeatures13.has_value()) {
         devFeatures13.value()->synchronization2 = VK_TRUE;
         devFeatures13.value()->dynamicRendering = VK_TRUE;
+        devFeatures13.value()->maintenance4 = VK_TRUE;
     }else {
         static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
         devFeatures13.synchronization2 = VK_TRUE;
         devFeatures13.dynamicRendering = VK_TRUE;
+        devFeatures13.maintenance4 = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
     };
 
@@ -298,7 +300,7 @@ $endif$
 
 $if(compute.truthy)$
 void $classname$::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
+    auto module = device.createShaderModule( resource("pass_through.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();

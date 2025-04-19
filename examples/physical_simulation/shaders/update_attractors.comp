@@ -1,0 +1,25 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+
+layout(local_size_x = 32) in;
+
+layout(constant_id = 0) const uint MAX_ATTRACTORS = 64;
+
+layout(set = 0, binding = 2, scalar) buffer SSBO_ATTRACTORS {
+    vec4 attractors[MAX_ATTRACTORS];
+};
+
+layout(set = 0, binding = 3, scalar) uniform Globals {
+    float time;
+    float delta_time;
+    float decay_rate;
+    int num_attractors;
+};
+
+void main() {
+    int index = int(gl_GlobalInvocationID.x);
+
+    attractors[index].x = sin(time * float(index + 4) * 7.5f * 20.0f) * 50.0f;
+    attractors[index].y = cos(time * float(index + 7) * 3.9f * 20.0f) * 50.0f;
+    attractors[index].z = cos(time * float(index + 5) * 9.1f) * 100.0f;
+}
