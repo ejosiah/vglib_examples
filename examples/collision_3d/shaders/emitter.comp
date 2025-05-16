@@ -1,0 +1,77 @@
+#version 460
+
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0, scalar) buffer Positions {
+    vec3 data[];
+} positions[2];
+
+layout(set = 1, binding = 1, scalar) buffer Velocity {
+    vec3 velocity[];
+};
+
+layout(set = 1, binding = 3, scalar) buffer Radius {
+    float radius[];
+};
+
+layout(set = 2, binding = 0, scalar) buffer EmitterData {
+    Emitter data[];
+} emitters[];
+
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint emitterID = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+float random(){
+    vec3 p3 = vec3(emitterID, global.frame, global.time);
+    p3  = fract(p3 * .1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 iPositions[100];
+vec3 iVelocity[100];
+float iRadius[100];
+
+void main() {
+    if(emitterID > global.numEmitters) return;
+
+    Emitter emitter = emitters[0].data[emitterID];
+
+    if(emitter.disabled == 1) return;
+
+    float elapsedTime = emitter.currentTime - emitter.firstFrameTimeInSeconds;
+    int newMaxTotalNumOfParticlesEmitted = int(ceil((elapsedTime + global.time) * emitter.maxNumberOfParticlePerSecond));
+
+    newMaxTotalNumOfParticlesEmitted = min(newMaxTotalNumOfParticlesEmitted, emitter.maxNumberOfParticles);
+
+    int maxNumberOfNewParticles = min(newMaxTotalNumOfParticlesEmitted - emitter.numberOfEmittedParticles, 100);
+
+    if(maxNumberOfNewParticles > 0) {
+        float t = emitter.radius * emitter.offset;
+        for(int i = 0; i < maxNumberOfNewParticles; i++) {
+            float angle = (random() - 0.5) * emitter.spreadAngleRad;
+            mat2 rotate = mat2( cos(angle), sin(angle), -sin(angle), cos(angle) );
+//            vec3 direction = rotate * emitter.direction;
+            vec3 direction = emitter.direction;
+            iPositions[i] = emitter.origin + direction * (i * t);
+            iVelocity[i] = emitter.speed * direction;
+            iRadius[i] = emitter.radius;
+        }
+
+
+        uint offset = atomicAdd(global.numObjects, maxNumberOfNewParticles);
+        for(uint i = 0; i < maxNumberOfNewParticles; i++){
+            positions[0].data[offset + i] = iPositions[i];
+            velocity[offset + i] = iVelocity[i];
+            radius[offset + i] = iRadius[i];
+        }
+        emitter.numberOfEmittedParticles += maxNumberOfNewParticles;
+
+    }
+
+    emitter.currentTime += global.time;
+    emitters[0].data[emitterID] = emitter;
+}

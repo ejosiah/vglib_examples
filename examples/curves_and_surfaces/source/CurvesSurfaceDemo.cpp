@@ -13,11 +13,11 @@ CurvesSurfaceDemo::CurvesSurfaceDemo(const Settings& settings) : VulkanBaseApp("
     fileManager().addSearchPath("curves_and_surfaces/models");
     fileManager().addSearchPath("curves_and_surfaces/patches");
     fileManager().addSearchPath("curves_and_surfaces/textures");
-    fileManager().addSearchPath("data/shaders");
-    fileManager().addSearchPath("data/models");
-    fileManager().addSearchPath("data/textures");
-    fileManager().addSearchPath("data");
-    fileManager().addSearchPath("data/bezier");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data/models");
+    fileManager().addSearchPath("../data/textures");
+    fileManager().addSearchPath("../data");
+    fileManager().addSearchPath("../data/bezier");
     movePointAction = &mapToMouse(0, "move_point", Action::normal());
     addPointAction = &mapToMouse(0, "add_point", Action::detectInitialPressOnly());
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "VulkanBaseApp.h"
-#include <vhacd/VHACD.h>
 #include "ThreadPool.hpp"
 #include "oclHelper.h"
 #include "convexHullbuilder.hpp"
@@ -150,24 +149,15 @@ protected:
     Callback callbackVHACD;
 
     struct {
-        int resolution{100000};
-        int maxHulls{1024};
-        float concavity{0.0025};
-        int planeDownSampling{4};
-        int convexHullDownSampling{4};
-        float alpha{0.05};
-        float beta{0.05};
-        float gamma{0.00125};
-        float delta{0.05};
-        int pca{0};
-        int mode{0};
-        int maxNumVerticesPerCH{4};
-        float minVolumePerCH{0.0001};
-        int convexHullApproximation{1};
-        int oclAcceleration{1};
-        int oclPlatformID{0};
-        int oclDeviceID{0};
-        bool projectHullVertices{true};
+       int maxConvexHulls{64};
+       int resolution{ 400000 };
+       float minimumVolumePercentErrorAllowed{1};
+       int maxRecursionDepth{10};
+       bool shrinkWrap{true};
+       int fillMode{0};
+       int maxNumVerticesPerCH{64};
+       int minEdgeLength{2};
+       bool findBestPlane{false};
     } params;
     bool updateHulls{false};
     float easeInDuration{2.0};

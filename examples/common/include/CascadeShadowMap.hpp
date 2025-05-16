@@ -64,7 +64,7 @@ private:
     VulkanDevice* _device{};
     VulkanDescriptorPool* _descriptorPool{};
     VkFormat _depthFormat{VK_FORMAT_UNDEFINED};
-    uint32_t _numCascades;
+    uint32_t _numCascades{};
     uint32_t _size{};
     float _splitLambda{DEFAULT_CASCADE_SLIT_LAMBDA};
     std::vector<float> _cascadeSplits;

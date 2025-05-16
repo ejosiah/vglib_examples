@@ -6,14 +6,14 @@
 #include "kdtree.hpp"
 
 PhotonMapping::PhotonMapping(const Settings& settings) : VulkanRayTraceBaseApp("Photon mapping", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../data/ltc");
-    fileManager.addSearchPathFront("../../data/models");
-    fileManager.addSearchPathFront("../../examples/photon_mapping");
-    fileManager.addSearchPathFront("../../examples/photon_mapping/data");
-    fileManager.addSearchPathFront("../../examples/photon_mapping/spv");
-    fileManager.addSearchPathFront("../../examples/photon_mapping/models");
-    fileManager.addSearchPathFront("../../examples/photon_mapping/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data/ltc");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("photon_mapping");
+    fileManager().addSearchPathFront("photon_mapping/data");
+    fileManager().addSearchPathFront("photon_mapping/spv");
+    fileManager().addSearchPathFront("photon_mapping/models");
+    fileManager().addSearchPathFront("photon_mapping/textures");
 }
 
 void PhotonMapping::initApp() {
@@ -1654,7 +1654,7 @@ void PhotonMapping::newFrame() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1024;
         settings.height = 1024;

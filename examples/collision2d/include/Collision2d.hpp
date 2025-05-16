@@ -255,6 +255,7 @@ protected:
     FixedUpdate fixedUpdate{480};
     uint32_t iterations{8};
     bool debugMode{false};
+    bool startSim{true};
     static constexpr uint32_t workGroupSize = 256;
     uint32_t frameStart = 0;
     bool useBruteForce = false;

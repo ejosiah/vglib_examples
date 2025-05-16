@@ -46,7 +46,7 @@ void CascadeShadowMapDemo::initCamera() {
     cameraSettings.acceleration = glm::vec3(10);
     cameraSettings.velocity = glm::vec3(50.f);
     cameraSettings.zNear = 0.5;
-    cameraSettings.zFar = 100;
+    cameraSettings.zFar = 1000;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     sceneCamera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
@@ -313,7 +313,7 @@ void CascadeShadowMapDemo::update(float time) {
         camera->update(time);
     }
     static auto elapsedTime = 0.f;
-    elapsedTime += time * 0.1;
+    elapsedTime += time * 0.1f;
     float angle = glm::radians(elapsedTime * 360.0f);
     float radius = 0.5f;
     lightDirection = glm::normalize(glm::vec3(cos(angle) * radius, radius, sin(angle) * radius));

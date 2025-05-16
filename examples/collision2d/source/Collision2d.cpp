@@ -8,11 +8,13 @@
 
 Collision2d::Collision2d(const Settings& settings) : VulkanBaseApp("Collision Detection", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/collision2d");
-    fileManager().addSearchPathFront("../../examples/collision2d/data");
-    fileManager().addSearchPathFront("../../examples/collision2d/spv");
-    fileManager().addSearchPathFront("../../examples/collision2d/models");
-    fileManager().addSearchPathFront("../../examples/collision2d/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("collision2d");
+    fileManager().addSearchPathFront("collision2d/data");
+    fileManager().addSearchPathFront("collision2d/spv");
+    fileManager().addSearchPathFront("collision2d/models");
+    fileManager().addSearchPathFront("collision2d/textures");
 }
 
 void Collision2d::initApp() {
@@ -1139,6 +1141,7 @@ void Collision2d::endFrame() {
 
 int main(){
     try{
+        fs::current_path("../../../../examples/");
 
         Settings settings;
         settings.width = 1024;

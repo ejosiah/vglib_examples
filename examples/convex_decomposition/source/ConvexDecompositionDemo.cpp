@@ -5,15 +5,15 @@
 #include "ThreadPool.hpp"
 
 ConvexDecompositionDemo::ConvexDecompositionDemo(const Settings& settings) : VulkanBaseApp("Hierarchical Approximate Convex Decomposition", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/convex_decomposition");
-    fileManager.addSearchPath("../../examples/convex_decomposition/spv");
-    fileManager.addSearchPath("../../examples/convex_decomposition/models");
-    fileManager.addSearchPath("../../examples/convex_decomposition/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("convex_decomposition");
+    fileManager().addSearchPathFront("convex_decomposition/spv");
+    fileManager().addSearchPathFront("convex_decomposition/models");
+    fileManager().addSearchPathFront("convex_decomposition/textures");
 }
 
 void ConvexDecompositionDemo::initApp() {
@@ -89,8 +89,8 @@ void ConvexDecompositionDemo::createRenderPipeline() {
         builder
             .allowDerivatives()
             .shaderStage()
-                .vertexShader(load("render.vert.spv"))
-                .fragmentShader(load("render.frag.spv"))
+                .vertexShader(resource("render.vert.spv"))
+                .fragmentShader(resource("render.frag.spv"))
             .vertexInputState()
                 .addVertexBindingDescriptions(Vertex::bindingDisc())
                 .addVertexAttributeDescriptions(Vertex::attributeDisc())
@@ -140,8 +140,8 @@ void ConvexDecompositionDemo::createRenderPipeline() {
         builder
             .basePipeline(render[0].pipeline)
             .shaderStage()
-                .vertexShader(load("mirror.vert.spv"))
-                .fragmentShader(load("render.frag.spv"))
+                .vertexShader(resource("mirror.vert.spv"))
+                .fragmentShader(resource("render.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescriptions(Vertex::bindingDisc())
                 .addVertexAttributeDescriptions(Vertex::attributeDisc())
@@ -159,8 +159,8 @@ void ConvexDecompositionDemo::createRenderPipeline() {
     ch.pipeline =
         builder
             .shaderStage()
-                .vertexShader(load("convex_hull.vert.spv"))
-                .fragmentShader(load("render.frag.spv"))
+                .vertexShader(resource("convex_hull.vert.spv"))
+                .fragmentShader(resource("render.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescription(0, sizeof(ConvexHullPoint), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(ConvexHullPoint, position))
@@ -185,8 +185,8 @@ void ConvexDecompositionDemo::createRenderPipeline() {
         builder
             .basePipeline(ch.pipeline)
             .shaderStage()
-                .vertexShader(load("convex_hull_mirror.vert.spv"))
-                .fragmentShader(load("render.frag.spv"))
+                .vertexShader(resource("convex_hull_mirror.vert.spv"))
+                .fragmentShader(resource("render.frag.spv"))
             .rasterizationState()
                 .frontFaceClockwise()
             .name("mirror_convex_hull")
@@ -196,8 +196,8 @@ void ConvexDecompositionDemo::createRenderPipeline() {
         builder
             .basePipeline(render[0].pipeline)
             .shaderStage()
-            .vertexShader(load("render.vert.spv"))
-                .fragmentShader(load("checkerboard.frag.spv"))
+            .vertexShader(resource("render.vert.spv"))
+                .fragmentShader(resource("checkerboard.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescriptions(Vertex::bindingDisc())
                 .addVertexAttributeDescriptions(Vertex::attributeDisc())
@@ -223,9 +223,9 @@ void ConvexDecompositionDemo::createRenderPipeline() {
         builder
             .basePipeline(render[0].pipeline)
             .shaderStage()
-                .vertexShader(load("draw_normals.vert.spv"))
-                .geometryShader(load("draw_normals.geom.spv"))
-                .fragmentShader(load("point.frag.spv"))
+                .vertexShader(resource("draw_normals.vert.spv"))
+                .geometryShader(resource("draw_normals.geom.spv"))
+                .fragmentShader(resource("point.frag.spv"))
             .inputAssemblyState()
                 .points()
             .rasterizationState()
@@ -444,29 +444,20 @@ void ConvexDecompositionDemo::renderUI(VkCommandBufferInheritanceInfo& inheritan
     ImGui::Begin("HACD options");
     ImGui::SetWindowSize({450, 400});
 
-    ImGui::Text("CH Mode:");
-    ImGui::RadioButton("voxel", &params.mode, 0); ImGui::SameLine();
-    ImGui::RadioButton("tetrahedron", &params.mode, 1);
+    static std::array<const char*, 3> fillmode{ "flood", "surface only", "raycast"};
+    ImGui::Combo("fill mode", &params.fillMode, fillmode.data(), to<int>(fillmode.size()));
 
+    ImGui::SliderInt("max convex hulls", &params.maxConvexHulls, 1, 64);
     ImGui::SliderInt("resolution", &params.resolution, 10000, 16000000, "%d", ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("concavity", &params.concavity, 0.0010, 1.0);
-    ImGui::SliderInt("plane downsampling", &params.planeDownSampling, 1, 16);
-    ImGui::SliderFloat("alpha", &params.alpha, 0.0, 1.0);
-    ImGui::SliderFloat("beta", &params.beta, 0.0, 1.0);
-    ImGui::SliderFloat("gamma", &params.gamma, 0.0, 1.0);
-    ImGui::SliderFloat("delta", &params.delta, 0.0, 1.0);
-
-    static bool pcaEnabled = false;
-    ImGui::Checkbox("pca", &pcaEnabled);
-    params.pca = static_cast<int>(pcaEnabled);
-
-
+    ImGui::SliderFloat("min volume % error", &params.minimumVolumePercentErrorAllowed, 1, 20);
+    ImGui::SliderInt("max recursion depth", &params.maxRecursionDepth, 1, 20);
     ImGui::SliderInt("max vertices per CH", &params.maxNumVerticesPerCH, 4, 1024);
-    ImGui::SliderFloat("min volume per CH", &params.minVolumePerCH, 0.0, 0.01);
+    ImGui::SliderInt("min edge length", &params.minEdgeLength, 2, 10);
 
-    static bool chApproximationEnabled = true;
-    ImGui::Checkbox("CH approximation", &chApproximationEnabled);
-    params.convexHullApproximation = static_cast<int>(chApproximationEnabled);
+
+    ImGui::Checkbox("shrink wrap", &params.shrinkWrap);
+    ImGui::Checkbox("find best plane", &params.findBestPlane);
+
 
 
     if(ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Leaf)){
@@ -517,12 +508,12 @@ void ConvexDecompositionDemo::renderModel(VkCommandBufferInheritanceInfo& inheri
 
     if (models[currentModel].ready) {
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render[models[currentModel].pipeline].pipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render[models[currentModel].pipeline].pipeline.handle);
 
         glm::mat4 model = positionModel(models[currentModel], -1) * models[currentModel].transform;
         cameraController->push(commandBuffer, render[models[currentModel].pipeline].layout, model);
         glm::vec4 color{0.8, 0.8, 0.8, 1.0};
-        vkCmdPushConstants(commandBuffer, render[models[currentModel].pipeline].layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera),
+        vkCmdPushConstants(commandBuffer, render[models[currentModel].pipeline].layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera),
                            sizeof(glm::vec4), &color);
         models[currentModel].drawable.draw(commandBuffer);
     }
@@ -540,7 +531,7 @@ void ConvexDecompositionDemo::renderConvexHull(VkCommandBufferInheritanceInfo &i
     if(hullIsReady[currentHull]){
         auto& convexHulls = this->convexHulls[currentHull];
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ch.pipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ch.pipeline.handle);
 
         glm::mat4 model = positionModel(models[currentModel]) * models[currentModel].transform;
 
@@ -564,9 +555,9 @@ void ConvexDecompositionDemo::renderConvexHull(VkCommandBufferInheritanceInfo &i
             auto& color = convexHulls.colors[i];
             color.a = alpha;
 
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ch.pipeline);
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ch.pipeline.handle);
             cameraController->push(commandBuffer, ch.layout, model);
-            vkCmdPushConstants(commandBuffer, ch.layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec4), &color);
+            vkCmdPushConstants(commandBuffer, ch.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(glm::vec4), &color);
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffer, &offset);
             vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(commandBuffer, indexBuffer.size/sizeof(uint32_t), 1, 0, 0, 0);
@@ -577,21 +568,25 @@ void ConvexDecompositionDemo::renderConvexHull(VkCommandBufferInheritanceInfo &i
 }
 
 inline VHACD::IVHACD::Parameters ConvexDecompositionDemo::getParams() {
+    auto fillmode = [](int i) {
+        switch(i) {
+            case 0 : return VHACD::FillMode::FLOOD_FILL;
+            case 1 : return VHACD::FillMode::SURFACE_ONLY;
+            case 2 : return VHACD::FillMode::RAYCAST_FILL;
+            default: throw std::runtime_error{"invalid fill type"};
+        }
+    };
+
     static VHACD::IVHACD::Parameters parameters{};
+    parameters.m_maxConvexHulls = params.maxConvexHulls;
     parameters.m_resolution = params.resolution;
-    parameters.m_concavity = params.concavity;
-    parameters.m_planeDownsampling = params.planeDownSampling;
-    parameters.m_convexhullDownsampling = params.convexHullDownSampling;
-    parameters.m_alpha = params.alpha;
-    parameters.m_beta = params.beta;
-    parameters.m_pca = params.pca;
-    parameters.m_mode = params.mode;
+    parameters.m_minimumVolumePercentErrorAllowed = params.minimumVolumePercentErrorAllowed;
+    parameters.m_maxRecursionDepth = params.maxRecursionDepth;
+    parameters.m_shrinkWrap = params.shrinkWrap;
+    parameters.m_fillMode = fillmode(params.fillMode);
     parameters.m_maxNumVerticesPerCH = params.maxNumVerticesPerCH;
-    parameters.m_minVolumePerCH = params.minVolumePerCH;
-    parameters.m_convexhullApproximation = params.convexHullApproximation;
-    parameters.m_maxConvexHulls = params.maxHulls;
-    parameters.m_oclAcceleration = params.oclAcceleration;
-    parameters.m_callback = &callbackVHACD;
+    parameters.m_minEdgeLength = params.minEdgeLength;
+    parameters.m_findBestPlane = params.findBestPlane;
     return parameters;
 }
 
@@ -642,7 +637,7 @@ void ConvexDecompositionDemo::renderFloor(VkCommandBufferInheritanceInfo &inheri
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, floor.pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, floor.pipeline.handle);
     cameraController->push(commandBuffer, floor.layout, glm::mat4(1));
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, floor.vertices, &offset);
@@ -661,13 +656,13 @@ void ConvexDecompositionDemo::mirror(VkCommandBufferInheritanceInfo &inheritance
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     if(cameraController->position().y > 0) {
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mirrorRender[models[currentModel].pipeline].pipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mirrorRender[models[currentModel].pipeline].pipeline.handle);
 
         glm::mat4 model = positionModel(models[currentModel], -1) * models[currentModel].transform;
         glm::vec4 color{0.6, 0.6, 0.6, 1.0};
 
         cameraController->push(commandBuffer, mirrorRender[models[currentModel].pipeline].layout, model);
-        vkCmdPushConstants(commandBuffer, mirrorRender[models[currentModel].pipeline].layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera),
+        vkCmdPushConstants(commandBuffer, mirrorRender[models[currentModel].pipeline].layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera),
                            sizeof(glm::vec4), &color);
         models[currentModel].drawable.draw(commandBuffer);
 
@@ -676,7 +671,7 @@ void ConvexDecompositionDemo::mirror(VkCommandBufferInheritanceInfo &inheritance
 
         if (hullIsReady[currentHull]) {
             auto &convexHulls = this->convexHulls[currentHull];
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mirrorCH.pipeline);
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mirrorCH.pipeline.handle);
 
             cameraController->push(commandBuffer, mirrorCH.layout, model);
 
@@ -687,7 +682,7 @@ void ConvexDecompositionDemo::mirror(VkCommandBufferInheritanceInfo &inheritance
                 auto &indexBuffer = convexHulls.indices[i];
                 auto &color = convexHulls.colors[i];
 //                color.a = 0.3f;
-                vkCmdPushConstants(commandBuffer, mirrorCH.layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera),
+                vkCmdPushConstants(commandBuffer, mirrorCH.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera),
                                    sizeof(glm::vec4), &color);
                 vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffer, &offset);
                 vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -762,7 +757,7 @@ std::tuple<glm::vec3, glm::vec3> ConvexDecompositionDemo::getBounds(Model &model
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.height = 1024;

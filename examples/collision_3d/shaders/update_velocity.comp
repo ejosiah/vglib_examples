@@ -1,0 +1,30 @@
+#version 460
+
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0, scalar) buffer Positions {
+    vec3 data[];
+} positions[2];
+
+layout(set = 1, binding = 1, scalar) buffer Velocity {
+    vec3 velocity[];
+};
+
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+
+void main() {
+    if(gid >= global.numObjects) return;
+
+    vec3 p = positions[PREV].data[gid];
+    vec3 x = positions[CURR].data[gid];
+    float t = global.time;
+
+    velocity[gid] = (x - p)/t;
+    positions[PREV].data[gid] = x;
+
+}
