@@ -102,9 +102,15 @@ void Collision2d::initObjects() {
 
     uint32_t numParticle = objects.maxParticles;
 
-    auto colorMap = load(resource("color_map.dat"));
+    byte_string colors;
 
-    auto colors = std::span{ reinterpret_cast<glm::vec4*>(colorMap.data()), colorMap.size()/sizeof(glm::vec4)};
+    if(generateColorMap){
+        std::vector<glm::vec4> defaultColors(numParticle, glm::vec4{1});
+        colors.resize(numParticle * sizeof(glm::vec4));
+        std::memcpy(colors.data(), defaultColors.data(), colors.size());
+    }else {
+        colors = load(resource("color_map.dat"));
+    }
 
 //    std::vector<glm::vec4> colors(numParticle, glm::vec4(1, 0, 0, 1) );
     objects.position = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(glm::vec2));
