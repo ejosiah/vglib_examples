@@ -6,6 +6,10 @@ layout(set = 1, binding = 0, scalar) buffer Positions {
     vec3 data[];
 } particles[2];
 
+layout(set = 1, binding = 2, scalar) buffer Colors {
+    vec3 colors[];
+};
+
 layout(set = 1, binding = 3, scalar) buffer Radius {
     float radius[];
 };
@@ -33,7 +37,7 @@ void main() {
     uint index = gl_InstanceIndex;
     vec3 p = particles[CURRENT].data[index] + position.xyz * global.radius;
 
-    vs_out.color = color.rgb;
+    vs_out.color = colors[index];
     vs_out.normal = normal;
     gl_Position = proj * view * model * vec4(p, 1);
 }

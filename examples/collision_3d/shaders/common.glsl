@@ -76,6 +76,7 @@ struct DebugInfo {
 layout(set = 0, binding = 0, scalar) buffer Globals {
     Domain domain;
     vec3 gravity;
+    vec3 light;
     float spacing;
     float radius;
     float time;
@@ -230,6 +231,35 @@ bool processCollision(uint passCellType, uint controlBitsA, uint controlBitsB, v
     uint homeCellB = HOME_CELL_TYPE(controlBitsB);
 
     return SHARE_COMMON_CELLS(controlBitsA, controlBitsA) && (min(homeCellA, homeCellB) == passCellType || !test(posA, cellHashB));
+}
+
+vec3 hsv_to_rgb(float h, float s, float v) {
+    float h_i = floor(h*6.);
+    float f = fract(h*6.);
+    float p = v * (1. - s);
+    float q = v * (1. - f*s);
+    float t = v * (1. - (1. - f) * s);
+
+    if(h_i == 0.) {
+        return vec3(v, t, p);
+    }else if (h_i == 1.) {
+        return vec3(q, v, p);
+    }else if(h_i == 2.) {
+        return vec3(p, v, t);
+    }else if(h_i == 3.) {
+        return vec3(p, q, v);
+    }else if(h_i == 4.) {
+        return vec3(t, p, v);
+    }else  {
+        return vec3(v, p, q);
+    }
+}
+
+float hash11(float p){
+    p = fract(p * .1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
 }
 
 #endif // SHARED_GLSL

@@ -12,6 +12,10 @@ layout(set = 1, binding = 1, scalar) buffer Velocity {
     vec3 velocity[];
 };
 
+layout(set = 1, binding = 2, scalar) buffer Colors {
+    vec3 color[];
+};
+
 layout(set = 1, binding = 3, scalar) buffer Radius {
     float radius[];
 };
@@ -61,7 +65,7 @@ void main() {
     if(maxNumberOfNewParticles > 0) {
         float t = emitter.radius * emitter.offset;
         vec3 direction = emitter.direction; // + uniformSampleSphere(hash22(emitterID, i) * emitter.spread);
-//        direction += vec3(cos(emitter.currentTime), 0, sin(emitter.currentTime));
+        direction += vec3(cos(emitter.currentTime), 0, sin(emitter.currentTime));
         for(int i = 0; i < maxNumberOfNewParticles; i++) {
             vec3 p = emitter.origin + direction * (i * t);
             vec3 v = emitter.speed * direction * dt * dt;
@@ -76,6 +80,11 @@ void main() {
             positions[CURRENT].data[offset + i] = iPositions[i];
             positions[PREVIOUS].data[offset + i] = iPrevPosition[i];
             radius[offset + i] = iRadius[i];
+            float seed = float(emitterID + global.time + global.frame + offset + i);
+
+            float h = float(emitter.numberOfEmittedParticles)/float(emitter.maxNumberOfParticles);
+//            float h = hash11(seed);
+            color[offset + i] = hsv_to_rgb(h, 1.0, 1.0);
         }
         emitter.numberOfEmittedParticles += maxNumberOfNewParticles;
 

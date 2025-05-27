@@ -1,5 +1,7 @@
 #version 460 core
 
+#include "common.glsl"
+
 layout(location = 0) in struct {
     vec3 position;
     vec3 normal;
@@ -9,6 +11,8 @@ layout(location = 0) in struct {
 layout(location = 0) out vec4 fracColor;
 
 void main(){
-
-    fracColor.rgb = fs_in.color;
+    vec3 N = normalize(fs_in.normal);
+    vec3 L = normalize(global.light - fs_in.position);
+    vec3 color = fs_in.color * max(0, dot(N, L));
+    fracColor.rgb = color;
 }

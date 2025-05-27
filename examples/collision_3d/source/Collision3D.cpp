@@ -32,11 +32,7 @@ Collision3D::Collision3D(const Settings& settings) : VulkanBaseApp("3D collision
 }
 
 void Collision3D::initApp() {
-    if(debug.enabled){
-        domain = { {0, 0, 0}, {2, 2, 2} };
-    }else {
-        domain = {{-4, 0, -4}, {4,  4, 4}};
-    }
+    setDomain();
     createGizmo();
     createShapes();
     initScratchBuffer();
@@ -57,6 +53,14 @@ void Collision3D::initApp() {
     createPipelineCache();
     createRenderPipeline();
     createComputePipeline();
+}
+
+void Collision3D::setDomain() {
+    if(debug.enabled){
+        domain = { {0, 0, 0}, {2, 2, 2} };
+    }else {
+        domain = {{-4, 0, -4}, {4,  2, 4}};
+    }
 }
 
 void Collision3D::initCamera() {
@@ -377,14 +381,15 @@ void Collision3D::createInverseCam() {
 
 void Collision3D::createRenderPipeline() {
     //    @formatter:off
-        auto builder = prototypes->cloneGraphicsPipeline();
         render.bounds.pipeline =
-            builder
+            prototypes->cloneGraphicsPipeline()
                 .shaderStage()
                     .vertexShader(resource("bounds.vert.spv"))
                     .fragmentShader(resource("bounds.frag.spv"))
                 .rasterizationState()
                     .cullNone()
+                .layout()
+                    .addDescriptorSetLayout(globalSetLayout)
                 .name("bounds")
             .build(render.bounds.layout);
 
@@ -403,7 +408,7 @@ void Collision3D::createRenderPipeline() {
             .build(render.flat.layout);
 
         render.shape.pipeline =
-            builder
+            prototypes->cloneGraphicsPipeline()
                 .shaderStage()
                     .vertexShader(resource("particles.vert.spv"))
                     .fragmentShader(resource("render.frag.spv"))
@@ -620,7 +625,11 @@ VkCommandBuffer *Collision3D::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 
 void Collision3D::renderBounds(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
+    static std::array<VkDescriptorSet, 1> sets;
+    sets[0] = globalSet;
+
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.bounds.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.bounds.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     camera->push(commandBuffer, render.bounds.layout, identity);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &bounds.vertices.buffer, &offset);
     vkCmdBindIndexBuffer(commandBuffer, bounds.indexes,  0, VK_INDEX_TYPE_UINT32);
@@ -646,7 +655,7 @@ void Collision3D::update(float time) {
     auto cam = camera->cam();
     globals.cpu->frame++;
     fixedUpdate.advance(time);
-    setTitle(fmt::format("{}, {} active objects", title, globals.cpu->numObjects));
+    setTitle(fmt::format("{}, {} active objects, {} fps", title, globals.cpu->numObjects, framePerSecond));
 }
 
 void Collision3D::checkAppInputs() {
@@ -677,7 +686,7 @@ void Collision3D::createShapes() {
     bounds.vertices = device.createDeviceLocalBuffer(wall.vertices.data(), BYTE_SIZE(wall.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     bounds.indexes = device.createDeviceLocalBuffer(wall.indices.data(), BYTE_SIZE(wall.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
-    auto sphere = primitives::sphere(50, 50, 1.f, glm::mat4{1}, {0, 1, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    auto sphere = primitives::sphere(50, 50, 1.f, glm::mat4{1}, {1, 0, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     ball.vertices = device.createDeviceLocalBuffer(sphere.vertices.data(), BYTE_SIZE(sphere.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     ball.indexes = device.createDeviceLocalBuffer(sphere.indices.data(), BYTE_SIZE(sphere.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
@@ -703,13 +712,14 @@ void Collision3D::initObjects() {
     globals.cpu->segmentSize = 2;
     globals.cpu->frame = 0;
     globals.cpu->time = fixedUpdate.period();
-    globals.cpu->restitution = 0.75;
+    globals.cpu->restitution = 0.5;
 
     globals.cpu->halfSpacing = objects.defaultRadius;
     const auto spacing = glm::sqrt(2.f) * objects.defaultRadius * 2;
     globals.cpu->spacing = spacing;
 
     globals.cpu->gridSize = gridSize();
+    globals.cpu->light = (domain.upper + domain.lower) * 0.5f;
 
     static constexpr VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_CPU_TO_GPU;
     uint32_t numParticle = objects.maxParticles;
@@ -829,10 +839,10 @@ void Collision3D::initScratchBuffer() {
 void Collision3D::initParticleEmitters() {
     const auto& domain = globals.cpu->domain;
     const auto radius = objects.defaultRadius;
-    globals.cpu->numEmitters = 10;
+    globals.cpu->numEmitters = 20;
 
     Emitter prototype{
-        .origin = { 0, 5, 3.5 },
+        .origin = { 0, 3, 3.5 },
         .direction = {0, -1, -1},
         .radius = radius,
         .offset = radius * 4,
@@ -865,6 +875,25 @@ void Collision3D::initParticleEmitters() {
         emits.push_back(emitter);
     }
 
+    prototype.origin.z *= -1;
+    prototype.direction.z *= -1;
+    emits.push_back(prototype);
+
+    r = radius * 3.f;
+    for(auto i = 1; i <= 3; ++i) {
+        auto angle = glm::two_pi<float>() * to<float>(i)/3.f;
+        Emitter emitter = prototype;
+        emitter.origin = prototype.origin + r * glm::vec3(glm::sin(angle), 0, glm::cos(angle));
+        emits.push_back(emitter);
+    }
+
+    r *= 2.f;
+    for(auto i = 1; i <= 6; ++i) {
+        auto angle = glm::two_pi<float>() * to<float>(i)/6.f;
+        Emitter emitter = prototype;
+        emitter.origin = prototype.origin + r * glm::vec3(glm::sin(angle), 0, glm::cos(angle));
+        emits.push_back(emitter);
+    }
     emitters.particle = device.createDeviceLocalBuffer(emits.data(), BYTE_SIZE(emits), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 }
 

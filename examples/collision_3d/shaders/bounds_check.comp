@@ -12,10 +12,6 @@ layout(set = 1, binding = 1, scalar) buffer Velocity {
     vec3 velocity[];
 };
 
-layout(set = 1, binding = 2, scalar) buffer Correction {
-    vec3 correction[];
-};
-
 layout(set = 1, binding = 3, scalar) buffer Radius {
     float radius[];
 };
@@ -34,7 +30,6 @@ vec3 walls[5] = vec3[5](
 void main() {
     if(gid >= global.numObjects) return;
 
-    correction[gid] = vec3(0);
 
     vec3 x = positions[CURRENT].data[gid];
     vec3 x0 = positions[PREVIOUS].data[gid];

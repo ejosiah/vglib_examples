@@ -1,6 +1,6 @@
 #version 460 core
 
-
+#include "common.glsl"
 
 vec3 GetColorFromPositionAndNormal( in vec3 worldPosition, in vec3 normal );
 
@@ -15,8 +15,12 @@ layout(location = 0) out vec4 fracColor;
 void main(){
     if(fs_in.normal.y > 0) discard;
 
-    fracColor.a = 1;
-    fracColor.rgb = GetColorFromPositionAndNormal(fs_in.position, fs_in.normal);
+    vec3 N = normalize(fs_in.normal);
+    N = gl_FrontFacing ? N : -N;
+    vec3 L = normalize(global.light - fs_in.position);
+    vec3 color = GetColorFromPositionAndNormal(fs_in.position, fs_in.normal) * max(0, dot(N, L));
+
+    fracColor = vec4(color, 1);
 }
 
 vec3 GetColorFromPositionAndNormal( in vec3 worldPosition, in vec3 normal ) {

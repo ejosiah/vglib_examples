@@ -26,6 +26,7 @@ struct UpdateInfo {
 struct GlobalData {
     Domain domain;
     glm::vec3 gravity;
+    glm::vec3 light;
     float spacing;
     float halfSpacing;
     float time;

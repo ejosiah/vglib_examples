@@ -21,6 +21,8 @@ protected:
 
     void initCamera();
 
+    void setDomain();
+
     void initObjects();
 
     void initSort();
@@ -205,7 +207,7 @@ protected:
         } constraints;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
-        const float defaultRadius{0.05};
+        const float defaultRadius{0.06};
         uint32_t gridSize{};
     } objects;
     VulkanBuffer prevCellIds;
