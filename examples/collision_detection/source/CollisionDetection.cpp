@@ -1,8 +1,17 @@
 #include "CollisionDetection.hpp"
 #include "GraphicsPipelineBuilder.hpp"
+#include "ExtensionChain.hpp"
 
 CollisionDetection::CollisionDetection(const Settings& settings) : VulkanBaseApp("Collision Detection", settings) {
-
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("collision_detection");
+    fileManager().addSearchPathFront("collision_detection/data");
+    fileManager().addSearchPathFront("collision_detection/spv");
+    fileManager().addSearchPathFront("collision_detection/models");
+    fileManager().addSearchPathFront("collision_detection/textures");
 }
 
 void CollisionDetection::initApp() {
@@ -81,26 +90,13 @@ void CollisionDetection::createGridBuffers(){
 
 void CollisionDetection::createDescriptorPool() {
     constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 17> poolSizes{
+    std::array<VkDescriptorPoolSize, 5> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
                     { VK_DESCRIPTOR_TYPE_SAMPLER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 100 * maxSets },
-
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
@@ -143,8 +139,8 @@ void CollisionDetection::createPipelineCache() {
 
 
 void CollisionDetection::createRenderPipeline() {
-    auto vertModule = device.createShaderModule( "../../data/shaders/flat.vert.spv");
-    auto fragModule = device.createShaderModule("../../data/shaders/flat.frag.spv");
+    auto vertModule = device.createShaderModule(resource("flat.vert.spv"));
+    auto fragModule = device.createShaderModule(resource("flat.frag.spv"));
 
     auto shaderStages = initializers::vertexShaderStages({
              { vertModule, VK_SHADER_STAGE_VERTEX_BIT },
@@ -268,8 +264,8 @@ void CollisionDetection::createRenderPipeline() {
 }
 
 void CollisionDetection::createGridPipeline() {
-    auto vertexModule = device.createShaderModule("../../data/shaders/grid.vert.spv");
-    auto fragModule = device.createShaderModule("../../data/shaders/grid.frag.spv");
+    auto vertexModule = device.createShaderModule(resource("grid.vert.spv"));
+    auto fragModule = device.createShaderModule(resource("grid.frag.spv"));
 
     auto shaderStages = initializers::vertexShaderStages({
          { vertexModule, VK_SHADER_STAGE_VERTEX_BIT },
@@ -371,7 +367,7 @@ void CollisionDetection::createGridPipeline() {
 }
 
 void CollisionDetection::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
+    auto module = device.createShaderModule( resource("pass_through.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
@@ -390,7 +386,9 @@ void CollisionDetection::onSwapChainDispose() {
 }
 
 void CollisionDetection::onSwapChainRecreation() {
+    initCamera();
     createRenderPipeline();
+    createGridPipeline();
     createComputePipeline();
 }
 
@@ -503,6 +501,7 @@ void CollisionDetection::onPause() {
 }
 
 void CollisionDetection::initCamera() {
+    const auto ar = swapChain.aspectRatio();
     OrbitingCameraSettings settings{};
     settings.offsetDistance = 5.0f;
     settings.rotationSpeed = 0.1f;
@@ -510,23 +509,58 @@ void CollisionDetection::initCamera() {
     settings.orbitMaxZoom = 100.0f;
     settings.fieldOfView = 45.0f;
     settings.modelHeight = 1.0f;
-    settings.aspectRatio = swapChain.aspectRatio();
+    settings.aspectRatio = ar;
     camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), settings);
 
-    cameras.top.proj = vkn::ortho(-1.5f, 1.5f, -1.5f, 1.5f, -1.5f, 1.5f);
+    cameras.top.proj = vkn::ortho(-1.5f * ar, 1.5f * ar, -1.5f, 1.5f, -1.5f, 1.5f);
     cameras.top.model = glm::rotate(glm::mat4(1), -glm::half_pi<float>(), {1, 0, 0});
 
-    cameras.right.proj = vkn::ortho(-1.5f, 1.5f, -1.5f, 1.5f, -1.5f, 1.5f);
+    cameras.right.proj = vkn::ortho(-1.5f * ar, 1.5f * ar, -1.5f, 1.5f, -1.5f, 1.5f);
     cameras.right.model = glm::rotate(glm::mat4(1), glm::half_pi<float>(), {0, 1, 0});
 
-    cameras.front.proj = vkn::ortho(-1.5f, 1.5f, -1.5f, 1.5f, -1.5f, 1.5f);
+    cameras.front.proj = vkn::ortho(-1.5f * ar, 1.5f * ar, -1.5f, 1.5f, -1.5f, 1.5f);
 
+}
+
+void CollisionDetection::beforeDeviceCreation() {
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    if(devFeatures12.has_value()) {
+        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
+        devFeatures12.value()->shaderOutputViewportIndex = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        devFeatures12.scalarBlockLayout = VK_TRUE;
+        devFeatures12.shaderOutputViewportIndex = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
+    }
+
+
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    if(devFeatures13.has_value()) {
+        devFeatures13.value()->synchronization2 = VK_TRUE;
+        devFeatures13.value()->dynamicRendering = VK_TRUE;
+        devFeatures13.value()->maintenance4 = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        devFeatures13.synchronization2 = VK_TRUE;
+        devFeatures13.dynamicRendering = VK_TRUE;
+        devFeatures13.maintenance4 = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
+    };
+
+    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
+    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
+    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+
+    static VkPhysicalDeviceIndexTypeUint8FeaturesEXT indexType8{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT };
+    indexType8.indexTypeUint8 = VK_TRUE;
+    deviceCreateNextChain = addExtension(deviceCreateNextChain, indexType8);
 }
 
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1280;
         settings.height = 1280;

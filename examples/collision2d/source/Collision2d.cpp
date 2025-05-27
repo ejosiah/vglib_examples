@@ -5,6 +5,8 @@
 #include "ImGuiPlugin.hpp"
 #include <random>
 #include <fmt/color.h>
+#include "ExtensionChain.hpp"
+
 
 Collision2d::Collision2d(const Settings& settings) : VulkanBaseApp("Collision Detection", settings) {
     fileManager().addSearchPathFront(".");
@@ -95,7 +97,7 @@ void Collision2d::initObjects() {
     globals.cpu->numObjects = 0;
 
     globals.cpu->halfSpacing = objects.defaultRadius;
-    globals.cpu->spacing = SQRT2 * objects.defaultRadius * 3;
+    globals.cpu->spacing = SQRT2 * objects.defaultRadius * 2;
     glm::uvec2 dim{((globals.cpu->domain.upper - globals.cpu->domain.lower)/globals.cpu->spacing) + 1.f };
     globals.cpu->gridSize = objects.gridSize = dim.x * dim.y;
 
@@ -1144,6 +1146,32 @@ void Collision2d::endFrame() {
         generateColorMap = false;
     }
 }
+
+void Collision2d::beforeDeviceCreation() {
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    if(devFeatures12.has_value()) {
+        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
+        devFeatures12.value()->shaderOutputViewportIndex = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        devFeatures12.scalarBlockLayout = VK_TRUE;
+        devFeatures12.shaderOutputViewportIndex = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
+    }
+
+
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    if(devFeatures13.has_value()) {
+        devFeatures13.value()->synchronization2 = VK_TRUE;
+        devFeatures13.value()->dynamicRendering = VK_TRUE;
+        devFeatures13.value()->maintenance4 = VK_TRUE;
+    }else {
+        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        devFeatures13.synchronization2 = VK_TRUE;
+        devFeatures13.dynamicRendering = VK_TRUE;
+        devFeatures13.maintenance4 = VK_TRUE;
+        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
+    };}
 
 int main(){
     try{

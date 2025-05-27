@@ -1,0 +1,43 @@
+#version 460
+
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0, scalar) buffer Positions {
+    vec3 data[];
+} positions[2];
+
+layout(set = 1, binding = 2, scalar) buffer Correction {
+    vec3 correction[];
+};
+
+layout(set = 1, binding = 9, scalar) buffer DistanceConstraints {
+    DistanceConstraint constraints[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint id = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main() {
+    if(id > global.numDistanceConstraints) return;
+
+    DistanceConstraint dc = constraints[id];
+
+    if(dc.a == dc.b) return;
+
+    vec3 pa = positions[CURRENT].data[dc.a];
+    vec3 pb = positions[CURRENT].data[dc.b];
+
+    float l0 = dc.l;
+    float l = distance(pa, pb);
+    float C = l - l0;
+
+    vec3 Ga = normalize(pb - pa);
+    vec3 Gb = -Ga;
+
+    float lambda = -C / (dot(Ga, Ga) + dot(Gb, Gb));
+
+    correction[dc.a] = isnan(lambda) ? vec3(0) : lambda * Ga;
+    correction[dc.b] = lambda * Gb;
+}

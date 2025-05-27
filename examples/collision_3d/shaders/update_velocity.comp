@@ -20,11 +20,11 @@ uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 void main() {
     if(gid >= global.numObjects) return;
 
-    vec3 p = positions[PREV].data[gid];
-    vec3 x = positions[CURR].data[gid];
+    vec3 p = positions[PREVIOUS].data[gid];
+    vec3 x = positions[CURRENT].data[gid];
     float t = global.time;
 
     velocity[gid] = (x - p)/t;
-    positions[PREV].data[gid] = x;
+    positions[PREVIOUS].data[gid] = x;
 
 }

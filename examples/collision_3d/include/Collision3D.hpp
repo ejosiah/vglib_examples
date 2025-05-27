@@ -5,6 +5,12 @@
 #include "model.hpp"
 #include "ComputePipelins.hpp"
 #include "FixedUpdate.hpp"
+#include "Sort.hpp"
+#include "PrefixSum.hpp"
+
+namespace DebugType {
+    static constexpr int CELL_TYPE = 0;
+}
 
 class Collision3D : public VulkanBaseApp {
 public:
@@ -16,6 +22,12 @@ protected:
     void initCamera();
 
     void initObjects();
+
+    void initSort();
+
+    void createGizmo();
+
+    void initDebug();
 
     void initParticleEmitters();
 
@@ -39,8 +51,6 @@ protected:
 
     void initLoader();
 
-    void initCanvas();
-
     void createInverseCam();
 
     void createRenderPipeline();
@@ -53,6 +63,10 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void renderGizmo(VkCommandBuffer commandBuffer);
+
+    void renderGrid(VkCommandBuffer commandBuffer);
+
     void renderBounds(VkCommandBuffer commandBuffer);
 
     void renderParticles(VkCommandBuffer commandBuffer);
@@ -64,6 +78,22 @@ protected:
     void integrate(VkCommandBuffer commandBuffer);
 
     void solveConstraints(VkCommandBuffer commandBuffer);
+
+    void processCollisions(VkCommandBuffer commandBuffer);
+
+    void computeDispatch(VkCommandBuffer commandBuffer, uint32_t objectType);
+
+    void initializeCellIds(VkCommandBuffer commandBuffer);
+
+    void sortCellIds(VkCommandBuffer commandBuffer);
+
+    void countCells(VkCommandBuffer commandBuffer);
+
+    void generateCellIndexArray(VkCommandBuffer commandBuffer);
+
+    void compactCellIndexArray(VkCommandBuffer commandBuffer);
+
+    void resolveCollision(VkCommandBuffer commandBuffer);
 
     void solveConstraint(Pipeline& pipeline, VkCommandBuffer commandBuffer);
 
@@ -85,10 +115,18 @@ protected:
 
     BufferRegion reserve(VkDeviceSize size);
 
+    void endFrame() override;
+
+    uint32_t gridSize();
+
 protected:
+    static constexpr uint32_t workGroupSize = 256;
+
     struct {
+        Pipeline flat;
         Pipeline bounds;
         Pipeline shape;
+        Pipeline grid;
     } render;
 
     struct {
@@ -98,6 +136,12 @@ protected:
         Pipeline correction;
         Pipeline velocity;
         Pipeline boundsCheck;
+        Pipeline computeDispatch;
+        Pipeline initCellIDs;
+        Pipeline countCells;
+        Pipeline generateCellIndexArray;
+        Pipeline compactCellIndexArray;
+        Pipeline collisionTest;
         std::vector<Pipeline> constraints;
     } compute;
 
@@ -105,12 +149,22 @@ protected:
     ShaderBindingTables bindingTables;
 
     VulkanBuffer inverseCamProj;
-    Canvas canvas{};
 
     struct {
         VulkanBuffer vertices;
         VulkanBuffer indexes;
     } bounds;
+
+    struct {
+        struct {
+            VulkanBuffer vertices;
+            VulkanBuffer indexes;
+        } solid;
+        struct {
+            VulkanBuffer vertices;
+            VulkanBuffer indexes;
+        } outline;
+    } cell;
 
     struct {
         VulkanBuffer vertices;
@@ -124,11 +178,11 @@ protected:
     std::unique_ptr<BaseCameraController> camera;
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
-    Domain3D domain{};
+    Domain domain{};
 
     struct {
         VulkanBuffer gpu;
-        GlobalData3D* cpu{};
+        GlobalData* cpu{};
     } globals;
 
     struct  {
@@ -146,6 +200,9 @@ protected:
         BufferRegion bitSet;
         BufferRegion compactIndices;
         VulkanBuffer dispatchBuffer;
+        struct {
+            VulkanBuffer distance;
+        } constraints;
         VulkanDescriptorSetLayout setLayout;
         VkDescriptorSet descriptorSet;
         const float defaultRadius{0.05};
@@ -159,9 +216,10 @@ protected:
         VulkanBuffer sphere;
     } emitters;
 
-    FixedUpdate fixedUpdate{480};
-    ScratchPad3D scratchPad;
-    bool pauseSim{true};
+    FixedUpdate fixedUpdate{120};
+    ScratchPad scratchPad;
+    bool pauseSim{};
+    bool displayStatus{};
 
     VulkanDescriptorSetLayout globalSetLayout;
     VkDescriptorSet globalSet{};
@@ -169,4 +227,37 @@ protected:
     VulkanDescriptorSetLayout emitterSetLayout;
     VkDescriptorSet emitterDescriptorSet{};
 
+    VulkanDescriptorSetLayout stagingSetLayout;
+    VkDescriptorSet stagingDescriptorSet;
+
+    struct DebugInfo {
+        std::array<glm::vec3, 8> center{};
+        std::array<glm::vec3, 8> min{};
+        std::array<glm::vec3, 8> max{};
+        std::array<int, 8> overlap{};
+    };
+
+    struct {
+        bool enabled{false};
+        bool outline{true};
+        int type{DebugType::CELL_TYPE};
+        VulkanDescriptorSetLayout descriptorSetLayout;
+        VkDescriptorSet descriptorSet{};
+        std::array<std::span<glm::vec3>, 2> positions;
+        std::span<float> radius;
+        std::span<uint32_t> counts;
+        std::span<DebugInfo> info;
+        VulkanBuffer buffer;
+    } debug;
+
+    struct {
+        VulkanBuffer vertices;
+        glm::mat4 transform{1};
+    } gizmo;
+    glm::mat4 identity{1};
+    RadixSort sort;
+    PrefixSum prefixSum;
+    Action* pauseAction{};
+    bool pauseRequested{};
+    Action* statusAction{};
 };

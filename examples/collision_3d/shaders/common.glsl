@@ -5,7 +5,7 @@
 
 #define PI 3.1415926535897932384626433832795
 #define SQRT2 1.4142135623730950488016887242097
-#define THREE_DIMENSIONS 2u
+#define THREE_DIMENSIONS 3u
 #define D_BITS THREE_DIMENSIONS
 #define HOME_CELL_MASK ((1u << D_BITS) - 1u)
 #define INTERSECTING_CELLS_MASK ((1u << (1u << D_BITS)) - 1u)
@@ -13,12 +13,12 @@
 #define INTERSECTING_CELLS(ctrlBits) ((ctrlBits >> D_BITS) & INTERSECTING_CELLS_MASK)
 #define SHARE_COMMON_CELLS(A, B) ((INTERSECTING_CELLS(A) & INTERSECTING_CELLS(B)) != 0)
 #define CELL_TYPE_INDEX(X, Y, Z) ((X % 2u) + (Y % 2u) * 2u + (Z % 2u) * 4u)
-#define PREV 0
-#define CURR 1
+#define PREVIOUS 0
+#define CURRENT 1
 
 struct DistanceConstraint {
-    int a;
-    int b;
+    uint a;
+    uint b;
     float l;
 };
 
@@ -56,13 +56,20 @@ struct Emitter {
     float radius;
     float offset;
     float speed;
-    float spreadAngleRad;
+    float spread;
     int maxNumberOfParticlePerSecond;
     int maxNumberOfParticles;
     float firstFrameTimeInSeconds;
     float currentTime;
     int numberOfEmittedParticles;
     int disabled;
+};
+
+struct DebugInfo {
+    vec3 center[8];
+    vec3 min[8];
+    vec3 max[8];
+    int overlap[8];
 };
 
 
@@ -81,17 +88,46 @@ layout(set = 0, binding = 0, scalar) buffer Globals {
     uint numSphereEmitters;
     uint numUpdates;
     uint frame;
-    uint screenWidth;
-    uint screenHeight;
+    uint numDistanceConstraints;
+    float restitution;
 } global;
 
+vec3 remap(vec3 x, vec3 a, vec3 b, vec3 c, vec3 d) {
+    return mix(c, d, (x-a)/(b-a));
+}
+
+vec3 remap(vec3 p) {
+    const vec3 a = global.domain.lower;
+    const vec3 b = global.domain.upper;
+    const vec3 d = b - a;
+    return mix(vec3(0), d, (p-a)/d);
+}
+
+Domain shrink(Domain domain, float factor){
+    Domain newDomain = domain;
+    newDomain.lower += factor;
+    newDomain.upper -= factor;
+
+    return newDomain;
+}
+
+
+Domain expand(Domain domain, float factor) {
+    Domain newDomain = domain;
+    newDomain.lower -= factor;
+    newDomain.upper += factor;
+
+    return newDomain;
+}
+
 uvec3 dimensions() {
-    return uvec3(((global.domain.upper - global.domain.lower)/global.spacing) + 1);
+    Domain d = expand(global.domain, global.spacing);
+    return uvec3(((d.upper - d.lower)/global.spacing));
 }
 
 uint hash(uvec3 pid) {
     uvec3 dim = dimensions();
-    return pid.y * dim.x + pid.x;
+    return (pid.z * dim.y + pid.y) * dim.x + pid.x;
 }
 
 ivec3 intCoord(vec3 pos) {
@@ -105,8 +141,7 @@ uvec3 uintCoord(vec3 pos) {
 
 vec3 coordinate(uint cellID) {
     uvec3 dim = dimensions();
-// TODO    return vec3( cellID % dim.x, cellID / dim.x );
-    return vec3( 0 );
+    return vec3(cellID % dim.x, (cellID/dim.x) % dim.y, cellID / (dim.x * dim.y));
 }
 
 uint computeHash(vec3 pos) {
@@ -128,8 +163,8 @@ Bounds createBounds(vec3 center, float radius) {
 }
 
 bool test(Bounds a, Bounds b) {
-    bvec2 overlap = bvec2(false);
-    for(int axis = 0; axis < 2; axis++){
+    bvec3 overlap = bvec3(false);
+    for(int axis = 0; axis < 3; axis++){
         float minA = a.min[axis];
         float minB = b.min[axis];
         float maxA = a.max[axis];
@@ -162,8 +197,7 @@ void addIntersectingCelltoControlBits(ivec3 cell, inout uint controlBits) {
 
 bool isHomeCell(uint cell, uint controlBits) {
     uvec3 dim = dimensions();
-// TODO    uint cellType =  1 << CELL_TYPE_INDEX(cell % dim.x, cell/dim.x);
-    uint cellType =  1 << CELL_TYPE_INDEX(0, 0, 0);
+    uint cellType =  1 << CELL_TYPE_INDEX(cell % dim.x, (cell/dim.x) % dim.y, cell / (dim.x * dim.y));
     return cellType == HOME_CELL_TYPE(controlBits);
 }
 
@@ -197,15 +231,5 @@ bool processCollision(uint passCellType, uint controlBitsA, uint controlBitsB, v
 
     return SHARE_COMMON_CELLS(controlBitsA, controlBitsA) && (min(homeCellA, homeCellB) == passCellType || !test(posA, cellHashB));
 }
-
-
-Domain shrink(Domain bounds, float factor){
-    Domain newDomain = bounds;
-    newDomain.lower += factor;
-    newDomain.upper -= factor;
-
-    return newDomain;
-}
-
 
 #endif // SHARED_GLSL

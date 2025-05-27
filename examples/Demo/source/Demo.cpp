@@ -8,7 +8,7 @@
 Demo::Demo(const Settings &settings)
     : VulkanBaseApp("Demo", settings,  {})
 {
-
+`
     fileManager.addSearchPathFront(".");
     fileManager.addSearchPathFront("../../examples/data");
     

@@ -1,0 +1,122 @@
+#version 460
+
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0, scalar) buffer Positions {
+    vec3 data[];
+} positions[2];
+
+layout(set = 1, binding = 3, scalar) buffer Radius {
+    float radius[];
+};
+
+layout(set = 1, binding = 4, scalar) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 5, scalar) buffer Attributes {
+    Attribute attributes[];
+};
+
+layout(set = 2, binding = 0, scalar) buffer Debug {
+    DebugInfo debug[];
+};
+
+ivec3 gridSize = ivec3(gl_NumWorkGroups * gl_WorkGroupSize);
+int objectID = int(gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x);
+
+uint cells[8] = uint[8](0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+uint controlBits = 0;
+int next = 0;
+
+void main() {
+    if(objectID >= global.numObjects) return;
+
+    vec3 pos = remap(positions[CURRENT].data[objectID]);
+    float r = radius[objectID];
+    Bounds oBounds = createBounds(pos, r * SQRT2);
+
+
+    ivec3 hCell = intCoord(pos);
+
+    debug[objectID].center[next] = pos;
+    debug[objectID].min[next] = oBounds.min;
+    debug[objectID].max[next] = oBounds.max;
+
+    cells[next++] = hash(hCell);
+    addHomeCellToControlBits(hCell, controlBits);
+    addIntersectingCelltoControlBits(hCell, controlBits);
+
+    for(int z = -1; z <= 1; ++z){
+        for (int y = -1; y <= 1; ++y){
+            for (int x = -1; x <= 1; ++x){
+
+                if (x == 0 && y == 0 && z == 0) continue;
+
+                ivec3 pCell = hCell + ivec3(x, y, z);
+                uvec3 dim = dimensions();
+                if (pCell.x < 0 || pCell.y < 0 || pCell.z < 0
+                || pCell.x >= dim.x ||  pCell.y >= dim.y || pCell.z >= dim.z) {
+                    continue;
+                }
+
+                vec3 cPos = vec3(pCell) * global.spacing;
+                Bounds pBounds = Bounds(cPos, cPos  + global.spacing);
+
+                if (test(oBounds, pBounds)){
+                    debug[objectID].center[next] = cPos;
+                    debug[objectID].min[next] = pBounds.min;
+                    debug[objectID].max[next] = pBounds.max;
+                    debug[objectID].overlap[next] = 1;
+
+                    uint h = hash(pCell);
+                    cells[next++] = h;
+                    addIntersectingCelltoControlBits(pCell, controlBits);
+                }
+            }
+        }
+    }
+
+    uint offset = objectID;
+    cellID[offset] = cells[0];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+
+    offset += global.numObjects;
+    cellID[offset] = cells[1];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+
+    offset += global.numObjects;
+    cellID[offset] = cells[2];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+
+    offset += global.numObjects;
+    cellID[offset] = cells[3];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+
+    offset += global.numObjects;
+    cellID[offset] = cells[4];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+
+    offset += global.numObjects;
+    cellID[offset] = cells[5];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+
+    offset += global.numObjects;
+    cellID[offset] = cells[6];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+
+    offset += global.numObjects;
+    cellID[offset] = cells[7];
+    attributes[offset].objectID = objectID;
+    attributes[offset].controlBits = controlBits;
+    atomicAdd(global.numCells, next);
+}

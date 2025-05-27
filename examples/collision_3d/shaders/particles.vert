@@ -31,7 +31,7 @@ layout(location = 0) out struct {
 
 void main() {
     uint index = gl_InstanceIndex;
-    vec3 p = particles[0].data[index] + position.xyz * radius[index];
+    vec3 p = particles[CURRENT].data[index] + position.xyz * global.radius;
 
     vs_out.color = color.rgb;
     vs_out.normal = normal;

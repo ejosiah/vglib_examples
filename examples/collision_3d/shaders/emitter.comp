@@ -24,15 +24,23 @@ layout(set = 2, binding = 0, scalar) buffer EmitterData {
 uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
 uint emitterID = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 
-float random(){
-    vec3 p3 = vec3(emitterID, global.frame, global.time);
-    p3  = fract(p3 * .1031);
-    p3 += dot(p3, p3.zyx + 31.32);
-    return fract((p3.x + p3.y) * p3.z);
+vec2 hash22(float seedx, float seedy) {
+    vec2 p = vec2(seedx, seedy);
+    vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+    p3 += dot(p3, p3.yzx+33.33);
+    return fract((p3.xx+p3.yz)*p3.zy);
+
+}
+
+vec3 uniformSampleSphere(vec2 u){
+    float z = 1 - 2 * u.x;
+    float r = sqrt(max(0, 1 - z * z));
+    float phi = 2 * PI * u.y;
+    return vec3(r * cos(phi), r * sin(phi), z);
 }
 
 vec3 iPositions[100];
-vec3 iVelocity[100];
+vec3 iPrevPosition[100];
 float iRadius[100];
 
 void main() {
@@ -49,23 +57,24 @@ void main() {
 
     int maxNumberOfNewParticles = min(newMaxTotalNumOfParticlesEmitted - emitter.numberOfEmittedParticles, 100);
 
+    const float dt = 0.050;
     if(maxNumberOfNewParticles > 0) {
         float t = emitter.radius * emitter.offset;
+        vec3 direction = emitter.direction; // + uniformSampleSphere(hash22(emitterID, i) * emitter.spread);
+//        direction += vec3(cos(emitter.currentTime), 0, sin(emitter.currentTime));
         for(int i = 0; i < maxNumberOfNewParticles; i++) {
-            float angle = (random() - 0.5) * emitter.spreadAngleRad;
-            mat2 rotate = mat2( cos(angle), sin(angle), -sin(angle), cos(angle) );
-//            vec3 direction = rotate * emitter.direction;
-            vec3 direction = emitter.direction;
-            iPositions[i] = emitter.origin + direction * (i * t);
-            iVelocity[i] = emitter.speed * direction;
+            vec3 p = emitter.origin + direction * (i * t);
+            vec3 v = emitter.speed * direction * dt * dt;
+            iPrevPosition[i] = p - v;
+            iPositions[i] = p;
             iRadius[i] = emitter.radius;
         }
 
 
         uint offset = atomicAdd(global.numObjects, maxNumberOfNewParticles);
         for(uint i = 0; i < maxNumberOfNewParticles; i++){
-            positions[0].data[offset + i] = iPositions[i];
-            velocity[offset + i] = iVelocity[i];
+            positions[CURRENT].data[offset + i] = iPositions[i];
+            positions[PREVIOUS].data[offset + i] = iPrevPosition[i];
             radius[offset + i] = iRadius[i];
         }
         emitter.numberOfEmittedParticles += maxNumberOfNewParticles;

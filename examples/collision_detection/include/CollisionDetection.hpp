@@ -125,6 +125,8 @@ protected:
 
     void initCamera();
 
+    void beforeDeviceCreation() override;
+
 protected:
     struct {
         VulkanPipelineLayout layout;

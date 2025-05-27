@@ -1,0 +1,50 @@
+#version 460
+
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 4, scalar) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 6, scalar) buffer Counts {
+    uint counts[];
+};
+
+uint gid = gl_GlobalInvocationID.x;
+
+void main() {
+    uint start = gid * global.segmentSize;
+    uint end = start + global.segmentSize;
+    end = min(end, global.numCells);
+
+    if(start >= global.numCells) return;
+
+    uint cell = cellID[start];
+    uint offset = start;
+
+    uint transitions = 0;
+
+    uint last = global.numCells - 1;
+
+    while(offset <= global.numCells) {
+        uint nextCell = cellID[++offset];
+        if(nextCell != cell){
+            transitions++;
+            if(transitions == 1 && gid != 0){   // skip first transition for all but first invocation
+                start = offset;
+                cell = nextCell;
+                continue;
+            }
+
+            counts[cell] = offset - start;
+
+            if(offset > end)  break;// we have gone beyond our seqment
+
+            start = offset;
+            cell = nextCell;
+        }
+    }
+
+}

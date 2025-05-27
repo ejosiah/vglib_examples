@@ -16,9 +16,14 @@ layout(set = 1, binding = 3, scalar) buffer Radius {
     float radius[];
 };
 
+layout(set = 1, binding = 9, scalar) buffer DistanceConstraints {
+    DistanceConstraint constraints[];
+};
+
 layout(set = 2, binding = 0, scalar) buffer EmitterData {
     Emitter data[];
 } emitters[];
+
 
 uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
 uint emitterID = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
@@ -79,7 +84,7 @@ void main() {
                     p.y = r * cos(v);
                     p.z = r * sin(u) * sin(v);
 
-                    float angle = (random() - 0.5) * emitter.spreadAngleRad;
+                    float angle = (random() - 0.5) * emitter.spread;
 
                     iPositions[emittedParticles] = emitter.origin + p + direction;
                     iVelocity[emittedParticles] = emitter.speed * direction;
@@ -90,10 +95,15 @@ void main() {
         }
 
         uint offset = atomicAdd(global.numObjects, maxNumberOfNewParticles);
+        atomicAdd(global.numDistanceConstraints, maxNumberOfNewParticles - 1);
         for(uint i = 0; i < maxNumberOfNewParticles; i++){
             positions[0].data[offset + i] = iPositions[i];
             velocity[offset + i] = iVelocity[i];
             radius[offset + i] = iRadius[i];
+
+            constraints[offset + i].a = offset;
+            constraints[offset + i].b = offset + i;
+            constraints[offset + i].l = emitter.radius * 3;
         }
         emitter.numberOfEmittedParticles += maxNumberOfNewParticles;
 

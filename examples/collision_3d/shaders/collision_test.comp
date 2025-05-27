@@ -1,0 +1,122 @@
+#version 460
+
+#include "common.glsl"
+
+struct LocalData{
+    vec3 position;
+    uint controlBits;
+    uint index;
+    uint cell;
+    int pass;
+    bool previousPassUpdate;
+    bool updated;
+};
+
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 9, scalar) buffer Indexes {
+    uint indices[];
+};
+
+layout(set = 1, binding = 0, scalar) buffer Positions {
+    vec3 data[];
+} positions[2];
+
+layout(set = 1, binding = 3, scalar) buffer Radius {
+    float radius[];
+};
+
+layout(set = 1, binding = 4, scalar) buffer CellId {
+    uint cellID[];
+};
+
+layout(set = 1, binding = 5, scalar) buffer Attributes {
+    Attribute attributes[];
+};
+
+layout(set = 1, binding = 7) buffer CellIndexArray {
+    CellInfo cellIndices[];
+};
+
+layout(set = 2, binding = 1) buffer BitSet {
+    uint bitSet[];
+};
+
+layout(push_constant) uniform Constants {
+    int pass;
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+float r = global.radius;
+float _2r = r + r;
+float rr = _2r * _2r;
+float restitution = global.restitution;
+float inverseMass = 1;
+
+LocalData local[100];
+int numCollisions;
+
+void resolveCollision(inout LocalData a, inout LocalData b, vec3 dir, float dd, uint pass) {
+
+    float d = sqrt(dd);
+    dir /= d;
+
+    float corr = 0.5 * (_2r - d) * restitution;
+    a.position -= dir * corr;
+    b.position += dir * corr;
+
+    a.updated = true;
+    b.updated = true;
+}
+
+void main() {
+    if(gid >= global.numCellIndices) return;
+
+    CellInfo info = cellIndices[gid];
+
+    if(info.numCells == 1) return;
+
+    const uint passCellType = 1u << pass;
+    const uint homeCellType = HOME_CELL_TYPE(attributes[indices[info.index]].controlBits);
+
+    if(passCellType != homeCellType) return;
+
+    uint start = info.index;
+    uint end = start + info.numCells;
+
+    for(uint i = start; i < end; ++i){
+        LocalData data;
+        data.controlBits = attributes[indices[i]].controlBits;
+        data.index = attributes[indices[i]].objectID;
+        data.position = positions[CURRENT].data[data.index];
+        data.updated = false;
+        data.pass = -1;
+        data.cell = cellID[i];
+        local[i - start] = data;
+    }
+
+    for(int i = 0; i < info.numHomeCells; ++i){
+        LocalData a = local[i];
+        for(int j = i + 1; j < info.numCells; ++j){
+            if(i == j) continue;
+            LocalData b = local[j];
+            if(SHARE_COMMON_CELLS(a.controlBits, b.controlBits)){
+                vec3 d = b.position - a.position;
+                float dd = dot(d, d);
+                if(dd != 0 && dd < rr) {
+                    resolveCollision(local[i], local[j], d, dd, pass);
+                }
+            }
+        }
+    }
+
+    for(int i = 0; i < info.numCells; ++i) {
+        if(local[i].updated) {
+            positions[CURRENT].data[local[i].index] = local[i].position;
+        }
+    }
+
+}

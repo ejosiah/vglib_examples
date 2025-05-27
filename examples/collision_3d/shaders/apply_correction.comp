@@ -19,7 +19,7 @@ uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 void main() {
     if(gid >= global.numObjects) return;
 
-    vec3 x = positions[CURR].data[gid];
+    vec3 x = positions[CURRENT].data[gid];
     vec3 dx = correction[gid];
     float dt = global.time;
 

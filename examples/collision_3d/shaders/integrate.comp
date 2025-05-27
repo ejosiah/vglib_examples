@@ -18,14 +18,13 @@ uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 void main() {
     if(gid >= global.numObjects) return;
 
-    vec3 x = positions[0].data[gid];
-    vec3 v = velocity[gid];
     vec3 a = global.gravity;
-    float t = global.time;
+    float dt = global.time;
 
-    v += a * t;
-    x += v * t;
+    vec3 p0 = positions[PREVIOUS].data[gid];
+    vec3 p1 = positions[CURRENT].data[gid];
+    vec3 p2 = 2.f * p1 - p0 + a * dt * dt;
 
-    positions[1].data[gid] = x;
-    velocity[gid] = v;
+    positions[CURRENT].data[gid] = p2;
+    positions[PREVIOUS].data[gid] = p1;
 }

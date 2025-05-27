@@ -1,0 +1,39 @@
+#version 460
+
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 7, scalar) buffer CellIndexArray {
+    CellInfo cellIndicesOut[];
+};
+
+layout(set = 2, binding = 0, scalar) buffer ScratchPad {
+    CellInfo cellIndicesIn[];
+};
+
+layout(set = 2, binding = 1, scalar) buffer BitSet {
+    uint bitSet[];
+};
+
+layout(set = 2, binding = 2, scalar) buffer CompactIndices {
+    uint compactIndices[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+void main() {
+    if(gid >= global.gridSize) return;
+
+    if(bitSet[gid] == 1) {
+        cellIndicesOut[compactIndices[gid]] = cellIndicesIn[gid];
+    }
+
+    if(gid == 0) {
+        uvec3 dim = dimensions();
+        uint numCellsIndex = dim.x * dim.y * dim.z + 1;
+        global.numCellIndices = compactIndices[numCellsIndex];
+    }
+}
+
