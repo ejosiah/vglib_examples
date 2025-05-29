@@ -78,7 +78,6 @@ layout(set = 0, binding = 0, scalar) buffer Globals {
     vec3 gravity;
     vec3 light;
     float spacing;
-    float radius;
     float time;
     uint numObjects;
     uint gridSize;
@@ -214,10 +213,10 @@ uint countCellIntersections(uint controlBits){
     return uint(sign(ic & 8u) + sign(ic & 4u) + sign(ic & 2u) + sign(ic & 1u));
 }
 
-bool test(vec3 position, uint cellHash) {
+bool test(vec3 position, float radius, uint cellHash) {
     vec3 cell = coordinate(cellHash);
-    Bounds oBounds = createBounds(position, global.radius * SQRT2);
-    Bounds cBounds = Bounds(cell, cell  + global.spacing);
+    Bounds oBounds = createBounds(position, radius * SQRT2);
+    Bounds cBounds = Bounds(cell, cell + global.spacing);
 
     return test(oBounds, cBounds);
 }
@@ -226,11 +225,11 @@ bool test(vec3 position, uint cellHash) {
 // SHARE_COMMON_CELLS will return true for intersections on both sides of controlBitA
 // which means we may get false positives if we test against the wrong side
 // so in addition we check if A intersects the Home Cell of B
-bool processCollision(uint passCellType, uint controlBitsA, uint controlBitsB, vec3 posA, uint cellHashB) {
+bool processCollision(uint passCellType, uint controlBitsA, uint controlBitsB, vec3 posA, float radius, uint cellHashB) {
     uint homeCellA = HOME_CELL_TYPE(controlBitsA);
     uint homeCellB = HOME_CELL_TYPE(controlBitsB);
 
-    return SHARE_COMMON_CELLS(controlBitsA, controlBitsA) && (min(homeCellA, homeCellB) == passCellType || !test(posA, cellHashB));
+    return SHARE_COMMON_CELLS(controlBitsA, controlBitsA) && (min(homeCellA, homeCellB) == passCellType || !test(posA, radius, cellHashB));
 }
 
 vec3 hsv_to_rgb(float h, float s, float v) {

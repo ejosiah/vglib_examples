@@ -28,7 +28,6 @@ struct GlobalData {
     glm::vec3 gravity;
     glm::vec3 light;
     float spacing;
-    float halfSpacing;
     float time;
     uint32_t numObjects;
     uint32_t gridSize;

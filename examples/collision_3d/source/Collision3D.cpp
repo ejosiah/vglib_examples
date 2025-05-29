@@ -714,21 +714,24 @@ void Collision3D::initObjects() {
     globals.cpu->time = fixedUpdate.period();
     globals.cpu->restitution = 0.5;
 
-    globals.cpu->halfSpacing = objects.defaultRadius;
     const auto spacing = glm::sqrt(2.f) * objects.defaultRadius * 2;
     globals.cpu->spacing = spacing;
 
     globals.cpu->gridSize = gridSize();
     globals.cpu->light = (domain.upper + domain.lower) * 0.5f;
 
-    static constexpr VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    static constexpr VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY;
     uint32_t numParticle = objects.maxParticles;
+
+    std::vector<float> radius(numParticle, objects.defaultRadius);
+//    std::generate(radius.begin(), radius.end(), [rng=rngFunc(0.04f, objects.defaultRadius, 1 << 20)]{ return rng(); });
 
     objects.position[0] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memoryUsage, numParticle * sizeof(glm::vec3));
     objects.position[1] = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memoryUsage, numParticle * sizeof(glm::vec3));
     objects.correctionVector = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(glm::vec3));
     objects.velocity = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(glm::vec3));
-    objects.radius = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(float));
+//    objects.radius = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(float));
+    objects.radius = device.createDeviceLocalBuffer(radius.data(), BYTE_SIZE(radius), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     objects.constraints.distance = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memoryUsage, numParticle * sizeof(DistanceConstraint));
 
 
@@ -763,7 +766,6 @@ void Collision3D::initDebug() {
 
     const auto scale = 1.0f;
     auto defaultRadius = 0.35355339059327376220042218105242f * scale;
-    globals.cpu->halfSpacing = defaultRadius;
     auto spacing = 1.f * scale;
     globals.cpu->spacing = spacing;
 

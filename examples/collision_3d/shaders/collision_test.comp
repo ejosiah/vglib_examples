@@ -50,7 +50,7 @@ layout(push_constant) uniform Constants {
 uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
 uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
 
-float r = global.radius;
+float r = radius[gid];
 float _2r = r + r;
 float rr = _2r * _2r;
 float restitution = global.restitution;

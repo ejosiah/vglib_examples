@@ -12,6 +12,10 @@ layout(set = 1, binding = 1, scalar) buffer Velocity {
     vec3 velocity[];
 };
 
+layout(set = 1, binding = 2, scalar) buffer Correction {
+    vec3 correction[];
+};
+
 layout(set = 1, binding = 3, scalar) buffer Radius {
     float radius[];
 };
@@ -28,86 +32,18 @@ vec3 walls[5] = vec3[5](
 );
 
 void main() {
-    if(gid >= global.numObjects) return;
-
-
     vec3 x = positions[CURRENT].data[gid];
-    vec3 x0 = positions[PREVIOUS].data[gid];
-
-    vec3 origin = (global.domain.lower + global.domain.upper) * 0.5f;
-    vec3 halfSize = (global.domain.upper - global.domain.lower) * 0.5f;
-
-    if(any(lessThan(x, global.domain.lower)) || any(greaterThan(x, global.domain.upper))) {
-        return;
-    }
-    float e = global.restitution;
-    float dt = global.time;
-    vec3 v = (x - x0)/dt;
-
     float r = radius[gid];
-    vec3 n = vec3(0, 1, 0);
-    float d = dot(n, global.domain.lower) + r;
-    float l = dot(n, x);
 
-    if(l < d + r) {
-        float dd = abs(l - d);
-        x += n * dd;
-        v = reflect(v,  n);
-        positions[CURRENT].data[gid] = x;
-        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
+    if( any(greaterThan(x, global.domain.upper))) {
         return;
     }
 
-    n = vec3(1, 0, 0);
-    d = dot(n, global.domain.lower) + r;
-    l = dot(n, x);
+    Domain newDomain = shrink(global.domain, r * 1.1);
+    vec3 lower = newDomain.lower;
+    vec3 upper = newDomain.upper;
+    float rest = 0.5;// Restitution
 
-    if(l < d + r) {
-        float dd = abs(l - d);
-        x += n * dd;
-        v = reflect(v,  n);
-        positions[CURRENT].data[gid] = x;
-        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
-        return;
-    }
-
-    n = vec3(0, 0, 1);
-    d = dot(n, global.domain.lower) + r;
-    l = dot(n, x);
-
-    if(l < d + r) {
-        float dd = abs(l - d);
-        x += n * dd;
-        v = reflect(v,  n);
-        positions[CURRENT].data[gid] = x;
-        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
-        return;
-    }
-
-    n = vec3(-1, 0, 0);
-    d = dot(n, global.domain.upper) + r;
-    l = dot(n, x);
-
-    if(l < d + r) {
-        float dd = abs(l - d);
-        x += n * dd;
-        v = reflect(v,  n);
-        positions[CURRENT].data[gid] = x;
-        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
-        return;
-    }
-
-    n = vec3(0, 0, -1);
-    d = dot(n, global.domain.upper) + r;
-    l = dot(n, x);
-
-    if(l < d + r) {
-        float dd = abs(l - d);
-        x += n * dd;
-        v = reflect(v,  n);
-        positions[CURRENT].data[gid] = x;
-        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
-        return;
-    }
+    positions[CURRENT].data[gid] =  max(lower, min(x, upper));
 
 }

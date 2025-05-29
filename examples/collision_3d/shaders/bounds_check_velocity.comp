@@ -1,0 +1,113 @@
+#version 460
+
+#include "common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 0, scalar) buffer Positions {
+    vec3 data[];
+} positions[2];
+
+layout(set = 1, binding = 1, scalar) buffer Velocity {
+    vec3 velocity[];
+};
+
+layout(set = 1, binding = 3, scalar) buffer Radius {
+    float radius[];
+};
+
+uvec3 gridSize = gl_NumWorkGroups * gl_WorkGroupSize;
+uint gid = gl_GlobalInvocationID.y * gridSize.x + gl_GlobalInvocationID.x;
+
+vec3 walls[5] = vec3[5](
+    vec3(0, 1, 0),
+    vec3(1, 0, 0),
+    vec3(0, 0, 1),
+    vec3(-1, 0, 0),
+    vec3(0, 0, -1)
+);
+
+void main() {
+    if(gid >= global.numObjects) return;
+
+
+    vec3 x = positions[CURRENT].data[gid];
+    vec3 x0 = positions[PREVIOUS].data[gid];
+
+    vec3 origin = (global.domain.lower + global.domain.upper) * 0.5f;
+    vec3 halfSize = (global.domain.upper - global.domain.lower) * 0.5f;
+
+    if(any(lessThan(x, global.domain.lower)) || any(greaterThan(x, global.domain.upper))) {
+        return;
+    }
+    float e = global.restitution;
+    float dt = global.time;
+    vec3 v = (x - x0)/dt;
+
+    float r = radius[gid];
+    vec3 n = vec3(0, 1, 0);
+    float d = dot(n, global.domain.lower) + r;
+    float l = dot(n, x);
+
+    if(l < d + r) {
+        float dd = abs(l - d);
+        x += n * dd;
+        v = reflect(v,  n);
+        positions[CURRENT].data[gid] = x;
+        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
+        return;
+    }
+
+    n = vec3(1, 0, 0);
+    d = dot(n, global.domain.lower) + r;
+    l = dot(n, x);
+
+    if(l < d + r) {
+        float dd = abs(l - d);
+        x += n * dd;
+        v = reflect(v,  n);
+        positions[CURRENT].data[gid] = x;
+        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
+        return;
+    }
+
+    n = vec3(0, 0, 1);
+    d = dot(n, global.domain.lower) + r;
+    l = dot(n, x);
+
+    if(l < d + r) {
+        float dd = abs(l - d);
+        x += n * dd;
+        v = reflect(v,  n);
+        positions[CURRENT].data[gid] = x;
+        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
+        return;
+    }
+
+    n = vec3(-1, 0, 0);
+    d = dot(n, global.domain.upper) + r;
+    l = dot(n, x);
+
+    if(l < d + r) {
+        float dd = abs(l - d);
+        x += n * dd;
+        v = reflect(v,  n);
+        positions[CURRENT].data[gid] = x;
+        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
+        return;
+    }
+
+    n = vec3(0, 0, -1);
+    d = dot(n, global.domain.upper) + r;
+    l = dot(n, x);
+
+    if(l < d + r) {
+        float dd = abs(l - d);
+        x += n * dd;
+        v = reflect(v,  n);
+        positions[CURRENT].data[gid] = x;
+        positions[PREVIOUS].data[gid] = x - (e*v) * dt;
+        return;
+    }
+
+}

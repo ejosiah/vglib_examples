@@ -68,7 +68,7 @@ void main() {
         direction += vec3(cos(emitter.currentTime), 0, sin(emitter.currentTime));
         for(int i = 0; i < maxNumberOfNewParticles; i++) {
             vec3 p = emitter.origin + direction * (i * t);
-            vec3 v = emitter.speed * direction * dt * dt;
+            vec3 v = emitter.speed * direction * dt * dt * 2;
             iPrevPosition[i] = p - v;
             iPositions[i] = p;
             iRadius[i] = emitter.radius;
@@ -79,7 +79,7 @@ void main() {
         for(uint i = 0; i < maxNumberOfNewParticles; i++){
             positions[CURRENT].data[offset + i] = iPositions[i];
             positions[PREVIOUS].data[offset + i] = iPrevPosition[i];
-            radius[offset + i] = iRadius[i];
+//            radius[offset + i] = iRadius[i];
             float seed = float(emitterID + global.time + global.frame + offset + i);
 
             float h = float(emitter.numberOfEmittedParticles)/float(emitter.maxNumberOfParticles);
