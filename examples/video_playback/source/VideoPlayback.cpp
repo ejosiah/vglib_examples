@@ -161,6 +161,7 @@ VkCommandBuffer *VideoPlayback::buildCommandBuffers(uint32_t imageIndex, uint32_
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, 1, &displayDescriptorSet, 0, nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
 
+    renderControls(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -1271,6 +1272,45 @@ void VideoPlayback::createDpbOutputTexture(OutputTexture& output, const std::str
         .baseArrayLayer = 0,
         .layerCount = 1
     };
+}
+
+void VideoPlayback::renderControls(VkCommandBuffer commandBuffer) {
+
+    static float pos = 0;
+    static bool playing = false;
+    static bool loop = false;
+
+    playing = has_flag(video_instance->flags, VideoInstance::Flags::Playing);
+    loop = has_flag(video_instance->flags, VideoInstance::Flags::Looped);
+    pos = video_instance->current_time;
+    ImGui::Begin("video controls");
+    ImGui::SetWindowSize({350, 60});
+
+    auto action = playing ? "Stop" : "Play";
+    if(ImGui::Button(action)) {
+        if(playing) {
+            video_instance->flags &= ~VideoInstance::Flags::Playing;
+        }else {
+            video_instance->flags |= VideoInstance::Flags::Playing;
+        }
+    }
+    ImGui::SameLine();
+    auto updated = ImGui::SliderFloat("", &pos, 0, video_instance->video->duration_seconds);
+    ImGui::SameLine();
+    ImGui::Checkbox("Loop", &loop);
+
+    if(loop) {
+        video_instance->flags |= VideoInstance::Flags::Looped;
+    }else {
+        video_instance->flags &= ~VideoInstance::Flags::Looped;
+    }
+
+    ImGui::End();
+
+    if(updated) {
+        video_instance->seek(pos);
+    }
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
 int main() {

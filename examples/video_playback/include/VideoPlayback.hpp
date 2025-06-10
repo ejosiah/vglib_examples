@@ -68,6 +68,8 @@ protected:
 
     void copyToDisplayTexture(VkCommandBuffer commandBuffer);
 
+    void renderControls(VkCommandBuffer commandBuffer);
+
     void initPrototypeVideoDecodeOperation();
 
     void getVideoCapabilities();

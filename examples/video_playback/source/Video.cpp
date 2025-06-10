@@ -50,6 +50,9 @@ void VideoInstance::update(float dt) {
 
     if (has_flag(flags, Flags::Playing)) {
         current_time += dt;
+        if(!has_flag(flags, Flags::Looped)) {
+            current_time = std::min(current_time, video->duration_seconds);
+        }
     }
 }
 
