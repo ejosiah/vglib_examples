@@ -154,3 +154,8 @@ doc
 **/*.vdb
 **/*.ply
 **/imgui.ini
+
+# video
+**/*.mp4
+**/*.mov
+**/*.h264
