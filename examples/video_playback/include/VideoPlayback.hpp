@@ -62,12 +62,6 @@ protected:
 
     void decode(const VideoDecodeOperation& decodeOperation, VkCommandBuffer commandBuffer);
 
-    void prepVideoForDisplay(VkCommandBuffer commandBuffer);
-
-    void prepVideoForDecode(VkCommandBuffer commandBuffer);
-
-    void copyToDisplayTexture(VkCommandBuffer commandBuffer);
-
     void renderControls(VkCommandBuffer commandBuffer);
 
     void initPrototypeVideoDecodeOperation();
