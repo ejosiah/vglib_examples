@@ -106,7 +106,7 @@ void Collision3D::beforeDeviceCreation() {
         devFeatures13.dynamicRendering = VK_TRUE;
         devFeatures13.maintenance4 = VK_TRUE;
         deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
+    }
 
     static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
     dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
