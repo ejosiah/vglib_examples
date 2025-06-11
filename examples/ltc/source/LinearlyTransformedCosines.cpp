@@ -206,31 +206,17 @@ VkCommandBuffer *LinearlyTransformedCosines::buildCommandBuffers(uint32_t imageI
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    static std::array<VkClearValue, 2> clearValues;
-    clearValues[0].color = {0, 0, 1, 1};
-    clearValues[1].depthStencil = {1.0, 0u};
+    renderToSwapChain([&]{
+        static std::array<VkDescriptorSet, 2> sets;
+        sets[0] = ltcDescriptorSet;
+        sets[1] = uniformsDescriptorSet;
 
-    VkRenderPassBeginInfo rPassInfo = initializers::renderPassBeginInfo();
-    rPassInfo.clearValueCount = COUNT(clearValues);
-    rPassInfo.pClearValues = clearValues.data();
-    rPassInfo.framebuffer = framebuffers[imageIndex];
-    rPassInfo.renderArea.offset = {0u, 0u};
-    rPassInfo.renderArea.extent = swapChain.extent;
-    rPassInfo.renderPass = renderPass;
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ltc.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ltc.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
+        AppContext::renderClipSpaceQuad(commandBuffer);
 
-    vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = ltcDescriptorSet;
-    sets[1] = uniformsDescriptorSet;
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ltc.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ltc.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
-    AppContext::renderClipSpaceQuad(commandBuffer);
-
-    renderControls(commandBuffer);
-
-    vkCmdEndRenderPass(commandBuffer);
+        renderControls(commandBuffer);
+    }, commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -245,6 +231,23 @@ void LinearlyTransformedCosines::update(float time) {
 
 void LinearlyTransformedCosines::checkAppInputs() {
     camera->processInput();
+
+    static bool initialPress = true;
+    static glm::vec2 pos{};
+
+    if(!ImGui::IsAnyItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        if(initialPress) {
+            initialPress = false;
+            pos.x = ImGui::GetMousePos().x;
+            pos.y = ImGui::GetMousePos().y;
+        }
+        cam.rotY = ImGui::GetMousePos().x - pos.x;
+        cam.rotX = ImGui::GetMousePos().y - pos.y;
+    }else {
+        initialPress = true;
+        pos = glm::vec2(0);
+    }
+    cam.zoom += 10 * ImGui::GetIO().MouseWheel;
 }
 
 void LinearlyTransformedCosines::cleanup() {

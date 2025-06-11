@@ -347,25 +347,13 @@ VkCommandBuffer *$classname$::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    static std::array<VkClearValue, 2> clearValues;
-    clearValues[0].color = {0, 0, 1, 1};
-    clearValues[1].depthStencil = {1.0, 0u};
+    clearColor(0, 0, 1);
 
-    VkRenderPassBeginInfo rPassInfo = initializers::renderPassBeginInfo();
-    rPassInfo.clearValueCount = COUNT(clearValues);
-    rPassInfo.pClearValues = clearValues.data();
-    rPassInfo.framebuffer = framebuffers[imageIndex];
-    rPassInfo.renderArea.offset = {0u, 0u};
-    rPassInfo.renderArea.extent = swapChain.extent;
-    rPassInfo.renderPass = renderPass;
-
-    vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    $if(raytracing.truthy)$
-    canvas.draw(commandBuffer);
-    $endif$
-
-    vkCmdEndRenderPass(commandBuffer);
+    renderToSwapChain([&]{
+        $if(raytracing.truthy)$
+        canvas.draw(commandBuffer);
+        $endif$
+    }, commandBuffer);
 
     $if(raytracing.truthy)$
     rayTrace(commandBuffer);
