@@ -4,7 +4,8 @@
 #include <fmt/format.h>
 #include <glm_format.h>
 #include "nishita.hpp"
-
+#include "ltc.hpp"
+#include <fstream>
 constexpr auto maxDepth = 20UL;
 constexpr auto iniMaxDepth = maxDepth;
 
@@ -13,38 +14,27 @@ const float earthRadius = 6360 * km;
 namespace fs = std::filesystem;
 
 int main() {
-    const auto kFovY = 50.f / 180.f * glm::pi<float>();
-    const auto kTanFovY = glm::tan(kFovY / 2);
-    const auto aspectRatio = 1;
 
-    const auto view_from_clip = glm::transpose(glm::mat4{
-            kTanFovY * aspectRatio, 0, 0, 0,
-            0, kTanFovY, 0, 0,
-            0, 0, 0, -1,
-            0, 0, 1, 1
-    });
-
-    float viewZenithAngleRadians = 1.47;
-    float viewAzimuthAngleRadians = 0;
-    const auto cosZ = glm::cos(viewZenithAngleRadians);
-    const auto sinZ = glm::sin(viewZenithAngleRadians);
-    const auto cosA = glm::cos(viewAzimuthAngleRadians);
-    const auto sinA = glm::sin(viewAzimuthAngleRadians);
-    const auto viewDistance = 9000.f;
-
-    float vDist = viewDistance + earthRadius;
-    const auto model_from_view = glm::transpose(glm::mat4{
-            -sinA, -cosZ * cosA,  sinZ * cosA, sinZ * cosA * vDist,
-            0, sinZ, cosZ, cosZ * vDist,
-            cosA, -cosZ * sinA, sinZ * sinA, sinZ * sinA * vDist,
-            0, 0, 0, 1
-    });
-
-
-
-    auto camera = glm::column(model_from_view, 3);
-    fmt::print("camera: {}\n", camera);
-
-    auto view = model_from_view * glm::vec4(0, 0, -1, 0);
-    fmt::print("camera: {}\n", view);
+    fmt::print("g_ltc_mat {}, {}\n", ltc::g_ltc_mat.size(), std::sqrt(ltc::g_ltc_mat.size()/4));
+    fmt::print("g_ltc_mag {}, {}\n", ltc::g_ltc_mag.size(), std::sqrt(ltc::g_ltc_mag.size()/4));
+//    std::ofstream fout{"../../../../data/ltc/g_ltc_mat.dat", std::ios::binary};
+//    if(!fout.good()) {
+//        fmt::print("unable to up g_ltc_mat.dat for writing");
+//        std::exit(120);
+//    }
+//
+//    auto size = static_cast<std::streamsize>(sizeof(float) * ltc::g_ltc_mat.size());
+//
+//    fout.write(reinterpret_cast<char*>(ltc::g_ltc_mat.data()), size);
+//    fmt::print("g_ltc_mat.dat saved to disc\n");
+//
+//    fout = std::ofstream{"../../../../data/ltc/g_ltc_mag.dat", std::ios::binary};
+//    if(!fout.good()) {
+//        fmt::print("unable to up g_ltc_mag.dat for writing");
+//        std::exit(120);
+//    }
+//
+//    size = static_cast<std::streamsize>(sizeof(float) * ltc::g_ltc_mag.size());
+//    fout.write(reinterpret_cast<char*>(ltc::g_ltc_mag.data()), size);
+//    fmt::print("g_ltc_mag.dat saved to disc\n");
 }
