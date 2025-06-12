@@ -1,9 +1,9 @@
 #pragma once
 
 #include "VulkanBaseApp.h"
-#include "mp4.hpp"
-#include "Video.hpp"
+#include "video/Video.hpp"
 #include "plugins/BindLessDescriptorPlugin.hpp"
+#include "video/VideoDecoder.hpp"
 
 class VideoPlayback : public VulkanBaseApp{
 public:
@@ -11,6 +11,8 @@ public:
 
 protected:
     void initApp() override;
+
+    void initVideoDecoder();
 
     void initCamera();
 
@@ -48,36 +50,11 @@ protected:
 
     void initVideoInstance();
 
-    void createVideoSession();
-
-    void createDpbResources();
-
-    void createDpbOutputTexture(OutputTexture& output, const std::string& name);
-
-    void translate(const h264::SPS& sps, StdVideoH264SequenceParameterSet& vk_sps, StdVideoH264SequenceParameterSetVui& vk_vui, StdVideoH264HrdParameters& vk_hrd);
-
-    void translate(const h264::PPS& pps, StdVideoH264PictureParameterSet& vk_pps, StdVideoH264ScalingLists& vk_scalinglist);
-
-    void decode(const std::shared_ptr<VideoInstance>& vInstance, VkCommandBuffer commandBuffer);
-
-    void decode(const VideoDecodeOperation& decodeOperation, VkCommandBuffer commandBuffer);
-
     void renderControls(VkCommandBuffer commandBuffer);
-
-    void initPrototypeVideoDecodeOperation();
-
-    void getVideoCapabilities();
-
-    void createYUVSampler();
-
-    void createDisplayTexture();
-
-    void createSemaphores();
 
     void endFrame() override;
 
 protected:
-    uint64_t VIDEO_DECODE_BITSTREAM_ALIGNMENT = 1u;
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
@@ -89,22 +66,9 @@ protected:
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
     std::string video_playback_info;
-    VideoCapabilities cb;
     std::shared_ptr<Video> video;
     std::shared_ptr<VideoInstance> video_instance;
-    VideoDecodeOperation prototypeDecodeOperation{};
-    VulkanSampler yuvSampler;
-    VkSamplerYcbcrConversion ycbcrConversion{};
-    VulkanImageView displayView;
-    struct {
-        Texture texture;
-        VkImageSubresourceRange subresource;
-    } display;  // TODO replace with VideoInstance.output_textures_used and use bindless descriptor
     VulkanDescriptorSetLayout displayDescriptorSetLayout;
     VkDescriptorSet displayDescriptorSet{};
-
-    struct {
-        VulkanSemaphore renderingFinished;
-        VulkanSemaphore frameDecoded;
-    } semaphores;
+    std::unique_ptr<VideoDecoder> decoder;
 };
