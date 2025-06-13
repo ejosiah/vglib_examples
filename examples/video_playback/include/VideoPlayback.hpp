@@ -1,5 +1,4 @@
 #pragma once
-
 #include "VulkanBaseApp.h"
 #include "video/Video.hpp"
 #include "plugins/BindLessDescriptorPlugin.hpp"
@@ -13,6 +12,8 @@ protected:
     void initApp() override;
 
     void initVideoDecoder();
+
+    void createSampler();
 
     void initCamera();
 
@@ -71,4 +72,5 @@ protected:
     VulkanDescriptorSetLayout displayDescriptorSetLayout;
     VkDescriptorSet displayDescriptorSet{};
     std::unique_ptr<VideoDecoder> decoder;
+    VulkanSampler sampler;
 };

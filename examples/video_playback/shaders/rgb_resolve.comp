@@ -1,0 +1,19 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform sampler2D yuvTexture[];    // we using a YUV to RGG conversion sampler
+layout(set = 0, binding = 1) uniform writeonly image2D rgbTexture[];
+
+layout(push_constant) uniform Constans {
+    int texture_id;
+};
+
+void main() {
+    vec2 uv = (vec2(gl_GlobalInvocationID) + 0.5)/vec2(gl_WorkGroupSize * gl_NumWorkGroups);
+
+    vec4 rgba = texture(yuvTexture[texture_id], uv);
+    imageStore(rgbTexture[texture_id], ivec2(gl_GlobalInvocationID), rgba);
+}

@@ -22,6 +22,7 @@ VideoPlayback::VideoPlayback(const Settings &settings) : VulkanBaseApp("Video pl
 }
 
 void VideoPlayback::initApp() {
+    createSampler();
     initVideoDecoder();
     loadVideo();
     initVideoInstance();
@@ -72,7 +73,7 @@ void VideoPlayback::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
-                .immutableSamplers(decoder->getSampler())
+                .immutableSamplers(sampler)
         .createLayout();
     auto sets = descriptorPool.allocate( { displayDescriptorSetLayout } );
     displayDescriptorSet = sets[0];
@@ -230,7 +231,7 @@ void VideoPlayback::beforeDeviceCreation() {
 
 void VideoPlayback::loadVideo() {
     auto parser = video::VideoParser{device};
-    video = parser.parse(resource("855289-hd_1920_1080_25fps.mp4"));
+    video = parser.parse(resource("2616637-hd_1920_1080_30fps.mp4"));
     
     std::vector<int> intra_frames{};
     for(auto i = 0; i < video->slice_header_count; ++i) {
@@ -307,6 +308,23 @@ void VideoPlayback::renderControls(VkCommandBuffer commandBuffer) {
 void VideoPlayback::initVideoDecoder() {
     decoder = std::make_unique<VideoDecoder>(device);
     decoder->init();
+}
+
+void VideoPlayback::createSampler() {
+    VkSamplerCreateInfo samplerCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = VK_FILTER_LINEAR,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .minLod = 0,
+            .maxLod = 1,
+            .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+    };
+
+    sampler = device.createSampler(samplerCreateInfo);
 }
 
 int main() {
