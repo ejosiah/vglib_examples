@@ -68,7 +68,12 @@ public:
         vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_BACK_BIT);
         vkCmdSetPolygonModeEXT(commandBuffer, VK_POLYGON_MODE_FILL);
-        content();
+
+        if constexpr (std::is_invocable_v<decltype(content), Pipeline>){
+            content(flat);
+        }else {
+            content();
+        }
     }
 
     static void renderWireframe(VkCommandBuffer commandBuffer, BaseCameraController& camera,  auto content, const glm::vec3& color = glm::vec3(0.2)) {

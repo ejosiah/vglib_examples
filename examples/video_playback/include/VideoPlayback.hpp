@@ -21,8 +21,6 @@ protected:
 
     void createDescriptorSetLayouts();
 
-    void updateDescriptorSets();
-
     void updateDescriptorBinding(const Texture& texture);
 
     void createCommandPool();
@@ -66,7 +64,6 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
-    std::string video_playback_info;
     std::shared_ptr<Video> video;
     std::shared_ptr<VideoInstance> video_instance;
     VulkanDescriptorSetLayout displayDescriptorSetLayout;

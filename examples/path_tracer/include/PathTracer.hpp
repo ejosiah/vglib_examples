@@ -48,6 +48,8 @@ protected:
 
     void loadEnvironmentMap();
 
+    void beforeDeviceCreation() override;
+
     void loadMediums();
 
     void loadModel();

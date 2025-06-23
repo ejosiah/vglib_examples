@@ -91,6 +91,8 @@ protected:
 
     void onPause() override;
 
+    void beforeDeviceCreation() override;
+
 protected:
     struct {
         VulkanPipeline pipeline;

@@ -1,10 +1,14 @@
 #define DEVICE_ADDRESS_BIT
 #include <ImGuiPlugin.hpp>
 #include "RayTracerDemo.hpp"
+#include "ExtensionChain.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
 
 RayTracerDemo::RayTracerDemo(const Settings& settings): VulkanRayTraceBaseApp("Ray trace Demo", settings) {
-
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/textures");
 }
 
 void RayTracerDemo::initApp() {
@@ -398,11 +402,9 @@ void RayTracerDemo::createModel() {
 }
 
 void RayTracerDemo::createGraphicsPipeline() {
-//    auto vertexShaderModule = VulkanShaderModule{"../../data/shaders/barycenter.vert.spv", device};
-//    auto fragmentShaderModule = VulkanShaderModule{"../../data/shaders/barycenter.frag.spv", device};
 
-    VulkanShaderModule vertexShaderModule = device.createShaderModule("../../data/shaders/demo/spaceship.vert.spv");
-    VulkanShaderModule fragmentShaderModule = device.createShaderModule("../../data/shaders/demo/spaceship.frag.spv");
+    VulkanShaderModule vertexShaderModule = device.createShaderModule(resource("demo/spaceship.vert.spv"));
+    VulkanShaderModule fragmentShaderModule = device.createShaderModule(resource("demo/spaceship.frag.spv"));
 
     auto stages = initializers::vertexShaderStages({
         { vertexShaderModule, VK_SHADER_STAGE_VERTEX_BIT},
@@ -496,10 +498,10 @@ void RayTracerDemo::createShaderBindingTables() {
 }
 
 void RayTracerDemo::createRayTracePipeline() {
-    auto rayGenShaderModule = device.createShaderModule("../../data/shaders/raytrace_basic/raygen.rgen.spv");
-    auto missShaderModule = device.createShaderModule("../../data/shaders/raytrace_basic/miss.rmiss.spv");
-    auto shadowMissShaderModule = device.createShaderModule("../../data/shaders/raytrace_basic/shadow.rmiss.spv");
-    auto closestHitModule = device.createShaderModule("../../data/shaders/raytrace_basic/closesthit.rchit.spv");
+    auto rayGenShaderModule = device.createShaderModule(resource("raytrace_basic/raygen.rgen.spv"));
+    auto missShaderModule = device.createShaderModule(resource("raytrace_basic/miss.rmiss.spv"));
+    auto shadowMissShaderModule = device.createShaderModule(resource("raytrace_basic/shadow.rmiss.spv"));
+    auto closestHitModule = device.createShaderModule(resource("raytrace_basic/closesthit.rchit.spv"));
 
     auto stages = initializers::vertexShaderStages({
         {rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
@@ -548,7 +550,7 @@ void RayTracerDemo::rayTrace(VkCommandBuffer commandBuffer) {
 }
 
 void RayTracerDemo::loadTexture() {
-    textures::fromFile(device, texture, "../../data/textures/portrait.jpg", false, VK_FORMAT_R8G8B8A8_SRGB);
+    textures::fromFile(device, texture, resource("portrait.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB);
 
 }
 
@@ -562,7 +564,7 @@ void RayTracerDemo::loadSpaceShip() {
 
     std::vector<rt::MeshObjectInstance> instances;
     VulkanDrawable spaceShip;
-    phong::load("../../data/models/bigship1.obj", device, descriptorPool, spaceShip, info, true, 1);
+    phong::load(resource("bigship1.obj"), device, descriptorPool, spaceShip, info, true, 1);
  //   spaceShip = VulkanDrawable::flatten(device, descriptorPool, spaceShip.descriptorSetLayout, spaceShip, 0, 0, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     drawables.insert(std::make_pair("spaceShip", std::move(spaceShip)));
   //  phong::load(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\ChineseDragon.obj)", device, descriptorPool, spaceShip, info);
@@ -588,7 +590,7 @@ void RayTracerDemo::loadSpaceShip() {
 
 
     VulkanDrawable plane_l;
-    phong::load("../../data/models/plane.gltf", device, descriptorPool, plane_l,  info);
+    phong::load(resource("plane.gltf"), device, descriptorPool, plane_l,  info);
     drawables.insert(std::make_pair("plane", std::move(plane_l)));
 //    phong::load(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\Lucy-statue\metallic-lucy-statue-stanford-scan.obj)", device, descriptorPool, plane,  info, true, 1);
  //   phong::load("../../data/models/bigship1.obj", device, descriptorPool, plane,  info, true, 1);
@@ -627,6 +629,13 @@ void RayTracerDemo::CanvasToRayTraceBarrier(VkCommandBuffer commandBuffer) const
                          &barrier);
 }
 
+void RayTracerDemo::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+}
+
 void RayTracerDemo::rayTraceToCanvasBarrier(VkCommandBuffer commandBuffer) const {
     VkImageMemoryBarrier barrier = initializers::ImageMemoryBarrier();
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -655,7 +664,7 @@ void RayTracerDemo::rayTraceToCanvasBarrier(VkCommandBuffer commandBuffer) const
 
 
 int main(){
-
+    fs::current_path("../../../../examples/");
     Settings settings;
     settings.depthTest = true;
     std::unique_ptr<Plugin> plugin = std::make_unique<ImGuiPlugin>();

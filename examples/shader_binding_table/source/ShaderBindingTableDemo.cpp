@@ -1,17 +1,18 @@
 #include "ShaderBindingTableDemo.hpp"
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
+#include "ImGuiPlugin.hpp"
 
 ShaderBindingTableDemo::ShaderBindingTableDemo(const Settings& settings) : VulkanRayTraceBaseApp("shader binding table", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/shader_binding_table");
-    fileManager.addSearchPath("../../examples/shader_binding_table/spv");
-    fileManager.addSearchPath("../../examples/shader_binding_table/models");
-    fileManager.addSearchPath("../../examples/shader_binding_table/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("shader_binding_table");
+    fileManager().addSearchPathFront("shader_binding_table/spv");
+    fileManager().addSearchPathFront("shader_binding_table/models");
+    fileManager().addSearchPathFront("shader_binding_table/textures");
 }
 
 void ShaderBindingTableDemo::initApp() {
@@ -93,7 +94,7 @@ void ShaderBindingTableDemo::loadBunny() {
 
 void ShaderBindingTableDemo::createDescriptorPool() {
     constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 16> poolSizes{
+    std::array<VkDescriptorPoolSize, 15> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
@@ -109,7 +110,6 @@ void ShaderBindingTableDemo::createDescriptorPool() {
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets }
             }
     };
@@ -309,8 +309,8 @@ void ShaderBindingTableDemo::createRenderPipeline() {
     render.pipeline =
         builder
             .shaderStage()
-                .vertexShader("../../data/shaders/pass_through.vert.spv")
-                .fragmentShader("../../data/shaders/pass_through.frag.spv")
+                .vertexShader(resource("pass_through.vert.spv"))
+                .fragmentShader(resource("pass_through.frag.spv"))
             .vertexInputState()
                 .addVertexBindingDescriptions(Vertex::bindingDisc())
                 .addVertexAttributeDescriptions(Vertex::attributeDisc())
@@ -390,7 +390,9 @@ void ShaderBindingTableDemo::createRayTracingPipeline() {
 
     dispose(raytrace.layout);
 
-    raytrace.layout = device.createPipelineLayout({ raytrace.descriptorSetLayout, raytrace.instanceDescriptorSetLayout, raytrace.vertexDescriptorSetLayout });
+    raytrace.layout = device.createPipelineLayout(
+            { raytrace.descriptorSetLayout, raytrace.instanceDescriptorSetLayout, raytrace.vertexDescriptorSetLayout },
+            { {VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(constants)} });
     VkRayTracingPipelineCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
     createInfo.stageCount = COUNT(stages);
     createInfo.pStages = stages.data();
@@ -436,7 +438,7 @@ VkCommandBuffer *ShaderBindingTableDemo::buildCommandBuffers(uint32_t imageIndex
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     canvas.draw(commandBuffer);
-
+    renderUI(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
     rayTrace(commandBuffer);
@@ -453,7 +455,7 @@ void ShaderBindingTableDemo::rayTrace(VkCommandBuffer commandBuffer) {
     assert(raytrace.pipeline);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-
+    vkCmdPushConstants(commandBuffer, raytrace.layout.handle, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(constants), &constants);
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);
 
@@ -517,7 +519,9 @@ void ShaderBindingTableDemo::CanvasToRayTraceBarrier(VkCommandBuffer commandBuff
 
 void ShaderBindingTableDemo::update(float time) {
     glfwSetWindowTitle(window, fmt::format("{} - FPS {}", title, framePerSecond).c_str());
-    camera->update(time);
+    if(!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
     auto cam = camera->cam();
     inverseCamProj.map<glm::mat4>([&](auto ptr){
         auto view = glm::inverse(cam.view);
@@ -540,15 +544,50 @@ void ShaderBindingTableDemo::onPause() {
     VulkanBaseApp::onPause();
 }
 
+void ShaderBindingTableDemo::beforeDeviceCreation() {
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    devFeatures12->scalarBlockLayout = VK_TRUE;
+
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->maintenance4 = VK_TRUE;
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+}
+
+void ShaderBindingTableDemo::renderUI(VkCommandBuffer commandBuffer) {
+
+    ImGui::Begin("Options");
+    ImGui::SetWindowSize({0, 0});
+
+    int cullmask = to<int>(std::log2(constants.cullmask) + 0.5);
+    ImGui::SliderInt("Cull Mask", &cullmask, 0, 8);
+
+    int offset = constants.offset;
+    ImGui::SliderInt("SBT Record Offset", &offset, 0, 3);
+
+    int stride = constants.stride;
+    ImGui::SliderInt("SBT Record Stride", &stride, 0, 10);
+
+    ImGui::End();
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+
+    constants.cullmask = (1 << cullmask) - 1;
+    constants.offset = offset;
+    constants.stride = stride;
+}
+
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.enableBindlessDescriptors = false;
         settings.depthTest = true;
 
+        std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
         auto app = ShaderBindingTableDemo{ settings };
+        app.addPlugin(imGui);
         app.run();
     }catch(std::runtime_error& err){
         spdlog::error(err.what());

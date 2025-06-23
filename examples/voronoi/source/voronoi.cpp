@@ -5,11 +5,13 @@
 
 Voronoi::Voronoi(const Settings& settings) : VulkanBaseApp("voronoi", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/voronoi");
-    fileManager().addSearchPathFront("../../examples/voronoi/data");
-    fileManager().addSearchPathFront("../../examples/voronoi/spv");
-    fileManager().addSearchPathFront("../../examples/voronoi/models");
-    fileManager().addSearchPathFront("../../examples/voronoi/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("voronoi");
+    fileManager().addSearchPathFront("voronoi/data");
+    fileManager().addSearchPathFront("voronoi/spv");
+    fileManager().addSearchPathFront("voronoi/models");
+    fileManager().addSearchPathFront("voronoi/textures");
 
     static VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
     dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
@@ -1108,116 +1110,116 @@ void Voronoi::copyGeneratorPointsToCpu(VkCommandBuffer commandBuffer) {
                          &barrier, 0, nullptr, 0, nullptr);
 }
 
-void Voronoi::updateTriangles() {
-    std::vector<CDT::V2d<float>> points(generators.sizeAs<CDT::V2d<float>>());
-    std::memcpy(points.data(), stagingBuffer.map(), BYTE_SIZE(points));
-    stagingBuffer.unmap();
-    triangulate(points);
+//void Voronoi::updateTriangles() {
+////    std::vector<CDT::V2d<float>> points(generators.sizeAs<CDT::V2d<float>>());
+////    std::memcpy(points.data(), stagingBuffer.map(), BYTE_SIZE(points));
+////    stagingBuffer.unmap();
+////    triangulate(points);
+//
+//    auto& cdt = delaunayTriangles.cdt;
+//    auto& indices = delaunayTriangles.cdt.indices;
+//    device.graphicsCommandPool().oneTimeCommand([&](VkCommandBuffer commandBuffer) {
+//        stagingBuffer.copy(cdt.vertices);
+//        VkBufferCopy vRegion{0, 0, BYTE_SIZE(cdt.vertices)};
+//
+//        auto offset = BYTE_SIZE(cdt.vertices);
+//        stagingBuffer.copy(indices.data(), BYTE_SIZE(indices), offset);
+//        VkBufferCopy iRegion{ offset, 0, BYTE_SIZE(indices)};
+//
+//        static std::vector<VkBufferMemoryBarrier> barriers{
+//                {
+//                        VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+//                        VK_NULL_HANDLE,
+//                        VK_ACCESS_TRANSFER_WRITE_BIT,
+//                        VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+//                        0, 0, 0, 0
+//                },
+//                {
+//                        VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+//                        VK_NULL_HANDLE,
+//                        VK_ACCESS_TRANSFER_WRITE_BIT,
+//                        VK_ACCESS_INDEX_READ_BIT,
+//                        0, 0, 0, 0
+//                },
+//        };
+//
+//        barriers[0].buffer = delaunayTriangles.vertices;
+//        barriers[0].size = delaunayTriangles.vertices.size;
+//
+//        barriers[1].buffer = delaunayTriangles.triangles;
+//        barriers[1].size = delaunayTriangles.triangles.size;
+//
+//        vkCmdCopyBuffer(commandBuffer, stagingBuffer, delaunayTriangles.vertices, 1, &vRegion);
+//        vkCmdCopyBuffer(commandBuffer, stagingBuffer, delaunayTriangles.triangles, 1, &iRegion);
+//        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
+//                , 0, 0, VK_NULL_HANDLE, 2, barriers.data(), 0, VK_NULL_HANDLE);
+//
+//    });
+//
+//}
 
-    auto& cdt = delaunayTriangles.cdt;
-    auto& indices = delaunayTriangles.cdt.indices;
-    device.graphicsCommandPool().oneTimeCommand([&](VkCommandBuffer commandBuffer) {
-        stagingBuffer.copy(cdt.vertices);
-        VkBufferCopy vRegion{0, 0, BYTE_SIZE(cdt.vertices)};
-
-        auto offset = BYTE_SIZE(cdt.vertices);
-        stagingBuffer.copy(indices.data(), BYTE_SIZE(indices), offset);
-        VkBufferCopy iRegion{ offset, 0, BYTE_SIZE(indices)};
-
-        static std::vector<VkBufferMemoryBarrier> barriers{
-                {
-                        VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                        VK_NULL_HANDLE,
-                        VK_ACCESS_TRANSFER_WRITE_BIT,
-                        VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-                        0, 0, 0, 0
-                },
-                {
-                        VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                        VK_NULL_HANDLE,
-                        VK_ACCESS_TRANSFER_WRITE_BIT,
-                        VK_ACCESS_INDEX_READ_BIT,
-                        0, 0, 0, 0
-                },
-        };
-
-        barriers[0].buffer = delaunayTriangles.vertices;
-        barriers[0].size = delaunayTriangles.vertices.size;
-
-        barriers[1].buffer = delaunayTriangles.triangles;
-        barriers[1].size = delaunayTriangles.triangles.size;
-
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer, delaunayTriangles.vertices, 1, &vRegion);
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer, delaunayTriangles.triangles, 1, &iRegion);
-        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
-                , 0, 0, VK_NULL_HANDLE, 2, barriers.data(), 0, VK_NULL_HANDLE);
-
-    });
-
-}
-
-void Voronoi::triangulate(std::span<CDT::V2d<float>> points) {
-    std::vector<CDT::V2d<float>> gPoints{ points.begin(), points.end() };
-    CDT::Triangulation<float> cdt;
-    cdt.insertVertices(gPoints);
-    cdt.eraseSuperTriangle();
-
-    delaunayTriangles.cdt.vertices = cdt.vertices;
-    delaunayTriangles.cdt.triangles = cdt.triangles;
-
-    auto& indices = delaunayTriangles.cdt.indices;
-    indices.resize(cdt.triangles.size() * 3);
-    auto next = indices.data();
-    VkDeviceSize offset = 3;
-    auto size = sizeof(uint32_t) * 3;
-    for(const auto& tri : cdt.triangles) {
-        std::memcpy(next, tri.vertices.data(), size);
-        next += offset;
-    }
-
-    delaunayTriangles.numTriangles = indices.size();
-
-    std::set<uint32_t> duplicate;
-    for(auto& tri : cdt.triangles){
-        auto c = calculateCircumCircle(points, tri);
-        uint32_t hash = glm::floatBitsToUint(c.center.x) * 541u + glm::floatBitsToUint(c.center.y) * 79u;
-        if(duplicate.contains(hash)) continue;
-        duplicate.insert(hash);
-        delaunayTriangles.circumCircles.push_back(c);
-    }
-
-}
-
-Circle Voronoi::calculateCircumCircle(std::span<CDT::V2d<float>> points, const CDT::Triangle &triangle) {
-    glm::vec2 a{points[triangle.vertices[0]].x, points[triangle.vertices[0]].y};
-    glm::vec2 b{points[triangle.vertices[1]].x, points[triangle.vertices[1]].y};
-    glm::vec2 c{points[triangle.vertices[2]].x, points[triangle.vertices[2]].y};
-
-    auto ab = b - a;
-    auto ac = c - a;
-    auto abmid = ( a + b) / 2.f;
-
-    auto acmid = (a + c) / 2.f;
-
-    // We have a triangle with 3 vertices: a, b, c
-    // We have vectors that define the sides of the triangle: ab, ac, bc
-    // We also have the midpoints of the line segements: abmid, acmid, bcmid
-
-    // We need perpendicular vectors to define the bisectors of each side
-    ab = {-ab.y, ab.x};
-    ac = {-ac.y, ac.x};
-;
-
-    // Find the intersection between the two perpendicular bisectors
-    auto numerator = ac.x * (abmid.y - acmid.y) - ac.y * (abmid.x - acmid.x);
-    auto denominator = ac.y * ab.x - ac.x * ab.y;
-    ab *= numerator / denominator;
-    // The center of the circumcircle is that intersection!
-    auto center = abmid + ab;
-    // The radius is the distance from the center to one of the triangle vertices
-    auto r = glm::distance(center, c);
-    return {center, r};
-}
+//void Voronoi::triangulate(std::span<CDT::V2d<float>> points) {
+//    std::vector<CDT::V2d<float>> gPoints{ points.begin(), points.end() };
+//    CDT::Triangulation<float> cdt;
+//    cdt.insertVertices(gPoints);
+//    cdt.eraseSuperTriangle();
+//
+//    delaunayTriangles.cdt.vertices = cdt.vertices;
+//    delaunayTriangles.cdt.triangles = cdt.triangles;
+//
+//    auto& indices = delaunayTriangles.cdt.indices;
+//    indices.resize(cdt.triangles.size() * 3);
+//    auto next = indices.data();
+//    VkDeviceSize offset = 3;
+//    auto size = sizeof(uint32_t) * 3;
+//    for(const auto& tri : cdt.triangles) {
+//        std::memcpy(next, tri.vertices.data(), size);
+//        next += offset;
+//    }
+//
+//    delaunayTriangles.numTriangles = indices.size();
+//
+//    std::set<uint32_t> duplicate;
+//    for(auto& tri : cdt.triangles){
+//        auto c = calculateCircumCircle(points, tri);
+//        uint32_t hash = glm::floatBitsToUint(c.center.x) * 541u + glm::floatBitsToUint(c.center.y) * 79u;
+//        if(duplicate.contains(hash)) continue;
+//        duplicate.insert(hash);
+//        delaunayTriangles.circumCircles.push_back(c);
+//    }
+//
+//}
+//
+//Circle Voronoi::calculateCircumCircle(std::span<CDT::V2d<float>> points, const CDT::Triangle &triangle) {
+//    glm::vec2 a{points[triangle.vertices[0]].x, points[triangle.vertices[0]].y};
+//    glm::vec2 b{points[triangle.vertices[1]].x, points[triangle.vertices[1]].y};
+//    glm::vec2 c{points[triangle.vertices[2]].x, points[triangle.vertices[2]].y};
+//
+//    auto ab = b - a;
+//    auto ac = c - a;
+//    auto abmid = ( a + b) / 2.f;
+//
+//    auto acmid = (a + c) / 2.f;
+//
+//    // We have a triangle with 3 vertices: a, b, c
+//    // We have vectors that define the sides of the triangle: ab, ac, bc
+//    // We also have the midpoints of the line segements: abmid, acmid, bcmid
+//
+//    // We need perpendicular vectors to define the bisectors of each side
+//    ab = {-ab.y, ab.x};
+//    ac = {-ac.y, ac.x};
+//;
+//
+//    // Find the intersection between the two perpendicular bisectors
+//    auto numerator = ac.x * (abmid.y - acmid.y) - ac.y * (abmid.x - acmid.x);
+//    auto denominator = ac.y * ab.x - ac.x * ab.y;
+//    ab *= numerator / denominator;
+//    // The center of the circumcircle is that intersection!
+//    auto center = abmid + ab;
+//    // The radius is the distance from the center to one of the triangle vertices
+//    auto r = glm::distance(center, c);
+//    return {center, r};
+//}
 
 void Voronoi::update(float time) {
     glfwSetWindowTitle(window, fmt::format("{} - fps {}", title, framePerSecond).c_str());
@@ -1549,6 +1551,7 @@ void Voronoi::endFrame() {
 
 int main(){
     try{
+        fs::current_path("../../../../examples/");
 //        spdlog::set_level(spdlog::level::err);
         Settings settings;
         settings.width = 1024;

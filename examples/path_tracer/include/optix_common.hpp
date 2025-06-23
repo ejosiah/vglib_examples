@@ -15,7 +15,7 @@
     OptixResult res = call;                                                                                            \
     if(res != OPTIX_SUCCESS)                                                                                           \
     {                                                                                                                  \
-      auto msg = fmt::format("Optix call ({}) failed with code {} ({} : {})\n", #call, res, __FILE__, __LINE__);      \
+      auto msg = fmt::format("Optix call ({}) failed with code {} ({} : {})\n", #call, static_cast<int>(res), __FILE__, __LINE__);      \
       spdlog::error(msg);                                                                                              \
       throw std::runtime_error(msg);                                                                                   \
     }                                                                                                                  \

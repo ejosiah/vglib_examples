@@ -23,3 +23,5 @@ if (OpenCL_FOUND)
     add_definitions( -DOPENCL_FOUND=1 )
     target_link_libraries(path_tracer ${OpenCL_LIBRARIES})
 endif()
+
+message(STATUS "cuda libaries: ${CUDA_LIBRARIES}")

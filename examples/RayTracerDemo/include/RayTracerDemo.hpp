@@ -59,6 +59,8 @@ protected:
 
     void cleanup() override;
 
+    void beforeDeviceCreation() override;
+
     struct {
         VulkanBuffer vertices;
         VulkanBuffer indices;

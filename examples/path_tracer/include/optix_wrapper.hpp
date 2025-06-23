@@ -3,9 +3,6 @@
 #include "optix_common.hpp"
 #include <spdlog/spdlog.h>
 
-
-
-
 struct OptixContext{
     OptixContext();
 

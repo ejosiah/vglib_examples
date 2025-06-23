@@ -1,7 +1,7 @@
 #define MAX_IN_FLIGHT_FRAMES 2
 #include "VulkanBaseApp.h"
 #include <PrefixSum.hpp>
-#include <CDT.h>
+//#include <CDT.h>
 #include "Profiler.hpp"
 
 struct Circle {
@@ -126,9 +126,9 @@ protected:
 
     void updateTriangles();
 
-    void triangulate(std::span<CDT::V2d<float>> points);
-
-    Circle calculateCircumCircle(std::span<CDT::V2d<float>> points, const CDT::Triangle& triangle);
+//    void triangulate(std::span<CDT::V2d<float>> points);
+//
+//    Circle calculateCircumCircle(std::span<CDT::V2d<float>> points, const CDT::Triangle& triangle);
 
     void update(float time) override;
 
@@ -242,8 +242,8 @@ protected:
         uint32_t numTriangles;
         std::vector<Circle> circumCircles;
         struct  {
-            std::vector<CDT::V2d<float>> vertices;
-            std::vector<CDT::Triangle> triangles;
+//            std::vector<CDT::V2d<float>> vertices;
+//            std::vector<CDT::Triangle> triangles;
             std::vector<uint32_t> indices;
         } cdt;
     } delaunayTriangles;

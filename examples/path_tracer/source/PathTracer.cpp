@@ -8,35 +8,18 @@
 #include "denoiser.hpp"
 
 PathTracer::PathTracer(const Settings& settings) : VulkanRayTraceBaseApp("reference path tracer", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/path_tracer");
-    fileManager.addSearchPathFront("../../examples/path_tracer/spv");
-    fileManager.addSearchPathFront("../../examples/path_tracer/models");
-    fileManager.addSearchPathFront("../../examples/path_tracer/textures");
-    fileManager.addSearchPathFront("../../examples/path_tracer/environment");
-    fileManager.addSearchPathFront("../../data/shaders");
-    fileManager.addSearchPathFront("../../data/models");
-    fileManager.addSearchPathFront("../../data/textures");
-    fileManager.addSearchPathFront("../../data");
-    fileManager.addSearchPathFront(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models)");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("path_tracer");
+    fileManager().addSearchPathFront("path_tracer/spv");
+    fileManager().addSearchPathFront("path_tracer/models");
+    fileManager().addSearchPathFront("path_tracer/textures");
+    fileManager().addSearchPathFront("path_tracer/environment");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront(R"(C:\Users\joebh\OneDrive\media\models)");
 
-
-    timelineFeatures = VkPhysicalDeviceTimelineSemaphoreFeatures{
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
-        &enabledDescriptorIndexingFeatures,
-        VK_TRUE
-    };
-
-    rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
-    rayQueryFeatures.rayQuery = VK_TRUE;
-    rayQueryFeatures.pNext = &timelineFeatures;
-
-    syncFeatures = VkPhysicalDeviceSynchronization2Features{
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
-        &rayQueryFeatures,
-        VK_TRUE
-    };
-    deviceCreateNextChain = &syncFeatures;
 }
 
 void PathTracer::initApp() {
@@ -141,7 +124,7 @@ void PathTracer::initDenoiser() {
 
 void PathTracer::loadEnvironmentMap() {
 //    textures::hdr(device, environmentMap, resource("environment/old_hall_4k.hdr"));
-    textures::hdr(device, environmentMap, resource("environment/white.png"));
+    textures::hdr(device, environmentMap, resource("white.png"));
 //    textures::exr(device, environmentMap, resource("sky.exr"));
 //    textures::hdr(device, environmentMap, resource("environment/HdrOutdoorFieldWinterDayClear002_JPG_4K.jpg"));
     textures::createDistribution(device, environmentMap, envMapDistribution);
@@ -455,23 +438,16 @@ void PathTracer::initCamera() {
 
 void PathTracer::createDescriptorPool() {
     constexpr uint32_t maxSets = 500;
-    std::array<VkDescriptorPoolSize, 16> poolSizes{
+    std::array<VkDescriptorPoolSize, 9> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 500 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 500 * maxSets},
-                    {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 500 * maxSets},
                     { VK_DESCRIPTOR_TYPE_SAMPLER, 500 * maxSets },
                     { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 500 * maxSets },
                     { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 500 * maxSets },
                     { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 500 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 500 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 500 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 500 * maxSets },
                     { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 500 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 500 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 500 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 500 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 500 * maxSets },
                     { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 500 * maxSets }
             }
     };
@@ -1453,12 +1429,27 @@ void PathTracer::onPause() {
     VulkanBaseApp::onPause();
 }
 
+void PathTracer::beforeDeviceCreation() {
+    auto timelineFeatures = findExtension<VkPhysicalDeviceTimelineSemaphoreFeatures>(
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES, deviceCreateNextChain);
+    timelineFeatures->timelineSemaphore = VK_TRUE;
+
+    auto rayQueryFeatures = findExtension<VkPhysicalDeviceRayQueryFeaturesKHR>(
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, deviceCreateNextChain);
+    rayQueryFeatures->rayQuery = VK_TRUE;
+
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+}
+
 #include "denoiser_test.hpp"
 
 int main(){
 //    testCudaInterop();
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 2048;
         settings.height = 1080;

@@ -5,10 +5,10 @@
 
 WhittedRayTracer::WhittedRayTracer(const Settings& settings) : VulkanRayTraceBaseApp("Whitted Ray tracer", settings) {
     fileManager().addSearchPath(".");
-    fileManager().addSearchPath("../../examples/whitted_ray_tracer");
-    fileManager().addSearchPath("../../examples/whitted_ray_tracer/spv");
-    fileManager().addSearchPath("../../examples/whitted_ray_tracer/models");
-    fileManager().addSearchPath("../../examples/whitted_ray_tracer/textures");
+    fileManager().addSearchPath("whitted_ray_tracer");
+    fileManager().addSearchPath("whitted_ray_tracer/spv");
+    fileManager().addSearchPath("whitted_ray_tracer/models");
+    fileManager().addSearchPath("whitted_ray_tracer/textures");
     fileManager().addSearchPath("../../data/shaders");
     fileManager().addSearchPath("../../data/models");
     fileManager().addSearchPath("../../data/textures");
@@ -27,6 +27,13 @@ void WhittedRayTracer::initApp() {
     createCommandPool();
     createPipelineCache();
     createRayTracingPipeline();
+}
+
+void WhittedRayTracer::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
 }
 
 void WhittedRayTracer::initCamera() {
@@ -135,7 +142,7 @@ void WhittedRayTracer::createSpheres(Brdf brdf, int numSpheres) {
 }
 
 void WhittedRayTracer::createSkyBox() {
-    SkyBox::load(skybox, R"(C:\Users\Josiah Ebhomenye\OneDrive\media\textures\skybox\005)"
+    SkyBox::load(skybox, R"(C:\Users\joebh\OneDrive\media\textures\skybox\005)"
             , {"right.jpg", "left.jpg", "top.jpg", "bottom.jpg", "front.jpg", "back.jpg"}, &device);
 }
 
@@ -499,11 +506,9 @@ void WhittedRayTracer::onPause() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
-
-        spdlog::set_level(spdlog::level::debug);
 
         auto app = WhittedRayTracer{ settings };
         app.run();

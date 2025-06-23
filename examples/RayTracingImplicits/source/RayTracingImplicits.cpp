@@ -3,7 +3,10 @@
 RayTracingImplicits::RayTracingImplicits(const Settings& settings)
         : VulkanRayTraceBaseApp("Implicit Objects", settings)
 {
-
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/textures");
 }
 
 void RayTracingImplicits::initApp() {
@@ -324,23 +327,23 @@ void RayTracingImplicits::createPipeline() {
     std::vector<VkPipelineShaderStageCreateInfo> stages;
 
     // Ray generation group
-    auto rayGenShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rgen.spv");
+    auto rayGenShader = device.createShaderModule(resource("raytracing_implicits/implicits.rgen.spv"));
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
     stages.push_back(initializers::shaderStage({ rayGenShader, VK_SHADER_STAGE_RAYGEN_BIT_KHR}));
 
     // miss group 0;
-    auto missShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rmiss.spv");
+    auto missShader = device.createShaderModule(resource("raytracing_implicits/implicits.rmiss.spv"));
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(1));
     stages.push_back(initializers::shaderStage({ missShader, VK_SHADER_STAGE_MISS_BIT_KHR}));
 
     // miss group 1
-    auto shadowShader = device.createShaderModule("../../data/shaders/raytracing_implicits/shadow.rmiss.spv");
+    auto shadowShader = device.createShaderModule(resource("raytracing_implicits/shadow.rmiss.spv"));
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(2));
     stages.push_back(initializers::shaderStage({ shadowShader, VK_SHADER_STAGE_MISS_BIT_KHR}));
 
     // hit group 0;
-    auto hitShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rchit.spv");
-    auto intersectShader = device.createShaderModule("../../data/shaders/raytracing_implicits/implicits.rint.spv");
+    auto hitShader = device.createShaderModule(resource("raytracing_implicits/implicits.rchit.spv"));
+    auto intersectShader = device.createShaderModule(resource("raytracing_implicits/implicits.rint.spv"));
     stages.push_back(initializers::shaderStage({ hitShader, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR}));
     stages.push_back(initializers::shaderStage({ intersectShader, VK_SHADER_STAGE_INTERSECTION_BIT_KHR}));
     shaderGroups.push_back(shaderTablesDesc.addHitGroup(3, 4, VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
@@ -360,11 +363,17 @@ void RayTracingImplicits::createPipeline() {
     pipeline = device.createRayTracingPipeline(createInfo);
 }
 
+void RayTracingImplicits::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;}
+
 void RayTracingImplicits::createBindingTables() {
     bindingTables = shaderTablesDesc.compile(device, pipeline);
 }
 
 int main() {
+    fs::current_path("../../../../examples/");
     auto raytracing = RayTracingImplicits{ {} };
     raytracing.run();
     return 0;

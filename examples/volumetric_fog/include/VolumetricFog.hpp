@@ -5,11 +5,6 @@
 #include "AsyncModelLoader.hpp"
 #include "Fog.hpp"
 
-struct Pipeline{
-    VulkanPipelineLayout layout;
-    VulkanPipeline pipeline;
-};
-
 class VolumetricFog : public VulkanBaseApp{
 public:
     explicit VolumetricFog(const Settings& settings = {});

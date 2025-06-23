@@ -10,6 +10,12 @@ layout(set = 0, binding = 1) uniform CameraProperties{
 } cam;
 layout(set = 0, binding = 2, rgba8) uniform image2D image;
 
+layout(push_constant) uniform Constants {
+    uint cullmask;
+    uint offset;
+    uint stride;
+};
+
 layout(location = 0) rayPayload vec3 hitValue;
 
 void main(){
@@ -26,6 +32,6 @@ void main(){
 
     hitValue = vec3(0.0);
 
-    traceRay(topLevelAs, gl_RayFlagsOpaque, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
+    traceRay(topLevelAs, gl_RayFlagsOpaque, cullmask, offset, stride, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
     imageStore(image, ivec2(gl_LaunchID.xy), vec4(hitValue, 0.0));
 }

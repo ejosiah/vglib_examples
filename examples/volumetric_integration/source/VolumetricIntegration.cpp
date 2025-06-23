@@ -535,12 +535,12 @@ void VolumetricIntegration::createGBuffer() {
 
     gbuffer.renderInfo = Offscreen::RenderInfo{
         .colorAttachments = {
-                {&gbuffer.position, VK_FORMAT_R32G32B32A32_SFLOAT},
-                {&gbuffer.normal, VK_FORMAT_R32G32B32A32_SFLOAT},
-                {&gbuffer.color, VK_FORMAT_R32G32B32A32_SFLOAT},
-                {&gbuffer.metalRoughnessAmb, VK_FORMAT_R32G32B32A32_SFLOAT},
+                {gbuffer.position.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
+                {gbuffer.normal.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
+                {gbuffer.color.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
+                {gbuffer.metalRoughnessAmb.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
         },
-        .depthAttachment = { { &gbuffer.depth, VK_FORMAT_D16_UNORM}},
+        .depthAttachment = { { gbuffer.depth.imageView, VK_FORMAT_D16_UNORM}},
         .renderArea = { width, height }
     };
 

@@ -79,10 +79,6 @@ void VideoPlayback::createDescriptorSetLayouts() {
     displayDescriptorSet = sets[0];
 }
 
-void VideoPlayback::updateDescriptorSets() {
-//    updateDescriptorBinding(display.texture);
-}
-
 void VideoPlayback::updateDescriptorBinding(const Texture &texture) {
 
     static VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
@@ -128,7 +124,6 @@ void VideoPlayback::onSwapChainDispose() {
 }
 
 void VideoPlayback::onSwapChainRecreation() {
-    updateDescriptorSets();
     createRenderPipeline();
 }
 
@@ -231,7 +226,7 @@ void VideoPlayback::beforeDeviceCreation() {
 
 void VideoPlayback::loadVideo() {
     auto parser = video::VideoParser{device};
-    video = parser.parse(resource("2616637-hd_1920_1080_30fps.mp4"));
+    video = parser.parse(resource("855289-hd_1920_1080_25fps.mp4"));
     
     std::vector<int> intra_frames{};
     for(auto i = 0; i < video->slice_header_count; ++i) {

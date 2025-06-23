@@ -40,6 +40,8 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void renderUI(VkCommandBuffer commandBuffer);
+
     void rayTrace(VkCommandBuffer commandBuffer);
 
     void rayTraceToCanvasBarrier(VkCommandBuffer commandBuffer) const;
@@ -51,6 +53,8 @@ protected:
     void checkAppInputs() override;
 
     void cleanup() override;
+
+    void beforeDeviceCreation() override;
 
     void onPause() override;
 
@@ -82,4 +86,9 @@ protected:
     VulkanBuffer inverseCamProj;
     std::unique_ptr<OrbitingCameraController> camera;
     Canvas canvas{};
+    struct {
+        uint32_t cullmask{0xFF};
+        uint32_t offset{0};
+        uint32_t stride{0};
+    } constants;
 };

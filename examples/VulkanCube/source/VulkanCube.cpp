@@ -294,7 +294,7 @@ void VulkanCube::cleanup() {
 }
 
 int main() {
-    fs::current_path("../../../../examples/data");
+    fs::current_path("../../../../data");
     try{
         Settings settings;
         settings.vSync = false;

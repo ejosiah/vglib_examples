@@ -50,6 +50,8 @@ protected:
 
     void cleanup() override;
 
+    void beforeDeviceCreation() override;
+
 private:
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
