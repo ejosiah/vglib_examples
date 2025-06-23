@@ -1,0 +1,77 @@
+#version 450
+
+#include "octahedral.glsl"
+#include "ltc.glsl"
+
+#define ROUGHNESS_LEVELS 10
+#define NUM_SAMPLES 1024
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D lightTextureBase;
+layout(set = 1, binding = 0) writeonly uniform image2D outputMips;
+layout(set = 2, binding = 0) uniform sampler2D ltc_mat;
+
+layout(push_constant) uniform Constants {
+    ivec2 baseResolution;
+    int mipLevel;
+};
+
+// Generates a cosine-weighted sample on the hemisphere using a 2D point in [0,1]^2
+vec3 sampleCosineHemisphere(vec2 xi) {
+    float phi = 2.0 * 3.14159265 * xi.x;
+    float r = sqrt(xi.y);
+    return vec3(r * cos(phi), r * sin(phi), sqrt(1.0 - xi.y));
+}
+
+// Projects a direction in world space to 2D light texture space (assuming flat area light)
+vec2 projectToLight(vec3 dir) {
+    // Assume light lies on XY plane in local space
+    return dir.xy * 0.5 + 0.5; // map [-1,1] to [0,1]
+}
+void main() {
+    if (mipLevel >= ROUGHNESS_LEVELS) return;
+
+    ivec2 mipSize = baseResolution >> int(mipLevel);
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(coord, mipSize))) return;
+
+    vec2 uv = (vec2(coord) + 0.5) / vec2(mipSize);
+    float roughness = float(mipLevel) / float(ROUGHNESS_LEVELS - 1);
+    vec2 mCoord =  LTC_Coords(0, roughness);
+    mat3 M = LTC_Matrix(ltc_mat, mCoord);
+    vec3 N = octDecode(2 * uv - 1);
+    vec3 R = N;
+    vec3 V = R;
+
+    vec3 sum = vec3(0.0);
+    float weightSum = 0.0;
+
+    // Sample hemisphere using importance sampling of cosine distribution
+    for (int i = 0; i < NUM_SAMPLES; ++i) {
+        float u1 = float(i) / float(NUM_SAMPLES);
+        float u2 = fract(sin(float(i) * 12.9898) * 43758.5453); // basic hash
+
+        vec2 xi = vec2(u1, u2);
+        vec3 L = sampleCosineHemisphere(xi);
+
+        // Transform sample direction with LTC matrix
+        L = normalize(M * L);
+
+        float NoL = clamp(dot(N, L), 0.0, 1.0);
+        if (NoL <= 0.0) continue;
+
+        // Project to texture space
+        vec2 lightUV = projectToLight(L);
+        if (any(lessThan(lightUV, vec2(0.0))) || any(greaterThan(lightUV, vec2(1.0)))){
+            continue;
+        }
+
+        vec3 texel = textureLod(lightTextureBase, lightUV, 0.0).rgb;
+        sum += texel * NoL;
+        weightSum += NoL;
+    }
+
+    vec3 result = sum / max(weightSum, 1e-6);
+    imageStore(outputMips, coord, vec4(result, 1.0));
+}

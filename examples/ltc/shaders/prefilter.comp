@@ -1,0 +1,65 @@
+#version 450
+
+#define ROUGHNESS_LEVELS 10      // Number of mip levels to generate
+#define KERNEL_RADIUS 11        // Elliptical filter radius in texels
+#define FILTER_RADIUS 0.5      // In normalized UV space
+
+#include "ltc.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D lightTextureBase;
+layout(set = 1, binding = 0) writeonly uniform image2D outputMips;
+layout(set = 2, binding = 0) uniform sampler2D ltc_mat;
+
+layout(push_constant) uniform Constants {
+    ivec2 baseResolution;
+    int mipLevel;
+};
+
+float gaussian(vec2 offset, mat2 invCov) {
+    float d2 = dot(offset, invCov * offset);
+    return exp(-0.5 * d2);
+}
+
+mat2 projectCovariance(mat3 M) {
+    mat2 A = mat2(M[0].xy, M[1].xy);// Project to 2D
+    return A * transpose(A);
+}
+
+void main() {
+    ivec2 mipSize = baseResolution >> mipLevel;
+
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(coord, mipSize))) return;
+
+    vec2 uv = (vec2(coord) + 0.5) / vec2(mipSize);
+
+    float roughness = float(mipLevel) / float(10 - 1);
+    vec2 mCoord =  LTC_Coords(0, roughness);
+    mat3 M = LTC_Matrix(ltc_mat, mCoord);
+    mat2 cov = projectCovariance(M);
+    mat2 invCov = inverse(cov);
+
+    vec3 sum = vec3(0.0);
+    float wsum = 0.0;
+
+    for (int j = -KERNEL_RADIUS; j <= KERNEL_RADIUS; ++j) {
+        for (int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; ++i) {
+            vec2 offset = vec2(i, j) / vec2(mipSize) * FILTER_RADIUS;
+            vec2 sampleUV = uv + offset;
+
+            if (any(lessThan(sampleUV, vec2(0.0))) || any(greaterThan(sampleUV, vec2(1.0))))
+            continue;
+
+            float weight = gaussian(offset / FILTER_RADIUS, invCov);
+            vec3 asample = texture(lightTextureBase, sampleUV).rgb;
+
+            sum += asample * weight;
+            wsum += weight;
+        }
+    }
+
+    vec3 result = sum / wsum;
+    imageStore(outputMips, coord, vec4(result, 1.0));
+}

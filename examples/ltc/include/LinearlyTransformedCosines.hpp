@@ -1,8 +1,10 @@
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
+#include "ComputePipelins.hpp"
 
 struct LtcUniforms {
     glm::mat4  view{1};
+    glm::vec3 eyes{1};
     glm::vec2 resolution{0};
     int   sampleCount{1};
     float roughness{0.25};
@@ -16,9 +18,10 @@ struct LtcUniforms {
     float rotz{0};
 
     int twoSided{0};
+    int textureId{2};
 };
 
-class LinearlyTransformedCosines : public VulkanBaseApp{
+class LinearlyTransformedCosines : public VulkanBaseApp {
 public:
     explicit LinearlyTransformedCosines(const Settings& settings = {});
 
@@ -26,6 +29,10 @@ protected:
     void initApp() override;
 
     void initCamera();
+
+    void createLightSource();
+
+    void prefilterLightSource();
 
     void loadLtcTextures();
 
@@ -49,6 +56,8 @@ protected:
 
     void createRenderPipeline();
 
+    void createComputePipelines();
+
     void onSwapChainDispose() override;
 
     void onSwapChainRecreation() override;
@@ -67,18 +76,40 @@ protected:
 
     void renderControls(VkCommandBuffer commandBuffer);
 
+    void loadModel();
+
+    void renderModel(VkCommandBuffer commandBuffer);
+
+    void renderReference(VkCommandBuffer commandBuffer);
+
+    void renderLightSource(VkCommandBuffer commandBuffer);
+
+    void endFrame() override;
+
 protected:
     struct {
-        struct {
-            VulkanPipelineLayout layout;
-            VulkanPipeline pipeline;
-        } ltc;
+        Pipeline ltc;
+        Pipeline pbr;
+        Pipeline light;
     } render;
+
+    struct {
+        struct {
+            VulkanPipeline pipeline;
+            VulkanPipelineLayout layout;
+            struct {
+                glm::ivec2 baseResolution;
+                int mipLevel;
+            } constants{};
+        } prefilter;
+    } compute;
 
     struct {
         VulkanBuffer gpu;
         LtcUniforms* cpu{};
     } uniforms;
+    std::shared_ptr<gltf::Model> model;
+
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -95,9 +126,27 @@ protected:
 
     VulkanDescriptorSetLayout uniformsDescriptorSetLayout;
     VkDescriptorSet uniformsDescriptorSet{};
+    VulkanDescriptorSetLayout textureDescriptorSetLayout;
+    VulkanDescriptorSetLayout imageDescriptorSetLayout;
     struct {
         float zoom{};
         float rotX{};
         float rotY{};
     } cam;
+
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer points;
+        VulkanBuffer indices;
+        Texture texture;
+        Texture prefiltered;
+        glm::mat4 worldTransform{1};
+        glm::mat4 pose{1};
+        LtcUniforms props{};
+    } lightSource;
+
+    LtcUniforms reference{};
+
+    enum class Scene : int { Reference, Sponza };
+    Scene scene = Scene::Reference;
 };
