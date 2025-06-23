@@ -9,6 +9,7 @@ RayTracerDemo::RayTracerDemo(const Settings& settings): VulkanRayTraceBaseApp("R
     fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("RayTracerDemo/spv");
 }
 
 void RayTracerDemo::initApp() {
@@ -498,10 +499,10 @@ void RayTracerDemo::createShaderBindingTables() {
 }
 
 void RayTracerDemo::createRayTracePipeline() {
-    auto rayGenShaderModule = device.createShaderModule(resource("raytrace_basic/raygen.rgen.spv"));
-    auto missShaderModule = device.createShaderModule(resource("raytrace_basic/miss.rmiss.spv"));
-    auto shadowMissShaderModule = device.createShaderModule(resource("raytrace_basic/shadow.rmiss.spv"));
-    auto closestHitModule = device.createShaderModule(resource("raytrace_basic/closesthit.rchit.spv"));
+    auto rayGenShaderModule = device.createShaderModule(resource("raygen.rgen.spv"));
+    auto missShaderModule = device.createShaderModule(resource("miss.rmiss.spv"));
+    auto shadowMissShaderModule = device.createShaderModule(resource("shadow.rmiss.spv"));
+    auto closestHitModule = device.createShaderModule(resource("closesthit.rchit.spv"));
 
     auto stages = initializers::vertexShaderStages({
         {rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
