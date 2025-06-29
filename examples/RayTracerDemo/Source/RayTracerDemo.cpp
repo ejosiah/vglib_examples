@@ -534,8 +534,6 @@ void RayTracerDemo::createRayTracePipeline() {
 }
 
 void RayTracerDemo::rayTrace(VkCommandBuffer commandBuffer) {
-
-
     VkStridedDeviceAddressRegionKHR callableShaderSbtEntry{};
     CanvasToRayTraceBarrier(commandBuffer);
 
@@ -631,6 +629,9 @@ void RayTracerDemo::CanvasToRayTraceBarrier(VkCommandBuffer commandBuffer) const
 }
 
 void RayTracerDemo::beforeDeviceCreation() {
+    auto rayFetch = findExtension<VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR, deviceCreateNextChain);
+    rayFetch->rayTracingPositionFetch = VK_TRUE;
+
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
     devFeatures13->synchronization2 = VK_TRUE;
     devFeatures13->dynamicRendering = VK_TRUE;
@@ -668,6 +669,7 @@ int main(){
     fs::current_path("../../../../examples/");
     Settings settings;
     settings.depthTest = true;
+    settings.deviceExtensions.push_back("VK_KHR_ray_tracing_position_fetch");
     std::unique_ptr<Plugin> plugin = std::make_unique<ImGuiPlugin>();
 //    auto logger = spdlog::basic_logger_mt("logger", "log.txt");
 //    spdlog::set_default_logger(logger);
