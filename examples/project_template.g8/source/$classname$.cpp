@@ -15,6 +15,7 @@ $endif$
     fileManager().addSearchPathFront("../data");
     fileManager().addSearchPathFront("../data/textures");
     fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("$name$");
     fileManager().addSearchPathFront("$name$/data");
     fileManager().addSearchPathFront("$name$/spv");
@@ -68,25 +69,9 @@ void $classname$::initBindlessDescriptor() {
 
 void $classname$::beforeDeviceCreation() {
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-        devFeatures13.value()->maintenance4 = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        devFeatures13.maintenance4 = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
-
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
-
-    static VkPhysicalDeviceIndexTypeUint8FeaturesEXT indexType8{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT };
-    indexType8.indexTypeUint8 = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, indexType8);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
 }
 
 void $classname$::createDescriptorPool() {

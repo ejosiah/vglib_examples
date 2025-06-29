@@ -41,6 +41,8 @@ public:
 
     static void onResize(VulkanSwapChain& swapChain, VulkanRenderPass& renderPass);
 
+    static void addExtensions(void*& extensions);
+
     static std::vector<VkDescriptorSet> allocateDescriptorSets(const std::vector<VulkanDescriptorSetLayout>& setLayouts);
 
     static std::string resource(const std::string& name);

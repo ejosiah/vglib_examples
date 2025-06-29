@@ -1,6 +1,7 @@
 #include "AppContext.hpp"
 #include "FileManager.hpp"
 #include "Vertex.h"
+#include "ExtensionChain.hpp"
 
 AppContext::AppContext(VulkanDevice &device, VulkanDescriptorPool& descriptorPool, VulkanSwapChain& swapChain, VulkanRenderPass& renderPass)
 :_device{ &device}
@@ -240,6 +241,11 @@ void AppContext::addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std
 
 void AppContext::updateSunDirection(glm::vec3 direction) {
     instance._atmosphere.info.cpu->sunDirection = glm::vec4(direction, 1);
+}
+
+void AppContext::addExtensions(void*& extensions) {
+    auto dsFeatures = findExtension<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT, extensions);
+    dsFeatures->extendedDynamicState3PolygonMode = VK_TRUE;
 }
 
 AppContext AppContext::instance;
