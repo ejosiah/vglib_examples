@@ -1,0 +1,63 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+const int dither_input = 0;
+const int dither_output = 0;
+const int noiseId = 1;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
+
+layout(push_constant) uniform contants {
+    vec2 viewportSize;
+    int grayScale;
+    int gammaCorrect;
+    int blockSize;
+};
+
+float linearToSrgb(float linearColor){
+    if (linearColor < 0.0031308f) return linearColor * 12.92f;
+    else return 1.055f * float(pow(linearColor, 1.0f / 2.4f)) - 0.055f;
+}
+
+vec3 linearToSrgb(vec3 c){
+    return vec3(linearToSrgb(c.r),linearToSrgb(c.g), linearToSrgb(c.b));
+}
+
+
+vec4 rand(vec2 uv) {
+    vec2 numTiles = viewportSize/textureSize(global_textures[noiseId], 0);
+    vec2 tileUV = fract(uv * numTiles); // numTiles = tiling factor
+    vec4 randVal = texture(global_textures[noiseId], tileUV);
+
+    if(grayScale == 0) {
+        return randVal;
+    }
+
+    return randVal.rrrr;
+}
+
+vec3 source(vec2 uv) {
+    vec3 col = texture(global_textures[dither_input], uv).rgb;
+    col = grayScale == 1 ? vec3(dot(col, vec3(0.2126f, 0.7152f, 0.0722f))) : col;
+    col = gammaCorrect == 1 ? linearToSrgb(col) : col;
+
+    return col;
+}
+
+void main() {
+    vec2 gid = vec2(gl_GlobalInvocationID) + 0.5;
+    vec2 uv = gid/(vec2(gl_NumWorkGroups * gl_WorkGroupSize));
+
+    vec4 randVal = rand(uv);
+    vec4 col = vec4(source(uv), 1);
+
+    if(all(notEqual(randVal, vec4(1)))){
+        col.r = (randVal.r > col.r) ? 0 : 1;
+        col.g = (randVal.g > col.g) ? 0 : 1;
+        col.b = (randVal.b > col.b) ? 0 : 1;
+    }
+
+    imageStore(global_images[dither_output], ivec2(gid), col);
+}

@@ -1,0 +1,50 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+const int dither_input = 0;
+const int dither_output = 0;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
+
+layout(set = 1, binding = 0) buffer BAYER_MATRIX {
+    int kernel[];
+};
+
+layout(push_constant) uniform contants {
+    vec2 viewportSize;
+    int grayScale;
+    int gammaCorrect;
+    int blockSize;
+};
+
+float linearToSrgb(float linearColor){
+    if (linearColor < 0.0031308f) return linearColor * 12.92f;
+    else return 1.055f * float(pow(linearColor, 1.0f / 2.4f)) - 0.055f;
+}
+
+vec3 linearToSrgb(vec3 c){
+    return vec3(linearToSrgb(c.r),linearToSrgb(c.g), linearToSrgb(c.b));
+}
+
+vec3 source(ivec2 loc) {
+    vec3 col = texelFetch(global_textures[dither_input], loc, 0).rgb;
+    col = grayScale == 1 ? vec3(dot(col, vec3(0.2126f, 0.7152f, 0.0722f))) : col;
+    col = gammaCorrect == 1 ? linearToSrgb(col) : col;
+
+    return col;
+}
+
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    int N = blockSize * blockSize;
+    vec3 l = round(N * source(gid));
+    ivec2 bid = gid % blockSize;
+    float m = kernel[bid.y * blockSize + bid.x];
+
+    vec3 col = step(vec3(m), l);
+    imageStore(global_images[dither_output], ivec2(gid), vec4(col, 1));
+}
