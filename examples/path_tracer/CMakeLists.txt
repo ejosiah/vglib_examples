@@ -2,9 +2,6 @@ if (NOT NO_OPENCL)
     find_package(OpenCL QUIET)
 endif()
 
-find_package(OptiX REQUIRED)
-_add_package_Cuda()
-
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 include_directories(${OptiX_INCLUDE})
 
@@ -16,7 +13,7 @@ set(SPV_DIR "${CMAKE_CURRENT_LIST_DIR}/spv")
 compile_glsl_directory(SRC_DIR "${GLSL_SOURCE_DIR}" OUT_DIR "${SPV_DIR}" INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/data/shaders")
 
 add_executable(path_tracer ${CPP_FILES} ${HPP_FILES})
-target_link_libraries(path_tracer VulkanBase ImGuiPlugin ${LIBRARIES_DEBUG})
+target_link_libraries(path_tracer VulkanBase ImGuiPlugin Denoiser)
 
 if (OpenCL_FOUND)
     include_directories("${OpenCL_INCLUDE_DIRS}")

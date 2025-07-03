@@ -1049,10 +1049,10 @@ void PathTracer::denoise() {
     vkEndCommandBuffer(commandBuffer);
 
     auto waitValue = fenceValue;
+    fenceValue++;
     denoiseTimelineInfo.waitSemaphoreValueCount = 1;
     denoiseTimelineInfo.pWaitSemaphoreValues = &waitValue;
     denoiseTimelineInfo.signalSemaphoreValueCount = 1;
-    fenceValue++;
     denoiseTimelineInfo.pSignalSemaphoreValues = &fenceValue;
 
     VkSubmitInfo submitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
@@ -1086,10 +1086,12 @@ void PathTracer::denoise() {
     denoiseTimelineInfo.waitSemaphoreValueCount = 1;
     denoiseTimelineInfo.signalSemaphoreValueCount = 0;
     denoiseTimelineInfo.pWaitSemaphoreValues = &fenceValue;
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 
     submitInfo.pNext = &denoiseTimelineInfo;
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = denoiseSemaphore.vk;
+    submitInfo.pWaitDstStageMask = &waitStage;
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = raytraceFinished[currentImageIndex];
     submitInfo.commandBufferCount = 1;
