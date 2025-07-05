@@ -1,0 +1,63 @@
+#version 460
+
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : enable
+
+#include "ray_query_lang.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+
+layout(set = 0, binding = 0) uniform sampler2D position_in;
+layout(set = 0, binding = 1) uniform sampler2D normal_in;
+layout(set = 0, binding = 1) uniform sampler2D ambient_occlusion_in;
+layout(set = 1, binding = 0) uniform writeonly image2D ambient_occlusion_out;
+//
+layout(set = 2, binding = 0) uniform accelerationStructure tlas;
+layout(set = 3, binding = 0) uniform sampler2DArray noise_texture;
+
+layout(push_constant) uniform Constants {
+    int sampleCount;
+    float radius;
+    int frame;
+};
+#include "util.glsl"
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    vec3 position = texelFetch(position_in, gid, 0).xyz;
+    vec3 normal = texelFetch(normal_in, gid, 0).xyz;
+
+    if(all(equal(normal, vec3(0)))) return;
+
+    vec3 tangent;
+    vec3 bitangent;
+    othonormalBasis(tangent, bitangent, normal);
+
+    mat3 TBN = mat3(tangent, bitangent, normal);
+
+
+    float ao = 0;
+    const int N = sampleCount;
+    vec3 origin = offsetRay(position, normal);
+    ivec2 seed = gid;
+
+    rayQuery rQuery;
+    for(int i = 0; i < N; ++i){
+        vec2 uv = (vec2(gid) + .5)/vec2(gl_WorkGroupSize * gl_NumWorkGroups);
+        vec2 u = sampleNoise(noise_texture, uv, i);
+        vec3 direction = cosineSampleHemisphere(u);
+//        direction = TBN * direction;
+        direction       = direction.x * tangent + direction.y * bitangent + direction.z * normal;
+        rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xFF, origin, 0, direction, radius);
+
+        while(rayQueryProceed(rQuery)) {}
+
+        ao += int(rayQueryGetIntersectionType(rQuery, true) != gl_RayQueryCommittedIntersectionNone);
+
+    }
+    ao = 1 - (ao / N);
+
+    imageStore(ambient_occlusion_out, gid, vec4(ao));
+}
