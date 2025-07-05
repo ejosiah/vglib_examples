@@ -197,44 +197,45 @@ namespace gltf {
         const auto counts = getCounts(*gltf);
 
         const auto textureBindingOffset = _bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, gltf->textures.size());
-
+        auto biTransferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        auto bvhUsage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
         auto model = std::make_shared<Model>();
         model->numMeshes = counts.instances.count();
         model->numTextures = gltf->textures.size();
 
         VkDeviceSize byteSize = sizeof(VertexMultiAttributes) * counts.vertices;
-        model->vertices = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_vertices", _modelId));
+        model->vertices = _device->createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | bvhUsage , VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_vertices", _modelId));
 
         byteSize =  sizeof(uint8_t) + sizeof(uint8_t) * counts.indices.u8;
-        model->indices.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u8", _modelId));
+        model->indices.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | bvhUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u8", _modelId));
 
         byteSize =  sizeof(uint16_t) + sizeof(uint16_t) * counts.indices.u16;
-        model->indices.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u16", _modelId));
+        model->indices.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | bvhUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u16", _modelId));
 
         byteSize = sizeof(uint32_t) + sizeof(uint32_t) * counts.indices.u32;
-        model->indices.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT , VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u32", _modelId));
+        model->indices.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | bvhUsage , VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_indices_u32", _modelId));
 
         byteSize = counts.instances.u8 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand);
-        model->draw.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u8", _modelId));
+        model->draw.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | biTransferUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u8", _modelId));
         model->draw.u8.count = 0;
 
         byteSize = counts.instances.u16 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand);
-        model->draw.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u16", _modelId));
+        model->draw.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | biTransferUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u16", _modelId));
         model->draw.u16.count = 0;
 
         byteSize = counts.instances.u32 * sizeof(VkDrawIndexedIndirectCommand) + sizeof(VkDrawIndexedIndirectCommand);
-        model->draw.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u32", _modelId));
+        model->draw.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | biTransferUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_draw_u32", _modelId));
         model->draw.u32.count = 0;
 
         byteSize = sizeof(MeshData) * counts.instances.u8 + sizeof(MeshData);
-        model->meshes.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u8", _modelId));
+        model->meshes.u8.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | biTransferUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u8", _modelId));
 
         byteSize = sizeof(MeshData) * counts.instances.u16 + sizeof(MeshData);
-        model->meshes.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u16", _modelId));
+        model->meshes.u16.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | biTransferUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u16", _modelId));
 
         byteSize = sizeof(MeshData) * counts.instances.u32 + sizeof(MeshData);
-        model->meshes.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u32", _modelId));
+        model->meshes.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | biTransferUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u32", _modelId));
 
         byteSize = sizeof(Light) + sizeof(Light) * counts.numLights;
         model->lights = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_lights", _modelId));
@@ -518,8 +519,7 @@ namespace gltf {
         spdlog::info("GLTF async loader offline");
     }
 
-    void Loader::execute(const std::vector<VkCommandBuffer>& commandBuffers) {
-        auto commandBuffer = _device->transferCommandPool().allocate(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+    void Loader::execute(const std::vector<VkCommandBuffer>& commandBuffers) {        auto commandBuffer = _device->transferCommandPool().allocate(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
         _fence.reset();
 
         auto beginInfo = initializers::commandBufferBeginInfo();
@@ -1305,6 +1305,7 @@ namespace gltf {
         model->draw.u32.count += instanceUpload->drawCounts.u32;
 
         if((model->draw.u8.count + model->draw.u16.count + model->draw.u32.count) == model->numMeshes) {
+            model->_ready = true;
             model->_loaded.notify();
         }
 

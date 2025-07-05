@@ -33,20 +33,15 @@ namespace gltf {
 
     constexpr int NUM_TEXTURE_MAPPING = 20;
 
+    struct DrawGroup {
+        VulkanBuffer handle;
+        std::atomic_uint32_t count{};
+    };
 
     struct Draw {
-        struct {
-            VulkanBuffer handle;
-            std::atomic_uint32_t count{};
-        } u8;
-        struct {
-            VulkanBuffer handle;
-            std::atomic_uint32_t count{};
-        } u16;
-        struct {
-            VulkanBuffer handle;
-            std::atomic_int count{};
-        } u32;
+        DrawGroup u8;
+        DrawGroup u16;
+        DrawGroup u32;
         Mode mode{Mode::TRIANGLES};
     };
 
@@ -111,6 +106,7 @@ namespace gltf {
         Draw draw;
         MeshDescriptorSet meshDescriptorSet{};
         VkDescriptorSet materialDescriptorSet{};
+        VkDescriptorSet rtxDescriptorSet{};
         struct {
             glm::vec3 min{0};
             glm::vec3 max{0};
@@ -123,6 +119,10 @@ namespace gltf {
             _loaded.wait();
         }
 
+        bool isReady() const {
+            return _ready;
+        }
+
         ~Model();
 
         void render(VkCommandBuffer commandBuffer, VulkanPipelineLayout& layout, uint32_t meshDescriptorOffset = 0);
@@ -131,6 +131,7 @@ namespace gltf {
 
     private:
         Condition _loaded;
+        std::atomic_bool _ready{false};
         VulkanDescriptorPool* _sourceDescriptorPool{};
         BindlessDescriptor* _bindlessDescriptor{};
         uint32_t _textureBindingOffset{std::numeric_limits<uint32_t>::max()};
