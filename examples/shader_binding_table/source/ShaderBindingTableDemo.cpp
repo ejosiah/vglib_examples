@@ -649,11 +649,13 @@ VkPhysicalDeviceAccelerationStructurePropertiesKHR ShaderBindingTableDemo::getAc
 }
 
 ScratchBuffer ShaderBindingTableDemo::createScratchBuffer(VkDeviceSize size) const {
+    const auto minAlignment = getAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment;
+
     ScratchBuffer scratchBuffer{};
-    scratchBuffer.handle = device.createBuffer(
+    scratchBuffer.handle = device.createAlignedBuffer(
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY,
-            size, "acceleration_struct_scratch_buffer");
+            size, minAlignment,  "acceleration_struct_scratch_buffer");
 
     VkBufferDeviceAddressInfo bufferDeviceAddressInfo{};
     bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -775,22 +777,29 @@ void ShaderBindingTableDemo::endFrame() {
     inverseCamera[1] = glm::inverse(cam.proj);
 
     if(!ImGui::IsAnyItemActive() && instanceUpdated || addHitGroup || removeHitGroup) {
-        auto nextHitGroupSize = numHitGroups;
+        if(autoComputeOffset) {
+            recomputeAllOffsets();
+        }
 
-        if(addHitGroup) nextHitGroupSize++;
-        if(removeHitGroup) nextHitGroupSize--;
+        if(instanceUpdated) {
+            auto nextHitGroupSize = numHitGroups;
 
-        const auto maxHitGroup = computeMaxHitGroup() + 1;
-        if(maxHitGroup > nextHitGroupSize) {
-            recreateAS = false;
-            message = fmt::format("you need {} hit groups to match your configuration", maxHitGroup);
-        }else {
-            recreateAS = instanceUpdated;
+            if(addHitGroup) nextHitGroupSize++;
+            if(removeHitGroup) nextHitGroupSize--;
 
-            if(autoComputeOffset) {
-                recomputeAllOffsets();
+            const auto maxHitGroup = computeMaxHitGroup() + 1;
+
+            if(maxHitGroup > nextHitGroupSize){
+                recreateAS = false;
+                message = fmt::format("you need {} hit groups to match your configuration", maxHitGroup);
+            }else{
+                recreateAS = instanceUpdated;
+                instanceUpdated = false;
+                message.clear();
             }
+        }
 
+        if(addHitGroup || removeHitGroup) {
             if (addHitGroup) {
                 ++numHitGroups;
             }
@@ -799,8 +808,6 @@ void ShaderBindingTableDemo::endFrame() {
             }
             addHitGroup = false;
             removeHitGroup = false;
-            instanceUpdated = false;
-            message.clear();
         }
         invalidateSwapChain();
     }
