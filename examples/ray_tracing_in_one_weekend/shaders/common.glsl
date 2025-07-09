@@ -25,6 +25,8 @@ layout(set = 0, binding = 1, scalar) uniform Constants {
     uint frame;
     uint maxBounce;
     uint sampleCount;
+    uint currentSample;
+    int adaptiveSampling;
 };
 
 vec2 sampleVec2(inout RngStateType rngState) {

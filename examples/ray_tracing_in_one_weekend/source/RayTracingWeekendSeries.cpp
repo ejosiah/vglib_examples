@@ -148,14 +148,9 @@ void RayTracingWeekendSeries::createPipelineCache() {
 }
 
 void RayTracingWeekendSeries::initCanvas() {
-    canvas = Canvas{ this, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_FORMAT_R8G8B8A8_UNORM};
+    const auto imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    canvas = Canvas{ this, imageUsage, VK_FORMAT_R8G8B8A8_UNORM, {}, resource("display.frag.spv")};
     canvas.init();
-    std::vector<unsigned char> checkerboard(width * height * 4);
-    textures::checkerboard1(checkerboard.data(), {width, height});
-    const auto stagingBuffer = device.createCpuVisibleBuffer(checkerboard.data(), BYTE_SIZE(checkerboard), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        textures::transfer(commandBuffer, stagingBuffer, canvas.image, {width, height}, VK_IMAGE_LAYOUT_GENERAL);
-    });
 }
 
 void RayTracingWeekendSeries::createRayTracingPipeline() {
@@ -306,6 +301,7 @@ void RayTracingWeekendSeries::onSwapChainRecreation() {
     createRayTracingPipeline();
     updateDescriptorSets();
     createRenderPipeline();
+    uniforms.cpu->currentSample = 0;
 }
 
 VkCommandBuffer *RayTracingWeekendSeries::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -331,7 +327,9 @@ VkCommandBuffer *RayTracingWeekendSeries::buildCommandBuffers(uint32_t imageInde
 void RayTracingWeekendSeries::update(float time) {
     camera->update(time);
     auto cam = camera->cam();
-    setTitle(fmt::format("{}, FPS - {}", title, framePerSecond));
+
+    auto samples = uniforms.cpu->adaptiveSampling == 1 ? uniforms.cpu->currentSample : uniforms.cpu->sampleCount;
+    setTitle(fmt::format("{}, FPS - {}, samples - {}", title, framePerSecond, samples));
 }
 
 void RayTracingWeekendSeries::checkAppInputs() {
@@ -348,6 +346,10 @@ void RayTracingWeekendSeries::onPause() {
 }
 
 void RayTracingWeekendSeries::loadScene() {
+    loadInOneWeekendScene();
+}
+
+void RayTracingWeekendSeries::loadDefaultScene() {
     auto sphere = primitives::sphere(500, 500, 1.0, glm::mat4{1}, randomColor(), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     mesh::Mesh mesh{};
     mesh.vertices = sphere.vertices;
@@ -367,10 +369,77 @@ void RayTracingWeekendSeries::loadScene() {
     drawables.insert(std::make_pair("sphere", std::move(drawable)));
 
     std::vector<rt::MeshObjectInstance> instances;
+    auto& smallSphere0 = instances.emplace_back();
+    smallSphere0.xform = glm::translate(glm::mat4{1}, {0, 0, -1});
+    smallSphere0.xform = glm::scale(smallSphere0.xform, glm::vec3(0.5));
+    smallSphere0.object = rt::TriangleMesh{ &drawables["sphere"]};
+    smallSphere0.object.metaData.front().customIndex = 0;
+
     auto& bigSphere = instances.emplace_back();
-    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -1000, 0});
-    bigSphere.xform = glm::scale(bigSphere.xform, glm::vec3(1000));
+    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -100.5, -1});
+    bigSphere.xform = glm::scale(bigSphere.xform, glm::vec3(100));
     bigSphere.object = rt::TriangleMesh{ &drawables["sphere"]};
+    bigSphere.object.metaData.front().customIndex = 1;
+
+    auto& smallSphere1 = instances.emplace_back();
+    smallSphere1.xform = glm::translate(glm::mat4{1}, {1, 0, -1});
+    smallSphere1.xform = glm::scale(smallSphere1.xform, glm::vec3(0.5));
+    smallSphere1.object = rt::TriangleMesh{ &drawables["sphere"]};
+    smallSphere1.object.metaData.front().customIndex = 0;
+    smallSphere1.object.metaData.front().hitGroupId = 1;
+
+//    auto& smallSphere2 = instances.emplace_back();
+//    smallSphere2.xform = glm::translate(glm::mat4{1}, {-1, 0, -1});
+//    smallSphere2.xform = glm::scale(smallSphere2.xform, glm::vec3(0.5));
+//    smallSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
+//    smallSphere2.object.metaData.front().customIndex = 1;
+//    smallSphere2.object.metaData.front().hitGroupId = 1;
+
+    auto& smallSphere2 = instances.emplace_back();
+    smallSphere2.xform = glm::translate(glm::mat4{1}, {-1, 0, -1});
+    smallSphere2.xform = glm::scale(smallSphere2.xform, glm::vec3(0.5));
+    smallSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
+    smallSphere2.object.metaData.front().customIndex = 0;
+    smallSphere2.object.metaData.front().hitGroupId = 2;
+
+
+    createAccelerationStructure(instances);
+
+    mattes = { {{0.8, 0.3, 0.3}}, {{0.8, 0.8, 0.0}} };
+    metals = { { {0.8, 0.6, 0.2}, 0.00 }, { {0.8, 0.8, 0.8}, 0.75 } };
+    dielectrics = { {1.5} };
+}
+
+void RayTracingWeekendSeries::loadInOneWeekendScene() {
+    auto sphere = primitives::sphere(100, 100, 1.0, glm::mat4{1}, randomColor(), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    mesh::Mesh mesh{};
+    mesh.vertices = sphere.vertices;
+    mesh.indices = sphere.indices;
+
+    phong::VulkanDrawableInfo info{};
+    info.vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.materialUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.materialIdUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.generateMaterialId = true;
+
+    VulkanDrawable drawable{};
+    std::vector<mesh::Mesh> meshes{ mesh };
+    phong::load(device, descriptorPool, drawable, meshes, info);
+    drawables.insert(std::make_pair("sphere", std::move(drawable)));
+
+    sphere = primitives::sphere(100, 100, 1.0, glm::translate(glm::mat4{1}, {0, -1000, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1000)), randomColor(), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    mesh.vertices = sphere.vertices;
+    mesh.indices = sphere.indices;
+    meshes[0] = mesh;
+    phong::load(device, descriptorPool, drawable, meshes, info);
+    drawables.insert(std::make_pair("big_sphere", std::move(drawable)));
+
+    std::vector<rt::MeshObjectInstance> instances;
+    auto& bigSphere = instances.emplace_back();
+//    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -1000, 0});
+//    bigSphere.xform = glm::scale(bigSphere.xform, glm::vec3(1000));
+    bigSphere.object = rt::TriangleMesh{ &drawables["big_sphere"]};
     bigSphere.object.metaData.front().customIndex = mattes.size();
     mattes.push_back({ glm::vec3(0.5) });
 
@@ -425,7 +494,6 @@ void RayTracingWeekendSeries::loadScene() {
 
 
     createAccelerationStructure(instances);
-
 }
 
 void RayTracingWeekendSeries::initUniforms() {
@@ -438,6 +506,18 @@ void RayTracingWeekendSeries::endFrame() {
     uniforms.cpu->frame++;
     uniforms.cpu->viewInverse = glm::inverse(camera->cam().view);
     uniforms.cpu->projInverse = glm::inverse(camera->cam().proj);
+
+    if(uniforms.cpu->adaptiveSampling == 1) {
+        uniforms.cpu->currentSample = glm::clamp(uniforms.cpu->currentSample, 0u, uniforms.cpu->sampleCount - 1);
+        uniforms.cpu->currentSample++;
+        if (camera->moved()) {
+            uniforms.cpu->currentSample = 0;
+        }
+    }
+}
+
+void RayTracingWeekendSeries::newFrame() {
+    camera->newFrame();
 }
 
 void RayTracingWeekendSeries::createMaterials() {
