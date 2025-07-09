@@ -26,7 +26,6 @@ namespace gltf {
         glm::mat4 model{1};
         glm::mat4 ModelInverse{1};
         int materialId{0};
-        char padding[12]{};   // spirv-dis - ArrayStride 144 bytesclear
     };
 
     struct MaterialData {
@@ -82,7 +81,6 @@ namespace gltf {
         glm::mat4 model{1};
         glm::mat4 ModelInverse{1};
         int lightId{0};
-        char padding[12]{};
     };
 
     struct PendingModel {

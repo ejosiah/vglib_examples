@@ -354,7 +354,7 @@ void gltf::bvh::Bvh::createDescriptorSet() {
 
     m_model->rtxDescriptorSet = m_descriptorPool->allocate({ rtxDescriptorSetLayout }).front();
 
-    auto writes = initializers::writeDescriptorSets<5>();
+    auto writes = initializers::writeDescriptorSets<7>();
 
     VkWriteDescriptorSetAccelerationStructureKHR accWrites{};
     accWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
@@ -405,10 +405,24 @@ void gltf::bvh::Bvh::createDescriptorSet() {
     };
 
     writes[4].dstSet = m_model->rtxDescriptorSet;
-    writes[4].dstBinding = 3;
+    writes[4].dstBinding = 4;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 3;
     writes[4].pBufferInfo = drawInfo.data();
+    
+    writes[5].dstSet = m_model->rtxDescriptorSet;
+    writes[5].dstBinding = 5;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[5].descriptorCount = 1;
+    VkDescriptorBufferInfo materialInfo{ m_model->materials, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &materialInfo;
+
+    writes[6].dstSet = m_model->rtxDescriptorSet;
+    writes[6].dstBinding = 6;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[6].descriptorCount = 1;
+    VkDescriptorBufferInfo textureInfoBufferInfo{ m_model->textureInfos, 0, VK_WHOLE_SIZE };
+    writes[6].pBufferInfo = &textureInfoBufferInfo;
 
     device().updateDescriptorSets(writes);
 }
@@ -437,6 +451,14 @@ void gltf::bvh::Bvh::createDescriptorSetLayout(VulkanDevice &device) {
             .binding(4) // draw instance
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(3)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(5) // materials
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(6) // textureInfo
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 }
