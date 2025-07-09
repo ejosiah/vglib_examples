@@ -41,7 +41,7 @@ layout(set = MATERIAL_SET, binding = LIGHT_BINDING_POINT, scalar) buffer Punctua
 };
 
 
-layout(set = MATERIAL_SET, binding = LIGHT_INSTANCE_BINDING_POINT) buffer PunctualLightsInstances {
+layout(set = MATERIAL_SET, binding = LIGHT_INSTANCE_BINDING_POINT, scalar) buffer PunctualLightsInstances {
     LightInstance lightInstances[];
 };
 

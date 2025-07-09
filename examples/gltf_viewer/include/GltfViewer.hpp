@@ -2,30 +2,12 @@
 #include "VulkanBaseApp.h"
 #include "Offscreen.hpp"
 #include "Bloom.hpp"
+#include "gltf/Bvh.hpp"
+#include "domain.hpp"
+#include "shader_binding_table.hpp"
 
-struct UniformData {
-    Camera camera;
-    int brdf_lut_texture_id{};
-    int sheen_lut_texture_id{};
-    int charlie_lut_texture_id{};
-    int irradiance_texture_id{};
-    int specular_texture_id{};
-    int charlie_env_texture_id{};
-    int framebuffer_texture_id{};
-    int g_buffer_texture_id{};
-    int discard_transmissive{};
-    int environment{};
-    int tone_map{1};
-    int num_lights{1};
-    int debug{0};
-    int ibl_on{1};
-    int direct_on{1};
-    float ibl_intensity{1};
-};
 
-enum TextureConstants{ BLACK, WHITE, NORMAL, BRDF_LUT, SHEEN_LUT, CHARLIE_LUT, COUNT};
-
-class GltfViewer : public VulkanBaseApp{
+class GltfViewer : public VulkanBaseApp {
 public:
     explicit GltfViewer(const Settings& settings = {});
 
@@ -88,6 +70,8 @@ protected:
 
     void createRenderPipeline();
 
+    void createRayTracePipeline();
+
     void createComputePipeline();
 
     void onSwapChainDispose() override;
@@ -110,6 +94,8 @@ protected:
 
     void renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout, VkBool32 blendingEnabled);
 
+    void rtxOn(VkCommandBuffer commandBuffer);
+
     void toneMap(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
@@ -124,6 +110,8 @@ protected:
 
     void endFrame() override;
 
+    void buildBVH();
+
 protected:
     struct {
         struct {
@@ -135,8 +123,6 @@ protected:
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } pbr;
-
-
 
         struct {
             VulkanPipelineLayout layout;
@@ -163,6 +149,12 @@ protected:
             VulkanPipeline pipeline;
         } charlie;
     } compute;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+        bool enabled{};
+    } pathTrace;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -264,4 +256,9 @@ protected:
     } fileOpen;
     static constexpr uint32_t lowestLod{4};
     std::vector<Bloom> _bloom;
+    gltf::bvh::Bvh bvh;
+    bool bvhReady{};
+
+    ShaderTablesDescription shaderTablesDesc;
+    ShaderBindingTables bindingTables;
 };

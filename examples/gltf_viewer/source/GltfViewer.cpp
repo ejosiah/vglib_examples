@@ -5,6 +5,7 @@
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
 #include "L2DFileDialog.h"
+#include "Barrier.hpp"
 
 #include <cstring>
 
@@ -39,6 +40,7 @@ void GltfViewer::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+    createRayTracePipeline();
     createComputePipeline();
     updateDescriptorSets();
     createConvolutionSampler();
@@ -97,6 +99,7 @@ void GltfViewer::createGBuffer() {
 
         textures::create(device, gBuffer.color[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {swapChain.width(), swapChain.height(), 1});
         bindlessDescriptor.update({&gBuffer.color[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  gBuffer.color[i].bindingId});
+        bindlessDescriptor.update({&gBuffer.color[i], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,  to<uint32_t>(i) });
 
         textures::create(device, gBuffer.depth[i], VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {swapChain.width(), swapChain.height(), 1});
 
@@ -138,7 +141,7 @@ void GltfViewer::initBindlessDescriptor() {
     int reservation = to<int>(environmentPaths.size()) * textureSetWidth + bindingOffset;
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, reservation);
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, swapChainImageCount);
 }
 
 void GltfViewer::createConstantTextures() {
@@ -172,9 +175,12 @@ void GltfViewer::beforeDeviceCreation() {
     enabledFeatures.vertexPipelineStoresAndAtomics = VK_TRUE;
     enabledFeatures.fragmentStoresAndAtomics = VK_TRUE;
 
-    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
-    devFeatures12->scalarBlockLayout = VK_TRUE;
-
+    auto features12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    features12->scalarBlockLayout = VK_TRUE;
+    features12->descriptorIndexing = VK_TRUE;
+    features12->runtimeDescriptorArray = VK_TRUE;
+    features12->bufferDeviceAddress = VK_TRUE;
+    features12->shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
     devFeatures13->maintenance4 = VK_TRUE;
@@ -187,6 +193,26 @@ void GltfViewer::beforeDeviceCreation() {
 
     auto indexType8 = findExtension<VkPhysicalDeviceIndexTypeUint8FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT, deviceCreateNextChain);
     indexType8->indexTypeUint8 = VK_TRUE;
+
+    // Add raytracing device extensions
+    deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
+
+    auto enabledRayTracingPipelineFeatures = findExtension<VkPhysicalDeviceRayTracingPipelineFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR, deviceCreateNextChain);
+    enabledRayTracingPipelineFeatures->rayTracingPipeline = VK_TRUE;
+
+    auto enabledAccelerationStructureFeatures = findExtension<VkPhysicalDeviceAccelerationStructureFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, deviceCreateNextChain);
+    enabledAccelerationStructureFeatures->accelerationStructure = VK_TRUE;
+
+    auto fetchFeature = findExtension<VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR, deviceCreateNextChain);
+    fetchFeature->rayTracingPositionFetch = VK_TRUE;
+
 }
 
 void GltfViewer::createDescriptorPool() {
@@ -204,6 +230,7 @@ void GltfViewer::createDescriptorPool() {
 
 
 void GltfViewer::initLoader() {
+    gltf::bvh::Bvh::createDescriptorSetLayout(device);
     loader = std::make_unique<gltf::Loader>(&device, &descriptorPool, &bindlessDescriptor);
     loader->start();
 }
@@ -441,6 +468,46 @@ void GltfViewer::createRenderPipeline() {
         //    @formatter:on
 }
 
+void GltfViewer::createRayTracePipeline() {
+    auto rayGenShaderModule = device.createShaderModule( resource("path_trace.rgen.spv"));
+    auto missShaderModule = device.createShaderModule( resource("path_trace.rmiss.spv"));
+    auto chitShaderModule = device.createShaderModule( resource("path_trace.rchit.spv"));
+
+    auto shaders = std::vector<ShaderInfo>(to<int>(ShaderType::Count));
+    shaders[to<int>(ShaderType::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
+    shaders[to<int>(ShaderType::Miss)] = { missShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
+    shaders[to<int>(ShaderType::ClosesHit)] = { chitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
+    shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
+
+    shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(ShaderType::Miss)));
+
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderType::ClosesHit)));
+
+    auto stages = map_range(shaders, [](auto& shader){
+        return VkPipelineShaderStageCreateInfo{
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = shader.stage,
+                .module = shader.module.handle,
+                .pName = shader.entry,
+        };
+    });
+
+    pathTrace.layout = device.createPipelineLayout(
+            { uniformsDescriptorSetLayout, gltf::bvh::Bvh::rtxDescriptorSetLayout, *bindlessDescriptor.descriptorSetLayout});
+    VkRayTracingPipelineCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
+    createInfo.stageCount = COUNT(stages);
+    createInfo.pStages = stages.data();
+    createInfo.groupCount = COUNT(shaderGroups);
+    createInfo.pGroups = shaderGroups.data();
+    createInfo.maxPipelineRayRecursionDepth = 0;
+    createInfo.layout = pathTrace.layout.handle;
+
+    pathTrace.pipeline = device.createRayTracingPipeline(createInfo);
+    bindingTables = shaderTablesDesc.compile(device, pathTrace.pipeline);
+}
+
 void GltfViewer::createComputePipeline() {
 
     // IRRADIANCE MAPP CONVOLUTION
@@ -503,6 +570,7 @@ void GltfViewer::onSwapChainDispose() {
 }
 
 void GltfViewer::onSwapChainRecreation() {
+    uniforms.currentSample = 0;
     createGBuffer();
     initBloom();
     createFrameBufferTexture();
@@ -511,8 +579,10 @@ void GltfViewer::onSwapChainRecreation() {
 }
 
 void GltfViewer::newFrame() {
+    camera->newFrame();
     uniforms.framebuffer_texture_id = transmissionFramebuffer.color[currentImageIndex].bindingId;
     uniforms.g_buffer_texture_id = gBuffer.color[currentImageIndex].bindingId;
+    uniforms.g_buffer_image_id = currentImageIndex;
 }
 
 VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -522,9 +592,13 @@ VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    renderToTransmissionFrameBuffer(commandBuffer);
-    renderToGBuffer(commandBuffer);
-    applyBloom(commandBuffer);
+    if(!pathTrace.enabled) {
+        renderToTransmissionFrameBuffer(commandBuffer);
+        renderToGBuffer(commandBuffer);
+        applyBloom(commandBuffer);
+    }else {
+        rtxOn(commandBuffer);
+    }
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -629,8 +703,8 @@ void GltfViewer::renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescripto
 }
 
 void GltfViewer::renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout, VkBool32 blendingEnabled) {
-    auto model = models[currentModel];
-    static std::array<VkDescriptorSet, 4> sets;
+    const auto& model = models[currentModel];
+    static std::vector<VkDescriptorSet> sets(4);
     sets[0] = model->meshDescriptorSet.u16.handle;
     sets[1] = model->materialDescriptorSet;
     sets[2] = bindlessDescriptor.descriptorSet;
@@ -715,6 +789,10 @@ void GltfViewer::renderUI(VkCommandBuffer commandBuffer) {
         if(options.bloom.filterId == 2) {
             ImGui::SliderInt("order", &options.bloom.n, 1, 5);
         }
+    }
+
+    if(bvhReady) {
+        ImGui::Checkbox("path trace", &pathTrace.enabled);
     }
 
     ImGui::Text(""); // there is probably a layout for spacing, I'm just being lazy for now :)
@@ -1094,6 +1172,7 @@ void GltfViewer::endFrame() {
         }
 
         gltfPath.reset();
+        bvhReady = false;
     }
 
     static int previousEnvironment = options.environment;
@@ -1104,12 +1183,25 @@ void GltfViewer::endFrame() {
         uniforms.charlie_env_texture_id = charlieMaps[options.environment].bindingId;
         previousEnvironment = options.environment;
     }
-    uniforms.camera = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];
+    const auto camModel = options.camera == 0 ? camera->cam() : models[currentModel]->cameras[options.camera - 1];
+    uniforms.camera = camModel;
+    uniforms.inverse_view = glm::inverse(camModel.view);
+    uniforms.inverse_projection = glm::inverse(camModel.proj);
     uniforms.environment = environments[options.environment].bindingId;
     uniforms.debug = options.debug;
     uniforms.direct_on = int(options.directLighting);
     uniforms.ibl_on = int(options.imageBasedLighting);
     uniforms.ibl_intensity = options.iblIntensity;
+    uniforms.frame++;
+
+    if(pathTrace.enabled) {
+        uniforms.currentSample = glm::min(++uniforms.currentSample, uniforms.maxSamples);
+        if(camera->moved()) {
+            uniforms.currentSample = 0;
+        }
+    }else {
+        uniforms.currentSample = 0;
+    }
 
     if(options.envMapType == 1) {
         uniforms.environment = irradianceMaps[options.environment].bindingId;
@@ -1120,6 +1212,7 @@ void GltfViewer::endFrame() {
         _bloom[i].constants.n = options.bloom.n;
         _bloom[i].constants.d0 = options.bloom.d0;
     }
+    buildBVH();
 }
 
 void GltfViewer::constructModelPaths() {
@@ -1143,6 +1236,39 @@ void GltfViewer::constructModelPaths() {
             }
         }
     }
+}
+
+void GltfViewer::buildBVH() {
+    if(bvhReady || !models[currentModel]->isReady()) return;
+    spdlog::info("model is fully loaded constructing BVH");
+    bvh = gltf::bvh::Bvh{ device, descriptorPool, models[currentModel] };
+    bvh.build();
+    bvhReady = true;
+}
+
+void GltfViewer::rtxOn(VkCommandBuffer commandBuffer) {
+    auto& disp = gBuffer.color[currentImageIndex];
+    Barriers::push(disp.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                   VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+
+    Barriers::flush(commandBuffer);
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = gBuffer.UniformsDescriptorSet[currentImageIndex];
+    sets[1] = models[currentModel]->rtxDescriptorSet;
+    sets[2] = bindlessDescriptor.descriptorSet;
+
+    assert(pathTrace.pipeline);
+    updateUniforms(commandBuffer, gBuffer.uniforms[currentImageIndex], uniforms);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pathTrace.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pathTrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
+                      bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);
+
+    Barriers::push(disp.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    Barriers::flush(commandBuffer);
+
 }
 
 int main(){

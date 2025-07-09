@@ -1,15 +1,19 @@
 #ifndef UNIFORMS_GLSL
 #define UNIFORMS_GLSL
 
+#extension GL_EXT_scalar_block_layout : enable
+
 #ifndef UNIFORMS_SET
 #define UNIFORMS_SET 0
 #define UNIFORMS_BINDING_POINT 0
 #endif // UNIFORMS_SET
 
-layout(set = UNIFORMS_SET, binding = UNIFORMS_BINDING_POINT) uniform Constants {
+layout(set = UNIFORMS_SET, binding = UNIFORMS_BINDING_POINT, scalar) uniform Constants {
     mat4 model;
     mat4 view;
     mat4 projection;
+    mat4 inverse_view;
+    mat4 inverse_projection;
     int brdf_lut_texture_id;
     int sheen_lut_texture_id;
     int charlie_lut_texture_id;
@@ -18,6 +22,7 @@ layout(set = UNIFORMS_SET, binding = UNIFORMS_BINDING_POINT) uniform Constants {
     int charlie_env_texture_id;
     int framebuffer_texture_id;
     int g_buffer_texture_id;
+    int g_buffer_image_id;
     int discard_transmissive;
     int environment;
     int tone_map;
@@ -26,6 +31,11 @@ layout(set = UNIFORMS_SET, binding = UNIFORMS_BINDING_POINT) uniform Constants {
     int ibl_on;
     int direct_on;
     float ibl_intensity;
+    int frame;
+    int currentSample;
+    int maxSamples;
+    int maxBounce;
+    int adaptiveSampling;
 };
 
 #define u_EnvIntensity ibl_intensity

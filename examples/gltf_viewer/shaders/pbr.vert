@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_ray_tracing : enable
 
 #define UNIFORMS_SET 3
 #define UNIFORMS_BINDING_POINT 0
@@ -7,10 +8,9 @@
 #include "uniforms.glsl"
 #include "gltf.glsl"
 
-layout(set = 0, binding = 0) buffer MeshData {
+layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
 };
-
 
 layout(location = 0) in vec4 position;
 layout(location = 1) in vec3 normal;

@@ -106,7 +106,7 @@ layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 #include "ibl.glsl"
 #include "iridescence.glsl"
 
-layout(set = 0, binding = 0) buffer MeshData {
+layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
 };
 
