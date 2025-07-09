@@ -73,4 +73,10 @@ float fresnel(float cosThetaI, float etaI, float etaT) {
     return (Rparl * Rparl + Rperp * Rperp) / 2;
 }
 
+void getSurfaceInfo(vec3 rOrigin, vec3 rDirection, float tHit, mat4x3 xform,  out vec3 position, out vec3 normal) {
+    position = rOrigin + rDirection * tHit;
+    vec3 center = xform * vec4(0, 0, 0, 1);
+    normal = normalize(position - center);
+}
+
 #endif // COMMON_GLSL

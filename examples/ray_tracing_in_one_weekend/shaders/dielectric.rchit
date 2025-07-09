@@ -28,16 +28,9 @@ float w = bc.y;
 
 void main() {
 
-    vec3 p0 = gl_ObjectToWorld * vec4(gl_HitTriangleVertexPositionsEXT[0], 1);
-    vec3 p1 = gl_ObjectToWorld * vec4(gl_HitTriangleVertexPositionsEXT[1], 1);
-    vec3 p2 = gl_ObjectToWorld * vec4(gl_HitTriangleVertexPositionsEXT[2], 1);
+    vec3 p, N;
+    getSurfaceInfo(gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, gl_ObjectToWorld, p, N);
 
-    vec3 p = p0 * u + p1 * v + p2 * w;
-
-    vec3 e0 = p1 - p0;
-    vec3 e1 = p2 - p0;
-
-    vec3 N = normalize(cross(e0, e1));
     vec3 I = normalize(gl_WorldRayDirection);
     float cos0 = dot(-I, N);
 

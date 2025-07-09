@@ -367,45 +367,65 @@ void RayTracingWeekendSeries::loadScene() {
     drawables.insert(std::make_pair("sphere", std::move(drawable)));
 
     std::vector<rt::MeshObjectInstance> instances;
-    auto& smallSphere0 = instances.emplace_back();
-    smallSphere0.xform = glm::translate(glm::mat4{1}, {0, 0, -1});
-    smallSphere0.xform = glm::scale(smallSphere0.xform, glm::vec3(0.5));
-    smallSphere0.object = rt::TriangleMesh{ &drawables["sphere"]};
-    smallSphere0.object.metaData.front().customIndex = 0;
-
     auto& bigSphere = instances.emplace_back();
-    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -100.5, -1});
-    bigSphere.xform = glm::scale(bigSphere.xform, glm::vec3(100));
+    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -1000, 0});
+    bigSphere.xform = glm::scale(bigSphere.xform, glm::vec3(1000));
     bigSphere.object = rt::TriangleMesh{ &drawables["sphere"]};
-    bigSphere.object.metaData.front().customIndex = 1;
+    bigSphere.object.metaData.front().customIndex = mattes.size();
+    mattes.push_back({ glm::vec3(0.5) });
 
-    auto& smallSphere1 = instances.emplace_back();
-    smallSphere1.xform = glm::translate(glm::mat4{1}, {1, 0, -1});
-    smallSphere1.xform = glm::scale(smallSphere1.xform, glm::vec3(0.5));
-    smallSphere1.object = rt::TriangleMesh{ &drawables["sphere"]};
-    smallSphere1.object.metaData.front().customIndex = 0;
-    smallSphere1.object.metaData.front().hitGroupId = 1;
+    auto rand = rng(0.f, 1.f, 1 << 20);
+    const auto n = 500;
+    for(auto a = -11; a < 11; ++a) {
+        for (auto b = -11; b < 11; ++b) {
+            glm::vec3 center{a + 0.9 * rand(), 0.2, b + 0.9 * rand() };
 
-//    auto& smallSphere2 = instances.emplace_back();
-//    smallSphere2.xform = glm::translate(glm::mat4{1}, {-1, 0, -1});
-//    smallSphere2.xform = glm::scale(smallSphere2.xform, glm::vec3(0.5));
-//    smallSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
-//    smallSphere2.object.metaData.front().customIndex = 1;
-//    smallSphere2.object.metaData.front().hitGroupId = 1;
+            auto& instance = instances.emplace_back();
+            instance.xform = glm::translate(glm::mat4{1}, center);
+            instance.xform = glm::scale(instance.xform, glm::vec3(0.2));
+            instance.object = rt::TriangleMesh{ &drawables["sphere"]};
 
-    auto& smallSphere2 = instances.emplace_back();
-    smallSphere2.xform = glm::translate(glm::mat4{1}, {-1, 0, -1});
-    smallSphere2.xform = glm::scale(smallSphere2.xform, glm::vec3(0.5));
-    smallSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
-    smallSphere2.object.metaData.front().customIndex = 0;
-    smallSphere2.object.metaData.front().hitGroupId = 2;
+            auto choose_mat = rand();
+            if(choose_mat < 0.8) {
+                instance.object.metaData.front().customIndex = mattes.size();
+                mattes.push_back( { {rand() * rand(), rand() * rand(), rand() * rand()} });
+            } else if (choose_mat < 0.95) {
+                instance.object.metaData.front().hitGroupId = 1;
+                instance.object.metaData.front().customIndex = metals.size();
+                metals.push_back({ {0.5 * (1 + rand()), 0.5 * (1 + rand()), 0.5 * (1 + rand())}, 0.5f * rand() });
+            }else {
+                instance.object.metaData.front().hitGroupId = 2;
+                instance.object.metaData.front().customIndex = dielectrics.size();
+                dielectrics.push_back({1.5});
+            }
+        }
+    }
+
+
+    auto& mediumSphere0 = instances.emplace_back();
+    mediumSphere0.xform = glm::translate(glm::mat4{1}, {0, 1, 0});
+    mediumSphere0.object = rt::TriangleMesh{ &drawables["sphere"]};
+    mediumSphere0.object.metaData.front().customIndex = dielectrics.size();
+    mediumSphere0.object.metaData.front().hitGroupId = 2;
+    dielectrics.push_back({1.5});
+
+    auto& mediumSphere1 = instances.emplace_back();
+    mediumSphere1.xform = glm::translate(glm::mat4{1}, {-4, 1, 0});
+    mediumSphere1.object = rt::TriangleMesh{ &drawables["sphere"]};
+    mediumSphere1.object.metaData.front().customIndex = mattes.size();
+    mediumSphere1.object.metaData.front().hitGroupId = 0;
+    mattes.push_back({{ 0.4, 0.2, 0.1}});
+
+    auto& mediumSphere2 = instances.emplace_back();
+    mediumSphere2.xform = glm::translate(glm::mat4{1}, {4, 1, 0});
+    mediumSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
+    mediumSphere2.object.metaData.front().customIndex = metals.size();
+    mediumSphere2.object.metaData.front().hitGroupId = 1;
+    metals.push_back({{ 0.7, 0.6, 0.5}, 0.0});
 
 
     createAccelerationStructure(instances);
 
-    mattes = { {{0.8, 0.3, 0.3}}, {{0.8, 0.8, 0.0}} };
-    metals = { { {0.8, 0.6, 0.2}, 0.00 }, { {0.8, 0.8, 0.8}, 0.75 } };
-    dielectrics = { {1.5} };
 }
 
 void RayTracingWeekendSeries::initUniforms() {
