@@ -4,6 +4,7 @@
 #include "ImGuiPlugin.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
+#include "implicit_shapes.hpp"
 
 RayTracingWeekendSeries::RayTracingWeekendSeries(const Settings& settings) : VulkanRayTraceBaseApp("Ray tracing in one weekend", settings) {
     fileManager().addSearchPathFront(".");
@@ -159,6 +160,7 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     auto diffuseHitShaderModule = device.createShaderModule( resource("diffuse.rchit.spv"));
     auto metalHitShaderModule = device.createShaderModule( resource("metal.rchit.spv"));
     auto dielectricHitShaderModule = device.createShaderModule( resource("dielectric.rchit.spv"));
+    auto implicitsIntersectShaderModule = device.createShaderModule( resource("main.rint.spv"));
 
     auto shaders = std::vector<ShaderInfo>(to<int>(ShaderIndex::Count));
     shaders[to<int>(ShaderIndex::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
@@ -166,6 +168,7 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     shaders[to<int>(ShaderIndex::DiffuseHit)] = { diffuseHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::MetalHit)] = { metalHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::DielectricHit)] = { dielectricHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderIndex::Implicits)] = { implicitsIntersectShaderModule, VK_SHADER_STAGE_INTERSECTION_BIT_KHR};
 
 
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
@@ -173,13 +176,16 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
 
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(ShaderIndex::Miss)));
 
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHit)));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+    shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(diffuseSpheres));
     shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(materials.diffuse));
 
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHit)));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+    shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(metalSpheres));
     shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(materials.metal));
 
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHit)));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+    shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(dielectricSpheres));
     shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(materials.dielectric));
 
 
@@ -200,7 +206,7 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     createInfo.pStages = stages.data();
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
-    createInfo.maxPipelineRayRecursionDepth = 0;
+    createInfo.maxPipelineRayRecursionDepth = 1;
     createInfo.layout = raytrace.layout.handle;
 
     raytrace.pipeline = device.createRayTracingPipeline(createInfo);
@@ -350,97 +356,46 @@ void RayTracingWeekendSeries::loadScene() {
 }
 
 void RayTracingWeekendSeries::loadDefaultScene() {
-    auto sphere = primitives::sphere(500, 500, 1.0, glm::mat4{1}, randomColor(), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    mesh::Mesh mesh{};
-    mesh.vertices = sphere.vertices;
-    mesh.indices = sphere.indices;
+    constexpr auto usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT  | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    std::vector<imp::Sphere> spheres;
 
-    phong::VulkanDrawableInfo info{};
-    info.vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.materialUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.materialIdUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.generateMaterialId = true;
+    spheres.emplace_back(glm::vec3{0, 0, -1}, 0.5);
+    spheres.emplace_back(glm::vec3{0, -100.5, -1}, 100);
 
-    VulkanDrawable drawable{};
-    std::vector<mesh::Mesh> meshes{ mesh };
-    phong::load(device, descriptorPool, drawable, meshes, info);
-
-    drawables.insert(std::make_pair("sphere", std::move(drawable)));
-
-    std::vector<rt::MeshObjectInstance> instances;
-    auto& smallSphere0 = instances.emplace_back();
-    smallSphere0.xform = glm::translate(glm::mat4{1}, {0, 0, -1});
-    smallSphere0.xform = glm::scale(smallSphere0.xform, glm::vec3(0.5));
-    smallSphere0.object = rt::TriangleMesh{ &drawables["sphere"]};
-    smallSphere0.object.metaData.front().customIndex = 0;
-
-    auto& bigSphere = instances.emplace_back();
-    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -100.5, -1});
-    bigSphere.xform = glm::scale(bigSphere.xform, glm::vec3(100));
-    bigSphere.object = rt::TriangleMesh{ &drawables["sphere"]};
-    bigSphere.object.metaData.front().customIndex = 1;
-
-    auto& smallSphere1 = instances.emplace_back();
-    smallSphere1.xform = glm::translate(glm::mat4{1}, {1, 0, -1});
-    smallSphere1.xform = glm::scale(smallSphere1.xform, glm::vec3(0.5));
-    smallSphere1.object = rt::TriangleMesh{ &drawables["sphere"]};
-    smallSphere1.object.metaData.front().customIndex = 0;
-    smallSphere1.object.metaData.front().hitGroupId = 1;
-
-//    auto& smallSphere2 = instances.emplace_back();
-//    smallSphere2.xform = glm::translate(glm::mat4{1}, {-1, 0, -1});
-//    smallSphere2.xform = glm::scale(smallSphere2.xform, glm::vec3(0.5));
-//    smallSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
-//    smallSphere2.object.metaData.front().customIndex = 1;
-//    smallSphere2.object.metaData.front().hitGroupId = 1;
-
-    auto& smallSphere2 = instances.emplace_back();
-    smallSphere2.xform = glm::translate(glm::mat4{1}, {-1, 0, -1});
-    smallSphere2.xform = glm::scale(smallSphere2.xform, glm::vec3(0.5));
-    smallSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
-    smallSphere2.object.metaData.front().customIndex = 0;
-    smallSphere2.object.metaData.front().hitGroupId = 2;
+    diffuseSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_spheres", diffuseSpheres.buffer);
+    rtBuilder.add(spheres, 0, 0);
 
 
-    createAccelerationStructure(instances);
+    spheres.clear();
+    spheres.emplace_back(glm::vec3(1, 0, -1), 0.5);
+//    spheres.emplace_back(glm::vec3(-1, 0, -1), 0.5);
+    metalSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("metal_spheres", metalSpheres.buffer);
+    rtBuilder.add(spheres, 0, 1);
+
+    spheres.clear();
+    spheres.emplace_back(glm::vec3(-1, 0, -1), 0.5);
+    dielectricSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_spheres", dielectricSpheres.buffer);
+    rtBuilder.add(spheres, 0, 2);
+
+    asInstances = rtBuilder.buildTlas();
 
     mattes = { {{0.8, 0.3, 0.3}}, {{0.8, 0.8, 0.0}} };
-    metals = { { {0.8, 0.6, 0.2}, 0.00 }, { {0.8, 0.8, 0.8}, 0.75 } };
+    metals = { { {0.8, 0.6, 0.2}, 0.00 }, { {0.8, 0.8, 0.8}, 1 } };
     dielectrics = { {1.5} };
 }
 
 void RayTracingWeekendSeries::loadInOneWeekendScene() {
-    auto sphere = primitives::sphere(100, 100, 1.0, glm::mat4{1}, randomColor(), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    mesh::Mesh mesh{};
-    mesh.vertices = sphere.vertices;
-    mesh.indices = sphere.indices;
 
-    phong::VulkanDrawableInfo info{};
-    info.vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.materialUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.materialIdUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    info.generateMaterialId = true;
+    constexpr auto usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT  | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    std::vector<imp::Sphere> difSpheres;
+    std::vector<imp::Sphere> matSpheres;
+    std::vector<imp::Sphere> dieSpheres;
 
-    VulkanDrawable drawable{};
-    std::vector<mesh::Mesh> meshes{ mesh };
-    phong::load(device, descriptorPool, drawable, meshes, info);
-    drawables.insert(std::make_pair("sphere", std::move(drawable)));
 
-    sphere = primitives::sphere(100, 100, 1.0, glm::translate(glm::mat4{1}, {0, -1000, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1000)), randomColor(), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    mesh.vertices = sphere.vertices;
-    mesh.indices = sphere.indices;
-    meshes[0] = mesh;
-    phong::load(device, descriptorPool, drawable, meshes, info);
-    drawables.insert(std::make_pair("big_sphere", std::move(drawable)));
-
-    std::vector<rt::MeshObjectInstance> instances;
-    auto& bigSphere = instances.emplace_back();
-//    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -1000, 0});
-//    bigSphere.xform = glm::scale(bigSphere.xform, glm::vec3(1000));
-    bigSphere.object = rt::TriangleMesh{ &drawables["big_sphere"]};
-    bigSphere.object.metaData.front().customIndex = mattes.size();
+    difSpheres.emplace_back(glm::vec3(0, -1000, 0), 1000);
     mattes.push_back({ glm::vec3(0.5) });
 
     auto rand = rng(0.f, 1.f, 1 << 20);
@@ -449,51 +404,38 @@ void RayTracingWeekendSeries::loadInOneWeekendScene() {
         for (auto b = -11; b < 11; ++b) {
             glm::vec3 center{a + 0.9 * rand(), 0.2, b + 0.9 * rand() };
 
-            auto& instance = instances.emplace_back();
-            instance.xform = glm::translate(glm::mat4{1}, center);
-            instance.xform = glm::scale(instance.xform, glm::vec3(0.2));
-            instance.object = rt::TriangleMesh{ &drawables["sphere"]};
-
             auto choose_mat = rand();
             if(choose_mat < 0.8) {
-                instance.object.metaData.front().customIndex = mattes.size();
+                difSpheres.emplace_back(center, 0.2);
                 mattes.push_back( { {rand() * rand(), rand() * rand(), rand() * rand()} });
             } else if (choose_mat < 0.95) {
-                instance.object.metaData.front().hitGroupId = 1;
-                instance.object.metaData.front().customIndex = metals.size();
+                matSpheres.emplace_back(center, 0.2);
                 metals.push_back({ {0.5 * (1 + rand()), 0.5 * (1 + rand()), 0.5 * (1 + rand())}, 0.5f * rand() });
             }else {
-                instance.object.metaData.front().hitGroupId = 2;
-                instance.object.metaData.front().customIndex = dielectrics.size();
+                dieSpheres.emplace_back(center, 0.2);
                 dielectrics.push_back({1.5});
             }
         }
     }
 
 
-    auto& mediumSphere0 = instances.emplace_back();
-    mediumSphere0.xform = glm::translate(glm::mat4{1}, {0, 1, 0});
-    mediumSphere0.object = rt::TriangleMesh{ &drawables["sphere"]};
-    mediumSphere0.object.metaData.front().customIndex = dielectrics.size();
-    mediumSphere0.object.metaData.front().hitGroupId = 2;
+    dieSpheres.emplace_back(glm::vec3{0, 1, 0}, 1);
     dielectrics.push_back({1.5});
 
-    auto& mediumSphere1 = instances.emplace_back();
-    mediumSphere1.xform = glm::translate(glm::mat4{1}, {-4, 1, 0});
-    mediumSphere1.object = rt::TriangleMesh{ &drawables["sphere"]};
-    mediumSphere1.object.metaData.front().customIndex = mattes.size();
-    mediumSphere1.object.metaData.front().hitGroupId = 0;
+    difSpheres.emplace_back(glm::vec3{-4, 1, 0}, 1);
     mattes.push_back({{ 0.4, 0.2, 0.1}});
 
-    auto& mediumSphere2 = instances.emplace_back();
-    mediumSphere2.xform = glm::translate(glm::mat4{1}, {4, 1, 0});
-    mediumSphere2.object = rt::TriangleMesh{ &drawables["sphere"]};
-    mediumSphere2.object.metaData.front().customIndex = metals.size();
-    mediumSphere2.object.metaData.front().hitGroupId = 1;
+    matSpheres.emplace_back(glm::vec3{4, 1, 0}, 1);
     metals.push_back({{ 0.7, 0.6, 0.5}, 0.0});
 
+    rtBuilder.add(difSpheres, 0, 0);
+    rtBuilder.add(matSpheres, 0, 1);
+    rtBuilder.add(dieSpheres, 0, 2);
+    createAccelerationStructure();
 
-    createAccelerationStructure(instances);
+    diffuseSpheres = device.createDeviceLocalBuffer(difSpheres.data(), BYTE_SIZE(difSpheres), usage);
+    metalSpheres = device.createDeviceLocalBuffer(matSpheres.data(), BYTE_SIZE(matSpheres), usage);
+    dielectricSpheres = device.createDeviceLocalBuffer(dieSpheres.data(), BYTE_SIZE(dieSpheres), usage);
 }
 
 void RayTracingWeekendSeries::initUniforms() {

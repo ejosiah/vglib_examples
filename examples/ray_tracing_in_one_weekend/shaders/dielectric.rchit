@@ -14,7 +14,12 @@ layout(buffer_reference, buffer_reference_align=8) buffer DielectricBuffer {
     Dielectric at[];
 };
 
-layout(shaderRecord, scalar) buffer SBT {
+layout(buffer_reference, buffer_reference_align=8) buffer SphereBuffer {
+    Sphere at[];
+};
+
+layout(shaderRecord, std430) buffer SBT {
+    SphereBuffer spheres;
     DielectricBuffer dielectric;
 };
 
@@ -29,13 +34,13 @@ float w = bc.y;
 void main() {
 
     vec3 p, N;
-    getSurfaceInfo(gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, gl_ObjectToWorld, p, N);
+    getSurfaceInfo(spheres.at[gl_PrimitiveID], gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, p, N);
 
     vec3 I = normalize(gl_WorldRayDirection);
     float cos0 = dot(-I, N);
 
     float n0 = 1; // coming from air
-    float n1 = dielectric.at[gl_InstanceCustomIndex].ior;
+    float n1 = dielectric.at[gl_PrimitiveID].ior;
 
     float kr = fresnel(cos0, n0, n1);
 
@@ -47,10 +52,10 @@ void main() {
     vec3 wi;
     if(rand(hRec.rngState) < kr) {
         hRec.wi = reflect(I, N);
-        hRec.x = offsetRay(p, N);
+        hRec.x = offsetRayImpl(p, N);
     }else {
         hRec.wi = refract(I, N, n0/n1);
-        hRec.x = offsetRay(p, -N);
+        hRec.x = offsetRayImpl(p, N);
     }
 
     hRec.n = N;

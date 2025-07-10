@@ -15,7 +15,12 @@ layout(buffer_reference, buffer_reference_align=8) buffer MetalBuffer {
     Metal at[];
 };
 
-layout(shaderRecord, scalar) buffer SBT {
+layout(buffer_reference, buffer_reference_align=8) buffer SphereBuffer {
+    Sphere at[];
+};
+
+layout(shaderRecord, std430) buffer SBT {
+    SphereBuffer spheres;
     MetalBuffer metals;
 };
 
@@ -30,11 +35,11 @@ float w = bc.y;
 void main() {
 
     vec3 p, n;
-    getSurfaceInfo(gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, gl_ObjectToWorld, p, n);
+    getSurfaceInfo(spheres.at[gl_PrimitiveID], gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, p, n);
     hRec.n = n;
-    hRec.x = offsetRay(p, n);
-    float fuzz = metals.at[gl_InstanceCustomIndex].fuzz;
+    hRec.x = p;
+    float fuzz = metals.at[gl_PrimitiveID].fuzz;
     hRec.wi = reflect(gl_WorldRayDirection, n) + fuzz * uniformSampleSphere(sampleVec2(hRec.rngState));
     hRec.wi *= sign(max(0, dot(n, hRec.wi)));
-    hRec.attenuation = metals.at[gl_InstanceCustomIndex].albedo;
+    hRec.attenuation = metals.at[gl_PrimitiveID].albedo;
 }

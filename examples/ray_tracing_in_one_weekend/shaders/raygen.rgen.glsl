@@ -9,7 +9,7 @@ layout(set = 0, binding = 2, rgba8) uniform image2D image;
 
 layout(location = 0) rayPayload HitRecord hRec;
 
-const float Tmin = 0;
+const float Tmin = 0.001;
 const float Tmax = 10000.0;
 
 void init(out HitRecord hRec, vec2 offset);
@@ -66,7 +66,6 @@ vec3 computeRadience(uint currentSample, uint sampleCount) {
 }
 
 void generateRay(out vec3 origin, out vec3 direction, vec2 offset) {
-    vec2 uv = vec2(gl_LaunchID.xy + uvec2(1))/vec2(gl_LaunchSize.xy);
     const vec2 pixelCenter = vec2(gl_LaunchID.xy) + offset;
     const vec2 inUV = pixelCenter/vec2(gl_LaunchSize.xy);
     vec2 d = inUV * 2.0 - 1.0;

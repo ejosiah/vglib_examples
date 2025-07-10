@@ -3,7 +3,7 @@
 #include "VulkanRayTraceBaseApp.hpp"
 #include "shader_binding_table.hpp"
 
-enum class ShaderIndex : int { RayGen, Miss, DiffuseHit, MetalHit, DielectricHit, Count };
+enum class ShaderIndex : int { RayGen, Miss, DiffuseHit, MetalHit, DielectricHit, Implicits, Count };
 
 enum class HitShaders : int { Diffuse, Metal, Dielectric, Count };
 
@@ -14,9 +14,9 @@ struct UniformData {
     glm::mat4 projInverse{1};
     uint frame = 0;
     uint maxBounce = 50;
-    uint sampleCount = 10000;
+    uint sampleCount = 16;
     uint currentSample = 0;
-    int adaptiveSampling{1};
+    int adaptiveSampling{0};
 };
 
 struct DiffuseMaterial {
@@ -30,7 +30,7 @@ struct MetalMaterial{
 };
 
 struct DielectricMaterial {
-    float ior{1};
+    float ior{1.5};
 };
 
 class RayTracingWeekendSeries : public VulkanRayTraceBaseApp {
@@ -141,5 +141,8 @@ protected:
     std::vector<DiffuseMaterial> mattes;
     std::vector<MetalMaterial> metals;
     std::vector<DielectricMaterial> dielectrics;
+    VulkanBuffer diffuseSpheres;
+    VulkanBuffer metalSpheres;
+    VulkanBuffer dielectricSpheres;
 
 };
