@@ -7,11 +7,12 @@
 
 BulletPhysicsDemo::BulletPhysicsDemo(const Settings& settings) : VulkanBaseApp("bullet physics demo", settings) {
     fileManager().addSearchPath(".");
-    fileManager().addSearchPath("../../examples/bulletphysicsdemo");
-    fileManager().addSearchPath("../../data/shaders");
-    fileManager().addSearchPath("../../data");
-    fileManager().addSearchPath("../../data/models");
-    fileManager().addSearchPath("../../data/textures");
+    fileManager().addSearchPath("bulletphysicsdemo");
+    fileManager().addSearchPath("bulletphysicsdemo/spv");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data");
+    fileManager().addSearchPath("../data/models");
+    fileManager().addSearchPath("../data/textures");
 }
 
 void BulletPhysicsDemo::initApp() {
@@ -26,7 +27,6 @@ void BulletPhysicsDemo::initApp() {
     createRigidBodies();
     createPipelineCache();
     createRenderPipeline();
-    createComputePipeline();
 }
 
 void BulletPhysicsDemo::createDescriptorPool() {
@@ -57,6 +57,13 @@ void BulletPhysicsDemo::createDescriptorPool() {
 
 }
 
+void BulletPhysicsDemo::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+}
+
 void BulletPhysicsDemo::createCommandPool() {
     commandPool = device.createCommandPool(*device.queueFamilyIndex.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     commandBuffers = commandPool.allocateCommandBuffers(swapChainImageCount);
@@ -72,8 +79,8 @@ void BulletPhysicsDemo::createRenderPipeline() {
     render.pipeline =
         builder
             .shaderStage()
-                .vertexShader(load("spv/cube.vert.spv"))
-                .fragmentShader(load("spv/cube.frag.spv"))
+                .vertexShader(resource("cube.vert.spv"))
+                .fragmentShader(resource("cube.frag.spv"))
             .vertexInputState()
                 .addVertexBindingDescription(0, sizeof(VertexData), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexBindingDescription(1, sizeof(VertexInstanceData), VK_VERTEX_INPUT_RATE_INSTANCE)
@@ -126,8 +133,8 @@ void BulletPhysicsDemo::createRenderPipeline() {
             .basePipeline(render.pipeline)
             .shaderStage()
                 .clear()
-                .vertexShader(load("/spv/floor.vert.spv"))
-                .fragmentShader(load("spv/floor.frag.spv"))
+                .vertexShader(resource("floor.vert.spv"))
+                .fragmentShader(resource("floor.frag.spv"))
             .vertexInputState()
                 .clear()
                 .addVertexBindingDescription(0, sizeof(FloorVertexData), VK_VERTEX_INPUT_RATE_VERTEX)
@@ -138,28 +145,12 @@ void BulletPhysicsDemo::createRenderPipeline() {
         .build(floor.layout);
 }
 
-void BulletPhysicsDemo::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
-    auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
-    compute.layout = device.createPipelineLayout();
-
-    auto computeCreateInfo = initializers::computePipelineCreateInfo();
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout.handle;
-
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-}
-
-
 void BulletPhysicsDemo::onSwapChainDispose() {
     dispose(render.pipeline);
-    dispose(compute.pipeline);
 }
 
 void BulletPhysicsDemo::onSwapChainRecreation() {
     createRenderPipeline();
-    createComputePipeline();
 }
 
 VkCommandBuffer *BulletPhysicsDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -348,7 +339,7 @@ void BulletPhysicsDemo::displayInfo(VkCommandBuffer commandBuffer) {
 }
 
 void BulletPhysicsDemo::createSkyBox() {
-    SkyBox::create(skyBox, R"(C:\Users\Josiah Ebhomenye\OneDrive\media\textures\skybox\005)"
+    SkyBox::create(skyBox, R"(C:\Users\joebh\OneDrive\media\textures\skybox\005)"
                    , {"right.jpg", "left.jpg", "top.jpg", "bottom.jpg", "front.jpg", "back.jpg"});
 }
 
@@ -507,7 +498,7 @@ void BulletPhysicsDemo::updateAccelerationStructureDescriptorSet() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
@@ -525,7 +516,7 @@ int main(){
 
         std::vector<FontInfo> fonts {
 #ifdef WIN32
-                {"JetBrainsMono", R"(..\..\data\fonts\JetBrainsMono\JetBrainsMono-Regular.ttf)", 20},
+                {"JetBrainsMono", R"(..\data\fonts\JetBrainsMono\JetBrainsMono-Regular.ttf)", 20},
                 {"Arial", R"(C:\Windows\Fonts\arial.ttf)", 20},
                 {"Arial", R"(C:\Windows\Fonts\arial.ttf)", 15}
 #elif defined(__APPLE__)

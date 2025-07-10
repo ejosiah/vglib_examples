@@ -46,6 +46,15 @@ vec3 cosineSampleHemisphere(vec2 u){
     return p;
 }
 
+vec3 cosineSampleHemisphere(sampler2DArray noise_texture, vec2 uv, int seed) {
+    vec3 tSize = textureSize(noise_texture, 0);
+    float layer = mod(frame + seed, tSize.z);
+    vec2 numTiles = vec2(gl_WorkGroupSize * gl_NumWorkGroups)/tSize.xy;
+    vec2 tileUV = fract(uv * numTiles);
+
+    return -1 + 2 * texture(noise_texture, vec3(tileUV, layer)).xyz;
+}
+
 vec2 sampleNoise(sampler2DArray noise_texture, vec2 uv, int seed) {
     vec3 tSize = textureSize(noise_texture, 0);
     float layer = mod(frame + seed, tSize.z);

@@ -31,8 +31,6 @@ protected:
 
     void createRenderPipeline();
 
-    void createComputePipeline();
-
     void onSwapChainDispose() override;
 
     void onSwapChainRecreation() override;
@@ -60,6 +58,8 @@ protected:
     void createSsaoFrameBuffer();
 
     void createBlurFrameBuffer();
+
+    void beforeDeviceCreation() override;
 
     VulkanDrawable model;
 
@@ -122,11 +122,6 @@ protected:
 
     VulkanDescriptorSetLayout textureSetLayout;
     VulkanSampler globalSampler;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } compute;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;

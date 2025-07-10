@@ -29,7 +29,7 @@ struct VertexInstanceData{
 };
 
 
-class BulletPhysicsDemo : public VulkanBaseApp, public VulkanRayQuerySupport{
+class BulletPhysicsDemo : public VulkanBaseApp, public VulkanRayQuerySupport {
 public:
     explicit BulletPhysicsDemo(const Settings& settings = {});
 
@@ -51,8 +51,6 @@ protected:
     void createPipelineCache();
 
     void createRenderPipeline();
-
-    void createComputePipeline();
 
     void onSwapChainDispose() override;
 
@@ -98,6 +96,8 @@ protected:
                 );
     }
 
+    void beforeDeviceCreation() override;
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -110,11 +110,6 @@ protected:
         VulkanBuffer vertexBuffer;
         VulkanBuffer indexBuffer;
     } floor;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } compute;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;

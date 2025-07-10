@@ -180,6 +180,11 @@ protected:
     };
     uint32_t denoiseAfterFrames = 100;
     uint32_t commandBufferGroups = 4;   // render, raytrace, pre_denoise, post_denoise
+
+    enum CommandBuffers : int {
+        Render = 0, Raytrace, PreDenoise, PostDenoise
+    };
+
     bool shouldDenoise = false;
     uint64_t fenceValue{0};
     std::shared_ptr<OptixContext> optix;

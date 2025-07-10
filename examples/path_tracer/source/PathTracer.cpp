@@ -1038,7 +1038,7 @@ void PathTracer::rayTrace(VkCommandBuffer commandBuffer) {
 }
 
 void PathTracer::denoise() {
-    auto commandBuffer = commandBuffers[currentImageIndex * commandBufferGroups + 2];
+    auto commandBuffer = commandBuffers[currentImageIndex * commandBufferGroups + PreDenoise];
     auto beginInfo = initializers::commandBufferBeginInfo();
 
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
@@ -1076,7 +1076,7 @@ void PathTracer::denoise() {
     cudaSignalExternalSemaphoresAsync(&denoiseSemaphore.cu, &signalParams, 1, optix->m_cudaStream);
 
 
-    commandBuffer = commandBuffers[currentImageIndex * commandBufferGroups + 3];
+    commandBuffer = commandBuffers[currentImageIndex * commandBufferGroups + PostDenoise];
     beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
     denoiser->copyOutputTo(commandBuffer, rayTracedTexture.image);
@@ -1243,7 +1243,7 @@ void PathTracer::onSwapChainRecreation() {
 
 VkCommandBuffer *PathTracer::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
     numCommandBuffers = 1;
-    auto& commandBuffer = commandBuffers[imageIndex * commandBufferGroups];
+    auto& commandBuffer = commandBuffers[imageIndex * commandBufferGroups + Render];
 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
@@ -1305,7 +1305,7 @@ void PathTracer::update(float time) {
 void PathTracer::newFrame(){
     camera->newFrame();
 
-    auto commandBuffer = commandBuffers[currentImageIndex * commandBufferGroups + 1];
+    auto commandBuffer = commandBuffers[currentImageIndex * commandBufferGroups + Raytrace];
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
     rayTrace(commandBuffer);

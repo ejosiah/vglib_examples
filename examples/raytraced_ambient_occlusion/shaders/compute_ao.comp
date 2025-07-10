@@ -46,8 +46,8 @@ void main() {
     rayQuery rQuery;
     for(int i = 0; i < N; ++i){
         vec2 uv = (vec2(gid) + .5)/vec2(gl_WorkGroupSize * gl_NumWorkGroups);
-        vec2 u = sampleNoise(noise_texture, uv, i);
-        vec3 direction = cosineSampleHemisphere(u);
+//        vec2 u = sampleNoise(noise_texture, uv, i);
+        vec3 direction = cosineSampleHemisphere(noise_texture, uv, i);
 //        direction = TBN * direction;
         direction       = direction.x * tangent + direction.y * bitangent + direction.z * normal;
         rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xFF, origin, 0, direction, radius);

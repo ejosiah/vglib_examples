@@ -48,5 +48,7 @@ void main(){
 
     irradiance += ambient;
 
+    irradiance = pow(irradiance, vec3(1/2.2));
+
     fragColor = vec4(irradiance, 1);
 }

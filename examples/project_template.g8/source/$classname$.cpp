@@ -190,7 +190,7 @@ void $classname$::createRayTracingPipeline() {
     createInfo.pStages = stages.data();
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
-    createInfo.maxPipelineRayRecursionDepth = 0;
+    createInfo.maxPipelineRayRecursionDepth = 1;
     createInfo.layout = raytrace.layout.handle;
 
     raytrace.pipeline = device.createRayTracingPipeline(createInfo);

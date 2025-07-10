@@ -4,14 +4,14 @@
 
 SsaoDemo::SsaoDemo(const Settings& settings) : VulkanBaseApp("Screen Space Ambiant Occulsion", settings) {
     fileManager().addSearchPath(".");
-    fileManager().addSearchPath("../../examples/ssao");
-    fileManager().addSearchPath("../../examples/ssao/spv");
-    fileManager().addSearchPath("../../examples/ssao/models");
-    fileManager().addSearchPath("../../examples/ssao/textures");
-    fileManager().addSearchPath("../../data/shaders");
-    fileManager().addSearchPath("../../data/models");
-    fileManager().addSearchPath("../../data/textures");
-    fileManager().addSearchPath("../../data");
+    fileManager().addSearchPath("ssao");
+    fileManager().addSearchPath("ssao/spv");
+    fileManager().addSearchPath("ssao/models");
+    fileManager().addSearchPath("ssao/textures");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data/models");
+    fileManager().addSearchPath("../data/textures");
+    fileManager().addSearchPath("../data");
 }
 
 void SsaoDemo::initApp() {
@@ -29,11 +29,10 @@ void SsaoDemo::initApp() {
     initCamera();
     createPipelineCache();
     createRenderPipeline();
-    createComputePipeline();
 }
 
 void SsaoDemo::loadModel() {
-    phong::load(resource("leaving_room/living_room.obj"), device, descriptorPool, model);
+    phong::load(resource("Grid_128_128.obj"), device, descriptorPool, model);
 }
 
 void SsaoDemo::initCamera() {
@@ -175,28 +174,12 @@ void SsaoDemo::createRenderPipeline() {
         .build(ssao.blur.layout);
 }
 
-void SsaoDemo::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
-    auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
-    compute.layout = device.createPipelineLayout();
-
-    auto computeCreateInfo = initializers::computePipelineCreateInfo();
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout.handle;
-
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-}
-
-
 void SsaoDemo::onSwapChainDispose() {
     dispose(render.pipeline);
-    dispose(compute.pipeline);
 }
 
 void SsaoDemo::onSwapChainRecreation() {
     createRenderPipeline();
-    createComputePipeline();
 }
 
 VkCommandBuffer *SsaoDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -824,9 +807,16 @@ void SsaoDemo::blurPass(VkCommandBuffer commandBuffer) {
     vkCmdEndRenderPass(commandBuffer);
 }
 
+void SsaoDemo::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+}
+
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.enabledFeatures.fillModeNonSolid = true;

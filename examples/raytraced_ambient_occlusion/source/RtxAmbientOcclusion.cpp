@@ -68,9 +68,8 @@ void RtxAmbientOcclusion::beforeDeviceCreation() {
     devFeatures13->dynamicRendering = VK_TRUE;
     devFeatures13->maintenance4 = VK_TRUE;
 
-    auto timelineFeatures = findExtension<VkPhysicalDeviceTimelineSemaphoreFeatures>(
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES, deviceCreateNextChain);
-    timelineFeatures->timelineSemaphore = VK_TRUE;
+    auto features12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    features12->timelineSemaphore = VK_TRUE;
 }
 
 void RtxAmbientOcclusion::createDescriptorPool() {
@@ -308,7 +307,8 @@ void RtxAmbientOcclusion::loadModel() {
     info.materialUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     info.materialIdUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     info.generateMaterialId = true;
-    phong::load(resource("lte-orb.obj"), device, descriptorPool, model, info);
+//    phong::load(resource("lte-orb.obj"), device, descriptorPool, model, info);
+    phong::load(resource("ico_sphere.obj"), device, descriptorPool, model, info);
 //    phong::load(resource("leaving_room/living_room.obj"), device, descriptorPool, model, info);
 //    phong::load(resource("conference.obj"), device, descriptorPool, model, info);
     phong::load(resource("plane.obj"), device, descriptorPool, plane, info);
@@ -365,20 +365,38 @@ void RtxAmbientOcclusion::createNoiseTextures() {
     if(noise.blueNoise) {
         std::vector<std::string> paths;
         for(auto i = 0; i < NoiseCount; ++i) {
-            paths.push_back(resource(std::format("fast_noise/128_128/uniform/RG_{}.png", i)));
+            paths.push_back(resource(std::format("fast_noise/128_128/cosine/cosine_{}.png", i)));
         }
         textures::fromFile(device, noise.texture, paths);
     }else {
         auto Xi = rng(0.f, 1.f);
         const auto gr = golden_ratio_conjugate<float>();
-        std::vector<std::vector<glm::vec2>> noiseData(NoiseCount);
+
+        auto cosine_sample_hemisphere = [](auto u) {
+            const auto r = std::sqrt(u.x);
+            const auto phi = 2.f * glm::pi<decltype(u.x)>() * u.y;
+
+            auto x = r * cos(phi);
+            auto y = r * sin(phi);
+            auto z = glm::max(0.f, 1.f - x*x - y*y);
+
+            return glm::vec3{x, y, z};
+        };
+
+        std::vector<std::vector<glm::vec4>> noiseData(NoiseCount);
+
         std::generate(noiseData.begin(), noiseData.end(), [&]{
-           std::vector<glm::vec2> layer(128 * 128);
-           std::generate(layer.begin(), layer.end(), [&]{ return glm::vec2{Xi(), Xi() }; });
+           std::vector<glm::vec4> layer(128 * 128);
+
+           std::generate(layer.begin(), layer.end(), [&]{
+               auto sample = .5f + .5f  *cosine_sample_hemisphere(glm::vec2(Xi(), Xi()));
+               return glm::vec4{sample, 0 };
+           });
            return layer;
         });
+
         std::vector<void *> data = map_range(noiseData, [](auto& d){ return reinterpret_cast<void*>(d.data()); });
-        textures::createTextureArray(device, noise.texture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, data, {128, 128, 1}, VK_SAMPLER_ADDRESS_MODE_REPEAT, 4);
+        textures::createTextureArray(device, noise.texture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, data, {128, 128, 1}, VK_SAMPLER_ADDRESS_MODE_REPEAT, 4);
 
     }
 
