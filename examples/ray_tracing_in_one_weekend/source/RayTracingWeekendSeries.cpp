@@ -23,6 +23,7 @@ RayTracingWeekendSeries::RayTracingWeekendSeries(const Settings& settings) : Vul
 void RayTracingWeekendSeries::initApp() {
     initCamera();
     initCanvas();
+    createNoiseTexture();
     createDescriptorPool();
     initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
@@ -95,15 +96,19 @@ void RayTracingWeekendSeries::createDescriptorSetLayouts() {
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(1)
                 .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(2)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(3) // noise
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 }
 
@@ -111,7 +116,7 @@ void RayTracingWeekendSeries::updateDescriptorSets(){
     auto sets = descriptorPool.allocate( { raytrace.descriptorSetLayout });
     raytrace.descriptorSet = sets[0];
 
-    auto writes = initializers::writeDescriptorSets<3>();
+    auto writes = initializers::writeDescriptorSets<4>();
 
     VkWriteDescriptorSetAccelerationStructureKHR asWrites{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
     asWrites.accelerationStructureCount = 1;
@@ -135,6 +140,14 @@ void RayTracingWeekendSeries::updateDescriptorSets(){
     writes[2].descriptorCount = 1;
     VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &imageInfo;
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = raytrace.descriptorSet;
+    writes[3].dstBinding = 3;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].descriptorCount = 1;
+    VkDescriptorImageInfo noiseInfo{ noise.sampler.handle, noise.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    writes[3].pImageInfo = &noiseInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -472,6 +485,29 @@ void RayTracingWeekendSeries::createMaterials() {
     device.setName<VK_OBJECT_TYPE_BUFFER>("metal_materials", materials.metal.buffer);
     device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_materials", materials.dielectric.buffer);
 }
+
+void RayTracingWeekendSeries::createNoiseTexture() {
+    std::vector<std::string> paths;
+    for(auto i = 0; i < 64; ++i) {
+        paths.push_back(resource(std::format("fast_noise/128_128/uniform/RG_{}.png", i)));
+    }
+    noise.sampler = createNoiseSampler();
+    textures::fromFile(device, noise, paths);
+}
+
+VulkanSampler RayTracingWeekendSeries::createNoiseSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.mipmapMode =  VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.maxLod = 1;
+
+    return device.createSampler(samplerInfo);}
 
 
 int main(){

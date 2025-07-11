@@ -414,7 +414,8 @@ VulkanSampler RtxAmbientOcclusion::createNoiseSampler() {
     samplerInfo.mipmapMode =  VK_SAMPLER_MIPMAP_MODE_NEAREST;
     samplerInfo.maxLod = 1;
 
-    return device.createSampler(samplerInfo);}
+    return device.createSampler(samplerInfo);
+}
 
 std::vector<PipelineMetaData> RtxAmbientOcclusion::pipelineMetaData() {
     return {

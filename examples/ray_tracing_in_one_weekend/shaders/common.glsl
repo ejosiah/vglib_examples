@@ -44,6 +44,7 @@ struct HitRecord {
     vec3 color;
     vec3 attenuation;
     RngStateType rngState;
+    uint seed;
     bool hit;
 };
 
@@ -58,13 +59,7 @@ layout(set = 0, binding = 1, scalar) uniform Constants {
     int adaptiveSampling;
 };
 
-layout(set = 0, binding = 3) buffer VERTEX_BUFFER {
-    Vertex v[];
-} vertices[];
-
-layout(set = 0, binding = 4) buffer INDEX_BUFFER {
-    int i[];
-} indices[];
+layout(set = 0, binding = 3) uniform sampler2DArray noise_texture;
 
 vec2 sampleVec2(inout RngStateType rngState) {
     return vec2(rand(rngState), rand(rngState));
@@ -141,31 +136,19 @@ void getSurfaceInfo(vec2 attibs, vec3 hitPositions[3], mat4x3 xform, out vec3 po
     position = p0 * u + p1 * v + p2 * w;
 }
 
-void getSurfaceInfo(uint id, uint primitiveId, vec2 attribs, mat4x3 xform, out vec3 position, out vec3 normal) {
-    float u = 1 - attribs.x - attribs.y;
-    float v = attribs.x;
-    float w = attribs.y;
-
-
-    ivec3 index = ivec3(
-        indices[id].i[3 * primitiveId + 0],
-        indices[id].i[3 * primitiveId + 1],
-        indices[id].i[3 * primitiveId + 2]
-    );
-
-    Vertex v0 = vertices[id].v[index.x];
-    Vertex v1 = vertices[id].v[index.y];
-    Vertex v2 = vertices[id].v[index.z];
-
-    position = v0.position * u + v1.position * v + v2.position * w;
-    normal = v0.normal * u + v1.normal * v + v2.normal * w;
-
-    position = xform * vec4(position, 1);
-//    normal = inverse(transpose(mat3(xform))) * normal;
-}
-
 vec3 offsetRayImpl(vec3 p, vec3 n) {
     return p + n * rayOffset;
+}
+
+vec2 sampleNoiseBlue(inout uint seed) {
+    vec3 tSize = textureSize(noise_texture, 0);
+    float layer = mod(frame + seed, tSize.z);
+    vec2 numTiles = vec2(gl_LaunchSize)/tSize.xy;
+    vec2 uv = vec2(gl_LaunchID)/vec2(gl_LaunchSize);
+    vec2 tileUV = fract(uv * numTiles);
+
+    ++seed;
+    return texture(noise_texture, vec3(tileUV, layer)).xy;
 }
 
 #endif // COMMON_GLSL

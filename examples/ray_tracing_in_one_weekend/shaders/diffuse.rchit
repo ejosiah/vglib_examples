@@ -24,10 +24,6 @@ layout(location = 0) rayPayloadIn HitRecord hRec;
 
 hitAttribute vec2 bc;
 
-float u = 1 - bc.x - bc.y;
-float v = bc.x;
-float w = bc.y;
-
 void main() {
 
     vec3 p, n;
@@ -35,6 +31,6 @@ void main() {
 
     hRec.n = n;
     hRec.x = p;
-    hRec.wi = hRec.x + n + uniformSampleSphere(sampleVec2(hRec.rngState));
+    hRec.wi = hRec.x + n + uniformSampleSphere(sampleNoiseBlue(hRec.seed));
     hRec.attenuation = materials.at[gl_PrimitiveID].rgb;
 }

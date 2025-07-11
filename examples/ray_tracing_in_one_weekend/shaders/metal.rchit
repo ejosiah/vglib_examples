@@ -39,7 +39,7 @@ void main() {
     hRec.n = n;
     hRec.x = p;
     float fuzz = metals.at[gl_PrimitiveID].fuzz;
-    hRec.wi = reflect(gl_WorldRayDirection, n) + fuzz * uniformSampleSphere(sampleVec2(hRec.rngState));
+    hRec.wi = reflect(gl_WorldRayDirection, n) + fuzz * uniformSampleSphere(sampleNoiseBlue(hRec.seed));
     hRec.wi *= sign(max(0, dot(n, hRec.wi)));
     hRec.attenuation = metals.at[gl_PrimitiveID].albedo;
 }

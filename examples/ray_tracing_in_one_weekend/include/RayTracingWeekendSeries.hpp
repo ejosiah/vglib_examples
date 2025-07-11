@@ -14,9 +14,9 @@ struct UniformData {
     glm::mat4 projInverse{1};
     uint frame = 0;
     uint maxBounce = 50;
-    uint sampleCount = 16;
+    uint sampleCount = 10000;
     uint currentSample = 0;
-    int adaptiveSampling{0};
+    int adaptiveSampling{1};
 };
 
 struct DiffuseMaterial {
@@ -98,6 +98,10 @@ protected:
 
     void newFrame() override;
 
+    void createNoiseTexture();
+
+    VulkanSampler createNoiseSampler();
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -144,5 +148,6 @@ protected:
     VulkanBuffer diffuseSpheres;
     VulkanBuffer metalSpheres;
     VulkanBuffer dielectricSpheres;
+    Texture noise;
 
 };
