@@ -56,6 +56,8 @@ protected:
 
     void loadDefaultScene();
 
+    void loadTextureScene();
+
     void loadInOneWeekendScene();
 
     void createMaterials();

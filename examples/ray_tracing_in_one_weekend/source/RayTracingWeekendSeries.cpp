@@ -190,17 +190,23 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
 
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(ShaderIndex::Miss)));
 
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
-    shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(diffuseSpheres));
-    shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(materials.diffuse));
+    if(diffuseSpheres.size != 0) {
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+        shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(diffuseSpheres));
+        shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(materials.diffuse));
+    }
 
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
-    shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(metalSpheres));
-    shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(materials.metal));
+    if(metalSpheres.size != 0) {
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+        shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(metalSpheres));
+        shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(materials.metal));
+    }
 
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
-    shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(dielectricSpheres));
-    shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(materials.dielectric));
+    if(dielectricSpheres != 0) {
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+        shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(dielectricSpheres));
+        shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(materials.dielectric));
+    }
 
 
     dispose(raytrace.layout);
@@ -417,7 +423,7 @@ void RayTracingWeekendSeries::onPause() {
 }
 
 void RayTracingWeekendSeries::loadScene() {
-    loadInOneWeekendScene();
+    loadTextureScene();
 }
 
 void RayTracingWeekendSeries::loadDefaultScene() {
@@ -450,6 +456,23 @@ void RayTracingWeekendSeries::loadDefaultScene() {
     mattes = { {{0.8, 0.3, 0.3}}, {{0.8, 0.8, 0.0}} };
     metals = { { {0.8, 0.6, 0.2}, 0.00 }, { {0.8, 0.8, 0.8}, 1 } };
     dielectrics = { {1.5} };
+}
+
+void RayTracingWeekendSeries::loadTextureScene() {
+    constexpr auto usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT  | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    std::vector<imp::Sphere> spheres;
+
+    spheres.emplace_back(glm::vec3{0, -10, 1}, 10);
+    spheres.emplace_back(glm::vec3{0, 10, 1}, 10);
+
+    diffuseSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
+    device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_spheres", diffuseSpheres.buffer);
+    rtBuilder.add(spheres, 0, 0);
+
+
+    createAccelerationStructure();
+
+    mattes = { {glm::vec3(0), 0}, {glm::vec3(0), 0} };
 }
 
 void RayTracingWeekendSeries::loadInOneWeekendScene() {
@@ -533,13 +556,20 @@ void RayTracingWeekendSeries::newFrame() {
 
 void RayTracingWeekendSeries::createMaterials() {
     constexpr auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-    materials.diffuse = device.createDeviceLocalBuffer(mattes.data(), BYTE_SIZE(mattes), usage);
-    materials.metal = device.createDeviceLocalBuffer(metals.data(), BYTE_SIZE(metals), usage);
-    materials.dielectric = device.createDeviceLocalBuffer(dielectrics.data(), BYTE_SIZE(dielectrics), usage);
 
-    device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_materials", materials.diffuse.buffer);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("metal_materials", materials.metal.buffer);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_materials", materials.dielectric.buffer);
+    if(!mattes.empty()) {
+        materials.diffuse = device.createDeviceLocalBuffer(mattes.data(), BYTE_SIZE(mattes), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_materials", materials.diffuse.buffer);
+    }
+    if(!metals.empty()) {
+        materials.metal = device.createDeviceLocalBuffer(metals.data(), BYTE_SIZE(metals), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("metal_materials", materials.metal.buffer);
+    }
+    if(!dielectrics.empty()) {
+        materials.dielectric = device.createDeviceLocalBuffer(dielectrics.data(), BYTE_SIZE(dielectrics), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_materials", materials.dielectric.buffer);
+    }
+
 }
 
 void RayTracingWeekendSeries::createNoiseTexture() {
