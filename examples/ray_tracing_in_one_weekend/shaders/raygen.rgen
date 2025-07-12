@@ -24,7 +24,7 @@ void main(){
 
     vec3 fcolor = vec3(0);
 
-    if(adaptiveSampling == 1) {
+    if(adaptiveSamplingEnabled()) {
         if(currentSample >= sampleCount) return;
 
         fcolor = computeRadience(currentSample, sampleCount);
@@ -67,12 +67,11 @@ vec3 computeRadience(uint currentSample, uint sampleCount) {
 
 void generateRay(out vec3 origin, out vec3 direction, vec2 offset) {
     const vec2 pixelCenter = vec2(gl_LaunchID.xy) + offset;
-    const vec2 inUV = pixelCenter/vec2(gl_LaunchSize.xy);
-    vec2 d = inUV * 2.0 - 1.0;
+    const vec2 screenUV = pixelCenter/vec2(gl_LaunchSize.xy);
+    const vec2 lensUV = sampleVec2(hRec.rngState);
 
-    origin = mat4x3(viewInverse) * vec4(0,0,0,1);
-    vec4 target = projInverse * vec4(d.x, d.y, 1, 1) ;
-    direction = mat3(viewInverse) * normalize(target.xyz) ;
+    generateCameraRay(screenUV, lensUV, focalDistance, apertureSize, projInverse, viewInverse, origin, direction);
+
 }
 
 void init(out HitRecord hRec, vec2 offset) {

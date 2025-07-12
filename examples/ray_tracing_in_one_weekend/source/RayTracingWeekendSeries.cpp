@@ -334,6 +334,7 @@ VkCommandBuffer *RayTracingWeekendSeries::buildCommandBuffers(uint32_t imageInde
 
     renderToSwapChain([&]{
         canvas.draw(commandBuffer);
+        renderUI(commandBuffer);
     }, commandBuffer);
 
     rayTrace(commandBuffer);
@@ -343,9 +344,57 @@ VkCommandBuffer *RayTracingWeekendSeries::buildCommandBuffers(uint32_t imageInde
     return &commandBuffer;
 }
 
+void RayTracingWeekendSeries::renderUI(VkCommandBuffer commandBuffer) {
+    ImGui::Begin("Settings");
+    ImGui::SetWindowSize({0, 0});
+
+    static int samples = to<int>(uniforms.cpu->sampleCount);
+    static int bounces = to<int>(uniforms.cpu->maxBounce);
+    static bool adaptive = uniforms.cpu->adaptiveSampling;
+    static bool blueNoise = uniforms.cpu->blueNoise;
+    static float apertureSize = uniforms.cpu->apertureSize;
+    static float focalDistance = uniforms.cpu->focalDistance;
+    static bool dirty = false;
+
+    if(ImGui::CollapsingHeader("sampling", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if(uniforms.cpu->adaptiveSampling == 0) {
+            samples = std::clamp(samples, 1, 64);
+            dirty |= ImGui::SliderInt("sample count", &samples, 1, 64);
+        }else {
+            samples = std::clamp(samples, 1000, 1000000);
+            dirty |= ImGui::SliderInt("sample count", &samples, 1000, 1000000);
+        }
+        dirty |= ImGui::SliderInt("bounces", &bounces, 1, 50);
+        dirty |= ImGui::Checkbox("adaptive sampling", &adaptive);
+        dirty |= ImGui::Checkbox("use blue noise", &blueNoise);
+    }
+
+    if(ImGui::CollapsingHeader("camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+        dirty |= ImGui::SliderFloat("aperture", &apertureSize, 0, 20);
+        const auto maxDistance = glm::distance(camera->position(), camera->target);
+        dirty |= ImGui::SliderFloat("focal distance", &focalDistance, 1, maxDistance);
+    }
+
+    ImGui::End();
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+
+    uniforms.cpu->sampleCount = samples;
+    uniforms.cpu->maxBounce = bounces;
+    uniforms.cpu->adaptiveSampling = adaptive;
+    uniforms.cpu->blueNoise = blueNoise;
+    uniforms.cpu->apertureSize = apertureSize;
+    uniforms.cpu->focalDistance = focalDistance;
+    if(dirty) {
+        uniforms.cpu->currentSample = 0;
+        dirty = false;
+    }
+}
+
 void RayTracingWeekendSeries::update(float time) {
-    camera->update(time);
-    auto cam = camera->cam();
+    if(!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
 
     auto samples = uniforms.cpu->adaptiveSampling == 1 ? uniforms.cpu->currentSample : uniforms.cpu->sampleCount;
     setTitle(fmt::format("{}, FPS - {}, samples - {}", title, framePerSecond, samples));
@@ -461,6 +510,8 @@ void RayTracingWeekendSeries::endFrame() {
     uniforms.cpu->frame++;
     uniforms.cpu->viewInverse = glm::inverse(camera->cam().view);
     uniforms.cpu->projInverse = glm::inverse(camera->cam().proj);
+    uniforms.cpu->cameraPosition = camera->position();
+    uniforms.cpu->focalDistance = glm::distance(camera->position(), camera->target);
 
     if(uniforms.cpu->adaptiveSampling == 1) {
         uniforms.cpu->currentSample = glm::clamp(uniforms.cpu->currentSample, 0u, uniforms.cpu->sampleCount - 1);
@@ -468,6 +519,8 @@ void RayTracingWeekendSeries::endFrame() {
         if (camera->moved()) {
             uniforms.cpu->currentSample = 0;
         }
+    }else if(uniforms.cpu->sampleCount > 64) {
+        uniforms.cpu->sampleCount = 16;
     }
 }
 

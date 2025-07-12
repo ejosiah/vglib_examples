@@ -52,12 +52,24 @@ struct HitRecord {
 layout(set = 0, binding = 1, scalar) uniform Constants {
     mat4 viewInverse;
     mat4 projInverse;
+    vec3 cameraPosition;
     uint frame;
     uint maxBounce;
     uint sampleCount;
     uint currentSample;
+    float apertureSize;
+    float focalDistance;
     int adaptiveSampling;
+    int blueNoise;
 };
+
+bool adaptiveSamplingEnabled() {
+    return adaptiveSampling == 1;
+}
+
+bool useBlueNoise() {
+    return blueNoise == 1;
+}
 
 layout(set = 0, binding = 3) uniform sampler2DArray noise_texture;
 
@@ -149,6 +161,60 @@ vec2 sampleNoiseBlue(inout uint seed) {
 
     ++seed;
     return texture(noise_texture, vec3(tileUV, layer)).xy;
+}
+
+vec2 sampleVec2(inout HitRecord hRec) {
+    if(useBlueNoise()) {
+        return sampleNoiseBlue(hRec.seed);
+    }else {
+        return sampleVec2(hRec.rngState);
+    }
+}
+
+float sampleReal(inout HitRecord hRec) {
+    if(useBlueNoise()) {
+        return sampleNoiseBlue(hRec.seed).x;
+    }else {
+        return rand(hRec.rngState);
+    }
+}
+
+void generateCameraRay(
+    vec2 screenUV,              // Input: normalized screen coordinates [0,1]
+    vec2 lensUV,                // Input: uniform sample on [0,1]² for aperture jitter
+    float focalLength,          // Input: focal distance (scene units)
+    float apertureSize,         // Input: aperture radius (scene units)
+    mat4 invProjMatrix,         // Input: inverse projection matrix
+    mat4 invViewMatrix,         // Input: inverse view matrix
+    inout vec3 rayOriginWorld,    // Output: ray origin in world space
+    inout vec3 rayDirectionWorld  // Output: ray direction in world space
+) {
+    // Convert screenUV to normalized device coordinates [-1, 1]
+    vec2 ndc = screenUV * 2.0 - 1.0;
+    vec4 clipPos = vec4(ndc, -1.0, 1.0); // z = -1 for near plane
+
+    // Transform from clip space to view space
+    vec4 viewPos = invProjMatrix * clipPos;
+    viewPos /= viewPos.w;
+    vec3 rayDirView = normalize(viewPos.xyz);
+
+    // Transform view direction to world space
+    vec3 rayDirWorld = normalize((invViewMatrix * vec4(rayDirView, 0.0)).xyz);
+    vec3 camPosWorld = (invViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+
+    // Sample aperture offset in view space (concentric disk)
+    vec2 lensSample = concentricSampleDisk(lensUV) * apertureSize * 0.5;
+    vec3 apertureOffsetView = vec3(lensSample, 0.0);
+    vec3 apertureOffsetWorld = (invViewMatrix * vec4(apertureOffsetView, 0.0)).xyz;
+
+    // Final ray origin is offset on the lens
+    rayOriginWorld = camPosWorld + apertureOffsetWorld;
+
+    // Focal point in world space
+    vec3 focalPoint = camPosWorld + rayDirWorld * focalLength;
+
+    // Final ray direction towards focal point
+    rayDirectionWorld = normalize(focalPoint - rayOriginWorld);
 }
 
 #endif // COMMON_GLSL

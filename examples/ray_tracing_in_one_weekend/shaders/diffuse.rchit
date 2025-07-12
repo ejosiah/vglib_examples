@@ -31,6 +31,6 @@ void main() {
 
     hRec.n = n;
     hRec.x = p;
-    hRec.wi = hRec.x + n + uniformSampleSphere(sampleNoiseBlue(hRec.seed));
+    hRec.wi = hRec.x + n + uniformSampleSphere(sampleVec2(hRec));
     hRec.attenuation = materials.at[gl_PrimitiveID].rgb;
 }

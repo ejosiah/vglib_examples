@@ -12,11 +12,15 @@ enum class RayType : int { Primary, Count };
 struct UniformData {
     glm::mat4 viewInverse{1};
     glm::mat4 projInverse{1};
+    glm::vec3 cameraPosition;
     uint frame = 0;
     uint maxBounce = 50;
     uint sampleCount = 10000;
     uint currentSample = 0;
+    float apertureSize{0};
+    float focalDistance{2};
     int adaptiveSampling{1};
+    int blueNoise{0};
 };
 
 struct DiffuseMaterial {
@@ -88,6 +92,8 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void renderUI(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -146,8 +152,11 @@ protected:
     std::vector<MetalMaterial> metals;
     std::vector<DielectricMaterial> dielectrics;
     VulkanBuffer diffuseSpheres;
+    VulkanBuffer diffuseMotion;
     VulkanBuffer metalSpheres;
+    VulkanBuffer metalMotion;
     VulkanBuffer dielectricSpheres;
+    VulkanBuffer dielectricMotion;
     Texture noise;
 
 };
