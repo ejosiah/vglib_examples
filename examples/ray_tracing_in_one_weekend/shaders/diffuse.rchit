@@ -6,12 +6,17 @@
 #include "ray_tracing_lang.glsl"
 #include "common.glsl"
 
+struct Matte {
+    vec3 albedo;
+    int textureId;
+};
+
 layout(buffer_reference, buffer_reference_align=8) buffer SphereBuffer {
     Sphere at[];
 };
 
 layout(buffer_reference, buffer_reference_align=8) buffer MaterialBuffer {
-    vec4 at[];
+    Matte at[];
 };
 
 layout(shaderRecord, std430) buffer SBT {
@@ -32,5 +37,13 @@ void main() {
     hRec.n = n;
     hRec.x = p;
     hRec.wi = hRec.x + n + uniformSampleSphere(sampleVec2(hRec));
-    hRec.attenuation = materials.at[gl_PrimitiveID].rgb;
+
+    Matte material = materials.at[gl_PrimitiveID];
+    vec3 attenuation = material.albedo;
+    if(material.textureId != -1) {
+        attenuation = texture(global_textures[material.textureId], p.xz/10).rgb;
+    }
+
+    hRec.attenuation = attenuation;
+
 }

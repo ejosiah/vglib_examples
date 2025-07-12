@@ -72,6 +72,7 @@ bool useBlueNoise() {
 }
 
 layout(set = 0, binding = 3) uniform sampler2DArray noise_texture;
+layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 
 vec2 sampleVec2(inout RngStateType rngState) {
     return vec2(rand(rngState), rand(rngState));

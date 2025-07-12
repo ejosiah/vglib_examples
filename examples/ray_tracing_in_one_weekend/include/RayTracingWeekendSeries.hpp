@@ -25,7 +25,7 @@ struct UniformData {
 
 struct DiffuseMaterial {
     glm::vec3 color{0.6};
-    int padding;
+    int textureId{-1};
 };
 
 struct MetalMaterial{
@@ -49,6 +49,8 @@ protected:
     void initUniforms();
 
     void initBindlessDescriptor();
+
+    void createCheckerboardTexture();
 
     void loadScene();
 
@@ -158,5 +160,5 @@ protected:
     VulkanBuffer dielectricSpheres;
     VulkanBuffer dielectricMotion;
     Texture noise;
-
+    Texture checkerboard;
 };

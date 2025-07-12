@@ -23,10 +23,11 @@ RayTracingWeekendSeries::RayTracingWeekendSeries(const Settings& settings) : Vul
 void RayTracingWeekendSeries::initApp() {
     initCamera();
     initCanvas();
-    createNoiseTexture();
     createDescriptorPool();
     initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    createCheckerboardTexture();
+    createNoiseTexture();
     initLoader();
     loadScene();
     createMaterials();
@@ -54,7 +55,7 @@ void RayTracingWeekendSeries::initCamera() {
 
 void RayTracingWeekendSeries::initBindlessDescriptor() {
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0);
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10);
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
 }
 
@@ -213,7 +214,7 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
         };
     });
 
-    raytrace.layout = device.createPipelineLayout({ raytrace.descriptorSetLayout });
+    raytrace.layout = device.createPipelineLayout({ raytrace.descriptorSetLayout, *bindlessDescriptor.descriptorSetLayout });
     VkRayTracingPipelineCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
     createInfo.stageCount = COUNT(stages);
     createInfo.pStages = stages.data();
@@ -229,7 +230,9 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
 void RayTracingWeekendSeries::rayTrace(VkCommandBuffer commandBuffer) {
     CanvasToRayTraceBarrier(commandBuffer);
 
-    std::vector<VkDescriptorSet> sets{ raytrace.descriptorSet };
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = raytrace.descriptorSet;
+    sets[1] = bindlessDescriptor.descriptorSet;
     assert(raytrace.pipeline);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
@@ -458,7 +461,7 @@ void RayTracingWeekendSeries::loadInOneWeekendScene() {
 
 
     difSpheres.emplace_back(glm::vec3(0, -1000, 0), 1000);
-    mattes.push_back({ glm::vec3(0.5) });
+    mattes.push_back({ glm::vec3(0.5), 0 });
 
     auto rand = rng(0.f, 1.f, 1 << 20);
     const auto n = 500;
@@ -561,6 +564,11 @@ VulkanSampler RayTracingWeekendSeries::createNoiseSampler() {
     samplerInfo.maxLod = 1;
 
     return device.createSampler(samplerInfo);}
+
+void RayTracingWeekendSeries::createCheckerboardTexture() {
+    textures::checkerboard(device, checkerboard, glm::vec3(0.2, 0.3, 0.1), glm::vec3{0.9});
+    bindlessDescriptor.update({ &checkerboard, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0});
+}
 
 
 int main(){
