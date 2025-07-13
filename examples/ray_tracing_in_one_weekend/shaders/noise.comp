@@ -1,0 +1,22 @@
+#version 460
+
+#include "hash.glsl"
+#include "perlin_worley.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(set = 0, binding = 11) uniform writeonly image3D global_images3d[];
+
+
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    vec3 p = (vec3(gl_GlobalInvocationID) + 0.5)/vec3(gl_WorkGroupSize * gl_NumWorkGroups);
+    vec3 x = p * 8;
+
+    float r;
+    float c = perlinfbm(x, 2, 8, r);
+
+//    c = remap(c, -r, r, 0, 1);
+    c = abs(c);
+    imageStore(global_images3d[0], gid, vec4(c));
+}

@@ -118,12 +118,12 @@ vec2 remap(vec2 value, vec2 oldMin, vec2 oldMax, vec2 newMin, vec2 newMax){
 
 vec2 getUV(Sphere s, Ray r, float t){
     vec3 x = r.origin + r.direction * t;
-    vec3 p = x - s.center;
-    float u = acos(p.y/s.radius);
-    float v = atan(p.x, p.z);
+    vec3 p = normalize(x - s.center);
+    float phi = atan(p.z, p.x);
+    float theta = asin(p.y);
     vec2 uv;
-    uv.x = u / (TWO_PI);
-    uv.y = remap(v, -PI, PI, 0, 1);;
+    uv.x = 1 - (phi + PI) / (2 * PI);
+    uv.y = (theta + PI/2) / PI;
 
     return uv;
 }

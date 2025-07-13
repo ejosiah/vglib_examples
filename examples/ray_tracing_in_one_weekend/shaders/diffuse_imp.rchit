@@ -5,10 +5,15 @@
 
 #include "ray_tracing_lang.glsl"
 #include "common.glsl"
+#include "perlin_noise.glsl"
 
 struct Matte {
     vec3 albedo;
     int textureId;
+    int textureType;
+    float scale;
+    int useTriplanarMapping;
+    int padding;
 };
 
 layout(buffer_reference, buffer_reference_align=8) buffer SphereBuffer {
@@ -29,10 +34,16 @@ layout(location = 0) rayPayloadIn HitRecord hRec;
 
 hitAttribute vec2 bc;
 
+float turb(vec3 p) {
+    return abs(perlin_fbm(p, 2.0, 7));
+}
+
 void main() {
 
+    Sphere sphere = spheres.at[gl_PrimitiveID];
+
     vec3 p, n;
-    getSurfaceInfo(spheres.at[gl_PrimitiveID], gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, p, n);
+    getSurfaceInfo(sphere, gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, p, n);
 
     hRec.n = n;
     hRec.x = p;
@@ -41,9 +52,18 @@ void main() {
     Matte material = materials.at[gl_PrimitiveID];
     vec3 attenuation = material.albedo;
     if(material.textureId != -1) {
-        attenuation = texture(global_textures[material.textureId], p.xz/10).rgb;
+        if(material.textureType == 0){
+            if (material.useTriplanarMapping == 1){
+                attenuation = triplanerSample(global_textures[material.textureId], p, n, material.scale).rgb;
+            } else {
+                attenuation = texture(global_textures[material.textureId], bc * material.scale).rgb;
+            }
+        }else {
+            float s = material.scale;
+            float c = (1 + sin(s * p.y + 10 * turb(p))) * 0.5;
+            attenuation = vec3(c);
+        }
     }
-
     hRec.attenuation = attenuation;
 
 }

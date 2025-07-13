@@ -48,6 +48,13 @@ struct HitRecord {
     bool hit;
 };
 
+struct TriplanarCoords {
+    vec3 blendWeights;
+    vec2 uvX;
+    vec2 uvY;
+    vec2 uvZ;
+};
+
 
 layout(set = 0, binding = 1, scalar) uniform Constants {
     mat4 viewInverse;
@@ -73,6 +80,7 @@ bool useBlueNoise() {
 
 layout(set = 0, binding = 3) uniform sampler2DArray noise_texture;
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 10) uniform sampler3D global_textures3d[];
 
 vec2 sampleVec2(inout RngStateType rngState) {
     return vec2(rand(rngState), rand(rngState));
@@ -216,6 +224,34 @@ void generateCameraRay(
 
     // Final ray direction towards focal point
     rayDirectionWorld = normalize(focalPoint - rayOriginWorld);
+}
+
+TriplanarCoords getTriplanarCoords(vec3 position, vec3 normal, float scale) {
+    // Compute weights from normal (absolute value)
+    vec3 blending = abs(normalize(normal));
+
+    // Raise to a power to sharpen blending if desired
+    blending = pow(blending, vec3(4.0));
+
+    // Normalize so weights sum to 1
+    blending /= (blending.x + blending.y + blending.z);
+
+    // Generate planar UVs from world position
+    vec2 uvX = position.zy * scale; // projection onto YZ plane
+    vec2 uvY = position.xz * scale; // projection onto XZ plane
+    vec2 uvZ = position.xy * scale; // projection onto XY plane
+
+    return TriplanarCoords(blending, uvX, uvY, uvZ);
+}
+
+vec4 triplanerSample(sampler2D sTexture, vec3 position, vec3 normal, float scale) {
+    TriplanarCoords coords = getTriplanarCoords(position, normal, scale);
+
+    vec4 xTex = texture(sTexture, coords.uvX);
+    vec4 yTex = texture(sTexture, coords.uvY);
+    vec4 zTex = texture(sTexture, coords.uvZ);
+
+    return xTex * coords.blendWeights.x + yTex * coords.blendWeights.y + zTex * coords.blendWeights.z;
 }
 
 #endif // COMMON_GLSL

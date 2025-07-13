@@ -26,11 +26,17 @@ void RayTracingWeekendSeries::initApp() {
     createDescriptorPool();
     initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    compute = std::make_unique<ComputePipelines>(&device, pipelineMetaData());
+    compute->createPipelines();
     createCheckerboardTexture();
-    createNoiseTexture();
+    computePerlinNoise();
+    loadTextures();
     initLoader();
+    loadDefaultScene();
+    loadInOneWeekendScene();
+    loadTextureScene();
+    loadPerlinNoiseScene();
     loadScene();
-    createMaterials();
     initUniforms();
     createDescriptorSetLayouts();
     updateDescriptorSets();
@@ -38,6 +44,7 @@ void RayTracingWeekendSeries::initApp() {
     createPipelineCache();
     createRenderPipeline();
     createRayTracingPipeline();
+    sceneLabels = map_range(scenes, [](const auto& scene){ return scene.name.c_str(); });
 }
 
 void RayTracingWeekendSeries::initCamera() {
@@ -56,7 +63,7 @@ void RayTracingWeekendSeries::initCamera() {
 void RayTracingWeekendSeries::initBindlessDescriptor() {
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10);
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
+    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1);
 }
 
 void RayTracingWeekendSeries::beforeDeviceCreation() {
@@ -171,18 +178,18 @@ void RayTracingWeekendSeries::initCanvas() {
 void RayTracingWeekendSeries::createRayTracingPipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
     auto missShaderModule = device.createShaderModule( resource("main.rmiss.spv"));
-    auto diffuseHitShaderModule = device.createShaderModule( resource("diffuse.rchit.spv"));
-    auto metalHitShaderModule = device.createShaderModule( resource("metal.rchit.spv"));
-    auto dielectricHitShaderModule = device.createShaderModule( resource("dielectric.rchit.spv"));
+    auto diffuseHitShaderModule = device.createShaderModule( resource("diffuse_imp.rchit.spv"));
+    auto metalHitShaderModule = device.createShaderModule( resource("metal_imp.rchit.spv"));
+    auto dielectricHitShaderModule = device.createShaderModule( resource("dielectric_imp.rchit.spv"));
     auto implicitsIntersectShaderModule = device.createShaderModule( resource("main.rint.spv"));
 
     auto shaders = std::vector<ShaderInfo>(to<int>(ShaderIndex::Count));
     shaders[to<int>(ShaderIndex::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
     shaders[to<int>(ShaderIndex::Miss)] = { missShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
-    shaders[to<int>(ShaderIndex::DiffuseHit)] = { diffuseHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
-    shaders[to<int>(ShaderIndex::MetalHit)] = { metalHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
-    shaders[to<int>(ShaderIndex::DielectricHit)] = { dielectricHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
-    shaders[to<int>(ShaderIndex::Implicits)] = { implicitsIntersectShaderModule, VK_SHADER_STAGE_INTERSECTION_BIT_KHR};
+    shaders[to<int>(ShaderIndex::DiffuseHitImpl)] = { diffuseHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderIndex::MetalHitImpl)] = { metalHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderIndex::DielectricHitImpl)] = { dielectricHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderIndex::ImplIntersect)] = {implicitsIntersectShaderModule, VK_SHADER_STAGE_INTERSECTION_BIT_KHR};
 
 
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
@@ -191,19 +198,19 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(ShaderIndex::Miss)));
 
     if(diffuseSpheres.size != 0) {
-        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHitImpl), to<int>(ShaderIndex::ImplIntersect), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
         shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(diffuseSpheres));
         shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(materials.diffuse));
     }
 
     if(metalSpheres.size != 0) {
-        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHitImpl), to<int>(ShaderIndex::ImplIntersect), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
         shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(metalSpheres));
         shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(materials.metal));
     }
 
     if(dielectricSpheres != 0) {
-        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHit), to<int>(ShaderIndex::Implicits), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHitImpl), to<int>(ShaderIndex::ImplIntersect), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
         shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(dielectricSpheres));
         shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(materials.dielectric));
     }
@@ -322,10 +329,12 @@ void RayTracingWeekendSeries::createRenderPipeline() {
 void RayTracingWeekendSeries::onSwapChainDispose() {
     dispose(render.pipeline);
     dispose(raytrace.pipeline);
+    clearAccelerationStructure();
 }
 
 void RayTracingWeekendSeries::onSwapChainRecreation() {
     initCanvas();
+    loadScene();
     createRayTracingPipeline();
     updateDescriptorSets();
     createRenderPipeline();
@@ -364,6 +373,10 @@ void RayTracingWeekendSeries::renderUI(VkCommandBuffer commandBuffer) {
     static float apertureSize = uniforms.cpu->apertureSize;
     static float focalDistance = uniforms.cpu->focalDistance;
     static bool dirty = false;
+
+    if(ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen)) {
+        sceneUpdated = ImGui::Combo("Scene##1", &currentScene, sceneLabels.data(), sceneLabels.size());
+    }
 
     if(ImGui::CollapsingHeader("sampling", ImGuiTreeNodeFlags_DefaultOpen)) {
         if(uniforms.cpu->adaptiveSampling == 0) {
@@ -423,68 +436,84 @@ void RayTracingWeekendSeries::onPause() {
 }
 
 void RayTracingWeekendSeries::loadScene() {
-    loadTextureScene();
-}
+    assert(scenes.size() > currentScene);
 
-void RayTracingWeekendSeries::loadDefaultScene() {
     constexpr auto usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT  | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    std::vector<imp::Sphere> spheres;
+    auto& scene = scenes[currentScene];
 
-    spheres.emplace_back(glm::vec3{0, 0, -1}, 0.5);
-    spheres.emplace_back(glm::vec3{0, -100.5, -1}, 100);
+    if(!scene.implicits.diffuse.spheres.empty()) {
+        diffuseSpheres = device.createDeviceLocalBuffer(scene.implicits.diffuse.spheres.data(), BYTE_SIZE(scene.implicits.diffuse.spheres), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_spheres", diffuseSpheres.buffer);
+        rtBuilder.add(scene.implicits.diffuse.spheres, 0, 0);
 
-    diffuseSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_spheres", diffuseSpheres.buffer);
-    rtBuilder.add(spheres, 0, 0);
+        materials.diffuse = device.createDeviceLocalBuffer(scene.implicits.diffuse.materials.data(), BYTE_SIZE(scene.implicits.diffuse.materials), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_materials", materials.diffuse.buffer);
+    }
+    if(!scene.implicits.metal.spheres.empty()) {
+        metalSpheres = device.createDeviceLocalBuffer(scene.implicits.metal.spheres.data(), BYTE_SIZE(scene.implicits.metal.spheres), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("metal_spheres", metalSpheres.buffer);
+        rtBuilder.add(scene.implicits.metal.spheres, 0, 1);
 
+        materials.metal = device.createDeviceLocalBuffer(scene.implicits.metal.materials.data(), BYTE_SIZE(scene.implicits.metal.materials), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("metal_materials", materials.metal.buffer);
+    }
+    if(!scene.implicits.dielectric.spheres.empty()) {
+        dielectricSpheres = device.createDeviceLocalBuffer(scene.implicits.dielectric.spheres.data(), BYTE_SIZE(scene.implicits.dielectric.spheres), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_spheres", dielectricSpheres.buffer);
+        rtBuilder.add(scene.implicits.dielectric.spheres, 0, 2);
 
-    spheres.clear();
-    spheres.emplace_back(glm::vec3(1, 0, -1), 0.5);
-//    spheres.emplace_back(glm::vec3(-1, 0, -1), 0.5);
-    metalSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("metal_spheres", metalSpheres.buffer);
-    rtBuilder.add(spheres, 0, 1);
-
-    spheres.clear();
-    spheres.emplace_back(glm::vec3(-1, 0, -1), 0.5);
-    dielectricSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_spheres", dielectricSpheres.buffer);
-    rtBuilder.add(spheres, 0, 2);
-
-    asInstances = rtBuilder.buildTlas();
-
-    mattes = { {{0.8, 0.3, 0.3}}, {{0.8, 0.8, 0.0}} };
-    metals = { { {0.8, 0.6, 0.2}, 0.00 }, { {0.8, 0.8, 0.8}, 1 } };
-    dielectrics = { {1.5} };
-}
-
-void RayTracingWeekendSeries::loadTextureScene() {
-    constexpr auto usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT  | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    std::vector<imp::Sphere> spheres;
-
-    spheres.emplace_back(glm::vec3{0, -10, 1}, 10);
-    spheres.emplace_back(glm::vec3{0, 10, 1}, 10);
-
-    diffuseSpheres = device.createDeviceLocalBuffer(spheres.data(), BYTE_SIZE(spheres), usage);
-    device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_spheres", diffuseSpheres.buffer);
-    rtBuilder.add(spheres, 0, 0);
-
+        materials.dielectric = device.createDeviceLocalBuffer(scene.implicits.dielectric.materials.data(), BYTE_SIZE(scene.implicits.dielectric.materials), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_materials", materials.dielectric.buffer);
+    }
 
     createAccelerationStructure();
 
-    mattes = { {glm::vec3(0), 0}, {glm::vec3(0), 0} };
+}
+
+void RayTracingWeekendSeries::loadDefaultScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Default";
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 0, -1}, 0.5);
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -100.5, -1}, 100);
+
+
+    scene.implicits.metal.spheres.emplace_back(glm::vec3(1, 0, -1), 0.5);
+//    spheres.emplace_back(glm::vec3(-1, 0, -1), 0.5);
+
+
+    scene.implicits.dielectric.spheres.emplace_back(glm::vec3(-1, 0, -1), 0.5);
+
+    scene.implicits.diffuse.materials = { {{0.8, 0.3, 0.3}}, {{0.8, 0.8, 0.0}} };
+    scene.implicits.metal.materials = { { {0.8, 0.6, 0.2}, 0.00 }, { {0.8, 0.8, 0.8}, 1 } };
+    scene.implicits.dielectric.materials = { {1.5} };
+}
+
+void RayTracingWeekendSeries::loadTextureScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Texture";
+
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -10, 1}, 10);
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 10, 1}, 10);
+
+    scene.implicits.diffuse.materials = { {glm::vec3(0), 0}, {glm::vec3(0), 0} };
+}
+
+void RayTracingWeekendSeries::loadPerlinNoiseScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Perlin noise";
+
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 0, 0}, 1);
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -1001, 0}, 1000);
+
+    scene.implicits.diffuse.materials = { {glm::vec3(0.6), 2, 1, 4}, {glm::vec3(0.6), 2, 1} };
 }
 
 void RayTracingWeekendSeries::loadInOneWeekendScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Ray tracing in One weekend";
 
-    constexpr auto usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT  | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    std::vector<imp::Sphere> difSpheres;
-    std::vector<imp::Sphere> matSpheres;
-    std::vector<imp::Sphere> dieSpheres;
-
-
-    difSpheres.emplace_back(glm::vec3(0, -1000, 0), 1000);
-    mattes.push_back({ glm::vec3(0.5), 0 });
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3(0, -1000, 0), 1000);
+    scene.implicits.diffuse.materials.push_back({ {0.5, 0, 0}, 0, 0, 0.1, 1});
 
     auto rand = rng(0.f, 1.f, 1 << 20);
     const auto n = 500;
@@ -494,36 +523,27 @@ void RayTracingWeekendSeries::loadInOneWeekendScene() {
 
             auto choose_mat = rand();
             if(choose_mat < 0.8) {
-                difSpheres.emplace_back(center, 0.2);
-                mattes.push_back( { {rand() * rand(), rand() * rand(), rand() * rand()} });
+                scene.implicits.diffuse.spheres.emplace_back(center, 0.2);
+                scene.implicits.diffuse.materials.push_back( { {rand() * rand(), rand() * rand(), rand() * rand()} });
             } else if (choose_mat < 0.95) {
-                matSpheres.emplace_back(center, 0.2);
-                metals.push_back({ {0.5 * (1 + rand()), 0.5 * (1 + rand()), 0.5 * (1 + rand())}, 0.5f * rand() });
+                scene.implicits.metal.spheres.emplace_back(center, 0.2);
+                scene.implicits.metal.materials.push_back({ {0.5 * (1 + rand()), 0.5 * (1 + rand()), 0.5 * (1 + rand())}, 0.5f * rand() });
             }else {
-                dieSpheres.emplace_back(center, 0.2);
-                dielectrics.push_back({1.5});
+                scene.implicits.dielectric.spheres.emplace_back(center, 0.2);
+                scene.implicits.dielectric.materials.push_back({1.5});
             }
         }
     }
 
 
-    dieSpheres.emplace_back(glm::vec3{0, 1, 0}, 1);
-    dielectrics.push_back({1.5});
+    scene.implicits.dielectric.spheres.emplace_back(glm::vec3{0, 1, 0}, 1);
+    scene.implicits.dielectric.materials.push_back({1.5});
 
-    difSpheres.emplace_back(glm::vec3{-4, 1, 0}, 1);
-    mattes.push_back({{ 0.4, 0.2, 0.1}});
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{-4, 1, 0}, 1);
+    scene.implicits.diffuse.materials.push_back({{ 0.4, 0.2, 0.1}});
 
-    matSpheres.emplace_back(glm::vec3{4, 1, 0}, 1);
-    metals.push_back({{ 0.7, 0.6, 0.5}, 0.0});
-
-    rtBuilder.add(difSpheres, 0, 0);
-    rtBuilder.add(matSpheres, 0, 1);
-    rtBuilder.add(dieSpheres, 0, 2);
-    createAccelerationStructure();
-
-    diffuseSpheres = device.createDeviceLocalBuffer(difSpheres.data(), BYTE_SIZE(difSpheres), usage);
-    metalSpheres = device.createDeviceLocalBuffer(matSpheres.data(), BYTE_SIZE(matSpheres), usage);
-    dielectricSpheres = device.createDeviceLocalBuffer(dieSpheres.data(), BYTE_SIZE(dieSpheres), usage);
+    scene.implicits.metal.spheres.emplace_back(glm::vec3{4, 1, 0}, 1);
+    scene.implicits.metal.materials.push_back({{ 0.7, 0.6, 0.5}, 0.0});
 }
 
 void RayTracingWeekendSeries::initUniforms() {
@@ -548,37 +568,26 @@ void RayTracingWeekendSeries::endFrame() {
     }else if(uniforms.cpu->sampleCount > 64) {
         uniforms.cpu->sampleCount = 16;
     }
+    if(sceneUpdated) {
+        sceneUpdated = false;
+        invalidateSwapChain();
+    }
 }
 
 void RayTracingWeekendSeries::newFrame() {
     camera->newFrame();
 }
 
-void RayTracingWeekendSeries::createMaterials() {
-    constexpr auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-
-    if(!mattes.empty()) {
-        materials.diffuse = device.createDeviceLocalBuffer(mattes.data(), BYTE_SIZE(mattes), usage);
-        device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_materials", materials.diffuse.buffer);
-    }
-    if(!metals.empty()) {
-        materials.metal = device.createDeviceLocalBuffer(metals.data(), BYTE_SIZE(metals), usage);
-        device.setName<VK_OBJECT_TYPE_BUFFER>("metal_materials", materials.metal.buffer);
-    }
-    if(!dielectrics.empty()) {
-        materials.dielectric = device.createDeviceLocalBuffer(dielectrics.data(), BYTE_SIZE(dielectrics), usage);
-        device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_materials", materials.dielectric.buffer);
-    }
-
-}
-
-void RayTracingWeekendSeries::createNoiseTexture() {
+void RayTracingWeekendSeries::loadTextures() {
     std::vector<std::string> paths;
     for(auto i = 0; i < 64; ++i) {
         paths.push_back(resource(std::format("fast_noise/128_128/uniform/RG_{}.png", i)));
     }
     noise.sampler = createNoiseSampler();
     textures::fromFile(device, noise, paths);
+
+    textures::fromFile(device, earthTexture, resource("2k_earth_daymap.jpg"), true, VK_FORMAT_R8G8B8A8_SRGB);
+    bindlessDescriptor.update({ &earthTexture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 });
 }
 
 VulkanSampler RayTracingWeekendSeries::createNoiseSampler() {
@@ -598,6 +607,41 @@ VulkanSampler RayTracingWeekendSeries::createNoiseSampler() {
 void RayTracingWeekendSeries::createCheckerboardTexture() {
     textures::checkerboard(device, checkerboard, glm::vec3(0.2, 0.3, 0.1), glm::vec3{0.9});
     bindlessDescriptor.update({ &checkerboard, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0});
+}
+
+void RayTracingWeekendSeries::computePerlinNoise() {
+    textures::create(device, perlinNoise, VK_IMAGE_TYPE_3D, VK_FORMAT_R8G8B8A8_UNORM, {1024, 1024, 32});
+    bindlessDescriptor.update({ &perlinNoise, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, VK_IMAGE_LAYOUT_GENERAL});
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        Barriers::push(perlinNoise.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                       VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+
+        Barriers::flush(commandBuffer);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->pipeline("noise"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->layout("noise"), 0, 1, &bindlessDescriptor.descriptorSet, 0, nullptr);
+        vkCmdDispatch(commandBuffer, 128, 128, 4);
+
+        Barriers::push(perlinNoise.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                       VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        Barriers::flush(commandBuffer);
+
+    });
+
+    bindlessDescriptor.update({ &perlinNoise, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2});
+
+}
+
+std::vector<PipelineMetaData> RayTracingWeekendSeries::pipelineMetaData() {
+    return {
+            {
+                .name = "noise",
+                .shadePath = resource("noise.comp.spv"),
+                .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
+            },
+    };
 }
 
 

@@ -1,20 +1,9 @@
+#ifndef PERLIN_WORLEY_GLSL
+#define PERLIN_WORLEY_GLSL
+
 /**
 This tab contains all the necessary noise functions required to model a cloud shape.
 */
-
-// Hash by David_Hoskins
-#define UI0 1597334673U
-#define UI1 3812015801U
-#define UI2 uvec2(UI0, UI1)
-#define UI3 uvec3(UI0, UI1, 2798796415U)
-#define UIF (1.0 / float(0xffffffffU))
-
-vec3 hash33(vec3 p)
-{
-    uvec3 q = uvec3(ivec3(p)) * UI3;
-    q = (q.x ^ q.y ^ q.z)*UI3;
-    return -1. + 2. * vec3(q) * UIF;
-}
 
 float remap(float x, float a, float b, float c, float d)
 {
@@ -104,6 +93,21 @@ float perlinfbm(vec3 p, float freq, int octaves)
 
     return noise;
 }
+float perlinfbm(vec3 p, float freq, int octaves, out float range) {
+    float G = exp2(-.85);
+    float amp = 1.;
+    float noise = 0.;
+    range = 0;
+    for (int i = 0; i < octaves; ++i)
+    {
+        range += amp;
+        noise += amp * gradientNoise(p * freq, freq);
+        freq *= 2.;
+        amp *= G;
+    }
+
+    return noise;
+}
 
 // Tileable Worley fbm inspired by Andrew Schneider's Real-Time Volumetric Cloudscapes
 // chapter in GPU Pro 7.
@@ -114,3 +118,4 @@ float worleyFbm(vec3 p, float freq)
     worleyNoise(p*freq*4., freq*4.) * .125;
 }
 
+#endif // PERLIN_WORLEY_GLSL

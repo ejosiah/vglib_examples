@@ -2,12 +2,15 @@
 #include "VulkanRayTraceModel.hpp"
 #include "VulkanRayTraceBaseApp.hpp"
 #include "shader_binding_table.hpp"
+#include "ComputePipelins.hpp"
 
-enum class ShaderIndex : int { RayGen, Miss, DiffuseHit, MetalHit, DielectricHit, Implicits, Count };
+enum class ShaderIndex : int { RayGen, Miss, DiffuseHitImpl, MetalHitImpl, DielectricHitImpl, ImplIntersect, Count };
 
 enum class HitShaders : int { Diffuse, Metal, Dielectric, Count };
 
 enum class RayType : int { Primary, Count };
+
+enum class TextureType : int { TwoD, ThreeD };
 
 struct UniformData {
     glm::mat4 viewInverse{1};
@@ -26,6 +29,10 @@ struct UniformData {
 struct DiffuseMaterial {
     glm::vec3 color{0.6};
     int textureId{-1};
+    int textureType{to<int>(TextureType::TwoD)};
+    float scale{1};
+    int useTriplanarMapping{0};
+    int padding;
 };
 
 struct MetalMaterial{
@@ -35,6 +42,40 @@ struct MetalMaterial{
 
 struct DielectricMaterial {
     float ior{1.5};
+};
+
+struct Scene {
+    std::string name;
+    struct {
+        struct {
+            std::vector<imp::Sphere> spheres;
+            std::vector<DiffuseMaterial> materials;
+        } diffuse;
+        struct {
+            std::vector<imp::Sphere> spheres;
+            std::vector<MetalMaterial> materials;
+        } metal;
+        struct {
+            std::vector<imp::Sphere> spheres;
+            std::vector<DielectricMaterial> materials;
+        } dielectric;
+
+    } implicits;
+
+    struct {
+        struct {
+            std::vector<VulkanDrawable> spheres;
+            std::vector<DiffuseMaterial> materials;
+        } diffuse;
+        struct {
+            std::vector<VulkanDrawable> spheres;
+            std::vector<MetalMaterial> materials;
+        } metal;
+        struct {
+            std::vector<VulkanDrawable> spheres;
+            std::vector<DielectricMaterial> materials;
+        } dielectric;
+    } triangles;
 };
 
 class RayTracingWeekendSeries : public VulkanRayTraceBaseApp {
@@ -56,11 +97,11 @@ protected:
 
     void loadDefaultScene();
 
+    void loadPerlinNoiseScene();
+
     void loadTextureScene();
 
     void loadInOneWeekendScene();
-
-    void createMaterials();
 
     void beforeDeviceCreation() override;
 
@@ -108,7 +149,11 @@ protected:
 
     void newFrame() override;
 
-    void createNoiseTexture();
+    void loadTextures();
+
+    void computePerlinNoise();
+
+    std::vector<PipelineMetaData> pipelineMetaData();
 
     VulkanSampler createNoiseSampler();
 
@@ -163,4 +208,11 @@ protected:
     VulkanBuffer dielectricMotion;
     Texture noise;
     Texture checkerboard;
+    Texture earthTexture;
+    Texture perlinNoise;
+    std::unique_ptr<ComputePipelines> compute;
+    std::vector<Scene> scenes;
+    int currentScene{1};
+    std::vector<const char*> sceneLabels;
+    bool sceneUpdated{};
 };

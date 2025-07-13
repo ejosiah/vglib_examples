@@ -425,7 +425,8 @@ std::vector<PipelineMetaData> RtxAmbientOcclusion::pipelineMetaData() {
                 .layouts = { &gBufferDescriptorSetLayout, &imageDescriptorSetLayout, &accStructDescriptorSetLayout, &textureDescriptorSetLayout },
                 .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants) } }
             },
-    };}
+    };
+}
 
 void RtxAmbientOcclusion::computeAO(VkCommandBuffer commandBuffer) {
     const auto gx = (width + 7)/8;
