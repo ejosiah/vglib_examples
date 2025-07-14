@@ -4,9 +4,11 @@
 #include "shader_binding_table.hpp"
 #include "ComputePipelins.hpp"
 
-enum class ShaderIndex : int { RayGen, Miss, DiffuseHitImpl, MetalHitImpl, DielectricHitImpl, ImplIntersect, Count };
-
-enum class HitShaders : int { Diffuse, Metal, Dielectric, Count };
+enum class ShaderIndex : int {
+    RayGen, Miss, ImplIntersect,
+    DiffuseHitImpl, MetalHitImpl, DielectricHitImpl,
+    DiffuseHitTri, Count};
+//    DiffuseHitTri, MetalHitTri, DielectricHitTri, Count };
 
 enum class RayType : int { Primary, Count };
 
@@ -24,15 +26,19 @@ struct UniformData {
     float focalDistance{2};
     int adaptiveSampling{1};
     int blueNoise{0};
+    int litBackGround{1};
 };
 
 struct DiffuseMaterial {
-    glm::vec3 color{0.6};
+    glm::vec3 color{1};
     int textureId{-1};
+
+    glm::vec3 emission{0};
     int textureType{to<int>(TextureType::TwoD)};
+
     float scale{1};
     int useTriplanarMapping{0};
-    int padding;
+    int padding[2];
 };
 
 struct MetalMaterial{
@@ -50,32 +56,39 @@ struct Scene {
         struct {
             std::vector<imp::Sphere> spheres;
             std::vector<DiffuseMaterial> materials;
+            uint32_t hitGroup{};
         } diffuse;
         struct {
             std::vector<imp::Sphere> spheres;
             std::vector<MetalMaterial> materials;
+            uint32_t hitGroup{};
         } metal;
         struct {
             std::vector<imp::Sphere> spheres;
             std::vector<DielectricMaterial> materials;
+            uint32_t hitGroup{};
         } dielectric;
 
     } implicits;
 
     struct {
         struct {
-            std::vector<VulkanDrawable> spheres;
+            VulkanDrawable objects;
             std::vector<DiffuseMaterial> materials;
+            uint32_t hitGroup{};
         } diffuse;
         struct {
-            std::vector<VulkanDrawable> spheres;
+            VulkanDrawable objects;
             std::vector<MetalMaterial> materials;
+            uint32_t hitGroup{};
         } metal;
         struct {
-            std::vector<VulkanDrawable> spheres;
+            VulkanDrawable objects;
             std::vector<DielectricMaterial> materials;
+            uint32_t hitGroup{};
         } dielectric;
     } triangles;
+    int litBackGround = 1;
 };
 
 class RayTracingWeekendSeries : public VulkanRayTraceBaseApp {
@@ -98,6 +111,8 @@ protected:
     void loadDefaultScene();
 
     void loadPerlinNoiseScene();
+
+    void loadLightScene();
 
     void loadTextureScene();
 
@@ -153,6 +168,8 @@ protected:
 
     void computePerlinNoise();
 
+    uint32_t nextHitGroup();
+
     std::vector<PipelineMetaData> pipelineMetaData();
 
     VulkanSampler createNoiseSampler();
@@ -197,6 +214,11 @@ protected:
         VulkanBuffer metal;
         VulkanBuffer dielectric;
     } materials;
+    struct {
+        VulkanBuffer diffuse;
+        VulkanBuffer metal;
+        VulkanBuffer dielectric;
+    } triangleMaterials;
     std::vector<DiffuseMaterial> mattes;
     std::vector<MetalMaterial> metals;
     std::vector<DielectricMaterial> dielectrics;
@@ -215,4 +237,6 @@ protected:
     int currentScene{1};
     std::vector<const char*> sceneLabels;
     bool sceneUpdated{};
+    uint32_t nextInstance{};
+    phong::VulkanDrawableInfo info{};
 };

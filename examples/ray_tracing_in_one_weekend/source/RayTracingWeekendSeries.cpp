@@ -18,6 +18,15 @@ RayTracingWeekendSeries::RayTracingWeekendSeries(const Settings& settings) : Vul
     fileManager().addSearchPathFront("ray_tracing_in_one_weekend/spv");
     fileManager().addSearchPathFront("ray_tracing_in_one_weekend/models");
     fileManager().addSearchPathFront("ray_tracing_in_one_weekend/textures");
+
+    info.vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.materialUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.materialIdUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    info.generateMaterialId = true;
+    info.vertexUsage += VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    info.indexUsage += VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    info.materialBufferMemoryUsage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 }
 
 void RayTracingWeekendSeries::initApp() {
@@ -32,12 +41,13 @@ void RayTracingWeekendSeries::initApp() {
     computePerlinNoise();
     loadTextures();
     initLoader();
+    initUniforms();
     loadDefaultScene();
     loadInOneWeekendScene();
     loadTextureScene();
     loadPerlinNoiseScene();
+    loadLightScene();
     loadScene();
-    initUniforms();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     createCommandPool();
@@ -179,6 +189,7 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
     auto missShaderModule = device.createShaderModule( resource("main.rmiss.spv"));
     auto diffuseHitShaderModule = device.createShaderModule( resource("diffuse_imp.rchit.spv"));
+    auto diffuseTriHitShaderModule = device.createShaderModule( resource("diffuse_tri.rchit.spv"));
     auto metalHitShaderModule = device.createShaderModule( resource("metal_imp.rchit.spv"));
     auto dielectricHitShaderModule = device.createShaderModule( resource("dielectric_imp.rchit.spv"));
     auto implicitsIntersectShaderModule = device.createShaderModule( resource("main.rint.spv"));
@@ -191,30 +202,41 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     shaders[to<int>(ShaderIndex::DielectricHitImpl)] = { dielectricHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::ImplIntersect)] = {implicitsIntersectShaderModule, VK_SHADER_STAGE_INTERSECTION_BIT_KHR};
 
+    shaders[to<int>(ShaderIndex::DiffuseHitTri)] = { diffuseTriHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+
 
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
 
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(ShaderIndex::Miss)));
 
+    const auto& scene = scenes[currentScene];
     if(diffuseSpheres.size != 0) {
+        const auto hitGroup = scene.implicits.diffuse.hitGroup;
         shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHitImpl), to<int>(ShaderIndex::ImplIntersect), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
-        shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(diffuseSpheres));
-        shaderTablesDesc.hitGroups[to<int>(HitShaders::Diffuse)].addRecord(device.getAddress(materials.diffuse));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(diffuseSpheres));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(materials.diffuse));
     }
 
     if(metalSpheres.size != 0) {
+        const auto hitGroup = scene.implicits.metal.hitGroup;
         shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHitImpl), to<int>(ShaderIndex::ImplIntersect), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
-        shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(metalSpheres));
-        shaderTablesDesc.hitGroups[to<int>(HitShaders::Metal)].addRecord(device.getAddress(materials.metal));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(metalSpheres));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(materials.metal));
     }
 
     if(dielectricSpheres != 0) {
+        const auto hitGroup = scene.implicits.dielectric.hitGroup;
         shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHitImpl), to<int>(ShaderIndex::ImplIntersect), VK_SHADER_UNUSED_KHR, VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR));
-        shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(dielectricSpheres));
-        shaderTablesDesc.hitGroups[to<int>(HitShaders::Dielectric)].addRecord(device.getAddress(materials.dielectric));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(dielectricSpheres));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(materials.dielectric));
     }
 
+    if(triangleMaterials.diffuse.size != 0) {
+        const auto hitGroup = scene.triangles.diffuse.hitGroup;
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHitTri)));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(triangleMaterials.diffuse));
+    }
 
     dispose(raytrace.layout);
 
@@ -330,6 +352,12 @@ void RayTracingWeekendSeries::onSwapChainDispose() {
     dispose(render.pipeline);
     dispose(raytrace.pipeline);
     clearAccelerationStructure();
+    dispose(diffuseSpheres);
+    dispose(metalSpheres);
+    dispose(dielectricSpheres);
+    nextInstance = 0;
+    uniforms.cpu->litBackGround = 1;
+    uniforms.cpu->currentSample = 0;
 }
 
 void RayTracingWeekendSeries::onSwapChainRecreation() {
@@ -338,7 +366,6 @@ void RayTracingWeekendSeries::onSwapChainRecreation() {
     createRayTracingPipeline();
     updateDescriptorSets();
     createRenderPipeline();
-    uniforms.cpu->currentSample = 0;
 }
 
 VkCommandBuffer *RayTracingWeekendSeries::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -383,7 +410,7 @@ void RayTracingWeekendSeries::renderUI(VkCommandBuffer commandBuffer) {
             samples = std::clamp(samples, 1, 64);
             dirty |= ImGui::SliderInt("sample count", &samples, 1, 64);
         }else {
-            samples = std::clamp(samples, 1000, 1000000);
+            samples = std::clamp(samples, 10000, 1000000);
             dirty |= ImGui::SliderInt("sample count", &samples, 1000, 1000000);
         }
         dirty |= ImGui::SliderInt("bounces", &bounces, 1, 50);
@@ -442,32 +469,76 @@ void RayTracingWeekendSeries::loadScene() {
     auto& scene = scenes[currentScene];
 
     if(!scene.implicits.diffuse.spheres.empty()) {
+        const auto hitGroup = nextHitGroup();
         diffuseSpheres = device.createDeviceLocalBuffer(scene.implicits.diffuse.spheres.data(), BYTE_SIZE(scene.implicits.diffuse.spheres), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_spheres", diffuseSpheres.buffer);
-        rtBuilder.add(scene.implicits.diffuse.spheres, 0, 0);
+        rtBuilder.add(scene.implicits.diffuse.spheres, 0, hitGroup * to<int>(RayType::Count));
+        scene.implicits.diffuse.hitGroup = hitGroup;
 
         materials.diffuse = device.createDeviceLocalBuffer(scene.implicits.diffuse.materials.data(), BYTE_SIZE(scene.implicits.diffuse.materials), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("diffuse_materials", materials.diffuse.buffer);
     }
     if(!scene.implicits.metal.spheres.empty()) {
+        const auto hitGroup = nextHitGroup();
         metalSpheres = device.createDeviceLocalBuffer(scene.implicits.metal.spheres.data(), BYTE_SIZE(scene.implicits.metal.spheres), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("metal_spheres", metalSpheres.buffer);
-        rtBuilder.add(scene.implicits.metal.spheres, 0, 1);
+        rtBuilder.add(scene.implicits.metal.spheres, 0, hitGroup * to<int>(RayType::Count));
+        scene.implicits.metal.hitGroup = hitGroup;
 
         materials.metal = device.createDeviceLocalBuffer(scene.implicits.metal.materials.data(), BYTE_SIZE(scene.implicits.metal.materials), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("metal_materials", materials.metal.buffer);
     }
     if(!scene.implicits.dielectric.spheres.empty()) {
+        const auto hitGroup = nextHitGroup();
         dielectricSpheres = device.createDeviceLocalBuffer(scene.implicits.dielectric.spheres.data(), BYTE_SIZE(scene.implicits.dielectric.spheres), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_spheres", dielectricSpheres.buffer);
-        rtBuilder.add(scene.implicits.dielectric.spheres, 0, 2);
+        rtBuilder.add(scene.implicits.dielectric.spheres, 0, hitGroup * to<int>(RayType::Count));
+        scene.implicits.dielectric.hitGroup = hitGroup;
 
         materials.dielectric = device.createDeviceLocalBuffer(scene.implicits.dielectric.materials.data(), BYTE_SIZE(scene.implicits.dielectric.materials), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("dielectric_materials", materials.dielectric.buffer);
     }
 
-    createAccelerationStructure();
+    std::vector<rt::MeshObjectInstance> meshInstances;
+    if(!scene.triangles.diffuse.objects.empty()) {
+        const auto hitGroup = nextHitGroup();
+        auto& instance = meshInstances.emplace_back();
+        instance.object.drawable = &scene.triangles.diffuse.objects;
+        instance.object.ensureMetadata();
+        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        scene.triangles.diffuse.hitGroup = hitGroup;
 
+        triangleMaterials.diffuse = device.createDeviceLocalBuffer(scene.triangles.diffuse.materials.data(), BYTE_SIZE(scene.triangles.diffuse.materials), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("triangle_diffuse_materials", triangleMaterials.diffuse.buffer);
+    }
+
+    if(!scene.triangles.metal.objects.empty()) {
+        const auto hitGroup = nextHitGroup();
+        auto& instance = meshInstances.emplace_back();
+        instance.object.drawable = &scene.triangles.metal.objects;
+        instance.object.ensureMetadata();
+        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        scene.triangles.metal.hitGroup = hitGroup;
+
+        triangleMaterials.metal = device.createDeviceLocalBuffer(scene.triangles.metal.materials.data(), BYTE_SIZE(scene.triangles.metal.materials), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("triangle_metal_materials", triangleMaterials.metal.buffer);
+    }
+
+    if(!scene.triangles.dielectric.objects.empty()) {
+        const auto hitGroup = nextHitGroup();
+        auto& instance = meshInstances.emplace_back();
+        instance.object.drawable = &scene.triangles.dielectric.objects;
+        instance.object.ensureMetadata();
+        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        scene.triangles.dielectric.hitGroup = hitGroup;
+
+        triangleMaterials.dielectric = device.createDeviceLocalBuffer(scene.triangles.dielectric.materials.data(), BYTE_SIZE(scene.triangles.dielectric.materials), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("triangle_dielectric_materials", triangleMaterials.dielectric.buffer);
+    }
+    rtBuilder.add(meshInstances);
+
+    createAccelerationStructure();
+    uniforms.cpu->litBackGround = scene.litBackGround;
 }
 
 void RayTracingWeekendSeries::loadDefaultScene() {
@@ -505,7 +576,71 @@ void RayTracingWeekendSeries::loadPerlinNoiseScene() {
     scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 0, 0}, 1);
     scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -1001, 0}, 1000);
 
-    scene.implicits.diffuse.materials = { {glm::vec3(0.6), 2, 1, 4}, {glm::vec3(0.6), 2, 1} };
+    scene.implicits.diffuse.materials.resize(2);
+    scene.implicits.diffuse.materials[0] = {
+        .color = glm::vec3(0.6),
+        .textureId = 2,
+        .textureType = 1,
+        .scale = 4
+    };
+    scene.implicits.diffuse.materials[1] = {
+        .color = glm::vec3(0.6),
+        .textureId = 2,
+        .textureType = 1,
+    };
+
+}
+
+void RayTracingWeekendSeries::loadLightScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Lights";
+
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 2, 0}, 2);
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 7, 0}, 2);
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -1000, 0}, 1000);
+
+    scene.implicits.diffuse.materials.resize(3);
+    scene.implicits.diffuse.materials[0] = {
+        .color = glm::vec3(0.6),
+        .textureId = 2,
+        .textureType = 1,
+        .scale = 4
+    };
+    scene.implicits.diffuse.materials[1] = {
+        .emission = glm::vec3(1)
+    };
+    scene.implicits.diffuse.materials[2] = {
+        .color = glm::vec3(0.6),
+        .textureId = 2,
+        .textureType = 1,
+    };
+
+    float x0 = 3;
+    float x1 = 5;
+    float y0 = 1;
+    float y1 = 3;
+    float z = -2;
+
+    auto w = x1 - x0;
+    auto h = y1 - y0;
+    glm::vec3 c{ (x0 + x1) * .5, (y1 + y0) * .5, z };
+    auto pose = glm::translate(glm::mat4{1}, c);
+    auto plane = primitives::plane(2, 2, w, h, pose, glm::vec4(1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    mesh::Mesh mesh{};
+    mesh.vertices = plane.vertices;
+    mesh.indices = plane.indices;
+    std::vector<mesh::Mesh> meshes{ mesh};
+
+
+    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
+    scene.triangles.diffuse.materials.resize(1);
+    scene.triangles.diffuse.materials[0] = {
+        .color = glm::vec3(1),
+        .emission = glm::vec3(1)
+    };
+
+    scene.litBackGround = 0;
+
 }
 
 void RayTracingWeekendSeries::loadInOneWeekendScene() {
@@ -513,7 +648,13 @@ void RayTracingWeekendSeries::loadInOneWeekendScene() {
     scene.name = "Ray tracing in One weekend";
 
     scene.implicits.diffuse.spheres.emplace_back(glm::vec3(0, -1000, 0), 1000);
-    scene.implicits.diffuse.materials.push_back({ {0.5, 0, 0}, 0, 0, 0.1, 1});
+    scene.implicits.diffuse.materials.resize(1);
+    scene.implicits.diffuse.materials[0] = {
+            .color = {0.5, 0, 0},
+            .textureId = 0,
+            .scale = 0.1,
+            .useTriplanarMapping = 1
+    };
 
     auto rand = rng(0.f, 1.f, 1 << 20);
     const auto n = 500;
@@ -642,6 +783,11 @@ std::vector<PipelineMetaData> RayTracingWeekendSeries::pipelineMetaData() {
                 .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
             },
     };
+}
+
+uint32_t RayTracingWeekendSeries::nextHitGroup() {
+    auto hitGroup = nextInstance++;
+    return hitGroup;
 }
 
 

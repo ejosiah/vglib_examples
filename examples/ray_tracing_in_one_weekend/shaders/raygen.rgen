@@ -51,10 +51,14 @@ vec3 computeRadience(uint currentSample, uint sampleCount) {
     vec3 color = vec3(0);
     hRec.hit = true;
     hRec.color = vec3(0);
+    hRec.emission = vec3(0);
     hRec.attenuation = vec3(1);
 
     for(int bounce = 0; bounce < maxBounce; ++bounce) {
         traceRayEXT(topLevelAs, gl_RayFlagsOpaqueEXT, 0xff, 0, 1, 0, hRec.x, Tmin, hRec.wi, Tmax, 0);
+
+        color += throughput * hRec.emission;
+
         if(!hRec.hit || isBlack(hRec.wi)) {
             color += throughput * hRec.color;
             break;

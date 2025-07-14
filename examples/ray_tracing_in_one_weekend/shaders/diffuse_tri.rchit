@@ -7,17 +7,11 @@
 #include "common.glsl"
 #include "perlin_noise.glsl"
 
-
-layout(buffer_reference, buffer_reference_align=8) buffer SphereBuffer {
-    Sphere at[];
-};
-
 layout(buffer_reference, buffer_reference_align=8) buffer MaterialBuffer {
     Diffuse at[];
 };
 
 layout(shaderRecord, std430) buffer SBT {
-    SphereBuffer spheres;
     MaterialBuffer materials;
 };
 
@@ -32,10 +26,8 @@ float turb(vec3 p) {
 
 void main() {
 
-    Sphere sphere = spheres.at[gl_PrimitiveID];
-
     vec3 p, n;
-    getSurfaceInfo(sphere, gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, p, n);
+    getSurfaceInfo(bc, gl_HitTriangleVertexPositionsEXT, gl_ObjectToWorld, p, n);
 
     hRec.n = n;
     hRec.x = p;
@@ -47,7 +39,7 @@ void main() {
     hRec.wi = normalize(TBN * wi);
 //    hRec.wi = hRec.x + n + uniformSampleSphere(sampleVec2(hRec));
 
-    Diffuse material = materials.at[gl_PrimitiveID];
+    Diffuse material = materials.at[gl_InstanceCustomIndex];
     vec3 attenuation = material.albedo;
     if(material.textureId != -1) {
         if(material.textureType == 0){

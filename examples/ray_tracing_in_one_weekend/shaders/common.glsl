@@ -43,6 +43,7 @@ struct HitRecord {
     vec3 wi;
     vec3 color;
     vec3 attenuation;
+    vec3 emission;
     RngStateType rngState;
     uint seed;
     bool hit;
@@ -53,6 +54,18 @@ struct TriplanarCoords {
     vec2 uvX;
     vec2 uvY;
     vec2 uvZ;
+};
+
+struct Diffuse {
+    vec3 albedo;
+    int textureId;
+
+    vec3 emission;
+    int textureType;
+
+    float scale;
+    int useTriplanarMapping;
+    int padding[2];
 };
 
 
@@ -68,6 +81,7 @@ layout(set = 0, binding = 1, scalar) uniform Constants {
     float focalDistance;
     int adaptiveSampling;
     int blueNoise;
+    int litBackGround;
 };
 
 bool adaptiveSamplingEnabled() {
@@ -178,6 +192,10 @@ vec2 sampleVec2(inout HitRecord hRec) {
     }else {
         return sampleVec2(hRec.rngState);
     }
+}
+
+vec3 sampleVec3(inout HitRecord hRec) {
+    return vec3(rand(hRec.rngState), rand(hRec.rngState), rand(hRec.rngState));
 }
 
 float sampleReal(inout HitRecord hRec) {
