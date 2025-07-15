@@ -31,13 +31,12 @@ void main() {
 
     hRec.n = n;
     hRec.x = p;
-    vec3 wi = sampleHemisphere(sampleVec2(hRec));
+    vec3 wi = cosineSampleHemisphere(sampleVec2(hRec));
 
-    vec3 ti, bi;
-    othonormalBasis(ti, bi, n);
-    mat3 TBN = mat3(ti, bi, n);
-    hRec.wi = normalize(TBN * wi);
-//    hRec.wi = hRec.x + n + uniformSampleSphere(sampleVec2(hRec));
+    vec3 tn, bn;
+    othonormalBasis(tn, bn, n);
+    mat3 TBN = mat3(tn, bn, n);
+    hRec.wi = TBN * wi;
 
     Diffuse material = materials.at[gl_InstanceCustomIndex];
     vec3 attenuation = material.albedo;

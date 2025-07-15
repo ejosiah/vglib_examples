@@ -112,6 +112,8 @@ protected:
 
     void loadPerlinNoiseScene();
 
+    void loadCornellBoxScene();
+
     void loadLightScene();
 
     void loadTextureScene();

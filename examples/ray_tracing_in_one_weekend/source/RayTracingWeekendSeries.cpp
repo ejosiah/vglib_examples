@@ -47,6 +47,7 @@ void RayTracingWeekendSeries::initApp() {
     loadTextureScene();
     loadPerlinNoiseScene();
     loadLightScene();
+    loadCornellBoxScene();
     loadScene();
     createDescriptorSetLayouts();
     updateDescriptorSets();
@@ -641,6 +642,76 @@ void RayTracingWeekendSeries::loadLightScene() {
 
     scene.litBackGround = 0;
 
+}
+
+void RayTracingWeekendSeries::loadCornellBoxScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Cornell box";
+
+    auto cornellBox = primitives::cornellBox();
+
+    std::vector<mesh::Mesh> meshes(8);
+    scene.triangles.diffuse.materials.resize(8);
+
+    meshes[0].name = "Light";
+    meshes[0].vertices = cornellBox[0].vertices;
+    meshes[0].indices = cornellBox[0].indices;
+    scene.triangles.diffuse.materials[0] = {
+        .color = glm::vec3(0),
+        .emission = glm::vec3(15)
+    };
+
+    meshes[1].name = "Floor";
+    meshes[1].vertices = cornellBox[3].vertices;
+    meshes[1].indices = cornellBox[3].indices;
+    scene.triangles.diffuse.materials[1] = {
+        .color = cornellBox[3].vertices[0].color
+    };
+
+    meshes[2].name = "Celling";
+    meshes[2].vertices = cornellBox[1].vertices;
+    meshes[2].indices = cornellBox[1].indices;
+    scene.triangles.diffuse.materials[2] = {
+        .color = cornellBox[1].vertices[0].color
+    };
+
+    meshes[3].name = "BackWall";
+    meshes[3].vertices = cornellBox[7].vertices;
+    meshes[3].indices = cornellBox[7].indices;
+    scene.triangles.diffuse.materials[3] = {
+        .color = cornellBox[7].vertices[0].color
+    };
+
+    meshes[4].name = "rightWall";
+    meshes[4].vertices = cornellBox[2].vertices;
+    meshes[4].indices = cornellBox[2].indices;
+    scene.triangles.diffuse.materials[4] = {
+        .color = cornellBox[2].vertices[0].color
+    };
+
+    meshes[5].name = "rightWall";
+    meshes[5].vertices = cornellBox[4].vertices;
+    meshes[5].indices = cornellBox[4].indices;
+    scene.triangles.diffuse.materials[5] = {
+        .color = cornellBox[4].vertices[0].color
+    };
+
+    meshes[6].name = "ShortBox";
+    meshes[6].vertices = cornellBox[6].vertices;
+    meshes[6].indices = cornellBox[6].indices;
+    scene.triangles.diffuse.materials[6] = {
+        .color = cornellBox[6].vertices[0].color
+    };
+
+    meshes[7].name = "TallBox";
+    meshes[7].vertices = cornellBox[5].vertices;
+    meshes[7].indices = cornellBox[5].indices;
+    scene.triangles.diffuse.materials[7] = {
+        .color = cornellBox[5].vertices[0].color
+    };
+
+    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
+    scene.litBackGround = 0;
 }
 
 void RayTracingWeekendSeries::loadInOneWeekendScene() {
