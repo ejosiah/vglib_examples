@@ -7,7 +7,10 @@
 enum class ShaderIndex : int {
     RayGen, Miss, ImplIntersect,
     DiffuseHitImpl, MetalHitImpl, DielectricHitImpl,
-    DiffuseHitTri, Count};
+    DiffuseHitTri,
+    VolumeHit,
+    Count
+};
 //    DiffuseHitTri, MetalHitTri, DielectricHitTri, Count };
 
 enum class RayType : int { Primary, Count };
@@ -50,6 +53,11 @@ struct DielectricMaterial {
     float ior{1.5};
 };
 
+struct Medium {
+    glm::vec3 albedo{1};
+    float density{1};
+};
+
 struct Scene {
     std::string name;
     struct {
@@ -87,6 +95,11 @@ struct Scene {
             std::vector<DielectricMaterial> materials;
             uint32_t hitGroup{};
         } dielectric;
+        struct {
+            VulkanDrawable objects;
+            std::vector<Medium> mediums;
+            uint32_t hitGroup{};
+        } volume;
     } triangles;
     int litBackGround = 1;
 };
@@ -113,6 +126,8 @@ protected:
     void loadPerlinNoiseScene();
 
     void loadCornellBoxScene();
+
+    void loadCornellBoxVolumeScene();
 
     void loadLightScene();
 
@@ -221,6 +236,7 @@ protected:
         VulkanBuffer metal;
         VulkanBuffer dielectric;
     } triangleMaterials;
+    VulkanBuffer mediums;
     std::vector<DiffuseMaterial> mattes;
     std::vector<MetalMaterial> metals;
     std::vector<DielectricMaterial> dielectrics;

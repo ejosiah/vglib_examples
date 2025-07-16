@@ -48,6 +48,7 @@ void RayTracingWeekendSeries::initApp() {
     loadPerlinNoiseScene();
     loadLightScene();
     loadCornellBoxScene();
+    loadCornellBoxVolumeScene();
     loadScene();
     createDescriptorSetLayouts();
     updateDescriptorSets();
@@ -191,9 +192,11 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     auto missShaderModule = device.createShaderModule( resource("main.rmiss.spv"));
     auto diffuseHitShaderModule = device.createShaderModule( resource("diffuse_imp.rchit.spv"));
     auto diffuseTriHitShaderModule = device.createShaderModule( resource("diffuse_tri.rchit.spv"));
+//    auto diffuseTriHitShaderModule = device.createShaderModule( resource("winding_order.rchit.spv"));
     auto metalHitShaderModule = device.createShaderModule( resource("metal_imp.rchit.spv"));
     auto dielectricHitShaderModule = device.createShaderModule( resource("dielectric_imp.rchit.spv"));
     auto implicitsIntersectShaderModule = device.createShaderModule( resource("main.rint.spv"));
+    auto volumeHitShaderModule = device.createShaderModule( resource("volume.rchit.spv"));
 
     auto shaders = std::vector<ShaderInfo>(to<int>(ShaderIndex::Count));
     shaders[to<int>(ShaderIndex::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
@@ -201,6 +204,7 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     shaders[to<int>(ShaderIndex::DiffuseHitImpl)] = { diffuseHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::MetalHitImpl)] = { metalHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::DielectricHitImpl)] = { dielectricHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderIndex::VolumeHit)] = { volumeHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::ImplIntersect)] = {implicitsIntersectShaderModule, VK_SHADER_STAGE_INTERSECTION_BIT_KHR};
 
     shaders[to<int>(ShaderIndex::DiffuseHitTri)] = { diffuseTriHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
@@ -237,6 +241,12 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
         const auto hitGroup = scene.triangles.diffuse.hitGroup;
         shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHitTri)));
         shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(triangleMaterials.diffuse));
+    }
+
+    if(mediums.size != 0) {
+        const auto hitGroup = scene.triangles.volume.hitGroup;
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::VolumeHit)));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(mediums));
     }
 
     dispose(raytrace.layout);
@@ -356,6 +366,7 @@ void RayTracingWeekendSeries::onSwapChainDispose() {
     dispose(diffuseSpheres);
     dispose(metalSpheres);
     dispose(dielectricSpheres);
+    dispose(mediums);
     nextInstance = 0;
     uniforms.cpu->litBackGround = 1;
     uniforms.cpu->currentSample = 0;
@@ -536,6 +547,19 @@ void RayTracingWeekendSeries::loadScene() {
         triangleMaterials.dielectric = device.createDeviceLocalBuffer(scene.triangles.dielectric.materials.data(), BYTE_SIZE(scene.triangles.dielectric.materials), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("triangle_dielectric_materials", triangleMaterials.dielectric.buffer);
     }
+
+    if(!scene.triangles.volume.objects.empty()) {
+        const auto hitGroup = nextHitGroup();
+        auto& instance = meshInstances.emplace_back();
+        instance.object.drawable = &scene.triangles.volume.objects;
+        instance.object.ensureMetadata();
+        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        scene.triangles.volume.hitGroup = hitGroup;
+
+        mediums = device.createDeviceLocalBuffer(scene.triangles.volume.mediums.data(), BYTE_SIZE(scene.triangles.volume.mediums), usage);
+        device.setName<VK_OBJECT_TYPE_BUFFER>("triangle_medium", mediums.buffer);
+    }
+
     rtBuilder.add(meshInstances);
 
     createAccelerationStructure();
@@ -711,6 +735,84 @@ void RayTracingWeekendSeries::loadCornellBoxScene() {
     };
 
     phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
+    scene.litBackGround = 0;
+}
+
+void RayTracingWeekendSeries::loadCornellBoxVolumeScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Cornell box volumes";
+
+    auto cornellBox = primitives::cornellBox();
+
+    std::vector<mesh::Mesh> meshes(6);
+    scene.triangles.diffuse.materials.resize(6);
+
+    meshes[0].name = "Light";
+    meshes[0].vertices = cornellBox[0].vertices;
+    meshes[0].indices = cornellBox[0].indices;
+    scene.triangles.diffuse.materials[0] = {
+        .color = glm::vec3(0),
+        .emission = glm::vec3(15)
+    };
+
+    meshes[1].name = "Floor";
+    meshes[1].vertices = cornellBox[3].vertices;
+    meshes[1].indices = cornellBox[3].indices;
+    scene.triangles.diffuse.materials[1] = {
+        .color = cornellBox[3].vertices[0].color
+    };
+
+    meshes[2].name = "Celling";
+    meshes[2].vertices = cornellBox[1].vertices;
+    meshes[2].indices = cornellBox[1].indices;
+    scene.triangles.diffuse.materials[2] = {
+        .color = cornellBox[1].vertices[0].color
+    };
+
+    meshes[3].name = "BackWall";
+    meshes[3].vertices = cornellBox[7].vertices;
+    meshes[3].indices = cornellBox[7].indices;
+    scene.triangles.diffuse.materials[3] = {
+        .color = cornellBox[7].vertices[0].color
+    };
+
+    meshes[4].name = "rightWall";
+    meshes[4].vertices = cornellBox[2].vertices;
+    meshes[4].indices = cornellBox[2].indices;
+    scene.triangles.diffuse.materials[4] = {
+        .color = cornellBox[2].vertices[0].color
+    };
+
+    meshes[5].name = "rightWall";
+    meshes[5].vertices = cornellBox[4].vertices;
+    meshes[5].indices = cornellBox[4].indices;
+    scene.triangles.diffuse.materials[5] = {
+        .color = cornellBox[4].vertices[0].color
+    };
+
+
+    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
+
+    meshes.resize(2);
+    meshes[0].name = "ShortBox";
+    meshes[0].vertices = cornellBox[6].vertices;
+    meshes[0].indices = cornellBox[6].indices;
+    scene.triangles.volume.mediums.resize(2);
+    scene.triangles.volume.mediums[0] = {
+            .albedo = glm::vec3(1),
+            .density = 0.1
+    };
+
+    meshes[1].name = "TallBox";
+    meshes[1].vertices = cornellBox[5].vertices;
+    meshes[1].indices = cornellBox[5].indices;
+    scene.triangles.volume.mediums[1] = {
+            .albedo = glm::vec3(0),
+            .density = 0.1
+    };
+
+    phong::load(device, descriptorPool, scene.triangles.volume.objects, meshes, info);
+
     scene.litBackGround = 0;
 }
 

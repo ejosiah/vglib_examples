@@ -44,6 +44,8 @@ struct HitRecord {
     vec3 color;
     vec3 attenuation;
     vec3 emission;
+    bool inside_medium;
+    int bounce;
     RngStateType rngState;
     uint seed;
     bool hit;
@@ -68,6 +70,10 @@ struct Diffuse {
     int padding[2];
 };
 
+struct Medium {
+    vec3 albedo;
+    float density;
+};
 
 layout(set = 0, binding = 1, scalar) uniform Constants {
     mat4 viewInverse;
