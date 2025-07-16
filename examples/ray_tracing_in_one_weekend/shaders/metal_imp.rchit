@@ -5,11 +5,7 @@
 
 #include "ray_tracing_lang.glsl"
 #include "common.glsl"
-
-struct Metal {
-    vec3 albedo;
-    float fuzz;
-};
+#include "metal.glsl"
 
 layout(buffer_reference, buffer_reference_align=8) buffer MetalBuffer {
     Metal at[];
@@ -36,10 +32,5 @@ void main() {
 
     vec3 p, n;
     getSurfaceInfo(spheres.at[gl_PrimitiveID], gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, p, n);
-    hRec.n = n;
-    hRec.x = p;
-    float fuzz = metals.at[gl_PrimitiveID].fuzz;
-    hRec.wi = reflect(gl_WorldRayDirection, n) + fuzz * uniformSampleSphere(sampleVec2(hRec));
-    hRec.wi *= sign(max(0, dot(n, hRec.wi)));
-    hRec.attenuation = metals.at[gl_PrimitiveID].albedo;
+    compute_metal_bsdf(p, n, -gl_WorldRayDirection, metals.at[gl_PrimitiveID], hRec);
 }

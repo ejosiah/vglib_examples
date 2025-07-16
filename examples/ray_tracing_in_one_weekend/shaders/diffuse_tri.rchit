@@ -24,6 +24,6 @@ void main() {
 
     vec3 p, n;
     getSurfaceInfo(bc, gl_HitTriangleVertexPositionsEXT, gl_ObjectToWorld, p, n);
-    compute_diffuse_contribtion(p, n, bc, materials.at[gl_InstanceCustomIndex], hRec);
+    compute_diffuse_bsdf(p, n, bc, materials.at[gl_InstanceCustomIndex], hRec);
 
 }

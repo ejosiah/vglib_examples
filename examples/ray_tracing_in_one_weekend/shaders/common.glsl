@@ -58,17 +58,6 @@ struct TriplanarCoords {
     vec2 uvZ;
 };
 
-struct Diffuse {
-    vec3 albedo;
-    int textureId;
-
-    vec3 emission;
-    int textureType;
-
-    float scale;
-    int useTriplanarMapping;
-    int padding[2];
-};
 
 struct Medium {
     vec3 albedo;

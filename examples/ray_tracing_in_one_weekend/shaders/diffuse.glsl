@@ -4,11 +4,23 @@
 #include "common.glsl"
 #include "perlin_noise.glsl"
 
+struct Diffuse {
+    vec3 albedo;
+    int textureId;
+
+    vec3 emission;
+    int textureType;
+
+    float scale;
+    int useTriplanarMapping;
+    int padding[2];
+};
+
 float turb(vec3 p) {
     return abs(perlin_fbm(p, 2.0, 7));
 }
 
-void compute_diffuse_contribtion(vec3 p, vec3 n, vec2 uv, Diffuse material, inout HitRecord hRec) {
+void compute_diffuse_bsdf(vec3 p, vec3 n, vec2 uv, Diffuse material, inout HitRecord hRec) {
     vec3 wi = cosineSampleHemisphere(sampleVec2(hRec));
 
     vec3 tn, bn;

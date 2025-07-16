@@ -32,6 +32,6 @@ void main() {
 
     vec3 p, n;
     getSurfaceInfo(sphere, gl_WorldRayOrigin, gl_WorldRayDirection, gl_HitT, p, n);
-    compute_diffuse_contribtion(p, n, bc, materials.at[gl_PrimitiveID], hRec);
+    compute_diffuse_bsdf(p, n, bc, materials.at[gl_PrimitiveID], hRec);
 
 }
