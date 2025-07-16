@@ -191,23 +191,31 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("raygen.rgen.spv"));
     auto missShaderModule = device.createShaderModule( resource("main.rmiss.spv"));
     auto diffuseHitShaderModule = device.createShaderModule( resource("diffuse_imp.rchit.spv"));
-    auto diffuseTriHitShaderModule = device.createShaderModule( resource("diffuse_tri.rchit.spv"));
-//    auto diffuseTriHitShaderModule = device.createShaderModule( resource("winding_order.rchit.spv"));
     auto metalHitShaderModule = device.createShaderModule( resource("metal_imp.rchit.spv"));
     auto dielectricHitShaderModule = device.createShaderModule( resource("dielectric_imp.rchit.spv"));
     auto implicitsIntersectShaderModule = device.createShaderModule( resource("main.rint.spv"));
+
+//    auto diffuseTriHitShaderModule = device.createShaderModule( resource("normal.rchit.spv"));
+    auto diffuseTriHitShaderModule = device.createShaderModule( resource("diffuse_tri.rchit.spv"));
+    auto metalTriHitShaderModule = device.createShaderModule( resource("metal_tri.rchit.spv"));
+    auto dielectricTriHitShaderModule = device.createShaderModule( resource("dielectric_tri.rchit.spv"));
+
     auto volumeHitShaderModule = device.createShaderModule( resource("volume.rchit.spv"));
 
     auto shaders = std::vector<ShaderInfo>(to<int>(ShaderIndex::Count));
     shaders[to<int>(ShaderIndex::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
     shaders[to<int>(ShaderIndex::Miss)] = { missShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
+
     shaders[to<int>(ShaderIndex::DiffuseHitImpl)] = { diffuseHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::MetalHitImpl)] = { metalHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::DielectricHitImpl)] = { dielectricHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
-    shaders[to<int>(ShaderIndex::VolumeHit)] = { volumeHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderIndex::ImplIntersect)] = {implicitsIntersectShaderModule, VK_SHADER_STAGE_INTERSECTION_BIT_KHR};
 
     shaders[to<int>(ShaderIndex::DiffuseHitTri)] = { diffuseTriHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderIndex::MetalHitTri)] = { metalTriHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderIndex::DielectricHitTri)] = { dielectricTriHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+
+    shaders[to<int>(ShaderIndex::VolumeHit)] = { volumeHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
 
 
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
@@ -241,6 +249,18 @@ void RayTracingWeekendSeries::createRayTracingPipeline() {
         const auto hitGroup = scene.triangles.diffuse.hitGroup;
         shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DiffuseHitTri)));
         shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(triangleMaterials.diffuse));
+    }
+
+    if(triangleMaterials.metal.size != 0) {
+        const auto hitGroup = scene.triangles.metal.hitGroup;
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::MetalHitTri)));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(triangleMaterials.metal));
+    }
+
+    if(triangleMaterials.dielectric.size != 0) {
+        const auto hitGroup = scene.triangles.dielectric.hitGroup;
+        shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderIndex::DielectricHitTri)));
+        shaderTablesDesc.hitGroups[hitGroup].addRecord(device.getAddress(triangleMaterials.dielectric));
     }
 
     if(mediums.size != 0) {
@@ -367,6 +387,12 @@ void RayTracingWeekendSeries::onSwapChainDispose() {
     dispose(metalSpheres);
     dispose(dielectricSpheres);
     dispose(mediums);
+    dispose(triangleMaterials.dielectric);
+    dispose(triangleMaterials.metal);
+    dispose(triangleMaterials.diffuse);
+    dispose(materials.dielectric);
+    dispose(materials.metal);
+    dispose(materials.diffuse);
     nextInstance = 0;
     uniforms.cpu->litBackGround = 1;
     uniforms.cpu->currentSample = 0;
@@ -735,6 +761,27 @@ void RayTracingWeekendSeries::loadCornellBoxScene() {
     };
 
     phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
+
+//    meshes.resize(1);
+//    meshes[0].name = "ShortBox";
+//    meshes[0].vertices = cornellBox[6].vertices;
+//    meshes[0].indices = cornellBox[6].indices;
+//    scene.triangles.dielectric.materials.resize(1);
+//    scene.triangles.dielectric.materials[0] = {
+//            .ior = 1.5
+//    };
+//    phong::load(device, descriptorPool, scene.triangles.dielectric.objects, meshes, info);
+//
+//    meshes.resize(1);
+//    meshes[0].name = "TallBox";
+//    meshes[0].vertices = cornellBox[5].vertices;
+//    meshes[0].indices = cornellBox[5].indices;
+//    scene.triangles.metal.materials.resize(1);
+//    scene.triangles.metal.materials[0] = {
+//            .color = vec3(1),
+//            .roughness = 0
+//    };
+//    phong::load(device, descriptorPool, scene.triangles.metal.objects, meshes, info);
     scene.litBackGround = 0;
 }
 

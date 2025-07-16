@@ -7,7 +7,7 @@
 enum class ShaderIndex : int {
     RayGen, Miss, ImplIntersect,
     DiffuseHitImpl, MetalHitImpl, DielectricHitImpl,
-    DiffuseHitTri,
+    DiffuseHitTri, MetalHitTri, DielectricHitTri,
     VolumeHit,
     Count
 };
