@@ -22,5 +22,5 @@ hitAttribute vec2 bc;
 void main() {
     vec3 p, n;
     getSurfaceInfo(bc, gl_HitTriangleVertexPositionsEXT, gl_ObjectToWorld, p, n);
-    compute_metal_bsdf(p, n, -gl_WorldRayDirection, metals.at[gl_PrimitiveID], hRec);
+    compute_metal_bsdf(p, n, -gl_WorldRayDirection, metals.at[gl_InstanceCustomIndex], hRec);
 }

@@ -252,7 +252,7 @@ protected:
     Texture perlinNoise;
     std::unique_ptr<ComputePipelines> compute;
     std::vector<Scene> scenes;
-    int currentScene{1};
+    int currentScene{5};
     std::vector<const char*> sceneLabels;
     bool sceneUpdated{};
     uint32_t nextInstance{};

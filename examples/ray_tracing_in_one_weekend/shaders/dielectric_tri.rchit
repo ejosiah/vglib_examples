@@ -24,5 +24,5 @@ void main() {
 
     vec3 p, n;
     getSurfaceInfo(bc, gl_HitTriangleVertexPositionsEXT, gl_ObjectToWorld, p, n);
-    compute_dielectric_bsdf(p, n, -gl_WorldRayDirection, dielectric.at[gl_PrimitiveID].ior, hRec);
+    compute_dielectric_bsdf(p, n, -gl_WorldRayDirection, dielectric.at[gl_InstanceCustomIndex].ior, hRec);
 }
