@@ -12,6 +12,7 @@ enum class ShaderIndex : int {
     Count
 };
 //    DiffuseHitTri, MetalHitTri, DielectricHitTri, Count };
+static constexpr uint32_t CULL_MASK_HIDDEN = 1 << 0;
 
 enum class RayType : int { Primary, Count };
 
@@ -81,22 +82,22 @@ struct Scene {
 
     struct {
         struct {
-            VulkanDrawable objects;
+            std::vector<rt::MeshObjectInstance> objects;
             std::vector<DiffuseMaterial> materials;
             uint32_t hitGroup{};
         } diffuse;
         struct {
-            VulkanDrawable objects;
+            std::vector<rt::MeshObjectInstance> objects;
             std::vector<MetalMaterial> materials;
             uint32_t hitGroup{};
         } metal;
         struct {
-            VulkanDrawable objects;
+            std::vector<rt::MeshObjectInstance> objects;
             std::vector<DielectricMaterial> materials;
             uint32_t hitGroup{};
         } dielectric;
         struct {
-            VulkanDrawable objects;
+            std::vector<rt::MeshObjectInstance> objects;
             std::vector<Medium> mediums;
             uint32_t hitGroup{};
         } volume;
@@ -112,6 +113,10 @@ protected:
     void initApp() override;
 
     void initCamera();
+
+    void loadMeshes();
+
+    void createCornellBox();
 
     void initUniforms();
 
@@ -134,6 +139,8 @@ protected:
     void loadTextureScene();
 
     void loadInOneWeekendScene();
+
+    void loadInOneWeekendTrianglesScene();
 
     void beforeDeviceCreation() override;
 
@@ -252,7 +259,7 @@ protected:
     Texture perlinNoise;
     std::unique_ptr<ComputePipelines> compute;
     std::vector<Scene> scenes;
-    int currentScene{5};
+    int currentScene{0};
     std::vector<const char*> sceneLabels;
     bool sceneUpdated{};
     uint32_t nextInstance{};

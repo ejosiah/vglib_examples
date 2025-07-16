@@ -42,6 +42,7 @@ void RayTracingWeekendSeries::initApp() {
     loadTextures();
     initLoader();
     initUniforms();
+    loadMeshes();
     loadDefaultScene();
     loadInOneWeekendScene();
     loadTextureScene();
@@ -540,22 +541,26 @@ void RayTracingWeekendSeries::loadScene() {
     std::vector<rt::MeshObjectInstance> meshInstances;
     if(!scene.triangles.diffuse.objects.empty()) {
         const auto hitGroup = nextHitGroup();
-        auto& instance = meshInstances.emplace_back();
-        instance.object.drawable = &scene.triangles.diffuse.objects;
-        instance.object.ensureMetadata();
-        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
-        scene.triangles.diffuse.hitGroup = hitGroup;
+        auto& instances = scene.triangles.diffuse.objects;
+        for(auto& instance : instances) {
+            instance.object.ensureMetadata();
+            instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        }
+        meshInstances.insert(meshInstances.end(), instances.begin(), instances.end());
 
+        scene.triangles.diffuse.hitGroup = hitGroup;
         triangleMaterials.diffuse = device.createDeviceLocalBuffer(scene.triangles.diffuse.materials.data(), BYTE_SIZE(scene.triangles.diffuse.materials), usage);
         device.setName<VK_OBJECT_TYPE_BUFFER>("triangle_diffuse_materials", triangleMaterials.diffuse.buffer);
     }
 
     if(!scene.triangles.metal.objects.empty()) {
         const auto hitGroup = nextHitGroup();
-        auto& instance = meshInstances.emplace_back();
-        instance.object.drawable = &scene.triangles.metal.objects;
-        instance.object.ensureMetadata();
-        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        auto& instances = scene.triangles.metal.objects;
+        for(auto& instance : instances) {
+            instance.object.ensureMetadata();
+            instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        }
+        meshInstances.insert(meshInstances.end(), instances.begin(), instances.end());
         scene.triangles.metal.hitGroup = hitGroup;
 
         triangleMaterials.metal = device.createDeviceLocalBuffer(scene.triangles.metal.materials.data(), BYTE_SIZE(scene.triangles.metal.materials), usage);
@@ -564,10 +569,12 @@ void RayTracingWeekendSeries::loadScene() {
 
     if(!scene.triangles.dielectric.objects.empty()) {
         const auto hitGroup = nextHitGroup();
-        auto& instance = meshInstances.emplace_back();
-        instance.object.drawable = &scene.triangles.dielectric.objects;
-        instance.object.ensureMetadata();
-        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        auto& instances = scene.triangles.dielectric.objects;
+        for(auto& instance : instances) {
+            instance.object.ensureMetadata();
+            instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        }
+        meshInstances.insert(meshInstances.end(), instances.begin(), instances.end());
         scene.triangles.dielectric.hitGroup = hitGroup;
 
         triangleMaterials.dielectric = device.createDeviceLocalBuffer(scene.triangles.dielectric.materials.data(), BYTE_SIZE(scene.triangles.dielectric.materials), usage);
@@ -576,10 +583,12 @@ void RayTracingWeekendSeries::loadScene() {
 
     if(!scene.triangles.volume.objects.empty()) {
         const auto hitGroup = nextHitGroup();
-        auto& instance = meshInstances.emplace_back();
-        instance.object.drawable = &scene.triangles.volume.objects;
-        instance.object.ensureMetadata();
-        instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        auto& instances = scene.triangles.volume.objects;
+        for(auto& instance : instances) {
+            instance.object.ensureMetadata();
+            instance.hitGroupId = hitGroup * to<int>(RayType::Count);
+        }
+        meshInstances.insert(meshInstances.end(), instances.begin(), instances.end());
         scene.triangles.volume.hitGroup = hitGroup;
 
         mediums = device.createDeviceLocalBuffer(scene.triangles.volume.mediums.data(), BYTE_SIZE(scene.triangles.volume.mediums), usage);
@@ -643,54 +652,54 @@ void RayTracingWeekendSeries::loadPerlinNoiseScene() {
 }
 
 void RayTracingWeekendSeries::loadLightScene() {
-    auto& scene = scenes.emplace_back();
-    scene.name = "Lights";
-
-    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 2, 0}, 2);
-    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 7, 0}, 2);
-    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -1000, 0}, 1000);
-
-    scene.implicits.diffuse.materials.resize(3);
-    scene.implicits.diffuse.materials[0] = {
-        .color = glm::vec3(0.6),
-        .textureId = 2,
-        .textureType = 1,
-        .scale = 4
-    };
-    scene.implicits.diffuse.materials[1] = {
-        .emission = glm::vec3(1)
-    };
-    scene.implicits.diffuse.materials[2] = {
-        .color = glm::vec3(0.6),
-        .textureId = 2,
-        .textureType = 1,
-    };
-
-    float x0 = 3;
-    float x1 = 5;
-    float y0 = 1;
-    float y1 = 3;
-    float z = -2;
-
-    auto w = x1 - x0;
-    auto h = y1 - y0;
-    glm::vec3 c{ (x0 + x1) * .5, (y1 + y0) * .5, z };
-    auto pose = glm::translate(glm::mat4{1}, c);
-    auto plane = primitives::plane(2, 2, w, h, pose, glm::vec4(1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    mesh::Mesh mesh{};
-    mesh.vertices = plane.vertices;
-    mesh.indices = plane.indices;
-    std::vector<mesh::Mesh> meshes{ mesh};
-
-
-    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
-    scene.triangles.diffuse.materials.resize(1);
-    scene.triangles.diffuse.materials[0] = {
-        .color = glm::vec3(1),
-        .emission = glm::vec3(1)
-    };
-
-    scene.litBackGround = 0;
+//    auto& scene = scenes.emplace_back();
+//    scene.name = "Lights";
+//
+//    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 2, 0}, 2);
+//    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 7, 0}, 2);
+//    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -1000, 0}, 1000);
+//
+//    scene.implicits.diffuse.materials.resize(3);
+//    scene.implicits.diffuse.materials[0] = {
+//        .color = glm::vec3(0.6),
+//        .textureId = 2,
+//        .textureType = 1,
+//        .scale = 4
+//    };
+//    scene.implicits.diffuse.materials[1] = {
+//        .emission = glm::vec3(1)
+//    };
+//    scene.implicits.diffuse.materials[2] = {
+//        .color = glm::vec3(0.6),
+//        .textureId = 2,
+//        .textureType = 1,
+//    };
+//
+//    float x0 = 3;
+//    float x1 = 5;
+//    float y0 = 1;
+//    float y1 = 3;
+//    float z = -2;
+//
+//    auto w = x1 - x0;
+//    auto h = y1 - y0;
+//    glm::vec3 c{ (x0 + x1) * .5, (y1 + y0) * .5, z };
+//    auto pose = glm::translate(glm::mat4{1}, c);
+//    auto plane = primitives::plane(2, 2, w, h, pose, glm::vec4(1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+//    mesh::Mesh mesh{};
+//    mesh.vertices = plane.vertices;
+//    mesh.indices = plane.indices;
+//    std::vector<mesh::Mesh> meshes{ mesh};
+//
+//
+//    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
+//    scene.triangles.diffuse.materials.resize(1);
+//    scene.triangles.diffuse.materials[0] = {
+//        .color = glm::vec3(1),
+//        .emission = glm::vec3(1)
+//    };
+//
+//    scene.litBackGround = 0;
 
 }
 
@@ -700,68 +709,43 @@ void RayTracingWeekendSeries::loadCornellBoxScene() {
 
     auto cornellBox = primitives::cornellBox();
 
-    std::vector<mesh::Mesh> meshes(8);
     scene.triangles.diffuse.materials.resize(8);
 
-    meshes[0].name = "Light";
-    meshes[0].vertices = cornellBox[0].vertices;
-    meshes[0].indices = cornellBox[0].indices;
     scene.triangles.diffuse.materials[0] = {
         .color = glm::vec3(0),
         .emission = glm::vec3(15)
     };
 
-    meshes[1].name = "Floor";
-    meshes[1].vertices = cornellBox[3].vertices;
-    meshes[1].indices = cornellBox[3].indices;
     scene.triangles.diffuse.materials[1] = {
         .color = cornellBox[3].vertices[0].color
     };
 
-    meshes[2].name = "Celling";
-    meshes[2].vertices = cornellBox[1].vertices;
-    meshes[2].indices = cornellBox[1].indices;
     scene.triangles.diffuse.materials[2] = {
         .color = cornellBox[1].vertices[0].color
     };
 
-    meshes[3].name = "BackWall";
-    meshes[3].vertices = cornellBox[7].vertices;
-    meshes[3].indices = cornellBox[7].indices;
     scene.triangles.diffuse.materials[3] = {
         .color = cornellBox[7].vertices[0].color
     };
 
-    meshes[4].name = "rightWall";
-    meshes[4].vertices = cornellBox[2].vertices;
-    meshes[4].indices = cornellBox[2].indices;
     scene.triangles.diffuse.materials[4] = {
         .color = cornellBox[2].vertices[0].color
     };
 
-    meshes[5].name = "rightWall";
-    meshes[5].vertices = cornellBox[4].vertices;
-    meshes[5].indices = cornellBox[4].indices;
     scene.triangles.diffuse.materials[5] = {
         .color = cornellBox[4].vertices[0].color
     };
 
-    meshes[6].name = "ShortBox";
-    meshes[6].vertices = cornellBox[6].vertices;
-    meshes[6].indices = cornellBox[6].indices;
     scene.triangles.diffuse.materials[6] = {
         .color = cornellBox[6].vertices[0].color
     };
 
-    meshes[7].name = "TallBox";
-    meshes[7].vertices = cornellBox[5].vertices;
-    meshes[7].indices = cornellBox[5].indices;
     scene.triangles.diffuse.materials[7] = {
         .color = cornellBox[5].vertices[0].color
     };
 
-    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
-
+    auto& instance = scene.triangles.diffuse.objects.emplace_back();
+    instance.object = rt::TriangleMesh{ &drawables["cornell_box"] };
 //    meshes.resize(1);
 //    meshes[0].name = "ShortBox";
 //    meshes[0].vertices = cornellBox[6].vertices;
@@ -791,74 +775,52 @@ void RayTracingWeekendSeries::loadCornellBoxVolumeScene() {
 
     auto cornellBox = primitives::cornellBox();
 
-    std::vector<mesh::Mesh> meshes(6);
     scene.triangles.diffuse.materials.resize(6);
 
-    meshes[0].name = "Light";
-    meshes[0].vertices = cornellBox[0].vertices;
-    meshes[0].indices = cornellBox[0].indices;
     scene.triangles.diffuse.materials[0] = {
         .color = glm::vec3(0),
         .emission = glm::vec3(15)
     };
 
-    meshes[1].name = "Floor";
-    meshes[1].vertices = cornellBox[3].vertices;
-    meshes[1].indices = cornellBox[3].indices;
     scene.triangles.diffuse.materials[1] = {
         .color = cornellBox[3].vertices[0].color
     };
 
-    meshes[2].name = "Celling";
-    meshes[2].vertices = cornellBox[1].vertices;
-    meshes[2].indices = cornellBox[1].indices;
     scene.triangles.diffuse.materials[2] = {
         .color = cornellBox[1].vertices[0].color
     };
 
-    meshes[3].name = "BackWall";
-    meshes[3].vertices = cornellBox[7].vertices;
-    meshes[3].indices = cornellBox[7].indices;
     scene.triangles.diffuse.materials[3] = {
         .color = cornellBox[7].vertices[0].color
     };
 
-    meshes[4].name = "rightWall";
-    meshes[4].vertices = cornellBox[2].vertices;
-    meshes[4].indices = cornellBox[2].indices;
     scene.triangles.diffuse.materials[4] = {
         .color = cornellBox[2].vertices[0].color
     };
 
-    meshes[5].name = "rightWall";
-    meshes[5].vertices = cornellBox[4].vertices;
-    meshes[5].indices = cornellBox[4].indices;
     scene.triangles.diffuse.materials[5] = {
         .color = cornellBox[4].vertices[0].color
     };
 
+    auto& diffuseInstance = scene.triangles.diffuse.objects.emplace_back();
+    diffuseInstance.object = rt::TriangleMesh{ &drawables["cornell_box"] };
+    diffuseInstance.object.metaData[6].hitGroupId = ~0u;
+    diffuseInstance.object.metaData[7].hitGroupId = ~0u;
 
-    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
-
-    meshes.resize(2);
-    meshes[0].name = "ShortBox";
-    meshes[0].vertices = cornellBox[6].vertices;
-    meshes[0].indices = cornellBox[6].indices;
     scene.triangles.volume.mediums.resize(2);
     scene.triangles.volume.mediums[0] = {
             .albedo = glm::vec3(1),
             .density = 0.1
     };
 
-    meshes[1].name = "TallBox";
-    meshes[1].vertices = cornellBox[5].vertices;
-    meshes[1].indices = cornellBox[5].indices;
     scene.triangles.volume.mediums[1] = {
             .albedo = glm::vec3(0),
             .density = 0.1
     };
 
-    phong::load(device, descriptorPool, scene.triangles.volume.objects, meshes, info);
+    auto& volumeInstance = scene.triangles.volume.objects.emplace_back();
+    volumeInstance.object = rt::TriangleMesh{ &drawables["cornell_box"] };
+    for(auto i = 0; i < 6; ++i) volumeInstance.object.metaData[i].hitGroupId = ~0u;
 
     scene.litBackGround = 0;
 }
@@ -905,6 +867,11 @@ void RayTracingWeekendSeries::loadInOneWeekendScene() {
 
     scene.implicits.metal.spheres.emplace_back(glm::vec3{4, 1, 0}, 1);
     scene.implicits.metal.materials.push_back({{ 0.7, 0.6, 0.5}, 0.0});
+}
+
+void RayTracingWeekendSeries::loadInOneWeekendTrianglesScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "Ray tracing in One weekend, Triangle spheres";
 }
 
 void RayTracingWeekendSeries::initUniforms() {
@@ -1008,6 +975,56 @@ std::vector<PipelineMetaData> RayTracingWeekendSeries::pipelineMetaData() {
 uint32_t RayTracingWeekendSeries::nextHitGroup() {
     auto hitGroup = nextInstance++;
     return hitGroup;
+}
+
+void RayTracingWeekendSeries::loadMeshes() {
+    createCornellBox();
+}
+
+void RayTracingWeekendSeries::createCornellBox() {
+    auto cornellBox = primitives::cornellBox();
+
+    std::vector<mesh::Mesh> meshes(8);
+
+    meshes[0].name = "Light";
+    meshes[0].vertices = cornellBox[0].vertices;
+    meshes[0].indices = cornellBox[0].indices;
+
+    meshes[1].name = "Floor";
+    meshes[1].vertices = cornellBox[3].vertices;
+    meshes[1].indices = cornellBox[3].indices;
+
+
+    meshes[2].name = "Celling";
+    meshes[2].vertices = cornellBox[1].vertices;
+    meshes[2].indices = cornellBox[1].indices;
+
+
+    meshes[3].name = "BackWall";
+    meshes[3].vertices = cornellBox[7].vertices;
+    meshes[3].indices = cornellBox[7].indices;
+
+
+    meshes[4].name = "rightWall";
+    meshes[4].vertices = cornellBox[2].vertices;
+    meshes[4].indices = cornellBox[2].indices;
+
+    meshes[5].name = "rightWall";
+    meshes[5].vertices = cornellBox[4].vertices;
+    meshes[5].indices = cornellBox[4].indices;
+
+    meshes[6].name = "ShortBox";
+    meshes[6].vertices = cornellBox[6].vertices;
+    meshes[6].indices = cornellBox[6].indices;
+
+
+    meshes[7].name = "TallBox";
+    meshes[7].vertices = cornellBox[5].vertices;
+    meshes[7].indices = cornellBox[5].indices;
+
+    VulkanDrawable drawable;
+    phong::load(device, descriptorPool, drawable, meshes, info);
+    drawables.insert(std::make_pair("cornell_box", std::move(drawable)));
 }
 
 
