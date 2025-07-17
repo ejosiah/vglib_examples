@@ -6,7 +6,7 @@
 #define RANDOM_GLSL
 
 #ifndef USE_PCG
-#define USE_PCG 0
+#define USE_PCG 1
 #endif
 
 #if USE_PCG

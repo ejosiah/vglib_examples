@@ -35,10 +35,7 @@ void RayTracingWeekendSeries::initApp() {
     createDescriptorPool();
     initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
-    compute = std::make_unique<ComputePipelines>(&device, pipelineMetaData());
-    compute->createPipelines();
     createCheckerboardTexture();
-    computePerlinNoise();
     loadTextures();
     initLoader();
     initUniforms();
@@ -51,9 +48,12 @@ void RayTracingWeekendSeries::initApp() {
     loadLightScene();
     loadCornellBoxScene();
     loadCornellBoxVolumeScene();
+    loadTheNextWeekEndScene();
     loadScene();
     createDescriptorSetLayouts();
     updateDescriptorSets();
+    createComputePipelines();
+    computePerlinNoise();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
@@ -68,10 +68,11 @@ void RayTracingWeekendSeries::initCamera() {
     cameraSettings.orbitMaxZoom = 512.0f;
     cameraSettings.offsetDistance = 1.0f;
     cameraSettings.modelHeight = 0.5;
-    cameraSettings.fieldOfView = 60.0f;
+    cameraSettings.fieldOfView = 45.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera->zoomDelta = 5;
 }
 
 void RayTracingWeekendSeries::initBindlessDescriptor() {
@@ -185,7 +186,7 @@ void RayTracingWeekendSeries::createPipelineCache() {
 
 void RayTracingWeekendSeries::initCanvas() {
     const auto imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    canvas = Canvas{ this, imageUsage, VK_FORMAT_R8G8B8A8_UNORM, {}, resource("display.frag.spv")};
+    canvas = Canvas{ this, imageUsage, VK_FORMAT_R32G32B32A32_SFLOAT, {}, resource("display.frag.spv")};
     canvas.init();
 }
 
@@ -308,6 +309,15 @@ void RayTracingWeekendSeries::rayTrace(VkCommandBuffer commandBuffer) {
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);
 
+//    Barrier::rayTraceWriteToComputeRead(commandBuffer);
+//
+//    const auto gx = (width + 7)/8;
+//    const auto gy = (height + 7)/8;
+//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->pipeline("average"));
+//    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->layout("average"), 0, 1, &sets[0], 0, nullptr);
+//    vkCmdDispatch(commandBuffer, gx, gy, 1);
+//
+//    Barrier::computeWriteToFragmentRead(commandBuffer);
     rayTraceToCanvasBarrier(commandBuffer);
 }
 
@@ -653,54 +663,51 @@ void RayTracingWeekendSeries::loadPerlinNoiseScene() {
 }
 
 void RayTracingWeekendSeries::loadLightScene() {
-//    auto& scene = scenes.emplace_back();
-//    scene.name = "Lights";
-//
-//    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 2, 0}, 2);
-//    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 7, 0}, 2);
-//    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -1000, 0}, 1000);
-//
-//    scene.implicits.diffuse.materials.resize(3);
-//    scene.implicits.diffuse.materials[0] = {
-//        .color = glm::vec3(0.6),
-//        .textureId = 2,
-//        .textureType = 1,
-//        .scale = 4
-//    };
-//    scene.implicits.diffuse.materials[1] = {
-//        .emission = glm::vec3(1)
-//    };
-//    scene.implicits.diffuse.materials[2] = {
-//        .color = glm::vec3(0.6),
-//        .textureId = 2,
-//        .textureType = 1,
-//    };
-//
-//    float x0 = 3;
-//    float x1 = 5;
-//    float y0 = 1;
-//    float y1 = 3;
-//    float z = -2;
-//
-//    auto w = x1 - x0;
-//    auto h = y1 - y0;
-//    glm::vec3 c{ (x0 + x1) * .5, (y1 + y0) * .5, z };
-//    auto pose = glm::translate(glm::mat4{1}, c);
-//    auto plane = primitives::plane(2, 2, w, h, pose, glm::vec4(1), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//    mesh::Mesh mesh{};
-//    mesh.vertices = plane.vertices;
-//    mesh.indices = plane.indices;
-//    std::vector<mesh::Mesh> meshes{ mesh};
-//
-//
-//    phong::load(device, descriptorPool, scene.triangles.diffuse.objects, meshes, info);
-//    scene.triangles.diffuse.materials.resize(1);
-//    scene.triangles.diffuse.materials[0] = {
-//        .color = glm::vec3(1),
-//        .emission = glm::vec3(1)
-//    };
-//
-//    scene.litBackGround = 0;
+    auto& scene = scenes.emplace_back();
+    scene.name = "Lights";
+
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 2, 0}, 2);
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, 7, 0}, 2);
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{0, -1000, 0}, 1000);
+
+    scene.implicits.diffuse.materials.resize(3);
+    scene.implicits.diffuse.materials[0] = {
+        .color = glm::vec3(0.6),
+        .textureId = 2,
+        .textureType = 1,
+        .scale = 4
+    };
+    scene.implicits.diffuse.materials[1] = {
+        .emission = glm::vec3(1)
+    };
+    scene.implicits.diffuse.materials[2] = {
+        .color = glm::vec3(0.6),
+        .textureId = 2,
+        .textureType = 1,
+    };
+
+    float x0 = 3;
+    float x1 = 5;
+    float y0 = 1;
+    float y1 = 3;
+    float z = -2;
+
+    auto w = x1 - x0;
+    auto h = y1 - y0;
+    glm::vec3 c{ (x0 + x1) * .5, (y1 + y0) * .5, z };
+    auto pose = glm::translate(glm::mat4{1}, c);
+    auto& light = scene.triangles.diffuse.objects.emplace_back();
+    light.object = rt::TriangleMesh{ &drawables["plane"] };
+    light.xform = pose;
+    light.xformIT = glm::inverse(pose);
+
+    scene.triangles.diffuse.materials.resize(1);
+    scene.triangles.diffuse.materials[0] = {
+        .color = glm::vec3(1),
+        .emission = glm::vec3(1)
+    };
+
+    scene.litBackGround = 0;
 
 }
 
@@ -877,7 +884,7 @@ void RayTracingWeekendSeries::loadInOneWeekendTrianglesScene() {
     scene.name = "Ray tracing in One weekend, Triangle spheres";
 
     auto& bigSphere = scene.triangles.diffuse.objects.emplace_back();
-    bigSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+    bigSphere.object = rt::TriangleMesh{ &drawables["uv_sphere"] };
     bigSphere.xform = glm::translate(glm::mat4{1}, {0, -1000, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1000));
     bigSphere.xformIT = glm::inverse(bigSphere.xform);
     bigSphere.object.metaData.front().customIndex = scene.triangles.diffuse.materials.size();
@@ -896,7 +903,7 @@ void RayTracingWeekendSeries::loadInOneWeekendTrianglesScene() {
             glm::vec3 center{a + 0.9 * rand(), 0.2, b + 0.9 * rand() };
 
             rt::MeshObjectInstance smallSphere{};
-            smallSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+            smallSphere.object = rt::TriangleMesh{ &drawables["uv_sphere"] };
             smallSphere.xform = glm::translate(glm::mat4{1}, center) * glm::scale(glm::mat4{1}, glm::vec3(0.2));
             smallSphere.xformIT = glm::inverse(smallSphere.xform);
 
@@ -919,7 +926,7 @@ void RayTracingWeekendSeries::loadInOneWeekendTrianglesScene() {
 
 
     auto& deMediumSphere = scene.triangles.dielectric.objects.emplace_back();
-    deMediumSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+    deMediumSphere.object = rt::TriangleMesh{ &drawables["uv_sphere"] };
     deMediumSphere.xform = glm::translate(glm::mat4{1}, {0, 1, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1));
     deMediumSphere.xformIT = glm::inverse(deMediumSphere.xform);
     deMediumSphere.object.metaData.front().customIndex = scene.triangles.dielectric.materials.size();
@@ -939,6 +946,101 @@ void RayTracingWeekendSeries::loadInOneWeekendTrianglesScene() {
     mtMediumSphere.xformIT = glm::inverse(mtMediumSphere.xform);
     mtMediumSphere.object.metaData.front().customIndex = scene.triangles.metal.materials.size();
     scene.triangles.metal.materials.push_back({{ 0.7, 0.6, 0.5}, 0.0});
+}
+
+void RayTracingWeekendSeries::loadTheNextWeekEndScene() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "The next weekend";
+    auto rand = rng(0.f, 1.f, 1 << 20);
+
+    // boxes
+    const auto nb = 20;
+    for(auto i = 0; i < nb; ++i) {
+        for(auto j = 0; j < nb; ++j) {
+            glm::vec3 bmin, bmax;
+            float w = 10;
+            bmin.x = -100 + i*w;
+            bmin.z = -100 + j*w;
+            bmin.y = 0;
+            bmax.x = bmin.x + w;
+            bmax.y = 10 * (rand()+0.01);
+            bmax.z = bmin.z + w;
+
+            auto c = (bmin + bmax) * 0.5f;
+            auto s = (bmax - bmin) * 0.5f;
+            auto& instance = scene.triangles.diffuse.objects.emplace_back();
+            instance.object = rt::TriangleMesh{ &drawables["cube"] };
+            instance.object.metaData.front().customIndex = scene.triangles.diffuse.materials.size();
+            instance.xform = glm::translate(glm::mat4{1}, c) * glm::scale(glm::mat4{1}, s);
+        }
+    }
+    auto& groundMaterial = scene.triangles.diffuse.materials.emplace_back();
+    groundMaterial.color = {0.48, 0.83, 0.53};
+
+    // light
+    glm::vec3 bmin{0}, bmax{0};
+    bmin.x = 12.3;
+    bmax.x = 42.3;
+    bmin.y = 14.7;
+    bmax.y = 41.2;
+    bmin.z = 54.4;
+    bmax.z = 55.4;
+    auto c = (bmin + bmax) * 0.5f;
+    auto s = (bmax - bmin) * 0.5f;
+    c.xyz = c.xzy;
+    auto& light = scene.triangles.diffuse.objects.emplace_back();
+    light.object = rt::TriangleMesh{ &drawables["plane"] };
+    light.object.metaData.front().customIndex = scene.triangles.diffuse.materials.size();
+    light.xform = glm::translate(glm::mat4{1}, c) * glm::rotate(glm::mat4{1}, glm::half_pi<float>(), {1, 0, 0}) * glm::scale(glm::mat4{1}, s);
+
+    auto& lightMaterial = scene.triangles.diffuse.materials.emplace_back();
+    lightMaterial.emission = glm::vec3{7};
+    lightMaterial.color = glm::vec3{1};
+
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3{40, 40, 20}, 5.f);
+    scene.implicits.diffuse.materials.emplace_back(glm::vec3(0.7, 0.3, 0.1));
+
+    scene.implicits.dielectric.spheres.emplace_back(glm::vec3{26, 15, 4.5}, 5.f);
+    scene.implicits.dielectric.materials.emplace_back(1.5f);
+
+    scene.implicits.metal.spheres.emplace_back(glm::vec3{0, 15, 14.5}, 5.f);
+    scene.implicits.metal.materials.emplace_back(glm::vec3(0.8, 0.8, 0.9), 10.0);
+
+    {
+        auto &m1 = scene.triangles.volume.objects.emplace_back();
+        m1.object = rt::TriangleMesh{&drawables["uv_sphere"]};
+        m1.xform = glm::translate(glm::mat4{1}, {36, 15, 14.5}) * glm::scale(glm::mat4{1}, glm::vec3(6.5));
+        scene.triangles.volume.mediums.emplace_back(glm::vec3(0.2, 0.4, 0.9), 0.2);
+
+        scene.implicits.dielectric.spheres.emplace_back(glm::vec3(36, 15, 14.5), 7);
+        scene.implicits.dielectric.materials.emplace_back(1.5);
+    }
+
+    // TODO ray inside medium
+//    auto& m2 = scene.triangles.volume.objects.emplace_back();
+//    m2.object = rt::TriangleMesh{ &drawables["uv_sphere"] };
+//    m2.xform = glm::scale(glm::mat4{1}, glm::vec3(500));
+//    scene.triangles.volume.mediums.emplace_back(glm::vec3(0), 10);
+
+    scene.implicits.dielectric.spheres.emplace_back(glm::vec3(0), 500);
+    scene.implicits.dielectric.materials.emplace_back(1.5);
+
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3(40, 20, 40), 10);
+    scene.implicits.diffuse.materials.push_back({ .textureId = 1});
+
+    scene.implicits.diffuse.spheres.emplace_back(glm::vec3(22, 28, 30), 8);
+    scene.implicits.diffuse.materials.push_back({ .textureId = 2, .textureType = 1, .scale = 0.5});
+
+    const auto ns = 1000;
+    auto xform = glm::translate(glm::mat4{1}, {-10, 27, 39.5}) * glm::rotate(glm::mat4{1}, glm::radians(15.f), {0, 1, 0});
+    for(auto j = 0; j < ns; ++j) {
+        glm::vec3 center = (xform * glm::vec4(16.5 * rand(), 16.5 * rand(), 16.5 * rand(), 1)).xyz();
+        scene.implicits.diffuse.spheres.emplace_back(center, 1);
+        scene.implicits.diffuse.materials.push_back({ .color = glm::vec3(0.73)});
+    }
+
+    scene.litBackGround = 0;
+
 }
 
 void RayTracingWeekendSeries::initUniforms() {
@@ -1046,9 +1148,10 @@ uint32_t RayTracingWeekendSeries::nextHitGroup() {
 
 void RayTracingWeekendSeries::loadMeshes() {
     createCornellBox();
-
-    drawables.insert(std::make_pair("hires_ico_sphere", VulkanDrawable{}));
-    phong::load(resource("ico_sphere_hires.obj"), device, descriptorPool, drawables["hires_ico_sphere"], info);
+    loadIcoSphere();
+    loadUVSphere();
+    loadCube();
+    loadPlane();
 }
 
 void RayTracingWeekendSeries::createCornellBox() {
@@ -1095,6 +1198,46 @@ void RayTracingWeekendSeries::createCornellBox() {
     VulkanDrawable drawable;
     phong::load(device, descriptorPool, drawable, meshes, info);
     drawables.insert(std::make_pair("cornell_box", std::move(drawable)));
+}
+
+void RayTracingWeekendSeries::loadIcoSphere() {
+    drawables.insert(std::make_pair("hires_ico_sphere", VulkanDrawable{}));
+    phong::load(resource("ico_sphere.obj"), device, descriptorPool, drawables["hires_ico_sphere"], info);
+}
+
+void RayTracingWeekendSeries::loadUVSphere() {
+    auto sphere = primitives::sphere(500, 500, 1, glm::mat4{1}, glm::vec4{1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    std::vector<mesh::Mesh> meshes(1);
+    meshes.front().vertices = sphere.vertices;
+    meshes.front().indices = sphere.indices;
+
+    drawables.insert(std::make_pair("uv_sphere", VulkanDrawable{}));
+    phong::load(device, descriptorPool, drawables["uv_sphere"], meshes, info);
+}
+
+void RayTracingWeekendSeries::loadCube() {
+    auto cube = primitives::cube();
+    std::vector<mesh::Mesh> meshes(1);
+    meshes.front().vertices = cube.vertices;
+    meshes.front().indices = cube.indices;
+
+    drawables.insert(std::make_pair("cube", VulkanDrawable{}));
+    phong::load(device, descriptorPool, drawables["cube"], meshes, info);
+}
+
+void RayTracingWeekendSeries::loadPlane() {
+    auto plane = primitives::plane(2, 2, 2, 2, glm::mat4{1}, glm::vec4{1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    std::vector<mesh::Mesh> meshes(1);
+    meshes.front().vertices = plane.vertices;
+    meshes.front().indices = plane.indices;
+
+    drawables.insert(std::make_pair("plane", VulkanDrawable{}));
+    phong::load(device, descriptorPool, drawables["plane"], meshes, info);
+}
+
+void RayTracingWeekendSeries::createComputePipelines() {
+    compute = std::make_unique<ComputePipelines>(&device, pipelineMetaData());
+    compute->createPipelines();
 }
 
 

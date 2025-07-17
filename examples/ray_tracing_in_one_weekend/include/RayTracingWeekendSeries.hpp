@@ -116,6 +116,14 @@ protected:
 
     void loadMeshes();
 
+    void loadIcoSphere();
+
+    void loadUVSphere();
+
+    void loadCube();
+
+    void loadPlane();
+
     void createCornellBox();
 
     void initUniforms();
@@ -200,6 +208,8 @@ protected:
 
     VulkanSampler createNoiseSampler();
 
+    void createComputePipelines();
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -261,7 +271,7 @@ protected:
     Texture perlinNoise;
     std::unique_ptr<ComputePipelines> compute;
     std::vector<Scene> scenes;
-    int currentScene{0};
+    int currentScene{8};
     std::vector<const char*> sceneLabels;
     bool sceneUpdated{};
     uint32_t nextInstance{};
