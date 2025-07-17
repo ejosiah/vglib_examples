@@ -45,6 +45,7 @@ void RayTracingWeekendSeries::initApp() {
     loadMeshes();
     loadDefaultScene();
     loadInOneWeekendScene();
+    loadInOneWeekendTrianglesScene();
     loadTextureScene();
     loadPerlinNoiseScene();
     loadLightScene();
@@ -820,6 +821,8 @@ void RayTracingWeekendSeries::loadCornellBoxVolumeScene() {
 
     auto& volumeInstance = scene.triangles.volume.objects.emplace_back();
     volumeInstance.object = rt::TriangleMesh{ &drawables["cornell_box"] };
+    volumeInstance.object.metaData[6].customIndex = 0;
+    volumeInstance.object.metaData[7].customIndex = 1;
     for(auto i = 0; i < 6; ++i) volumeInstance.object.metaData[i].hitGroupId = ~0u;
 
     scene.litBackGround = 0;
@@ -872,6 +875,70 @@ void RayTracingWeekendSeries::loadInOneWeekendScene() {
 void RayTracingWeekendSeries::loadInOneWeekendTrianglesScene() {
     auto& scene = scenes.emplace_back();
     scene.name = "Ray tracing in One weekend, Triangle spheres";
+
+    auto& bigSphere = scene.triangles.diffuse.objects.emplace_back();
+    bigSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+    bigSphere.xform = glm::translate(glm::mat4{1}, {0, -1000, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1000));
+    bigSphere.xformIT = glm::inverse(bigSphere.xform);
+    bigSphere.object.metaData.front().customIndex = scene.triangles.diffuse.materials.size();
+    scene.triangles.diffuse.materials.resize(1);
+    scene.triangles.diffuse.materials[0] = {
+            .color = {0.5, 0, 0},
+            .textureId = 0,
+            .scale = 0.1,
+            .useTriplanarMapping = 1
+    };
+
+    auto rand = rng(0.f, 1.f, 1 << 20);
+    const auto n = 500;
+    for(auto a = -11; a < 11; ++a) {
+        for (auto b = -11; b < 11; ++b) {
+            glm::vec3 center{a + 0.9 * rand(), 0.2, b + 0.9 * rand() };
+
+            rt::MeshObjectInstance smallSphere{};
+            smallSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+            smallSphere.xform = glm::translate(glm::mat4{1}, center) * glm::scale(glm::mat4{1}, glm::vec3(0.2));
+            smallSphere.xformIT = glm::inverse(smallSphere.xform);
+
+            auto choose_mat = rand();
+            if(choose_mat < 0.8) {
+                smallSphere.object.metaData.front().customIndex = scene.triangles.diffuse.materials.size();
+                scene.triangles.diffuse.objects.push_back(std::move(smallSphere));
+                scene.triangles.diffuse.materials.push_back( { {rand() * rand(), rand() * rand(), rand() * rand()} });
+            } else if (choose_mat < 0.95) {
+                smallSphere.object.metaData.front().customIndex = scene.triangles.metal.materials.size();
+                scene.triangles.metal.objects.push_back(std::move(smallSphere));
+                scene.triangles.metal.materials.push_back({ {0.5 * (1 + rand()), 0.5 * (1 + rand()), 0.5 * (1 + rand())}, 0.5f * rand() });
+            }else {
+                smallSphere.object.metaData.front().customIndex = scene.triangles.dielectric.materials.size();
+                scene.triangles.dielectric.objects.push_back(std::move(smallSphere));
+                scene.triangles.dielectric.materials.push_back({1.5});
+            }
+        }
+    }
+
+
+    auto& deMediumSphere = scene.triangles.dielectric.objects.emplace_back();
+    deMediumSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+    deMediumSphere.xform = glm::translate(glm::mat4{1}, {0, 1, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1));
+    deMediumSphere.xformIT = glm::inverse(deMediumSphere.xform);
+    deMediumSphere.object.metaData.front().customIndex = scene.triangles.dielectric.materials.size();
+    scene.triangles.dielectric.materials.push_back({1.5});
+
+
+    auto& dfMediumSphere = scene.triangles.diffuse.objects.emplace_back();
+    dfMediumSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+    dfMediumSphere.xform = glm::translate(glm::mat4{1}, {-4, 1, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1));
+    dfMediumSphere.xformIT = glm::inverse(dfMediumSphere.xform);
+    dfMediumSphere.object.metaData.front().customIndex = scene.triangles.diffuse.materials.size();
+    scene.triangles.diffuse.materials.push_back({{ 0.4, 0.2, 0.1}});
+
+    auto& mtMediumSphere = scene.triangles.metal.objects.emplace_back();
+    mtMediumSphere.object = rt::TriangleMesh{ &drawables["hires_ico_sphere"] };
+    mtMediumSphere.xform = glm::translate(glm::mat4{1}, {4, 1, 0}) * glm::scale(glm::mat4{1}, glm::vec3(1));
+    mtMediumSphere.xformIT = glm::inverse(mtMediumSphere.xform);
+    mtMediumSphere.object.metaData.front().customIndex = scene.triangles.metal.materials.size();
+    scene.triangles.metal.materials.push_back({{ 0.7, 0.6, 0.5}, 0.0});
 }
 
 void RayTracingWeekendSeries::initUniforms() {
@@ -979,6 +1046,9 @@ uint32_t RayTracingWeekendSeries::nextHitGroup() {
 
 void RayTracingWeekendSeries::loadMeshes() {
     createCornellBox();
+
+    drawables.insert(std::make_pair("hires_ico_sphere", VulkanDrawable{}));
+    phong::load(resource("ico_sphere_hires.obj"), device, descriptorPool, drawables["hires_ico_sphere"], info);
 }
 
 void RayTracingWeekendSeries::createCornellBox() {

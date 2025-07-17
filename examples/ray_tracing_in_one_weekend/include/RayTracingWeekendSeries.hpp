@@ -142,6 +142,8 @@ protected:
 
     void loadInOneWeekendTrianglesScene();
 
+    void loadTheNextWeekEndScene();
+
     void beforeDeviceCreation() override;
 
     void createDescriptorPool();
