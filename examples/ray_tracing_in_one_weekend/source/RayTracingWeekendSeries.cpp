@@ -49,6 +49,7 @@ void RayTracingWeekendSeries::initApp() {
     loadCornellBoxScene();
     loadCornellBoxVolumeScene();
     loadTheNextWeekEndScene();
+    loadForTheRestOfYourLife();
     loadScene();
     createDescriptorSetLayouts();
     updateDescriptorSets();
@@ -1238,6 +1239,58 @@ void RayTracingWeekendSeries::loadPlane() {
 void RayTracingWeekendSeries::createComputePipelines() {
     compute = std::make_unique<ComputePipelines>(&device, pipelineMetaData());
     compute->createPipelines();
+}
+
+void RayTracingWeekendSeries::loadForTheRestOfYourLife() {
+    auto& scene = scenes.emplace_back();
+    scene.name = "For the rest of your life";
+
+    auto cornellBox = primitives::cornellBox();
+
+    scene.triangles.diffuse.materials.resize(8);
+
+    scene.triangles.diffuse.materials[0] = {
+            .color = glm::vec3(0),
+            .emission = glm::vec3(15)
+    };
+
+    scene.triangles.diffuse.materials[1] = {
+            .color = cornellBox[3].vertices[0].color
+    };
+
+    scene.triangles.diffuse.materials[2] = {
+            .color = cornellBox[1].vertices[0].color
+    };
+
+    scene.triangles.diffuse.materials[3] = {
+            .color = cornellBox[7].vertices[0].color
+    };
+
+    scene.triangles.diffuse.materials[4] = {
+            .color = cornellBox[2].vertices[0].color
+    };
+
+    scene.triangles.diffuse.materials[5] = {
+            .color = cornellBox[4].vertices[0].color
+    };
+
+    scene.triangles.diffuse.materials[6] = {
+            .color = cornellBox[6].vertices[0].color
+    };
+
+    scene.triangles.diffuse.materials[7] = {
+            .color = cornellBox[5].vertices[0].color
+    };
+
+    auto& instance = scene.triangles.diffuse.objects.emplace_back();
+    instance.object = rt::TriangleMesh{ &drawables["cornell_box"] };
+    instance.object.metaData[6].hitGroupId = ~0u;
+
+
+    scene.implicits.dielectric.spheres.emplace_back(glm::vec3(10, -19.2, 12), 8.25);
+    scene.implicits.dielectric.materials.emplace_back(1.5);
+
+    scene.litBackGround = 0;
 }
 
 

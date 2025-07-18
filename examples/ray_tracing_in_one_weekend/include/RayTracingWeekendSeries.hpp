@@ -152,6 +152,8 @@ protected:
 
     void loadTheNextWeekEndScene();
 
+    void loadForTheRestOfYourLife();
+
     void beforeDeviceCreation() override;
 
     void createDescriptorPool();
