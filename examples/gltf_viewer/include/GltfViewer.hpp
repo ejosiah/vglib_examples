@@ -261,4 +261,5 @@ protected:
 
     ShaderTablesDescription shaderTablesDesc;
     ShaderBindingTables bindingTables;
+    bool elapsedTime{0};
 };

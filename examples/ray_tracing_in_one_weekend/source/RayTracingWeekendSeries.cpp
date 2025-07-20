@@ -129,18 +129,48 @@ void RayTracingWeekendSeries::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(3) // noise
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(4) // noise
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
+
+    adaptiveSampling.descriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("adaptive_sampling")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(4)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 }
 
 void RayTracingWeekendSeries::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate( { raytrace.descriptorSetLayout });
+    auto sets = descriptorPool.allocate( { raytrace.descriptorSetLayout, adaptiveSampling.descriptorSetLayout });
     raytrace.descriptorSet = sets[0];
+    adaptiveSampling.descriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<4>();
+    auto writes = initializers::writeDescriptorSets<10>();
 
     VkWriteDescriptorSetAccelerationStructureKHR asWrites{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
     asWrites.accelerationStructureCount = 1;
@@ -162,16 +192,57 @@ void RayTracingWeekendSeries::updateDescriptorSets(){
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, canvas.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    VkDescriptorImageInfo imageInfo{ VK_NULL_HANDLE, rtxOutput.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
     writes[2].pImageInfo = &imageInfo;
 
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[3].dstSet = raytrace.descriptorSet;
     writes[3].dstBinding = 3;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[3].descriptorCount = 1;
+    VkDescriptorImageInfo convergeInfo{ VK_NULL_HANDLE, converged.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[3].pImageInfo = &convergeInfo;
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = raytrace.descriptorSet;
+    writes[4].dstBinding = 4;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[4].descriptorCount = 1;
     VkDescriptorImageInfo noiseInfo{ noise.sampler.handle, noise.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-    writes[3].pImageInfo = &noiseInfo;
+    writes[4].pImageInfo = &noiseInfo;
+
+    writes[5].dstSet = adaptiveSampling.descriptorSet;
+    writes[5].dstBinding = 0;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[5].descriptorCount = 1;
+    VkDescriptorImageInfo sourceInfo{ VK_NULL_HANDLE, rtxOutput.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[5].pImageInfo = &sourceInfo;
+
+    writes[6].dstSet = adaptiveSampling.descriptorSet;
+    writes[6].dstBinding = 1;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[6].descriptorCount = 1;
+    VkDescriptorImageInfo meanInfo{ VK_NULL_HANDLE, canvas.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[6].pImageInfo = &meanInfo;
+
+    writes[7].dstSet = adaptiveSampling.descriptorSet;
+    writes[7].dstBinding = 2;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[7].descriptorCount = 1;
+    VkDescriptorImageInfo M2Info{ VK_NULL_HANDLE, meanSquared.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[7].pImageInfo = &M2Info;
+
+    writes[8].dstSet = adaptiveSampling.descriptorSet;
+    writes[8].dstBinding = 3;
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[8].descriptorCount = 1;
+    VkDescriptorImageInfo errorInfo{ VK_NULL_HANDLE, stdError.imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    writes[8].pImageInfo = &errorInfo;
+
+    writes[9].dstSet = adaptiveSampling.descriptorSet;
+    writes[9].dstBinding = 4;
+    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[9].descriptorCount = 1;
+    writes[9].pImageInfo = &convergeInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -187,8 +258,24 @@ void RayTracingWeekendSeries::createPipelineCache() {
 
 void RayTracingWeekendSeries::initCanvas() {
     const auto imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    canvas = Canvas{ this, imageUsage, VK_FORMAT_R32G32B32A32_SFLOAT, {}, resource("display.frag.spv")};
+    canvas = Canvas{ this, imageUsage, VK_FORMAT_R32G32B32A32_SFLOAT, {}, resource("display.frag.spv"),
+                     VkPushConstantRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(toneMapping)}};
     canvas.init();
+    canvas.setConstants(&toneMapping);
+
+    textures::create(device, rtxOutput, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
+    rtxOutput.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    textures::create(device, meanSquared, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
+    meanSquared.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    textures::create(device, stdError, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
+    stdError.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    textures::create(device, converged, VK_IMAGE_TYPE_2D, VK_FORMAT_R8_UNORM, {width, height, 1});
+    converged.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    std_errTexId = plugin<ImGuiPlugin>(IM_GUI_PLUGIN).addTexture(stdError, VK_IMAGE_LAYOUT_GENERAL);
+
 }
 
 void RayTracingWeekendSeries::createRayTracingPipeline() {
@@ -310,16 +397,8 @@ void RayTracingWeekendSeries::rayTrace(VkCommandBuffer commandBuffer) {
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,
                       bindingTables.callable, swapChain.extent.width, swapChain.extent.height, 1);
 
-//    Barrier::rayTraceWriteToComputeRead(commandBuffer);
-//
-//    const auto gx = (width + 7)/8;
-//    const auto gy = (height + 7)/8;
-//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->pipeline("average"));
-//    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->layout("average"), 0, 1, &sets[0], 0, nullptr);
-//    vkCmdDispatch(commandBuffer, gx, gy, 1);
-//
-//    Barrier::computeWriteToFragmentRead(commandBuffer);
-    rayTraceToCanvasBarrier(commandBuffer);
+
+    accumulateAdaptive(commandBuffer);
 }
 
 void RayTracingWeekendSeries::rayTraceToCanvasBarrier(VkCommandBuffer commandBuffer) const {
@@ -473,6 +552,17 @@ void RayTracingWeekendSeries::renderUI(VkCommandBuffer commandBuffer) {
         dirty |= ImGui::SliderFloat("aperture", &apertureSize, 0, 20);
         const auto maxDistance = glm::distance(camera->position(), camera->target);
         dirty |= ImGui::SliderFloat("focal distance", &focalDistance, 1, maxDistance);
+    }
+
+    if(ImGui::CollapsingHeader("convergence", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Image(std_errTexId, {128, 128});
+        ImGui::SliderFloat("error threshold", &adaptiveSampling.constants.error_threshold, 0.1, 0.0);
+    }
+
+    if(ImGui::CollapsingHeader("ToneMapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+        static std::array<const char*, to<int>(ToneMappers::Count)> labels{ "Clamp", "Reinhard", "Uncharted 2", "ACES", "Hejl-Burgess-Dawson" };
+        ImGui::Combo("Tone mapper", &toneMapping.method, labels.data(), labels.size());
+        ImGui::SliderFloat("Exposure Value", &toneMapping.exposureValue, -3, 3);
     }
 
     ImGui::End();
@@ -1139,6 +1229,12 @@ std::vector<PipelineMetaData> RayTracingWeekendSeries::pipelineMetaData() {
                 .shadePath = resource("noise.comp.spv"),
                 .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
             },
+            {
+                .name = "accumulate_adaptive",
+                .shadePath = resource("accumulate_adaptive.comp.spv"),
+                .layouts = { &adaptiveSampling.descriptorSetLayout },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(adaptiveSampling.constants)} }
+            }
     };
 }
 
@@ -1291,6 +1387,21 @@ void RayTracingWeekendSeries::loadForTheRestOfYourLife() {
     scene.implicits.dielectric.materials.emplace_back(1.5);
 
     scene.litBackGround = 0;
+}
+
+void RayTracingWeekendSeries::accumulateAdaptive(VkCommandBuffer commandBuffer) {
+    Barrier::rayTraceWriteToComputeRead(commandBuffer);
+
+    const auto g = (glm::uvec2(width, height) + 1u)/8u;
+    adaptiveSampling.constants.currentSample = uniforms.cpu->currentSample;
+    adaptiveSampling.constants.sampleCount = uniforms.cpu->sampleCount;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->pipeline("accumulate_adaptive"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute->layout("accumulate_adaptive"), 0, 1, &adaptiveSampling.descriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, compute->layout("accumulate_adaptive"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(adaptiveSampling.constants), &adaptiveSampling.constants);
+    vkCmdDispatch(commandBuffer, g.x, g.y, 1);
+
+    Barrier::computeWriteToFragmentRead(commandBuffer);
 }
 
 

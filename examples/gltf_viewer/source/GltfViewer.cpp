@@ -440,6 +440,7 @@ void GltfViewer::createRenderPipeline() {
                     .addDescriptorSetLayout(loader->materialDescriptorSetLayout())
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                     .addDescriptorSetLayout(uniformsDescriptorSetLayout)
+                    .addDescriptorSetLayout(gltf::bvh::Bvh::rtxDescriptorSetLayout)
                 .name("pbr_renderer")
                 .build(render.pbr.layout);
 
@@ -501,7 +502,7 @@ void GltfViewer::createRayTracePipeline() {
     createInfo.pStages = stages.data();
     createInfo.groupCount = COUNT(shaderGroups);
     createInfo.pGroups = shaderGroups.data();
-    createInfo.maxPipelineRayRecursionDepth = 0;
+    createInfo.maxPipelineRayRecursionDepth = 1;
     createInfo.layout = pathTrace.layout.handle;
 
     pathTrace.pipeline = device.createRayTracingPipeline(createInfo);
@@ -580,9 +581,9 @@ void GltfViewer::onSwapChainRecreation() {
 
 void GltfViewer::newFrame() {
     camera->newFrame();
-    uniforms.framebuffer_texture_id = transmissionFramebuffer.color[currentImageIndex].bindingId;
-    uniforms.g_buffer_texture_id = gBuffer.color[currentImageIndex].bindingId;
-    uniforms.g_buffer_image_id = currentImageIndex;
+    uniforms.framebuffer_texture_id = transmissionFramebuffer.color[0].bindingId;
+    uniforms.g_buffer_texture_id = gBuffer.color[0].bindingId;
+    uniforms.g_buffer_image_id = 0;
 }
 
 VkCommandBuffer *GltfViewer::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -641,25 +642,25 @@ void GltfViewer::renderToTransmissionFrameBuffer(VkCommandBuffer commandBuffer) 
     uniformData = uniforms;
     uniformData.discard_transmissive = 1;
     uniformData.tone_map = 0;
-    updateUniforms(commandBuffer, transmissionFramebuffer.uniforms[currentImageIndex], uniformData);
+    updateUniforms(commandBuffer, transmissionFramebuffer.uniforms[0], uniformData);
 
-    offscreen.render(commandBuffer, transmissionFramebuffer.info[currentImageIndex], [&]{
-        renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.pipeline, &render.environmentMap.layout);
-        renderModel(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.pipeline, &render.pbr.layout, VK_FALSE);
+    offscreen.render(commandBuffer, transmissionFramebuffer.info[0], [&]{
+        renderEnvironmentMap(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[0], &render.environmentMap.pipeline, &render.environmentMap.layout);
+        renderModel(commandBuffer, transmissionFramebuffer.UniformsDescriptorSet[0], &render.pbr.pipeline, &render.pbr.layout, VK_FALSE);
     });
-    textures::generateLOD(commandBuffer, transmissionFramebuffer.color[currentImageIndex].image, transmissionFramebuffer.color[currentImageIndex].width
-                          , transmissionFramebuffer.color[currentImageIndex].height, transmissionFramebuffer.color[currentImageIndex].levels);
+    textures::generateLOD(commandBuffer, transmissionFramebuffer.color[0].image, transmissionFramebuffer.color[0].width
+                          , transmissionFramebuffer.color[0].height, transmissionFramebuffer.color[0].levels);
 }
 
 void GltfViewer::renderToGBuffer(VkCommandBuffer commandBuffer) {
-    updateUniforms(commandBuffer, gBuffer.uniforms[currentImageIndex], uniforms);
+    updateUniforms(commandBuffer, gBuffer.uniforms[0], uniforms);
 
-    offscreen.render(commandBuffer, gBuffer.info[currentImageIndex], [&]{
-        renderEnvironmentMap(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.environmentMap.pipeline, &render.environmentMap.layout);
-        renderModel(commandBuffer, gBuffer.UniformsDescriptorSet[currentImageIndex], &render.pbr.pipeline, &render.pbr.layout, VK_TRUE);
+    offscreen.render(commandBuffer, gBuffer.info[0], [&]{
+        renderEnvironmentMap(commandBuffer, gBuffer.UniformsDescriptorSet[0], &render.environmentMap.pipeline, &render.environmentMap.layout);
+        renderModel(commandBuffer, gBuffer.UniformsDescriptorSet[0], &render.pbr.pipeline, &render.pbr.layout, VK_TRUE);
     });
     VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-    barrier.image = gBuffer.color[currentImageIndex].image;
+    barrier.image = gBuffer.color[0].image;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -670,12 +671,12 @@ void GltfViewer::renderToGBuffer(VkCommandBuffer commandBuffer) {
 
 void GltfViewer::applyBloom(VkCommandBuffer commandBuffer) {
     if(!options.bloom.enabled) return;
-    _bloom[currentImageIndex](commandBuffer, gBuffer.color[currentImageIndex].image);
+    _bloom[0](commandBuffer, gBuffer.color[0].image);
 }
 
 void GltfViewer::toneMap(VkCommandBuffer commandBuffer){
     static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = gBuffer.UniformsDescriptorSet[currentImageIndex];
+    sets[0] = gBuffer.UniformsDescriptorSet[0];
     sets[1] = bindlessDescriptor.descriptorSet;
     VkDeviceSize offset = 0;
 
@@ -705,6 +706,11 @@ void GltfViewer::renderEnvironmentMap(VkCommandBuffer commandBuffer, VkDescripto
 void GltfViewer::renderModel(VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet, VulkanPipeline* pipeline, VulkanPipelineLayout* layout, VkBool32 blendingEnabled) {
     const auto& model = models[currentModel];
     static std::vector<VkDescriptorSet> sets(4);
+
+    if(bvhReady && sets.size() < 5) {
+        sets.push_back(models[currentModel]->rtxDescriptorSet);
+    }
+
     sets[0] = model->meshDescriptorSet.u16.handle;
     sets[1] = model->materialDescriptorSet;
     sets[2] = bindlessDescriptor.descriptorSet;
@@ -1240,25 +1246,30 @@ void GltfViewer::constructModelPaths() {
 
 void GltfViewer::buildBVH() {
     if(bvhReady || !models[currentModel]->isReady()) return;
+//    static int count = 0;
+//    count++;
+//    if(count < 1000) return;
+//    count = 0;
     spdlog::info("model is fully loaded constructing BVH");
     bvh = gltf::bvh::Bvh{ device, descriptorPool, models[currentModel] };
     bvh.build();
+    spdlog::info("BVH ready");
     bvhReady = true;
 }
 
 void GltfViewer::rtxOn(VkCommandBuffer commandBuffer) {
-    auto& disp = gBuffer.color[currentImageIndex];
+    auto& disp = gBuffer.color[0];
     Barriers::push(disp.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
 
     Barriers::flush(commandBuffer);
     static std::array<VkDescriptorSet, 3> sets;
-    sets[0] = gBuffer.UniformsDescriptorSet[currentImageIndex];
+    sets[0] = gBuffer.UniformsDescriptorSet[0];
     sets[1] = models[currentModel]->rtxDescriptorSet;
     sets[2] = bindlessDescriptor.descriptorSet;
 
     assert(pathTrace.pipeline);
-    updateUniforms(commandBuffer, gBuffer.uniforms[currentImageIndex], uniforms);
+    updateUniforms(commandBuffer, gBuffer.uniforms[0], uniforms);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pathTrace.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pathTrace.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdTraceRaysKHR(commandBuffer, bindingTables.rayGen, bindingTables.miss, bindingTables.closestHit,

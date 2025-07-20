@@ -4,8 +4,10 @@
 #include "ray_tracing_lang.glsl"
 #include "common.glsl"
 
+
 layout(set = 0, binding = 0) uniform accelerationStructure topLevelAs;
 layout(set = 0, binding = 2, rgba32f) uniform image2D image;
+layout(set = 0, binding = 3, r8) uniform image2D converge_status;
 
 layout(location = 0) rayPayload HitRecord hRec;
 
@@ -19,7 +21,7 @@ void generateRay(out vec3 origin, out vec3 direction, vec2 offset);
 vec3 computeRadience(uint currentSample, uint sampleCount);
 
 void main(){
-
+    ivec2 gid = ivec2(gl_LaunchID);
     hRec.rngState = initRNG(vec2(gl_LaunchID), vec2(gl_LaunchSize), frame);
 
     vec3 fcolor = vec3(0);
@@ -27,10 +29,12 @@ void main(){
     if(adaptiveSamplingEnabled()) {
         if(currentSample >= sampleCount) return;
 
+        bool converged = imageLoad(converge_status, gid).r == 1;
+        if (converged) {
+            return;
+        }
+
         fcolor = computeRadience(currentSample, sampleCount);
-        vec3 dst = imageLoad(image, ivec2(gl_LaunchID.xy)).rgb;
-        float t = 1/float(currentSample + 1);
-        fcolor = mix(dst, fcolor, t);
     }
     else {
         for (uint i = 0; i < sampleCount; ++i) {
@@ -39,7 +43,7 @@ void main(){
         fcolor /= sampleCount;
     }
 
-    imageStore(image, ivec2(gl_LaunchID.xy), vec4(fcolor, 1));
+    imageStore(image, gid, vec4(fcolor, 1));
 
 }
 

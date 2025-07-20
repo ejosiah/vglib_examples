@@ -7,6 +7,7 @@
 
 #include "uniforms.glsl"
 #include "gltf.glsl"
+#include "ray_tracing_lang.glsl"
 
 layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
@@ -32,6 +33,7 @@ layout(location = 0) out struct {
 } vs_out;
 
 layout(location = 13) out flat int drawId;
+layout(set = 4, binding = 0) uniform accelerationStructure topLevelAs;
 
 void main(){
     drawId = gl_DrawID;

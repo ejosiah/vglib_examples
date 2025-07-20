@@ -129,8 +129,9 @@ void main() {
     vec3 normal = instance.normal;
     vec3 tangent, bitangent;
     othonormalBasis(tangent, bitangent, normal);
+    mat3 TBN = mat3(tangent, bitangent, normal);
     vec3 direction = cosineSampleHemisphere(sampleVec2(hRec.rngState));
-    hRec.wi = direction.x * tangent + direction.y * bitangent + direction.z * normal;
+    hRec.wi = TBN * direction;
 
 }
 

@@ -1432,13 +1432,13 @@ void PathTracer::onPause() {
 }
 
 void PathTracer::beforeDeviceCreation() {
-    auto timelineFeatures = findExtension<VkPhysicalDeviceTimelineSemaphoreFeatures>(
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES, deviceCreateNextChain);
-    timelineFeatures->timelineSemaphore = VK_TRUE;
 
     auto rayQueryFeatures = findExtension<VkPhysicalDeviceRayQueryFeaturesKHR>(
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, deviceCreateNextChain);
     rayQueryFeatures->rayQuery = VK_TRUE;
+
+    auto features12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    features12->timelineSemaphore = VK_TRUE;
 
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
     devFeatures13->synchronization2 = VK_TRUE;

@@ -65,7 +65,7 @@ vec3 computeRadiance() {
     uint flags = gl_RayFlagsOpaque;
 
     for(uint b = 0; b < maxBounce; ++b) {
-        traceRay(topLevelAs, flags, 0xFF, 0, 2, 0, hRec.x, Tmin, hRec.wi, Tmax, 0);
+        traceRay(topLevelAs, flags, 0xFF, 0, 0, 0, hRec.x, Tmin, hRec.wi, Tmax, 0);
         if(!hRec.hit) {
             radiance += throughput * hRec.brdfWeigth;
             break;

@@ -1,0 +1,62 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D source_image;
+layout(set = 0, binding = 1, rgba32f) uniform image2D mean_image;
+layout(set = 0, binding = 2, rgba32f) uniform image2D M2_image;
+layout(set = 0, binding = 3, rgba32f) uniform image2D error_image;
+layout(set = 0, binding = 4, r8) uniform image2D converge_status;
+
+layout(push_constant) uniform Constants {
+    uint sampleCount;
+    uint currentSample;
+    float error_threshold;
+};
+
+void main() {
+    if (currentSample >= sampleCount) return;
+
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    // Load prior state
+    vec4 mean = vec4(0.0);
+    vec4 M2 = vec4(0.0);
+    vec4 std_error = vec4(9999.0); // large initial error
+
+    if (currentSample != 0) {
+        mean = imageLoad(mean_image, gid);
+        M2 = imageLoad(M2_image, gid);
+        std_error = imageLoad(error_image, gid);
+    }
+
+    uint N = currentSample + 1;
+
+    // Take new sample
+    vec4 x = imageLoad(source_image, gid);
+
+    // Update Welford stats
+    vec4 delta = x - mean;
+    mean += delta / float(N);
+    vec4 delta2 = x - mean;
+    M2 += delta * delta2;
+
+    // Update error
+    vec4 variance = max(M2 / max(float(N - 1), 1.0), vec4(0.0));
+    std_error = sqrt(variance / float(N));
+
+    uint converged = 0;
+    // Check convergence AFTER computing std_error
+    if (N >= 4 && all(lessThanEqual(std_error.rgb, vec3(error_threshold)))) {
+        converged = 1;
+        return;
+    }
+
+    // Write updated values
+    imageStore(mean_image, gid, mean);
+    imageStore(M2_image, gid, M2);
+    imageStore(error_image, gid, std_error);
+    imageStore(converge_status, gid, vec4(converged));
+
+
+}

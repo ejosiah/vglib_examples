@@ -23,26 +23,12 @@
 
 struct HitRecord {
     vec3 brdfWeigth;
-    int padding0;
-
     vec3 Le;
-    int padding1;
-
     vec3 Ld;
-    int padding2;
-
     vec3 x;
-    int padding3;
-
     vec3 wo;
-    int padding4;
-
     vec3 wi;
-    int padding5;
-
     vec3 n;
-    int padding6;
-
     RngStateType rngState;
     bool hit;
 };
@@ -164,9 +150,9 @@ void load(out InstanceData instance, vec2 bc, uint customIndex, uint  primitiveI
     float w = bc.y;
 
     instance.position = v0.position * u + v1.position * v + v2.position * w;
-    instance.normal = v0.normal * u + v1.normal * v + v2.normal * w;
-    instance.tangent = v0.tangent * u + v1.tangent * v + v2.tangent * w;
-    instance.bitangent = v0.bitangent * u + v1.bitangent * v + v2.bitangent * w;
+    instance.normal = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
+    instance.tangent = normalize(v0.tangent * u + v1.tangent * v + v2.tangent * w);
+    instance.bitangent = normalize(v0.bitangent * u + v1.bitangent * v + v2.bitangent * w);
     instance.color0 = v0.color0 * u + v1.color0 * v + v2.color0 * w;
     instance.color1 = v0.color1 * u + v1.color1 * v + v2.color1 * w;
     instance.uv = v0.uv * u + v1.uv * v + v2.uv * w;

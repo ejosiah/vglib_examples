@@ -87,7 +87,7 @@ bool useBlueNoise() {
     return blueNoise == 1;
 }
 
-layout(set = 0, binding = 3) uniform sampler2DArray noise_texture;
+layout(set = 0, binding = 4) uniform sampler2DArray noise_texture;
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures3d[];
 

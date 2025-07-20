@@ -3,6 +3,11 @@
 #include "VulkanRayTraceBaseApp.hpp"
 #include "shader_binding_table.hpp"
 #include "ComputePipelins.hpp"
+#include "imgui.h"
+
+enum class ToneMappers : int {
+    Clamp, Reinhard, Uncharted2, ACES, Hejl, Count
+};
 
 enum class ShaderIndex : int {
     RayGen, Miss, ImplIntersect,
@@ -176,6 +181,8 @@ protected:
 
     void rayTrace(VkCommandBuffer commandBuffer);
 
+    void accumulateAdaptive(VkCommandBuffer commandBuffer);
+
     void rayTraceToCanvasBarrier(VkCommandBuffer commandBuffer) const;
 
     void CanvasToRayTraceBarrier(VkCommandBuffer commandBuffer) const;
@@ -278,4 +285,23 @@ protected:
     bool sceneUpdated{};
     uint32_t nextInstance{};
     phong::VulkanDrawableInfo info{};
+    struct {
+        VulkanDescriptorSetLayout descriptorSetLayout;
+        VkDescriptorSet descriptorSet{};
+        struct {
+            uint32_t sampleCount{0};
+            uint32_t currentSample{};
+            float error_threshold{0};
+        } constants;
+    } adaptiveSampling;
+    Texture rtxOutput;
+    Texture meanSquared;
+    Texture stdError;
+    Texture converged;
+    ImTextureID std_errTexId{};
+    struct {
+        int method{to<uint32_t>(ToneMappers::Reinhard)};
+        float exposureValue{0};
+    } toneMapping;
+
 };
