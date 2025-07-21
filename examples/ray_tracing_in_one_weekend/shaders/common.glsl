@@ -95,10 +95,6 @@ vec2 sampleVec2(inout RngStateType rngState) {
     return vec2(rand(rngState), rand(rngState));
 }
 
-bool isBlack(vec3 v) {
-    return all(equal(vec3(0), v));
-}
-
 float fresnelSchlick(float cosThata, float ior) {
     float r0 = (1 - ior)/(1+ior);
     r0 *= r0;

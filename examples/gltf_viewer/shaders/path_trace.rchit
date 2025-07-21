@@ -4,6 +4,8 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_ray_tracing_position_fetch : enable
 
+#include "path_tracing/eval_brdf.glsl"
+
 #define BASE_COLOR_INDEX 0
 #define NORMAL_INDEX 1
 #define METALLIC_ROUGHNESS_INDEX 2
@@ -89,79 +91,58 @@
 
 #include "domain.glsl"
 
+const vec3 F0 = vec3(0.04);
+const vec3 F90 = vec3(1);
+const float IOR = 1.5;
+const float u_OcclusionStrength = 1;
+InstanceData instance;
+
 layout(location = 0) rayPayloadIn HitRecord hRec;
 
 hitAttribute vec2 bc;
-
-vec3 hash31(float p)
-{
-    vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
-    p3 += dot(p3, p3.yzx+33.33);
-    return fract((p3.xxy+p3.yzz)*p3.zyx);
-}
-
-void cosine_sample_hemisphere(vec2 u, out vec3 p) {
-    // Uniformly sample disk.
-    const float r   = sqrt(u.x);
-    const float phi = 2.0f * 3.14159265358979323846 * u.y;
-    p.x = r * cos(phi);
-    p.y = r * sin(phi);
-
-    // Project up to hemisphere.
-    p.z = sqrt(max(0.0f, 1.0f - p.x * p.x - p.y * p.y));
-}
-
-InstanceData instance;
 
 float u = 1 - bc.x - bc.y;
 float v = bc.x;
 float w = bc.y;
 
+Surface getSurfaceData();
+
 void main() {
     load(instance, bc, gl_InstanceCustomIndex, gl_PrimitiveID);
-    hRec.brdfWeigth = getBaseColor().rgb;
+    NormalInfo ni =  getNormalInfo();
+    const vec3 mro = getMRO();
+    vec3 wo = -gl_WorldRayDirection;
 
+    Surface surface;
+    surface.albedo = getBaseColor().rgb;
+    surface.emission = getEmission();
+    surface.x = instance.position.xyz;
+    surface.gN = ni.Ng;
+    surface.sN = ni.N;
+    surface.metalness = clamp(mro.r, 0, 1);
+    surface.roughness = clamp(mro.g, 0, 1);
+    surface.opacity = 1;
+    surface.specularType = SPECULAR_BRDF_MICROFACET;
+    surface.diffuseType = DIFFUSE_BRDF_LAMBERTIAN;
 
-    hRec.n = instance.normal;
-    hRec.x = offsetRay(instance.position.xyz, instance.normal);
-    hRec.wo = -gl_WorldRayDirection;
-
-    vec3 normal = instance.normal;
-    vec3 tangent, bitangent;
-    othonormalBasis(tangent, bitangent, normal);
-    mat3 TBN = mat3(tangent, bitangent, normal);
-    vec3 direction = cosineSampleHemisphere(sampleVec2(hRec.rngState));
-    hRec.wi = TBN * direction;
-
-}
-
-vec4 getBaseColor() {
-    vec4 vColor = instance.color0 * u + instance.color0 * v + instance.color0 * w;
-
-    vec4 color = vColor * MATERIAL.baseColor;
-    if (BASE_COLOR_TEX_INFO.index != -1){
-        vec2 uv = transformUV(BASE_COLOR_TEX_INFO);
-        vec4 texColor = texture(BASE_COLOR_TEXTURE, uv);
-        texColor.rgb = pow(texColor.rgb, vec3(2.2));
-        color *= texColor;
+    if(dot(surface.gN, wo) < 0){
+        surface.inside = true;
+        surface.gN *= -1;
+        surface.sN *= -1;
     }
 
-    return color;
+
+    vec3 origin = offsetRay(surface.x, surface.gN);
+    vec3 direction = vec3(0);
+    vec3 brdfWeight = getBrdfWeight(surface, hRec.rngState, wo, direction);
+
+    hRec.n = ni.N;
+    hRec.x = offsetRay(surface.x, surface.gN);
+    hRec.wo = wo;
+    hRec.wi =  direction;
+    hRec.Le = surface.emission;
+    hRec.brdfWeigth = brdfWeight;
+
 }
 
-
-vec2 transformUV(TextureInfo ti) {
-    vec4 uv = instance.uv;
-    if(ti.index == -1) return uv.xy;
-
-    mat3 translation = mat3(1,0,0, 0,1,0, ti.offset.x, ti.offset.y, 1);
-    mat3 rotation = mat3(
-    cos(ti.rotation), -sin(ti.rotation), 0,
-    sin(ti.rotation), cos(ti.rotation), 0,
-    0,             0, 1
-    );
-    mat3 scale = mat3(ti.scale.x,0,0, 0,ti.scale.y,0, 0,0,1);
-
-    mat3 matrix = translation * rotation * scale;
-    return ( matrix * vec3(ti.texCoord == 0 ? uv.xy : uv.zw, 1) ).xy;
-}
+#include "impl_pt.glsl"

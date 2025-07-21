@@ -57,7 +57,7 @@ float uintToFloat(uint x) {
     return uintBitsToFloat(0x3f800000u | (x >> 9)) - 1.0f;
 }
 
-    #if USE_PCG
+#if USE_PCG
 
 RngStateType initRNG(vec2 pixelCoords, vec2 resolution, uint frameNumber) {
     return RngStateType(uvec2(pixelCoords), frameNumber, 0); //< Seed for PCG uses a sequential sample number in 4th channel, which increments on every RNG call and starts from 0
@@ -68,9 +68,9 @@ float rand(inout RngStateType rngState) {
     return uintToFloat(pcg4d(rngState).x);
 }
 
-    # else
+#else
 
-    RngStateType initRNG(vec2 pixelCoords, vec2 resolution, uint frameNumber) {
+RngStateType initRNG(vec2 pixelCoords, vec2 resolution, uint frameNumber) {
     RngStateType seed = uint(dot(pixelCoords, vec2(1, resolution.x))) ^ jenkinsHash(frameNumber);
     return jenkinsHash(seed);
 }
@@ -80,6 +80,19 @@ float rand(inout RngStateType rngState) {
     return uintToFloat(xorshift(rngState));
 }
 
-    #endif
+#endif
+
+vec2 randomVec2(inout RngStateType rngState){
+    return vec2(rand(rngState), rand(rngState));
+}
+
+vec3 randomVec3(inout RngStateType rngState){
+    return vec3(rand(rngState), rand(rngState), rand(rngState));
+}
+
+
+vec4 randomVec4(inout RngStateType rngState){
+    return vec4(rand(rngState), rand(rngState), rand(rngState), rand(rngState));
+}
 
 #endif // RANDOM_GLSL

@@ -244,10 +244,6 @@ struct BrdfData{
     int brdfType;
 };
 
-vec2 randomVec2(inout RngStateType rngState){
-    return vec2(rand(rngState), rand(rngState));
-}
-
 struct Sample{
     int i;
     int N;

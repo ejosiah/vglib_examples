@@ -3,14 +3,38 @@
 
 void othonormalBasis(out vec3 tangent, out vec3 binormal, inout vec3 normal){
     normal = normalize(normal);
-    vec3 a;
-    if(abs(normal.x) > 0.9){
-        a = vec3(0, 1, 0);
-    }else {
-        a = vec3(1, 0, 0);
-    }
-    binormal = normalize(cross(normal, a));
-    tangent = cross(normal, binormal);
+    vec3 a = abs(normal.x) > 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    tangent = normalize(cross(a, normal));
+    binormal = cross(normal, tangent);
+}
+
+
+vec3 checkerboard( in vec3 worldPosition, in vec3 normal, float scale) {
+    const float pi = 3.141519;
+
+    vec3 scaledPos = 2 * worldPosition.xyz * pi * 2.0;
+    vec3 scaledPos2 = 2 * worldPosition.xyz * pi * 2.0 / 10.0 + vec3( pi / 4.0 );
+    scaledPos *= scale;
+    scaledPos *= scale;
+    float s = cos( scaledPos2.x ) * cos( scaledPos2.y ) * cos( scaledPos2.z );  // [-1,1] range
+    float t = cos( scaledPos.x ) * cos( scaledPos.y ) * cos( scaledPos.z );     // [-1,1] range
+
+
+    t = ceil( t * 0.9 );
+    s = ( ceil( s * 0.9 ) + 3.0 ) * 0.25;
+    vec3 colorB = vec3( 0.85, 0.85, 0.85 );
+    vec3 colorA = vec3( 1, 1, 1 );
+    vec3 finalColor = mix( colorA, colorB, t ) * s;
+
+    return vec3(0.8) * finalColor;
+}
+
+vec3 checkerboard( in vec3 worldPosition, in vec3 normal){
+    return checkerboard(worldPosition, normal, 1);
+}
+
+float luminance(vec3 rgb){
+    return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f));
 }
 
 vec3 offsetRay(in vec3 p, in vec3 n)
@@ -29,6 +53,35 @@ vec3 offsetRay(in vec3 p, in vec3 n)
     abs(p.y) < origin ? p.y + floatScale * n.y : p_i.y, //
     abs(p.z) < origin ? p.z + floatScale * n.z : p_i.z);
 }
+
+vec3 sphericalDirection(float sin0, float cos0, float phi, vec3 x, vec3 y, vec3 z){
+    return sin0 * cos(phi) * x + sin0 * sin(phi) * y + cos0 * z;
+}
+
+float linearToSrgb(float linearColor){
+    if (linearColor < 0.0031308f) return linearColor * 12.92f;
+    else return 1.055f * float(pow(linearColor, 1.0f / 2.4f)) - 0.055f;
+}
+
+vec3 linearToSrgb(vec3 c){
+    return vec3(linearToSrgb(c.r),linearToSrgb(c.g), linearToSrgb(c.b));
+}
+
+float saturate(float v){
+    return clamp(v, 0, 1);
+}
+
+float rsqrt(float x) { return inversesqrt(x); }
+
+
+bool isBlack(vec3 v){
+    return all(equal(v, vec3(0)));
+}
+
+bool isMirror(float metalness, float roughness){
+    return metalness == 1 && roughness == 0;
+}
+
 
 
 #endif // RTX_UTILS_GLSL

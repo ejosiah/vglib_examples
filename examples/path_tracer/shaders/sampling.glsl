@@ -3,10 +3,6 @@
 
 #include "constants.glsl"
 
-vec3 randomVec3(inout RngStateType rngState){
-    return vec3(rand(rngState), rand(rngState), rand(rngState));
-}
-
 float RadicalInverse_VdC(uint bits)
 {
     bits = (bits << 16u) | (bits >> 16u);
