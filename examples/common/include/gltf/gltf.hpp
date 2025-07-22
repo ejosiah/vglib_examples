@@ -123,6 +123,13 @@ namespace gltf {
             return _ready;
         }
 
+        void readyCheck()  {
+            if((draw.u8.count + draw.u16.count + draw.u32.count) == numMeshes && textures.size() == numTextures) {
+                _loaded.notifyAll();
+                _ready = true;
+            }
+        }
+
         ~Model();
 
         void render(VkCommandBuffer commandBuffer, VulkanPipelineLayout& layout, uint32_t meshDescriptorOffset = 0);

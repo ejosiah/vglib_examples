@@ -121,16 +121,24 @@ void main() {
     surface.sN = ni.N;
     surface.metalness = clamp(mro.r, 0, 1);
     surface.roughness = clamp(mro.g, 0, 1);
-    surface.opacity = 1;
-    surface.specularType = SPECULAR_BRDF_MICROFACET;
-    surface.diffuseType = DIFFUSE_BRDF_LAMBERTIAN;
+    surface.transmission = vec3(1);
+    surface.ior = MATERIAL.ior;
+
+//    if(MATERIAL.thickness > 0) {
+//        // c x / d
+//        const vec3 C =  MATERIAL.attenuationColor;
+//        const float d = MATERIAL.attenuationDistance;
+//        const float x = gl_HitT;
+//        surface.transmission = pow(C, vec3(x/d));
+//    }
+
+    surface.bsdf = SPECULAR_BRDF_MICROFACET | DIFFUSE_BRDF_LAMBERTIAN;
 
     if(dot(surface.gN, wo) < 0){
         surface.inside = true;
         surface.gN *= -1;
         surface.sN *= -1;
     }
-
 
     vec3 origin = offsetRay(surface.x, surface.gN);
     vec3 direction = vec3(0);

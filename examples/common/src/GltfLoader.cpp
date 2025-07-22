@@ -1303,11 +1303,7 @@ namespace gltf {
         model->draw.u8.count += instanceUpload->drawCounts.u8;
         model->draw.u16.count += instanceUpload->drawCounts.u16;
         model->draw.u32.count += instanceUpload->drawCounts.u32;
-
-        if((model->draw.u8.count + model->draw.u16.count + model->draw.u32.count) == model->numMeshes) {
-            model->_ready = true;
-            model->_loaded.notify();
-        }
+        model->readyCheck();
 
 //        spdlog::info("i32: {}, 116: {}", instanceUpload->pending->model->draw.u32.count, instanceUpload->pending->model->draw.u16.count);
     }
@@ -1373,6 +1369,7 @@ namespace gltf {
                 _bindlessDescriptor->update(
                         {&texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureUpload.bindingId});
                 textureUpload.pending->model->textures.push_back(std::move(texture));
+                textureUpload.pending->model->readyCheck();
             }
         }
     }

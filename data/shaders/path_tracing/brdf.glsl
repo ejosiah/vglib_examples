@@ -17,8 +17,7 @@ BrdfData prepareBRDFData(BrdfArgs args){
     data.V = V;
     data.sN = N;
     data.H = normalize(L + V);
-    data.specularType = args.specularType;
-    data.diffuseType = args.diffuseType;
+    args.brdfType = args.brdfType;
 
     float NdotL = dot(N, L);
     float NdotV = dot(N, V);
@@ -102,7 +101,7 @@ vec3 evalDisneyDiffuse(const BrdfData data) {
 
 
 vec3 evalDiffuse(BrdfData data){
-    switch(data.diffuseType){
+    switch(data.brdfType & BRDF_DIFFUSE){
         case DIFFUSE_BRDF_LAMBERTIAN:
             return evalLamberian(data);
         case DIFFUSE_BRDF_OREN_NAYAR:
@@ -320,13 +319,13 @@ vec3 evalMicrofacet(BrdfData data){
 }
 
 vec3 evalSpecular(BrdfData data){
-    switch(data.specularType){
+    switch(data.brdfType & BRDF_SPECULAR){
         case SPECULAR_BRDF_MICROFACET:
-        return evalMicrofacet(data);
+            return evalMicrofacet(data);
         case SPECLUAR_BRDF_PHONG:
-        return vec3(0, 1, 0);
+            return vec3(0, 1, 0); // TODO implement
         default:
-        return evalVoid(data);
+            return evalVoid(data);
     }
 }
 
@@ -503,7 +502,7 @@ vec3 evalIndirectCombinedBRDF(inout BrdfArgs args){
 
         BrdfData data = prepareBRDFData(localArgs);
 
-        sampleWeight = data.diffuseReflectance * diffuseTerm(data, args.diffuseType);
+        sampleWeight = data.diffuseReflectance * diffuseTerm(data, args.brdfType);
 
         if(bool(combine_brdf_with_fresnel)){
             // Sample a half-vector of specular BRDF

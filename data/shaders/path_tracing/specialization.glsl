@@ -8,7 +8,10 @@
 #define SPECULAR_BRDF_MICROFACET (1 << 3)
 #define SPECLUAR_BRDF_PHONG (1 << 4)
 
+#define BTDF_TRANSMISSION (1 << 5)
+
 #define BRDF_DIFFUSE (DIFFUSE_BRDF_LAMBERTIAN | DIFFUSE_BRDF_LAMBERTIAN | DIFFUSE_BRDF_DISNEY)
+
 #define BRDF_SPECULAR (SPECULAR_BRDF_MICROFACET | SPECLUAR_BRDF_PHONG)
 
 #define NDF_FUNC_GGX 1
@@ -16,7 +19,7 @@
 
 #define RIS_CANDIDATES_LIGHTS 8
 
-layout(constant_id = 0) const int combine_brdf_with_fresnel = 1;
+layout(constant_id = 0) const int combine_brdf_with_fresnel = 0;
 
 // Enable optimized G2 implementation which includes division by specular BRDF denominator (not available for all NDFs, check macro G2_DIVIDED_BY_DENOMINATOR if it was actually used)
 layout(constant_id = 1) const int use_optimized_g2 = 1;

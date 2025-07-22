@@ -15,10 +15,9 @@ struct BrdfArgs{
     vec3 lightPoint;
     float surfaceMetalness;
     float surfaceRoughness;
-    int specularType;
-    int diffuseType;
     int ndfFunc;
     int brdfType;
+    float eta;
     RngStateType rngState;
 
 // output
@@ -52,13 +51,12 @@ struct BrdfData{
     bool Vbackfacing;
     bool Lbackfacing;
     int brdfType;
-    int specularType;
-    int diffuseType;
 };
 
 struct Surface{
     vec3 albedo;
     vec3 emission;
+    vec3 transmission;
     vec3 x;
     vec3 gN;
     vec3 sN;
@@ -68,8 +66,8 @@ struct Surface{
     int id;
     bool inside;
     bool volume;
-    int specularType;
-    int diffuseType;
+    int bsdf;
+    float ior;
 };
 
 bool isMirror(Surface surface){

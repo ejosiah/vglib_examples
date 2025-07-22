@@ -54,6 +54,7 @@ void init(out HitRecord hRec, vec2 xi) {
     hRec.x = (inverse_view * vec4(0,0,0,1)).xyz;
     hRec.n = vec3(0);
     hRec.hit = true;
+    hRec.transmission = vec3(1);
 }
 
 vec3 computeRadiance() {
@@ -71,6 +72,7 @@ vec3 computeRadiance() {
             break;
         }
 
+        throughput *= hRec.transmission;
         radiance += throughput * hRec.Le;
         radiance += throughput * hRec.Ld;
 

@@ -23,6 +23,7 @@
 
 struct HitRecord {
     vec3 brdfWeigth;
+    vec3 transmission;
     vec3 Le;
     vec3 Ld;
     vec3 x;

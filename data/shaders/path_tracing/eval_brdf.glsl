@@ -62,8 +62,7 @@ vec3 evalBrdf(Surface surface, vec3 wo, vec3 wi){
     args.surfaceAlbedo = surface.albedo;
     args.surfaceMetalness = surface.metalness;
     args.surfaceRoughness = surface.roughness;
-    args.specularType = surface.specularType;
-    args.diffuseType = surface.diffuseType;
+    args.brdfType = surface.bsdf;
 
     return evalCombinedBRDF(args);
 }
@@ -72,14 +71,14 @@ vec3 getBrdfWeight(Surface surface, inout RngStateType rngState, vec3 wo, out ve
     int brdfType;
     vec3 weight = vec3(1);
     if(isMirror(surface)){
-        brdfType = surface.specularType;
+        brdfType = surface.bsdf & BRDF_SPECULAR;
     }else {
         float brdfProbability = getBrdfProbability(surface, wo);
         if(rand(rngState) < brdfProbability){
-            brdfType = surface.specularType;
+            brdfType = surface.bsdf & BRDF_SPECULAR;
             weight /= brdfProbability;
         }else{
-            brdfType = surface.diffuseType;
+            brdfType = surface.bsdf & BRDF_DIFFUSE;
             weight /= (1 - brdfProbability);
         }
     }
