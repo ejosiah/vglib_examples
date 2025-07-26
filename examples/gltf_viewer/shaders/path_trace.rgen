@@ -67,7 +67,7 @@ vec3 computeRadiance() {
 
     for(uint b = 0; b < maxBounce; ++b) {
         traceRay(topLevelAs, flags, 0xFF, 0, 0, 0, hRec.x, Tmin, hRec.wi, Tmax, 0);
-        if(!hRec.hit) {
+        if(!hRec.hit || isBlack(hRec.wi)) {
             radiance += throughput * hRec.brdfWeigth;
             break;
         }

@@ -128,22 +128,16 @@ Surface getSurfaceInfo();
 
 void main() {
     load(instance, bc, gl_InstanceCustomIndex, gl_PrimitiveID);
-    NormalInfo ni =  getNormalInfo();
-    const vec3 mro = getMRO();
-    vec3 wo = -gl_WorldRayDirection;
 
-    Surface surface;
-    surface.albedo = getBaseColor().rgb;
-    surface.emission = getEmission();
-    surface.x = instance.position.xyz;
-    surface.gN = ni.Ng;
-    surface.sN = ni.N;
-    surface.metalness = clamp(mro.r, 0, 1);
-    surface.roughness = clamp(mro.g, 0, 1);
-    surface.transmission = vec3(1);
-    surface.ior = MATERIAL.ior;
-    surface.inside = false;
+    Surface surface = getSurfaceInfo();
+    vec3 wo = -gl_WorldRayDirection;
     float Air = 1.0;
+
+    if(MATERIAL.unlit == 1) {
+        hRec.wi =  vec3(0);
+        hRec.brdfWeigth = surface.albedo;
+        return;
+    }
 
 
     if(dot(surface.gN, wo) < 0){
@@ -167,7 +161,7 @@ void main() {
             origin = offsetRay(surface.x, surface.gN);
             brdfWeight *= fresnel / max(reflectProb, 0.001); // Avoid divide-by-zero
         } else {
-            float eta = surface.inside ? (surface.ior)/Air : (Air/surface.ior);
+            float eta = computeEta(MATERIAL, surface.inside);
             direction = refract(-wo, surface.gN, eta);
             origin = offsetRay(surface.x, -surface.gN);
             brdfWeight *= (vec3(1.0) - fresnel) / max(1.0 - reflectProb, 0.001);
@@ -201,3 +195,27 @@ void main() {
 }
 
 #include "impl_pt.glsl"
+
+Surface getSurfaceInfo() {
+    NormalInfo ni =  getNormalInfo();
+    const vec3 mro = getMRO();
+    const vec4 baseColor = getBaseColor();
+    Surface surface;
+    surface.albedo = baseColor.rgb;
+    surface.emission = getEmission();
+    surface.x = instance.position.xyz;
+    surface.gN = ni.Ng;
+    surface.sN = ni.N;
+    surface.metalness = clamp(mro.r, 0, 1);
+    surface.roughness = clamp(mro.g, 0, 1);
+    surface.transmission = vec3(1);
+    surface.ior = instance.material.ior;
+    surface.inside = false;
+
+    if(instance.material.alphaMode == ALPHA_MODE_BLEND) {
+        surface.albedo = mix(vec3(1), surface.albedo, baseColor.a);
+        instance.material.transmission = 1;
+    }
+
+    return surface;
+}
