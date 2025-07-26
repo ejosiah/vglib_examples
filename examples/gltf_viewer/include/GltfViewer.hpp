@@ -262,4 +262,9 @@ protected:
     ShaderTablesDescription shaderTablesDesc;
     ShaderBindingTables bindingTables;
     bool elapsedTime{0};
+    VulkanBuffer debugBuffer;
+    VulkanBuffer debugRequestBuffer;
+    VulkanDescriptorSetLayout debugDescriptorSetLayout;
+    VkDescriptorSet debugDescriptorSet{};
+    DebugRequest* debugRequest;
 };

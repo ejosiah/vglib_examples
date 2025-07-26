@@ -2,6 +2,7 @@
 
 
 #include "domain.glsl"
+#define MIN_BOUNCES 3
 
 layout(set = 1, binding = 0) uniform accelerationStructure topLevelAs;
 layout(set = 2, binding = 11, rgba32f) uniform image2D global_images[];
@@ -50,11 +51,10 @@ void init(out HitRecord hRec, vec2 xi) {
     hRec.Le = vec3(0);
     hRec.Ld = vec3(0);
     hRec.wi = (inverse_view * vec4(normalize(target.xyz), 0)).xyz;
-    hRec.wo = -hRec.wi;
     hRec.x = (inverse_view * vec4(0,0,0,1)).xyz;
-    hRec.n = vec3(0);
     hRec.hit = true;
     hRec.transmission = vec3(1);
+    hRec.eta = 1;
 }
 
 vec3 computeRadiance() {
@@ -63,7 +63,7 @@ vec3 computeRadiance() {
 
     vec3 throughput = vec3(1);
     vec3 radiance = vec3(0);
-    uint flags = gl_RayFlagsOpaque;
+    uint flags = gl_RayFlagsNoOpaque;
 
     for(uint b = 0; b < maxBounce; ++b) {
         traceRay(topLevelAs, flags, 0xFF, 0, 0, 0, hRec.x, Tmin, hRec.wi, Tmax, 0);
@@ -76,7 +76,16 @@ vec3 computeRadiance() {
         radiance += throughput * hRec.Le;
         radiance += throughput * hRec.Ld;
 
+        if(b > MIN_BOUNCES && b < (maxBounce - 1)){
+            float rrProbability = min(0.95, luminance(throughput));
+            if(rrProbability < rand(hRec.rngState)){
+                break;
+            }
+            throughput /= rrProbability;
+        }
+
         throughput *= hRec.brdfWeigth;
+        hRec.transmission = vec3(1);
     }
     return radiance;
 }

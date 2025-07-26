@@ -96,7 +96,7 @@ NormalInfo getNormalInfo() {
 
 
     // For a back-facing surface, the tangential basis vectors are negated.
-    if (gl_HitKind == gl_HitKindBackFacingTriangle)
+    if (gl_HitKind == gl_HitKindBackFacingTriangle && MATERIAL.doubleSided == 1)
     {
         t *= -1.0;
         b *= -1.0;

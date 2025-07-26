@@ -27,9 +27,8 @@ struct HitRecord {
     vec3 Le;
     vec3 Ld;
     vec3 x;
-    vec3 wo;
     vec3 wi;
-    vec3 n;
+    float eta;
     RngStateType rngState;
     bool hit;
 };

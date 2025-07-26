@@ -85,6 +85,10 @@ void GltfViewer::initUniforms() {
     for(auto i = 0; i < swapChainImageCount; ++i) {
         transmissionFramebuffer.uniforms[i] = device.createDeviceLocalBuffer(&defaults, sizeof(UniformData),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     }
+
+    debugBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(DebugData) * defaults.maxBounces, "debug_buffer");
+    debugRequestBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(DebugRequest), "debug_request");
+    debugRequest = reinterpret_cast<DebugRequest*>(debugRequestBuffer.map());
 }
 
 void GltfViewer::createGBuffer() {
@@ -339,6 +343,19 @@ void GltfViewer::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
+
+    debugDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("rtx_debug_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
 }
 
 void GltfViewer::updateDescriptorSets(){
@@ -370,7 +387,26 @@ void GltfViewer::updateDescriptorSets(){
     }
 
     device.updateDescriptorSets(writes);
-    
+
+    debugDescriptorSet = descriptorPool.allocate({ debugDescriptorSetLayout}).front();
+    writes.resize(2);
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = debugDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[0].descriptorCount = 1;
+    auto debugInfo = VkDescriptorBufferInfo{ debugBuffer , 0, VK_WHOLE_SIZE};
+    writes[0].pBufferInfo = &debugInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = debugDescriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].descriptorCount = 1;
+    auto debugReqInfo = VkDescriptorBufferInfo{ debugRequestBuffer , 0, VK_WHOLE_SIZE};
+    writes[1].pBufferInfo = &debugReqInfo;
+    device.updateDescriptorSets(writes);
+
 }
 
 void GltfViewer::createCommandPool() {
@@ -473,18 +509,20 @@ void GltfViewer::createRayTracePipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("path_trace.rgen.spv"));
     auto missShaderModule = device.createShaderModule( resource("path_trace.rmiss.spv"));
     auto chitShaderModule = device.createShaderModule( resource("path_trace.rchit.spv"));
+    auto ahitShaderModule = device.createShaderModule( resource("path_trace.rahit.spv"));
 
     auto shaders = std::vector<ShaderInfo>(to<int>(ShaderType::Count));
     shaders[to<int>(ShaderType::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
     shaders[to<int>(ShaderType::Miss)] = { missShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
     shaders[to<int>(ShaderType::ClosesHit)] = { chitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(ShaderType::AnyHit)] = { ahitShaderModule, VK_SHADER_STAGE_ANY_HIT_BIT_KHR};
 
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
 
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(ShaderType::Miss)));
 
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderType::ClosesHit)));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(ShaderType::ClosesHit), VK_SHADER_UNUSED_KHR, to<int>(ShaderType::AnyHit)));
 
     auto stages = map_range(shaders, [](auto& shader){
         return VkPipelineShaderStageCreateInfo{
@@ -496,7 +534,7 @@ void GltfViewer::createRayTracePipeline() {
     });
 
     pathTrace.layout = device.createPipelineLayout(
-            { uniformsDescriptorSetLayout, gltf::bvh::Bvh::rtxDescriptorSetLayout, *bindlessDescriptor.descriptorSetLayout});
+            { uniformsDescriptorSetLayout, gltf::bvh::Bvh::rtxDescriptorSetLayout, *bindlessDescriptor.descriptorSetLayout, debugDescriptorSetLayout});
     VkRayTracingPipelineCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
     createInfo.stageCount = COUNT(stages);
     createInfo.pStages = stages.data();
@@ -835,6 +873,13 @@ void GltfViewer::update(float time) {
 void GltfViewer::checkAppInputs() {
     if(!ImGui::IsAnyItemActive() && !FileDialog::file_dialog_open && options.camera == 0) {
         camera->processInput();
+
+        if(ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            spdlog::info("mouse pos: {}", mouse.position);
+            debugRequest->mouse_position = mouse.position;
+            debugRequest->on = 1;
+            debugRequest->counter = 0;
+        }
     }
 }
 
@@ -1202,6 +1247,14 @@ void GltfViewer::endFrame() {
 
     if(pathTrace.enabled) {
         uniforms.currentSample = glm::min(++uniforms.currentSample, uniforms.maxSamples);
+
+        static bool once = true;
+        if(uniforms.currentSample == uniforms.maxSamples && once) {
+            once = false;
+            auto debugInfo = debugBuffer.span<DebugData>(1);
+            spdlog::info("reflect probability: {}", to<float>(debugInfo[0].reflect)/uniforms.maxSamples);
+        }
+
         if(camera->moved()) {
             uniforms.currentSample = 0;
         }
@@ -1219,6 +1272,19 @@ void GltfViewer::endFrame() {
         _bloom[i].constants.d0 = options.bloom.d0;
     }
     buildBVH();
+
+//    if(debugRequest->on == 1) {
+//        debugRequest->on = 0;
+//        auto debugInfo = debugBuffer.span<DebugData>(debugRequest->counter);
+//        if(!debugInfo.empty()){
+//            auto& head = debugInfo.front();
+//            std::stringstream ss{};
+//            for(auto d : debugInfo) {
+//                ss << fmt::format("o: {}, of: {}, n: {}, wi: {}, wo: {}, reflect: {}\n", d.origin, d.offsetOrigin, d.normal, d.rayDir, d.viewDir, d.reflect);
+//            }
+//            spdlog::info(ss.str());
+//        }
+//    }
 }
 
 void GltfViewer::constructModelPaths() {
@@ -1263,10 +1329,11 @@ void GltfViewer::rtxOn(VkCommandBuffer commandBuffer) {
                    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
 
     Barriers::flush(commandBuffer);
-    static std::array<VkDescriptorSet, 3> sets;
+    static std::array<VkDescriptorSet, 4> sets;
     sets[0] = gBuffer.UniformsDescriptorSet[0];
     sets[1] = models[currentModel]->rtxDescriptorSet;
     sets[2] = bindlessDescriptor.descriptorSet;
+    sets[3] = debugDescriptorSet;
 
     assert(pathTrace.pipeline);
     updateUniforms(commandBuffer, gBuffer.uniforms[0], uniforms);

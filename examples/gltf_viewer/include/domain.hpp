@@ -7,6 +7,7 @@ enum class ShaderType : int {
     Miss,
 
     ClosesHit,
+    AnyHit,
 
     Count
 };
@@ -35,6 +36,21 @@ struct UniformData {
     int frame{0};
     int currentSample{-1};
     int maxSamples{10000};
-    int maxBounces{4};
+    int maxBounces{50};
     int adaptiveSampling{1};
+};
+
+struct DebugData {
+    glm::vec3 origin;
+    glm::vec3 offsetOrigin;
+    glm::vec3 normal;
+    glm::vec3 rayDir;
+    glm::vec3 viewDir;
+    int reflect{0};
+};
+
+struct DebugRequest {
+    glm::uvec2 mouse_position;
+    int on{0};
+    int counter{0};
 };
