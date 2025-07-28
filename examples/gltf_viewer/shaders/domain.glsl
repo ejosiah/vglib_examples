@@ -11,6 +11,7 @@
 #include "ray_tracing_lang.glsl"
 
 #include "gltf.glsl"
+#include "punctual_lights.glsl"
 #include "octahedral.glsl"
 #include "random.glsl"
 #include "uniforms.glsl"
@@ -19,6 +20,12 @@
 
 #define render_target global_images[g_buffer_image_id]
 #define enivornment_texture global_textures[environment];
+#define pConditionalVFunc global_textures[distribution2D_id]
+#define pConditionalVCdf global_textures[distribution2D_id+1]
+#define pMarginal global_textures_1_dim[distribution2D_id+2]
+#define pMarginalCdf global_textures_1_dim[distribution2D_id+3]
+
+
 #define FLT_MAX 3.402823466e+38F
 
 struct HitRecord {
@@ -93,6 +100,16 @@ layout(set = 1, binding = 6) buffer TextureInfos {
     TextureInfo textureInfos[];
 };
 
+layout(set = 1, binding = 7, scalar) buffer PunctualLights {
+    Light lights[];
+};
+
+
+layout(set = 1, binding = 8, scalar) buffer PunctualLightsInstances {
+    LightInstance lightInstances[];
+};
+
+layout(set = 2, binding = 10) uniform sampler1D global_textures_1_dim[];
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
 uvec3 extractIndices(uint firstIndex, uint primitiveIndex, uint indexType, uint indexTypeSize) {
@@ -168,6 +185,15 @@ void load(out InstanceData instance, vec2 bc, uint customIndex, uint  primitiveI
     instance.normal = normalize(nModel * instance.normal);
     instance.tangent = normalize(nModel * instance.tangent);
     instance.bitangent = normalize(nModel * instance.bitangent);
+}
+
+Light lightAt(int index) {
+    LightInstance instance = lightInstances[index];
+    Light light = lights[instance.lightId];
+
+    light.direction = (instance.model * vec4(light.direction, 1)).xyz;
+    light.position = (instance.model * vec4(0, 0, 0, 1)).xyz;
+    return light;
 }
 
 #endif // GLTF_VIEWER_DOMAIN_GLSL

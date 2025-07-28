@@ -192,6 +192,18 @@ void main() {
     hRec.Le = surface.emission;
     hRec.brdfWeigth = brdfWeight;
 
+    if(num_lights > 0) {
+        int light_index = int(rand(hRec.rngState) * num_lights);
+        Light light = lightAt(light_index);
+        float light_weight = 1/float(num_lights);
+        bool isVisible = true;
+        if(isVisible) {
+            vec3 wi = (light.type == LightType_Directional) ? -light.direction : normalize(light.position - surface.x);
+            vec3 intensity = getLighIntensity(light, wi);
+            hRec.Ld = intensity * evalBrdf(surface, wo, wi) * light_weight;
+        }
+    }
+
 }
 
 #include "impl_pt.glsl"
@@ -202,15 +214,17 @@ Surface getSurfaceInfo() {
     const vec4 baseColor = getBaseColor();
     Surface surface;
     surface.albedo = baseColor.rgb;
+    surface.transmission = vec3(1);
     surface.emission = getEmission();
     surface.x = instance.position.xyz;
     surface.gN = ni.Ng;
     surface.sN = ni.N;
-    surface.metalness = clamp(mro.r, 0, 1);
     surface.roughness = clamp(mro.g, 0, 1);
-    surface.transmission = vec3(1);
-    surface.ior = instance.material.ior;
+    surface.metalness = clamp(mro.r, 0, 1);
+    surface.opacity = 1.0;
     surface.inside = false;
+    surface.volume = false;
+    surface.ior = instance.material.ior;
 
     if(instance.material.alphaMode == ALPHA_MODE_BLEND) {
         surface.albedo = mix(vec3(1), surface.albedo, baseColor.a);

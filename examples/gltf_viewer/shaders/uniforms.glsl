@@ -36,6 +36,8 @@ layout(set = UNIFORMS_SET, binding = UNIFORMS_BINDING_POINT, scalar) uniform Con
     int maxSamples;
     int maxBounce;
     int adaptiveSampling;
+    int distribution2D_id;
+    float marginalIntegral;
 };
 
 #define u_EnvIntensity ibl_intensity

@@ -267,4 +267,5 @@ protected:
     VulkanDescriptorSetLayout debugDescriptorSetLayout;
     VkDescriptorSet debugDescriptorSet{};
     DebugRequest* debugRequest;
+    Distribution2DTexture envMapDistribution;
 };

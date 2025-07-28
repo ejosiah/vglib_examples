@@ -354,7 +354,7 @@ void gltf::bvh::Bvh::createDescriptorSet() {
 
     m_model->rtxDescriptorSet = m_descriptorPool->allocate({ rtxDescriptorSetLayout }).front();
 
-    auto writes = initializers::writeDescriptorSets<7>();
+    auto writes = initializers::writeDescriptorSets<9>();
 
     VkWriteDescriptorSetAccelerationStructureKHR accWrites{};
     accWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
@@ -424,6 +424,20 @@ void gltf::bvh::Bvh::createDescriptorSet() {
     VkDescriptorBufferInfo textureInfoBufferInfo{ m_model->textureInfos, 0, VK_WHOLE_SIZE };
     writes[6].pBufferInfo = &textureInfoBufferInfo;
 
+    writes[7].dstSet = m_model->rtxDescriptorSet;
+    writes[7].dstBinding = 7;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[7].descriptorCount = 1;
+    VkDescriptorBufferInfo lightBufferInfo{ m_model->lights, 0, VK_WHOLE_SIZE };
+    writes[7].pBufferInfo = &lightBufferInfo;
+
+    writes[8].dstSet = m_model->rtxDescriptorSet;
+    writes[8].dstBinding = 8;
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[8].descriptorCount = 1;
+    VkDescriptorBufferInfo lightInstanceBufferInfo{ m_model->lightInstances, 0, VK_WHOLE_SIZE };
+    writes[8].pBufferInfo = &lightInstanceBufferInfo;
+
     device().updateDescriptorSets(writes);
 }
 
@@ -457,6 +471,14 @@ void gltf::bvh::Bvh::createDescriptorSetLayout(VulkanDevice &device) {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(6) // textureInfo
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(7) // Lights
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(8) // Lights instances
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)

@@ -53,6 +53,7 @@ vec3 evalBrdf(Surface surface, vec3 wo, vec3 wi){
     if(surface.volume){
         return surface.albedo;
     }
+
     BrdfArgs args;
     args.wo = wo;
     args.wi = wi;

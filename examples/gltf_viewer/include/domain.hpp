@@ -9,6 +9,7 @@ enum class ShaderType : int {
     ClosesHit,
     AnyHit,
 
+    RayGenSampleDist,
     Count
 };
 
@@ -38,6 +39,8 @@ struct UniformData {
     int maxSamples{10000};
     int maxBounces{50};
     int adaptiveSampling{1};
+    int distribution2D_id{-1};
+    float marginalIntegral{0};
 };
 
 struct DebugData {

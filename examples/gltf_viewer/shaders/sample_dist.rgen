@@ -1,0 +1,32 @@
+#version 460
+
+#include "domain.glsl"
+
+layout(set = 1, binding = 0) uniform accelerationStructure topLevelAs;
+layout(set = 2, binding = 11, rgba32f) uniform image2D global_images[];
+
+
+const float Tmin = 0;
+const float Tmax = FLT_MAX;
+
+void main() {
+    if(currentSample >= maxSamples) return;
+
+    RngStateType rngState = initRNG(vec2(gl_LaunchID), vec2(gl_LaunchSize), frame);
+    vec2 xi = vec2(rand(rngState), rand(rngState));
+
+    const vec2 pixelCenter = vec2(gl_LaunchID.xy) + xi;
+    const vec2 u = pixelCenter/vec2(gl_LaunchSize.xy);
+
+    float pdf;
+    vec2 uv = sampleContinuous2D(pConditionalVFunc, pConditionalVCdf, pMarginal, pMarginalCdf, marginalIntegral, u, pdf);
+
+    vec3 radiance = texture(global_textures[environment], uv).rgb/pdf;
+    radiance *= ibl_intensity;
+    vec3 dst = imageLoad(render_target, ivec2(gl_LaunchID.xy)).rgb;
+
+    float t = 1/float(currentSample + 1);
+    radiance = mix(dst, radiance, t);
+
+    imageStore(render_target, ivec2(gl_LaunchID.xy), vec4(radiance, 1));
+}

@@ -279,6 +279,7 @@ void GltfViewer::loadTextures() {
 //            environments[i].lod = true;
             textures::createNoTransition(device, environments[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, width, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
             convertToOctahedralMap(*status->texture, environments[i]);
+            textures::createDistribution(device, environments[i], envMapDistribution);
         }
 
         for(auto i = 0; i < environments.size(); ++i) {
@@ -311,7 +312,11 @@ void GltfViewer::loadTextures() {
         uniforms.specular_texture_id = specularMaps[options.environment].bindingId;
         uniforms.charlie_env_texture_id = charlieMaps[options.environment].bindingId;
 
-
+        uniforms.marginalIntegral = envMapDistribution.pMarginal.funcIntegral;
+        uniforms.distribution2D_id = bindlessDescriptor.update(envMapDistribution.pConditionalVFunc, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        bindlessDescriptor.update(envMapDistribution.pConditionalVCdf, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        bindlessDescriptor.update(envMapDistribution.pMarginal.func, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        bindlessDescriptor.update(envMapDistribution.pMarginal.cdf, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     });
 
 }
@@ -507,18 +512,22 @@ void GltfViewer::createRenderPipeline() {
 
 void GltfViewer::createRayTracePipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("path_trace.rgen.spv"));
+    auto rayGenSampleDistShaderModule = device.createShaderModule( resource("sample_dist.rgen.spv"));
     auto missShaderModule = device.createShaderModule( resource("path_trace.rmiss.spv"));
     auto chitShaderModule = device.createShaderModule( resource("path_trace.rchit.spv"));
     auto ahitShaderModule = device.createShaderModule( resource("path_trace.rahit.spv"));
 
     auto shaders = std::vector<ShaderInfo>(to<int>(ShaderType::Count));
     shaders[to<int>(ShaderType::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
+    shaders[to<int>(ShaderType::RayGenSampleDist)] = { rayGenSampleDistShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
     shaders[to<int>(ShaderType::Miss)] = { missShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
     shaders[to<int>(ShaderType::ClosesHit)] = { chitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
     shaders[to<int>(ShaderType::AnyHit)] = { ahitShaderModule, VK_SHADER_STAGE_ANY_HIT_BIT_KHR};
 
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
+
+    shaderGroups.push_back(shaderTablesDesc.rayGenGroup("sample_dist", to<int>(ShaderType::RayGenSampleDist)));
 
     shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(ShaderType::Miss)));
 

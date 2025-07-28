@@ -17,7 +17,7 @@ BrdfData prepareBRDFData(BrdfArgs args){
     data.V = V;
     data.sN = N;
     data.H = normalize(L + V);
-    args.brdfType = args.brdfType;
+    data.brdfType = args.brdfType;
 
     float NdotL = dot(N, L);
     float NdotV = dot(N, V);
@@ -319,7 +319,7 @@ vec3 evalMicrofacet(BrdfData data){
 }
 
 vec3 evalSpecular(BrdfData data){
-    switch(data.brdfType & BRDF_SPECULAR){
+    switch(SPECULAR_BRDF_MICROFACET & BRDF_SPECULAR){
         case SPECULAR_BRDF_MICROFACET:
             return evalMicrofacet(data);
         case SPECLUAR_BRDF_PHONG:

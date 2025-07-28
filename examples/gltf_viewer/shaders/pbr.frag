@@ -101,6 +101,7 @@ layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 #include "gltf_brdf.glsl"
 #include "uniforms.glsl"
 #include "punctual_lights.glsl"
+#include "lights_set.glsl"
 #include "gltf.glsl"
 #include "octahedral.glsl"
 #include "ibl.glsl"
