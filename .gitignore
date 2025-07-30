@@ -2,6 +2,7 @@
 **/*.dat
 **/*.vol
 
+data/**
 data/**/*.png
 data/**/*.jpg
 data/**/*.exr
