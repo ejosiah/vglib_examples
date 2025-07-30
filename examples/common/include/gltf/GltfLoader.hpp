@@ -40,7 +40,7 @@ namespace gltf {
         int doubleSided{0};
 
         float transmission{0};
-        float ior{1};
+        float ior{1.5};
         float thickness{0};
         float attenuationDistance{0};
 

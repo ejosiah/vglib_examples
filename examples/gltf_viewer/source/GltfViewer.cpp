@@ -13,6 +13,7 @@ GltfViewer::GltfViewer(const Settings& settings) : VulkanBaseApp("Gltf Viewer", 
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../data");
     fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/textures");
     fileManager().addSearchPathFront("common/data");
     fileManager().addSearchPathFront("gltf_viewer");
     fileManager().addSearchPathFront("gltf_viewer/data");
@@ -264,7 +265,7 @@ void GltfViewer::loadTextures() {
         stagingTextures[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
         stagingTextures[i].flipped = true;
 
-        auto status = loader->loadTexture(fmt::format("{}/{}", resource("environments"), environmentPaths[i]), stagingTextures[i]);
+        auto status = loader->loadTexture(fmt::format("{}/{}", resource("environment"), environmentPaths[i]), stagingTextures[i]);
         uploadStatuses.push_back(std::move(status));
     }
 
@@ -912,14 +913,13 @@ void GltfViewer::openFileDialog() {
     if (FileDialog::file_dialog_open) {
         FileDialog::ShowFileDialog(&FileDialog::file_dialog_open, file_dialog_buffer, &closed, FileDialog::file_dialog_open_type);
     }
-
     if(closed) {
         gltfPath = std::filesystem::path{file_dialog_buffer};
         if(std::filesystem::is_directory(*gltfPath)){
             fileOpen.error = true;
             fileOpen.message = "you tried to open a directory";
             gltfPath.reset();
-        }else if(gltfPath->extension().string() != ".gltf"){
+        }else if(gltfPath->extension().string() != ".gltf" && gltfPath->extension().string() != ".glb"){
             fileOpen.error = true;
             fileOpen.message = "selected file is not a supported gltf format";
             gltfPath.reset();

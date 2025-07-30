@@ -4,6 +4,7 @@
 #include <AbstractCamera.hpp>
 #include <utility>
 #include <xforms.h>
+#include <regex>
 
 namespace gltf {
 
@@ -45,7 +46,7 @@ namespace gltf {
 
     std::tuple<size_t, size_t, size_t> getNumIndices(const tinygltf::Model& model, const tinygltf::Mesh& mesh);
 
-    void tinyGltfLoad(tinygltf::Model& model, const std::string& path);
+    void tinyGltfLoad(tinygltf::Model& model, const std::filesystem::path& path);
 
     Counts getCounts(const tinygltf::Model& model);
 
@@ -1415,25 +1416,30 @@ namespace gltf {
     }
 
 
-    void tinyGltfLoad(tinygltf::Model& model, const std::string& path) {
+    void tinyGltfLoad(tinygltf::Model& model, const std::filesystem::path& path) {
         std::string err;
         std::string warn;
 
         tinygltf::TinyGLTF loader;
         stbi_set_flip_vertically_on_load(0);
-        auto successLoad = loader.LoadASCIIFromFile(&model, &err, &warn, path);
+        auto successLoad = false;
+        if(path.extension().string() == ".glb"){
+            successLoad = loader.LoadBinaryFromFile(&model, &err, &warn, path.string());
+        } else {
+            successLoad = loader.LoadASCIIFromFile(&model, &err, &warn, path.string());
+        }
 
         if(!warn.empty()) {
-            spdlog::warn("Warning loading gltf model: {}", path);
+            spdlog::warn("Warning loading gltf model: {}", path.string());
         }
 
         if(!err.empty()) {
-            spdlog::error("Error loading gltf model: {}", path);
+            spdlog::error("Error loading gltf model: {}", path.string());
         }
 
         if(!successLoad) {
-            spdlog::info("unable to load gltf model: {}", path);
-            throw std::runtime_error{ fmt::format("unable to load gltf model: {}", path) };
+            spdlog::info("unable to load gltf model: {}", path.string());
+            throw std::runtime_error{ fmt::format("unable to load gltf model: {}", path.string()) };
         }
     }
 
