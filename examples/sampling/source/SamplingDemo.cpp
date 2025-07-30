@@ -4,11 +4,16 @@
 #include "color.hpp"
 
 SamplingDemo::SamplingDemo(const Settings& settings) : VulkanBaseApp("sampling", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/sampling");
-    fileManager.addSearchPathFront("../../examples/sampling/spv");
-    fileManager.addSearchPathFront("../../examples/sampling/models");
-    fileManager.addSearchPathFront("../../examples/sampling/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/textures/environment");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("sampling");
+    fileManager().addSearchPathFront("sampling/spv");
+    fileManager().addSearchPathFront("sampling/models");
+    fileManager().addSearchPathFront("sampling/textures");
 }
 
 void SamplingDemo::initApp() {
@@ -37,7 +42,7 @@ void SamplingDemo::initCamera() {
 }
 
 void SamplingDemo::loadEnvMap() {
-    textures::hdr(device, envMap, resource("../path_tracer/environment/old_hall_4k.hdr"));
+    textures::hdr(device, envMap, resource("HdrOutdoorBeachFirePitNightClear001_JPG_2K.jpg"));
     textures::createDistribution(device, envMap, envMapDistribution);
 }
 
@@ -256,7 +261,7 @@ void SamplingDemo::onPause() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
 
