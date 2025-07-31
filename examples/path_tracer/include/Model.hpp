@@ -149,7 +149,7 @@ struct Model {
         float pMargialIntegral{1};
         uint32_t mask{eLights | eCornellBox | ePlane};
         float exposure{0.8};
-        float skyIntensity{0};
+        float skyIntensity{1};
         float envMapIntensity{1};
         int planeId{-1};
     } sceneConstants;

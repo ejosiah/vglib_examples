@@ -110,6 +110,8 @@ protected:
 
     void endFrame() final;
 
+    void createRenderPipeline();
+
 protected:
     struct {
         VulkanPipeline pipeline;
@@ -121,6 +123,11 @@ protected:
         VkDescriptorSet instanceDescriptorSet;
         VkDescriptorSet vertexDescriptorSet;
     } raytrace;
+
+    struct {
+        VulkanPipeline pipeline;
+        VulkanPipelineLayout layout;
+    } render;
 
     struct {
         VulkanPipeline pipeline;

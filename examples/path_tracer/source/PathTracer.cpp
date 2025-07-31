@@ -39,6 +39,7 @@ void PathTracer::initApp() {
     updateDescriptorSets();
     createCommandPool();
     createPipelineCache();
+    createRenderPipeline();
     createRayTracingPipeline();
     createPostProcessPipeline();
     m.invalidateSwapChain = &swapChainInvalidated;
@@ -123,8 +124,8 @@ void PathTracer::initDenoiser() {
 }
 
 void PathTracer::loadEnvironmentMap() {
-//    textures::hdr(device, environmentMap, resource("environment/old_hall_4k.hdr"));
-    textures::hdr(device, environmentMap, resource("white.png"));
+    textures::hdr(device, environmentMap, resource("environment/HdrOutdoorFrozenCreekWinterDayClear001_JPG_3K.jpg"));
+//    textures::hdr(device, environmentMap, resource("white.png"));
 //    textures::exr(device, environmentMap, resource("sky.exr"));
 //    textures::hdr(device, environmentMap, resource("environment/HdrOutdoorFieldWinterDayClear002_JPG_4K.jpg"));
     textures::createDistribution(device, environmentMap, envMapDistribution);
@@ -1265,6 +1266,12 @@ VkCommandBuffer *PathTracer::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     canvas.draw(commandBuffer);
     renderUI(commandBuffer);
 
+//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+//    camera->push(commandBuffer, render.layout);
+//    for(auto& object : objects) {
+//        object->draw(commandBuffer);
+//    }
+
     vkCmdEndRenderPass(commandBuffer);
 
 //    rayTrace(commandBuffer);
@@ -1444,6 +1451,21 @@ void PathTracer::beforeDeviceCreation() {
     devFeatures13->synchronization2 = VK_TRUE;
     devFeatures13->dynamicRendering = VK_TRUE;
     devFeatures13->maintenance4 = VK_TRUE;
+}
+
+void PathTracer::createRenderPipeline() {
+    //    @formatter:off
+    auto builder = prototypes->cloneGraphicsPipeline();
+    render.pipeline =
+        builder
+            .shaderStage()
+                .vertexShader(resource("flat.vert.spv"))
+                .fragmentShader(resource("flat.frag.spv"))
+            .rasterizationState()
+                .polygonModeLine()
+            .name("render")
+        .build(render.layout);
+    //    @formatter:on
 }
 
 #include "denoiser_test.hpp"
