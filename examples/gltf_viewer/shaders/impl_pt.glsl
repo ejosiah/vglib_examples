@@ -80,7 +80,7 @@ NormalInfo getNormalInfo() {
         } else {
             // Normals are either present as vertex attributes or approximated.
             ng = normalize(instance.normal);
-            othonormalBasis(t, b, n);
+            orthonormalBasis(t, b, n);
         }
     } else {
         vec3 p0 = gl_ObjectToWorld * vec4(gl_HitTriangleVertexPositionsEXT[0], 1);
@@ -91,7 +91,7 @@ NormalInfo getNormalInfo() {
         vec3 e1 = p2 - p0;
 
         ng = normalize(cross(e0, e1));
-        othonormalBasis(t, b, ng);
+        orthonormalBasis(t, b, ng);
     }
 
 

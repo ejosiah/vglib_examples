@@ -1,0 +1,114 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+#include "domain.glsl"
+
+layout(set = 0, binding = 0) uniform accelerationStructure topLevelAs;
+layout(set = 0, binding = 2, rgba32f) uniform image2D image;
+
+
+const float Tmin = 0.001;
+const float Tmax = 10000.0;
+const int minBounce = 3;
+
+layout(location = 0) rayPayload HitRecord hRec;
+
+vec3 envLight(vec3 wi);
+
+Surface toSurface(SurfaceInteraction isect);
+
+void main(){
+    if(currentSample >= sampleCount) return;
+
+    vec2 id = vec2(gl_LaunchID);
+    vec2 screenSize = vec2(gl_LaunchSize);
+    init(hRec, id, screenSize, frame);
+
+    vec3 throughput = vec3(1);
+    vec3 radiance = vec3(0);
+    uint flags = gl_RayFlagsOpaqueEXT;
+
+    for(int b = 0; b < maxBounce; ++b) {
+       vec3 wo = -hRec.wi;
+
+        traceRay(topLevelAs, flags, 0xff, 0, 0, 0, hRec.isect.x, Tmin, hRec.wi, Tmax, 0);
+
+        if(!hRec.hit) {
+            radiance += throughput * envLight(hRec.wi);
+            break;
+        }
+
+        if(hRec.isect.medium != -1) {
+            // TODO query medium
+        }
+
+        if(isBlack(throughput)) break;
+
+        // TODO radiance += throughput * emitted light;
+
+        if(hRec.isect.material == -1) {
+            hRec.x = offsetRay(hRec.isect.x, hRec.isect.gN);
+            // TODO sample direction from medium
+            b--;
+            continue;
+        }
+
+        // TODO radiance += throughput * direct light;
+        Surface surface = toSurface(hRec.isect);
+        vec3 brdfWeight = getBrdfWeight(surface, hRec.rngState, wo, hRec.wi);
+        hRec.x = offsetRay(hRec.isect.x, hRec.isect.gN);
+        throughput *= brdfWeight;
+
+        if(isBlack(throughput)) break;
+
+        if(b >= maxBounce - 1) break;
+
+        if(b > minBounce) {
+            float rrProbability = min(0.95, luminance(throughput));
+            if(rrProbability < rand(hRec.rngState)){
+                break;
+            }
+            throughput /= rrProbability;
+        }
+
+        reset(hRec);
+
+    }
+
+    if(currentSample > 0) {
+        vec3 dst = imageLoad(image, ivec2(gl_LaunchID.xy)).rgb;
+        float t = 1.0/float(currentSample+1);
+        radiance = mix(dst, radiance, t);
+    }
+
+
+    imageStore(image, ivec2(gl_LaunchID.xy), vec4(radiance, 1));
+}
+
+vec3 envLight(vec3 wi) {
+    float t = 0.5 + 0.5 * wi.y;
+    return mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
+    //    vec2 uv = .5 + .5 * octEncode(normalize(hRec.wi));
+    //    hRec.Le = texture(global_textures[environment], uv).rgb;
+}
+
+Surface toSurface(SurfaceInteraction isect) {
+    Material mat = materials[isect.material];
+
+    Surface s;
+    s.albedo = mat.diffuse.x != -1 ? mat.diffuse : checkerboard(isect.x, isect.gN, 1);
+    s.transmission = vec3(1);
+    s.emission = vec3(0);
+    s.x = isect.x;
+    s.gN = isect.gN;
+    s.sN = isect.sN;
+    s.roughness = clamp(mat.roughness, 0, 1);
+    s.metalness = clamp(mat.metalness, 0, 1);
+    s.opacity = 1.0;
+    s.inside = false;
+    s.volume = false;
+    s.ior = 1.0;
+    s.bsdf = mat.bsdf;
+
+    return s;
+}

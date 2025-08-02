@@ -485,7 +485,7 @@ vec3 evalIndirectCombinedBRDF(inout BrdfArgs args){
 
     vec3 N = args.surfaceNormal;
     vec3 T, B;
-    othonormalBasis(T, B, N);
+    orthonormalBasis(T, B, N);
     mat3 localToWorld = mat3(T, B, N);
     mat3 worldToLocal = transpose(localToWorld);
     // transform wo from world space to local space

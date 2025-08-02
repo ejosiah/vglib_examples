@@ -1,13 +1,18 @@
 #ifndef RTX_UTILS_GLSL
 #define RTX_UTILS_GLSL
 
-void othonormalBasis(out vec3 tangent, out vec3 binormal, inout vec3 normal){
+void orthonormalBasis(out vec3 tangent, out vec3 binormal, inout vec3 normal){
     normal = normalize(normal);
     vec3 a = abs(normal.x) > 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0);
     tangent = normalize(cross(a, normal));
     binormal = cross(normal, tangent);
 }
 
+mat3 computeTBN(vec3 normal) {
+    vec3 t, b, n = normalize(normal);
+    orthonormalBasis(t, b, n);
+    return mat3(t, b, n);
+}
 
 vec3 checkerboard( in vec3 worldPosition, in vec3 normal, float scale) {
     const float pi = 3.141519;

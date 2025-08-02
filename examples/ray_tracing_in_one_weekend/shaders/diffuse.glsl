@@ -24,7 +24,7 @@ void compute_diffuse_bsdf(vec3 p, vec3 n, vec2 uv, Diffuse material, inout HitRe
     vec3 wi = cosineSampleHemisphere(sampleVec2(hRec));
 
     vec3 tn, bn;
-    othonormalBasis(tn, bn, n);
+    orthonormalBasis(tn, bn, n);
     mat3 TBN = mat3(tn, bn, n);
     hRec.wi = TBN * wi;
     hRec.n = n;

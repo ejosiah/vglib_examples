@@ -32,7 +32,7 @@ void SsaoDemo::initApp() {
 }
 
 void SsaoDemo::loadModel() {
-    phong::load(resource("Grid_128_128.obj"), device, descriptorPool, model);
+    phong::load(resource("leaving_room/living_room.obj"), device, descriptorPool, model);
 }
 
 void SsaoDemo::initCamera() {

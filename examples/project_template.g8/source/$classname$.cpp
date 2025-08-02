@@ -72,6 +72,8 @@ void $classname$::beforeDeviceCreation() {
     devFeatures13->synchronization2 = VK_TRUE;
     devFeatures13->dynamicRendering = VK_TRUE;
     devFeatures13->maintenance4 = VK_TRUE;
+
+    AppContext::addExtensions(deviceCreateNextChain);
 }
 
 void $classname$::createDescriptorPool() {

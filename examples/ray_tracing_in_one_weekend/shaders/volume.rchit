@@ -42,7 +42,7 @@ void main() {
         vec3 n = vec3(1, 0, 0);
         vec3 wi = uniformSampleSphere(sampleVec2(hRec));
         vec3 tn, bn;
-        othonormalBasis(tn, bn, n);
+        orthonormalBasis(tn, bn, n);
         mat3 TBN = mat3(tn, bn, n);
         hRec.wi = TBN * wi;
         hRec.attenuation = medium.albedo;
