@@ -209,20 +209,40 @@ void VolumePathTracer::initUniforms() {
 
 void VolumePathTracer::createRayTracingPipeline() {
     auto rayGenShaderModule = device.createShaderModule( resource("main.rgen.spv"));
-    auto missShaderModule = device.createShaderModule( resource("main.rmiss.spv"));
-    auto chitShaderModule = device.createShaderModule( resource("main.rchit.spv"));
 
-    auto stages = initializers::rayTraceShaderStages({
-         { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
-         { missShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR},
-         { chitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR},
-                                                     });
+    auto missShaderModule = device.createShaderModule( resource("main.rmiss.spv"));
+    auto volumeMissShaderModule = device.createShaderModule( resource("volume.rmiss.spv"));
+
+    auto chitShaderModule = device.createShaderModule( resource("main.rchit.spv"));
+    auto volumeHitShaderModule = device.createShaderModule( resource("volume.rchit.spv"));
+
+    auto shaders = std::vector<ShaderInfo>(to<int>(Shaders::Count));
+    shaders[to<int>(Shaders::RayGen)] = { rayGenShaderModule, VK_SHADER_STAGE_RAYGEN_BIT_KHR};
+    shaders[to<int>(Shaders::Miss)] = { missShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
+    shaders[to<int>(Shaders::VolumeMiss)] = { volumeMissShaderModule, VK_SHADER_STAGE_MISS_BIT_KHR};
+
+    shaders[to<int>(Shaders::Hit)] = { chitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+    shaders[to<int>(Shaders::VolumeHit)] = { volumeHitShaderModule, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR};
+
+
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups;
     shaderGroups.push_back(shaderTablesDesc.rayGenGroup());
-    shaderGroups.push_back(shaderTablesDesc.addMissGroup(1));
-    shaderGroups.push_back(shaderTablesDesc.addHitGroup(2));
+    shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(Shaders::Miss)));
+    shaderGroups.push_back(shaderTablesDesc.addMissGroup(to<int>(Shaders::VolumeMiss)));
+
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(Shaders::Hit)));
+    shaderGroups.push_back(shaderTablesDesc.addHitGroup(to<int>(Shaders::VolumeHit)));
 
     dispose(raytrace.layout);
+
+    auto stages = map_range(shaders, [](auto& shader){
+        return VkPipelineShaderStageCreateInfo{
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = shader.stage,
+                .module = shader.module.handle,
+                .pName = shader.entry,
+        };
+    });
 
     raytrace.layout = device.createPipelineLayout({ raytrace.descriptorSetLayout, *bindlessDescriptor.descriptorSetLayout, object.descriptorSetLayout });
     VkRayTracingPipelineCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
@@ -345,8 +365,11 @@ void VolumePathTracer::loadModels() {
     rt::MeshObjectInstance dragon{ &drawables["dragon"] };
     dragon.xform = glm::translate(glm::mat4{1}, { 0, y, 0});
 
-    object.surface.cpu[instances.size()] = { object.materials.count++ };
-    object.materials.cpu[object.surface.cpu[instances.size()].materialId] = { .diffuse{0.8, 0.2, 0.01} };
+//    object.surface.cpu[instances.size()] = { object.materials.count++ };
+    object.surface.cpu[instances.size()] = { -1, object.mediums.count++ };
+//    object.materials.cpu[object.surface.cpu[instances.size()].materialId] = { .diffuse{0.8, 0.2, 0.01} };
+    float sigma_s = 10, sigma_a = 0;
+    object.mediums.cpu[object.surface.cpu[instances.size()].mediumId] = { vec3(sigma_s), vec3(sigma_a), vec3(sigma_s+sigma_a) };
     instances.push_back(dragon);
 
     createAccelerationStructure(instances);

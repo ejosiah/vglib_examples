@@ -13,9 +13,7 @@
 #include "rtx_utils.glsl"
 #include "octahedral.glsl"
 #include "path_tracing/eval_brdf.glsl"
-
-#define MEDIUM_TYPE_HOMOGENEOUS 0
-#define MEDIUM_TYPE_HETAROGENEOUS 1
+#include "path_tracing/medium.glsl"
 
 struct ObjectInfo {
     int materialId;
@@ -41,17 +39,24 @@ struct SurfaceInteraction {
     vec3 x;
     vec3 gN;
     vec3 sN;
-    int id;
     int material;
     int medium;
+    bool isFrontFacing;
+};
+
+struct MediumInteraction {
+    vec3 x;
+    vec3 wi;
+    bool isValid;
 };
 
 struct HitRecord {
     SurfaceInteraction isect;
     vec3 x;
     vec3 wi;
+    vec3 wo;
     RngStateType rngState;
-    bool hit;
+    float t;
 };
 
 layout(set = 0, binding = 1, scalar) uniform Uniforms {
@@ -61,6 +66,7 @@ layout(set = 0, binding = 1, scalar) uniform Uniforms {
     uint sampleCount;
     uint maxBounce;
     uint frame;
+    uint RayCount;
     uint environment;
 };
 
@@ -100,9 +106,7 @@ void reset(inout HitRecord hRec) {
 void init(inout HitRecord hRec, vec2 id, vec2 screenSize, uint frame) {
     reset(hRec);
     hRec.isect.x = vec3(0);
-    hRec.x = vec3(0);
-    hRec.wi = vec3(0);
-    hRec.hit = true;
+    hRec.t = 0;
     hRec.rngState = initRNG(id, screenSize, frame);
 
     vec2 offset = hammersley(currentSample, sampleCount);
@@ -111,6 +115,10 @@ void init(inout HitRecord hRec, vec2 id, vec2 screenSize, uint frame) {
 
 Material defaultMaterial() {
     return Material(vec3(0.6), 0, 0.5, DIFFUSE_BRDF_LAMBERTIAN | SPECULAR_BRDF_MICROFACET);
+}
+
+MediumInteraction defaulMi() {
+    return MediumInteraction(vec3(0), vec3(0), false);
 }
 
 

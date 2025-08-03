@@ -27,36 +27,9 @@ void main() {
     hRec.isect.x = p;
     hRec.isect.gN = n;
     hRec.isect.sN = n;
-    hRec.isect.id = gl_InstanceID;
+    hRec.isect.isFrontFacing = gl_HitKind == gl_HitKindFrontFacingTriangle;
     hRec.isect.medium = object.mediumId;
     hRec.isect.material = object.materialId;
-//    vec3 albedo;
-//
-//    if(object.materialId == -1) {
-//        albedo = checkerboard(p, n, 1);
-//    }
-//    Material mat = materials[object.materialId];
-//
-//    albedo = mat.diffuse.x != -1 ? mat.diffuse : checkerboard(p, n, 1);
-//
-//    vec3 wo = -gl_WorldRayDirection;
-//    Surface s;
-//    s.albedo = albedo;
-//    s.transmission = vec3(1);
-//    s.emission = vec3(0);
-//    s.x = p;
-//    s.gN = n;
-//    s.sN = n;
-//    s.roughness = clamp(mat.roughness, 0, 1);
-//    s.metalness = clamp(mat.metalness, 0, 1);
-//    s.opacity = 1.0;
-//    s.inside = false;
-//    s.volume = false;
-//    s.ior = 1.0;
-//    s.bsdf = mat.bsdf;
-//
-//    vec3 wi;
-//    hRec.brdfWeight =  getBrdfWeight(s, hRec.rngState, wo, wi);
-//    hRec.x = offsetRay(s.x, s.gN);
-//    hRec.wi = wi;
+    hRec.t = gl_HitT;
+    hRec.wo = -gl_WorldRayDirection;
 }

@@ -16,6 +16,14 @@
 
 #define BRDF_SPECULAR (SPECULAR_BRDF_MICROFACET | SPECLUAR_BRDF_PHONG)
 
+enum class Shaders : int {
+    RayGen,
+    Miss, VolumeMiss,
+    Hit, VolumeHit,
+    Count };
+
+enum class Rays : int { Primary, Volume, Count };
+
 enum class MediumType : int { Homogeneous, Heterogeneous };
 
 struct UniformData {
@@ -25,6 +33,7 @@ struct UniformData {
     uint32_t sampleCount{10000};
     uint32_t maxBounce{50};
     uint32_t frame{};
+    uint32_t RayCount{to<uint32_t>(Rays::Count) };
     uint32_t environment_id{~0u};
 };
 

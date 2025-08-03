@@ -99,6 +99,7 @@ protected:
     BindlessDescriptor bindlessDescriptor;
     std::vector<rt::MeshObjectInstance> instances;
     Texture environment;
+    uint32_t nextInstance{};
 
     struct {
         VulkanDescriptorSetLayout descriptorSetLayout;

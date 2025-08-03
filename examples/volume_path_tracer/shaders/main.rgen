@@ -1,7 +1,11 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_debug_printf : require
 
 #include "domain.glsl"
+
+#define RAY_TYPE_PRIMIARY 0
+#define RAY_TYPE_VOLUME 1
 
 layout(set = 0, binding = 0) uniform accelerationStructure topLevelAs;
 layout(set = 0, binding = 2, rgba32f) uniform image2D image;
@@ -12,10 +16,13 @@ const float Tmax = 10000.0;
 const int minBounce = 3;
 
 layout(location = 0) rayPayload HitRecord hRec;
+layout(location = 1) rayPayload float hitDistance;
 
 vec3 envLight(vec3 wi);
 
 Surface toSurface(SurfaceInteraction isect);
+
+vec3 sampleMedium(SurfaceInteraction isect, vec3 origin, vec3 wi, inout RngStateType rngState, out MediumInteraction mi);
 
 void main(){
     if(currentSample >= sampleCount) return;
@@ -29,39 +36,46 @@ void main(){
     uint flags = gl_RayFlagsOpaqueEXT;
 
     for(int b = 0; b < maxBounce; ++b) {
-       vec3 wo = -hRec.wi;
+        traceRay(topLevelAs, flags, 0xff, RAY_TYPE_PRIMIARY, RayCount, 0, hRec.isect.x, Tmin, hRec.wi, Tmax, 0);
 
-        traceRay(topLevelAs, flags, 0xff, 0, 0, 0, hRec.isect.x, Tmin, hRec.wi, Tmax, 0);
-
-        if(!hRec.hit) {
+        if(hRec.t == FLT_MAX) {
             radiance += throughput * envLight(hRec.wi);
             break;
         }
 
+        MediumInteraction mi = defaulMi();
         if(hRec.isect.medium != -1) {
-            // TODO query medium
+            throughput *= sampleMedium(hRec.isect, hRec.x, hRec.wi, hRec.rngState, mi);
+            if (isBlack(throughput)) break;
         }
 
-        if(isBlack(throughput)) break;
+        if(mi.isValid) {
+            if(b >= maxBounce - 1) break;
 
-        // TODO radiance += throughput * emitted light;
+            // TODO sample Light
+            hRec.x = offsetRay(mi.x, mi.wi);
+            hRec.wi = mi.wi;
+        }else {
 
-        if(hRec.isect.material == -1) {
+            // TODO radiance += throughput * emitted light;
+
+            if (hRec.isect.material == -1) {
+                hRec.x = offsetRay(hRec.isect.x, hRec.isect.gN);
+                // TODO sample direction from medium
+                b--;
+                continue;
+            }
+
+            // TODO radiance += throughput * direct light;
+            Surface surface = toSurface(hRec.isect);
+            vec3 brdfWeight = getBrdfWeight(surface, hRec.rngState, hRec.wo, hRec.wi);
             hRec.x = offsetRay(hRec.isect.x, hRec.isect.gN);
-            // TODO sample direction from medium
-            b--;
-            continue;
+            throughput *= brdfWeight;
+
+            if (isBlack(throughput)) break;
+
+            if (b >= maxBounce - 1) break;
         }
-
-        // TODO radiance += throughput * direct light;
-        Surface surface = toSurface(hRec.isect);
-        vec3 brdfWeight = getBrdfWeight(surface, hRec.rngState, wo, hRec.wi);
-        hRec.x = offsetRay(hRec.isect.x, hRec.isect.gN);
-        throughput *= brdfWeight;
-
-        if(isBlack(throughput)) break;
-
-        if(b >= maxBounce - 1) break;
 
         if(b > minBounce) {
             float rrProbability = min(0.95, luminance(throughput));
@@ -88,8 +102,8 @@ void main(){
 vec3 envLight(vec3 wi) {
     float t = 0.5 + 0.5 * wi.y;
     return mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
-    //    vec2 uv = .5 + .5 * octEncode(normalize(hRec.wi));
-    //    hRec.Le = texture(global_textures[environment], uv).rgb;
+//    vec2 uv = .5 + .5 * octEncode(normalize(hRec.wi));
+//    return texture(global_textures[environment], uv).rgb;
 }
 
 Surface toSurface(SurfaceInteraction isect) {
@@ -111,4 +125,73 @@ Surface toSurface(SurfaceInteraction isect) {
     s.bsdf = mat.bsdf;
 
     return s;
+}
+
+vec3 sampleMedium(SurfaceInteraction isect, vec3 origin, vec3 wi, inout RngStateType rngState, out MediumInteraction mi) {
+    Medium medium = mediums[isect.medium];
+    vec3 sigma_t = medium.extinction;   // Extinction coefficient
+    vec3 sigma_s = medium.scattering;   // Scattering coefficient
+    float g = medium.g;
+
+    uint flags = gl_RayFlagsOpaqueEXT;
+
+    // TODO offset direction should be based on triangle face, when we use provided normals
+    vec3 x = offsetRay(isect.x, -isect.gN);
+
+    // Trace ray through medium to detect distance to surface
+    float maxDistance = FLT_MAX;
+    if(isect.isFrontFacing){
+        traceRay(topLevelAs, flags, 0xff, RAY_TYPE_VOLUME, RayCount, 1, x, 0, wi, Tmax, 1);
+        maxDistance = hitDistance;
+    }else {
+        maxDistance = distance(isect.x, origin);
+    }
+
+    mi.isValid = false;
+
+    if (medium.type == MEDIUM_TYPE_HOMOGENEOUS) {
+        // Use average sigma_t to avoid spectral imbalance
+        float avgSigmaT = max(0.0001, dot(sigma_t, vec3(1.0 / 3.0)));
+        float sampledDistance = -log(1.0 - rand(rngState)) / avgSigmaT;
+//        debugPrintfEXT("sampledDistance = %f, maxDistance = %f\n", sampledDistance, maxDistance);
+
+        bool scatterOccurred =  sampledDistance < maxDistance;
+        float t = min(sampledDistance, maxDistance);
+
+        // Compute transmittance
+        vec3 Tr = exp(-sigma_t * t);
+
+        if (scatterOccurred) {
+            // Sample scattering direction from Henyey-Greenstein
+            vec2 u = vec2(rand(rngState), rand(rngState));
+            HG_sample_P(g, -wi, mi.wi, u);
+
+            // Fill medium interaction
+            mi.isValid = true;
+            mi.x = x + wi * t;
+        }
+
+        // Phase function weight
+        float phasePdf = 1.0;
+        if (mi.isValid) {
+            float cosTheta = dot(-wi, mi.wi);
+            phasePdf = HG_pdf(g, cosTheta); // scalar
+        }
+
+        // PDF for exponential sampling
+        float pdf = scatterOccurred ? (avgSigmaT * exp(-avgSigmaT * t)) : exp(-avgSigmaT * maxDistance);
+
+        // Final contribution
+        vec3 result;
+        if (scatterOccurred) {
+            result = Tr * sigma_s * phaseHG(g, dot(-wi, mi.wi)) / max(pdf * phasePdf, 1e-4);
+        } else {
+            result = Tr / max(pdf, 1e-4);
+        }
+
+        return result;
+    }
+
+    // Future support for grid-based media
+    return vec3(1.0);
 }
