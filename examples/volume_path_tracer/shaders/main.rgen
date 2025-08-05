@@ -21,8 +21,11 @@ layout(location = 1) rayPayload MediumHitRecord mRec;
 vec3 envLight(vec3 wi);
 
 Surface toSurface(SurfaceInteraction isect);
+vec3 sampleLight(SurfaceInteraction isect, vec3 wo, inout RngStateType rngState);
 
 vec3 sampleMedium(SurfaceInteraction isect, vec3 origin, vec3 wi, inout RngStateType rngState, out MediumInteraction mi);
+
+vec3 medium_Tr(SurfaceInteraction isect, vec3 rayOrigin, vec3 rayDirection, inout RngStateType rngState);
 
 void main(){
     if(currentSample >= sampleCount) return;
@@ -36,7 +39,7 @@ void main(){
     uint flags = gl_RayFlagsOpaqueEXT;
 
     for(int b = 0; b < maxBounce; ++b) {
-        traceRay(topLevelAs, flags, 0xff, RAY_TYPE_PRIMIARY, RayCount, 0, hRec.isect.x, Tmin, hRec.wi, Tmax, 0);
+        traceRay(topLevelAs, flags, 0xff, RAY_TYPE_PRIMIARY, RayCount, 0, hRec.x, Tmin, hRec.wi, Tmax, 0);
 
         if(hRec.t == FLT_MAX) {
             radiance += throughput * envLight(hRec.wi);
@@ -61,12 +64,12 @@ void main(){
 
             if (hRec.isect.material == -1) {
                 hRec.x = offsetRay(hRec.isect.x, hRec.isect.gN);
-                // TODO sample direction from medium
                 b--;
                 continue;
             }
 
-            // TODO radiance += throughput * direct light;
+            radiance += throughput * sampleLight(hRec.isect, hRec.wo, hRec.rngState);
+
             Surface surface = toSurface(hRec.isect);
             vec3 brdfWeight = getBrdfWeight(surface, hRec.rngState, hRec.wo, hRec.wi);
             hRec.x = offsetRay(hRec.isect.x, hRec.isect.gN);
@@ -193,7 +196,7 @@ vec3 sampleMedium(SurfaceInteraction isect, vec3 origin, vec3 wi, inout RngState
     else if (medium.type == MEDIUM_TYPE_HETAROGENEOUS) {
         Volume volume = volumes[medium.volume];
         float maxDensity = volume.maxDensity;
-        vec3 texelSize = 0.5 / vec3(textureSize(global_textures3D[volume.data], 0));
+        vec3 offset = 0.5 / vec3(textureSize(global_textures3D[volume.data], 0));
 
         if(maxDistance <= 0) return vec3(1);
 
@@ -202,14 +205,14 @@ vec3 sampleMedium(SurfaceInteraction isect, vec3 origin, vec3 wi, inout RngState
         float tMax;
 //        if(isect.isFrontFacing) {
             dir = normalize(mRec.isect.xLocal - isect.xLocal);
-            origin = isect.xLocal + texelSize * dir;
+            origin = isect.xLocal + dir * offset;
             tMax = distance(isect.xLocal, mRec.isect.xLocal);
-//        }else {
+//        } else {
 //            origin = (inverse(volume.textureToWorldSpace) * vec4(origin, 1)).xyz;
 //            dir = normalize(isect.xLocal - origin);
-//            tMax = distance(origin, isect.xLocal);
+//            tMax = distance(origin, isect.xLocal) - 1e-3;
 //            vec3 o = origin;
-//            debugPrintfEXT("we inside, origin is [%f, %f, %f]", o.x, o.y, o.z);
+////            debugPrintfEXT("we inside, origin is [%f, %f, %f], hit is [[%f, %f, %f], tMax: %f\n", o.x, o.y, o.z, x.x, x.y, x.z, tMax);
 //        }
 
         float t = 0.0;
@@ -233,22 +236,57 @@ vec3 sampleMedium(SurfaceInteraction isect, vec3 origin, vec3 wi, inout RngState
                 vec2 u = vec2(rand(rngState), rand(rngState));
                 HG_sample_P(g, -wi, mi.wi, u);
 
-                float cosTheta = dot(-wi, mi.wi);
-                float phasePdf = HG_pdf(g, cosTheta);
-
-                float extinction = density * sigma_t_scalar;
-                vec3 Tr = exp(-sigma_t * t); // Approximate transmittance
-                float pdf = extinction * phasePdf * luminance(Tr);
-
                 // Return properly normalized weight
-                return (Tr * sigma_s) / pdf;
+                return sigma_s / sigma_t;
             }
         }
 
-        // No scattering occurred — return transmittance
         return vec3(1.0);
     }
 
     // Future support for grid-based media
     return vec3(1.0);
+}
+
+
+vec3 sampleLight(SurfaceInteraction isect, vec3 wo, inout RngStateType rngState) {
+    vec2 u = vec2(rand(rngState), rand(rngState));
+
+    float pdf, sinTheta;
+    vec2 uv = sampleHierarchicalMipMappedTexture(distribution, u, pdf);
+    vec3 wi = direction_from_spherical(uv, sinTheta);
+    vec3 light_n = -wi;
+    vec3 light_x = isect.x + wi * 2 * worldRadius;
+    vec3 x = offsetRay(isect.x, isect.gN);
+    float NdotL = dot(wi, isect.gN);
+    pdf /= 2 * PI * PI * sinTheta;
+    vec3 radiance = texture(environment, uv).rgb;
+
+    if(NdotL <= 0) return vec3(0);
+
+    traceRay(topLevelAs, gl_RayFlagsOpaqueEXT, 0xff, RAY_TYPE_PRIMIARY, RayCount, 0, x, Tmin, wi, Tmax, 0);
+
+    if(hRec.t == FLT_MAX) {
+        Surface surface = toSurface(isect);
+        vec3 brdf = isect.medium == -1 ? vec3(1) : evalBrdf(surface, wo, wi);
+        return radiance * brdf / pdf;
+
+    } else {
+        if(hRec.isect.medium == -1) return vec3(0);
+
+        x = offsetRay(hRec.isect.x, -hRec.isect.gN);
+        wi = hRec.wi;
+
+        float dist = 0;
+
+        traceRay(topLevelAs, gl_RayFlagsOpaqueEXT, 0xff, RAY_TYPE_VOLUME, RayCount, 1, x, 0, wi, Tmax, 1);
+        dist = mRec.t;
+
+
+        vec3 sigma_t = mediums[hRec.isect.medium].extinction;
+
+        // TODO compute transmission for MEDIUM_TYPE_HETAROGENEOUS medium
+        return exp(-sigma_t * mRec.t) * radiance;
+    }
+
 }

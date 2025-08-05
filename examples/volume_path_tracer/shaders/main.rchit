@@ -42,4 +42,12 @@ void main() {
     hRec.isect.material = object.materialId;
     hRec.t = gl_HitT;
     hRec.wo = -gl_WorldRayDirection;
+
+//    if(gl_InstanceID == 1 && gl_HitKind != gl_HitKindFrontFacingTriangle){
+//        vec3 o = gl_WorldRayOrigin;
+//        vec3 x = p;
+//        float t = distance(o, x);
+//        debugPrintfEXT("we inside, origin is [%f, %f, %f], hit is [[%f, %f, %f], tMax: %f\n", o.x, o.y, o.z, x.x, x.y, x.z, t);
+//
+//    }
 }

@@ -84,7 +84,7 @@ glm::mat4 extractIndexToWorldMatrix(openvdb::GridBase::ConstPtr grid)
 }
 
 void VolumePathTracer::loadVolume() {
-    openvdb::io::File file(resource("smoke.vdb"));
+    openvdb::io::File file(resource("fire.vdb"));
 
     assert(file.open());
 
@@ -476,7 +476,7 @@ VkCommandBuffer *VolumePathTracer::buildCommandBuffers(uint32_t imageIndex, uint
 
 void VolumePathTracer::update(float time) {
     camera->update(time);
-    auto cam = camera->cam();
+    setTitle(fmt::format("{}, FPS - {}", title, framePerSecond));
 }
 
 void VolumePathTracer::checkAppInputs() {
@@ -506,34 +506,34 @@ void VolumePathTracer::loadModels() {
 
 
 
-//    phong::load(resource("baby_dragon.obj"), device, descriptorPool, drawable, drawableInfo, true);
-//    drawables.insert(std::make_pair("dragon", std::move(drawable)));
-//    float y =  -drawables["dragon"].bounds.min.y;
-//    rt::MeshObjectInstance dragon{ &drawables["dragon"] };
-//    dragon.xform = glm::translate(glm::mat4{1}, { 0, y, 0});
+    phong::load(resource("baby_dragon.obj"), device, descriptorPool, drawable, drawableInfo, true);
+    drawables.insert(std::make_pair("dragon", std::move(drawable)));
+    float y =  -drawables["dragon"].bounds.min.y;
+    rt::MeshObjectInstance dragon{ &drawables["dragon"] };
+    dragon.xform = glm::translate(glm::mat4{1}, { 0, y, 0});
+
+//    object.surface.cpu[instances.size()] = { object.materials.count++ };
+    object.surface.cpu[instances.size()] = { -1, object.mediums.count++ };
+//    object.materials.cpu[object.surface.cpu[instances.size()].materialId] = { .diffuse{0.8, 0.2, 0.01} };
+    float sigma_s = 5, sigma_a = 3;
+    object.mediums.cpu[object.surface.cpu[instances.size()].mediumId] = { vec3(sigma_s), vec3(sigma_a), vec3(sigma_s+sigma_a) };
+    instances.push_back(dragon);
+
+//    auto smokeVolume = to<uint32_t>(object.volume.count++);
+//    object.volume.cpu[smokeVolume].data = volume.binding_id;
+//    object.volume.cpu[smokeVolume].maxDensity = volume.maxDensity;
+//    object.volume.cpu[smokeVolume].textureToWorldSpace = glm::scale(glm::mat4{1}, glm::vec3(0.05)) * volume.localToWorld;
 //
-////    object.surface.cpu[instances.size()] = { object.materials.count++ };
-//    object.surface.cpu[instances.size()] = { -1, object.mediums.count++ };
-////    object.materials.cpu[object.surface.cpu[instances.size()].materialId] = { .diffuse{0.8, 0.2, 0.01} };
-//    float sigma_s = 5, sigma_a = 3;
-//    object.mediums.cpu[object.surface.cpu[instances.size()].mediumId] = { vec3(sigma_s), vec3(sigma_a), vec3(sigma_s+sigma_a) };
-//    instances.push_back(dragon);
-
-    auto smokeVolume = to<uint32_t>(object.volume.count++);
-    object.volume.cpu[smokeVolume].data = volume.binding_id;
-    object.volume.cpu[smokeVolume].maxDensity = volume.maxDensity;
-    object.volume.cpu[smokeVolume].textureToWorldSpace = glm::scale(glm::mat4{1}, glm::vec3(0.05)) * volume.localToWorld;
-
-    rt::MeshObjectInstance smoke{};
-    smoke.object = rt::TriangleMesh{ &textureSpaceCube };
-    smoke.xform = object.volume.cpu[smokeVolume].textureToWorldSpace;
-    object.surface.cpu[instances.size()] = { -1, object.mediums.count++,  };
-    float sigma_s = 0, sigma_a = 90;
-    object.mediums.cpu[object.surface.cpu[instances.size()].mediumId] = {
-            vec3(sigma_s), vec3(sigma_a), vec3(sigma_s+sigma_a), smokeVolume,
-            0, to<int>(MediumType::Heterogeneous)
-    };
-    instances.push_back(smoke);
+//    rt::MeshObjectInstance smoke{};
+//    smoke.object = rt::TriangleMesh{ &textureSpaceCube };
+//    smoke.xform = object.volume.cpu[smokeVolume].textureToWorldSpace;
+//    object.surface.cpu[instances.size()] = { -1, object.mediums.count++,  };
+//    float sigma_s = 50, sigma_a = 30;
+//    object.mediums.cpu[object.surface.cpu[instances.size()].mediumId] = {
+//            vec3(sigma_s), vec3(sigma_a), vec3(sigma_s+sigma_a), smokeVolume,
+//            0, to<int>(MediumType::Heterogeneous)
+//    };
+//    instances.push_back(smoke);
 
     createAccelerationStructure(instances);
 }

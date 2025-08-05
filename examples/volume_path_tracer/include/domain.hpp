@@ -32,11 +32,12 @@ struct UniformData {
     glm::mat4 projInverse;
     uint32_t currentSample{};
     uint32_t sampleCount{10000};
-    uint32_t maxBounce{50};
+    uint32_t maxBounce{8};
     uint32_t frame{};
     uint32_t RayCount{to<uint32_t>(Rays::Count) };
     uint32_t environment_id{~0u};
     uint32_t environment_light{~0u};
+    float worldRadius{20};
 };
 
 struct SurfaceInfo {

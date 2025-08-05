@@ -87,6 +87,15 @@ bool isMirror(float metalness, float roughness){
     return metalness == 1 && roughness == 0;
 }
 
+vec3 direction_from_spherical(vec2 uv, out float sinTheta){
+    float phi = uv.x * TWO_PI;
+    float theta = uv.y * PI;
+    sinTheta = sin(theta);
+    return vec3(
+    sin(phi) * sinTheta,
+    cos(theta),
+    cos(phi) * sinTheta);
+}
 
 
 #endif // RTX_UTILS_GLSL

@@ -86,6 +86,7 @@ layout(set = 0, binding = 1, scalar) uniform Uniforms {
     uint RayCount;
     uint environment_id;
     uint distribution_id;
+    float worldRadius;
 };
 
 layout(set = 2, binding = 0, scalar) buffer ObjectSSBO {
@@ -117,7 +118,7 @@ void generateRay(inout HitRecord hRec, vec2 id, vec2 screenSize, vec2 offset) {
     vec4 target = projInverse * vec4(d.x, d.y, 1, 1) ;
     vec4 direction = viewInverse*vec4(normalize(target.xyz), 0) ;
 
-    hRec.isect.x = origin.xyz;
+    hRec.x = origin.xyz;
     hRec.wi = normalize(direction.xyz);
 }
 
