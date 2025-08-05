@@ -2,8 +2,8 @@
 
 #include "domain.glsl"
 
-layout(location = 1) rayPayloadIn float hitDistance;
+layout(location = 1) rayPayloadIn MediumHitRecord mRec;
 
 void main() {
-    hitDistance = 0;
+    mRec.t = 0;
 }

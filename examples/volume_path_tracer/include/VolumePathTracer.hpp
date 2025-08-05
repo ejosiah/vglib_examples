@@ -11,6 +11,8 @@ public:
 protected:
     void initApp() override;
 
+    void loadTextureSpaceCube();
+
     void loadModels();
 
     void initCamera();
@@ -63,6 +65,8 @@ protected:
 
     void newFrame() override;
 
+    void loadVolume();
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -98,7 +102,11 @@ protected:
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
     std::vector<rt::MeshObjectInstance> instances;
-    Texture environment;
+
+    struct {
+        Texture texture;
+        Texture distribution;
+    } environment;
     uint32_t nextInstance{};
 
     struct {
@@ -119,7 +127,14 @@ protected:
             SurfaceInfo* cpu{};
             int count{0};
         } surface;
+        struct {
+            VulkanBuffer gpu;
+            VolumeInstance* cpu;
+            int count{0};
+        } volume;
         const int maxObjects{10};
     } object;
-
+    Volume volume{};
+    VulkanDrawable textureSpaceCube;
+    phong::VulkanDrawableInfo drawableInfo{};
 };

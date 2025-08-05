@@ -1,15 +1,10 @@
 #ifndef SAMPLING_GLSL
 #define SAMPLING_GLSL
 
-#define INV_PI 0.31830988618379067153776752674503
-#define INV_4PI 0.07957747154594766788444188168626
-#define ONE_OVER_PI 0.31830988618379067153776752674503
-#define PI 3.1415926535897932384626433832795
-#define TWO_PI 6.283185307179586476925286766559
-#define ONE_OVER_TWO_PI 0.15915494309189533576888376337251
-#define PI_OVER_TWO 1.5707963267948966192313216916398
-#define PI_OVER_FOUR 0.78539816339744830961566084581988
-#define ONE_VER_SQRT_TWO 0.70710678118654752440084436210485
+#include "constants.glsl"
+#include "random.glsl"
+
+#extension GL_EXT_debug_printf : require
 
 float RadicalInverse_VdC(uint bits){
     bits = (bits << 16u) | (bits >> 16u);
@@ -17,7 +12,7 @@ float RadicalInverse_VdC(uint bits){
     bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
     bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
     bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
-    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+    return float(bits) * 2.3283064365386963e-10;// / 0x100000000
 }
 
 vec2 hammersley(uint i, uint N){
@@ -73,15 +68,15 @@ float findInterval(sampler1D distribution, float value){
     int size = textureSize(distribution, 0);
     int first = 0;
     int len = size;
-    while(len > 0){
+    while (len > 0){
         int half_len = len >> 1;
         int middle = first + half_len;
         float u = float(middle + .5)/float(size);
         float distValue = texture(distribution, u).r;
-        if(distValue <= value){
+        if (distValue <= value){
             first =  middle + 1;
             len -= half_len + 1;
-        }else {
+        } else {
             len = half_len;
         }
     }
@@ -93,15 +88,15 @@ float findInterval(sampler2D distribution, float v, float value){
     int size = textureSize(distribution, 0).x;
     int first = 0;
     int len = size;
-    while(len > 0){
+    while (len > 0){
         int half_len = len >> 1;
         int middle = first + half_len;
         float u = float(middle + .5)/float(size);
         float distValue = texture(distribution, vec2(u, v)).r;
-        if(distValue <= value){
+        if (distValue <= value){
             first =  middle + 1;
             len -= half_len + 1;
-        }else {
+        } else {
             len = half_len;
         }
     }
@@ -110,7 +105,7 @@ float findInterval(sampler2D distribution, float v, float value){
 }
 
 
-float sampleContinuous1D(sampler1D func, sampler1D cdf, float funcIntegral,  float u, out float pdf, out float off){
+float sampleContinuous1D(sampler1D func, sampler1D cdf, float funcIntegral, float u, out float pdf, out float off){
     float offset = findInterval(cdf, u);
     float offsetPOne = offset + 0.5/textureSize(cdf, 0);
     float cdfOffset = texture(cdf, offset).r;
@@ -119,7 +114,7 @@ float sampleContinuous1D(sampler1D func, sampler1D cdf, float funcIntegral,  flo
     off = offset;
     float du = u - cdfOffset;
 
-    if((cdfOffsetPOne - cdfOffset)  > 0){
+    if ((cdfOffsetPOne - cdfOffset)  > 0){
         du /= (cdfOffsetPOne - cdfOffset);
     }
     pdf = funcIntegral > 0 ? texture(func, offset).r / funcIntegral : 0;
@@ -127,7 +122,7 @@ float sampleContinuous1D(sampler1D func, sampler1D cdf, float funcIntegral,  flo
     return (offset + du)/ float(textureSize(func, 0));
 }
 
-float sampleContinuous1D(sampler2D func, sampler2D cdf, float funcIntegral,  float u, float v, out float pdf, out float off) {
+float sampleContinuous1D(sampler2D func, sampler2D cdf, float funcIntegral, float u, float v, out float pdf, out float off) {
     float offset = findInterval(cdf, v, u);
     float offsetPOne = offset + 0.5/textureSize(cdf, 0).x;
     float cdfOffset = texture(cdf, vec2(offset, v)).r;
@@ -136,7 +131,7 @@ float sampleContinuous1D(sampler2D func, sampler2D cdf, float funcIntegral,  flo
     off = offset;
     float du = u - cdfOffset;
 
-    if((cdfOffsetPOne - cdfOffset)  > 0){
+    if ((cdfOffsetPOne - cdfOffset)  > 0){
         du /= (cdfOffsetPOne - cdfOffset);
     }
     pdf = funcIntegral > 0 ? texture(func, vec2(offset, v)).r / funcIntegral : 0;
@@ -161,17 +156,61 @@ vec2 sampleContinuous2D(sampler2D pConditionalVFunc, sampler2D pConditionalVCdf,
 vec2 concentricSampleDisk(vec2 u){
     u = 2 * u - 1;
 
-    if(u.x == 0  && u.y == 0) return vec2(0);   // at origin
+    if (u.x == 0  && u.y == 0) return vec2(0);// at origin
 
     float theta, r;
-    if(abs(u.x) > abs(u.y)){
+    if (abs(u.x) > abs(u.y)){
         r = u.x;
         theta = PI_OVER_FOUR * (u.y/u.x);
-    }else{
+    } else {
         r = u.y;
         theta = PI_OVER_TWO - PI_OVER_FOUR * (u.x/u.y);
     }
     return r * vec2(cos(theta), sin(theta));
 }
 
-#endif // SAMPLING_GLSL
+vec2 sampleHierarchicalMipMappedTexture(sampler2D distribution, vec2 u, out float pdf) {
+    float u0 = u.x;
+    float u1 = u.y;
+    int maxMipLevel = textureQueryLevels(distribution) - 1;
+
+    int x = 0, y = 0;
+    for( int mip = maxMipLevel - 1; mip >= 0; --mip) {
+        x <<= 1; y <<= 1;
+        float left = texelFetch(distribution, ivec2(x, y), mip).r + texelFetch(distribution, ivec2(x, y+1), mip).r;
+        float right = texelFetch(distribution, ivec2(x+1, y), mip).r + texelFetch(distribution, ivec2(x+1, y+1), mip).r;
+        float probLeft = left /(left+right);
+
+        if(u0 < probLeft) {
+            u0 /= probLeft;
+            float probLower = texelFetch(distribution, ivec2(x, y), mip).r / left;
+            if(u1 < probLower) {
+                u1 /= probLower;
+            } else {
+                y++;
+                u1 = (u1 - probLower) / (1 - probLower);
+            }
+        } else {
+            x++;
+            u0 = (u0 - probLeft) / (1 - probLeft);
+            float probLower = texelFetch(distribution, ivec2(x, y), mip).r / right;
+            if( u1 < probLower) {
+                u1 /= probLower;
+            } else {
+                y++;
+                u1 = (u1 - probLower) / (1 - probLower);
+            }
+        }
+    }
+
+//    float num = texelFetch(distribution, ivec2(x, y), 0).r;
+//    float denum = texelFetch(distribution, ivec2(0, 0), maxMipLevel).r;
+//
+//    debugPrintfEXT("levels = %d, [x, y] = [%d, %d] num = %f, denum = %f\n", maxMipLevel, x, y, num, denum);
+
+    pdf = texelFetch(distribution, ivec2(x, y), 0).r / texelFetch(distribution, ivec2(0, 0), maxMipLevel).r;
+    return vec2(x, y)/textureSize(distribution, 0);
+}
+
+
+#endif// SAMPLING_GLSL

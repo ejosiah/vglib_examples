@@ -15,6 +15,9 @@
 #include "path_tracing/eval_brdf.glsl"
 #include "path_tracing/medium.glsl"
 
+#define environment global_textures[environment_id]
+#define distribution global_textures[distribution_id]
+
 struct ObjectInfo {
     int materialId;
     int mediumId;
@@ -31,12 +34,21 @@ struct Medium {
     vec3 scattering;
     vec3 absorption;
     vec3 extinction;
+    uint volume;
     float g;
     int type;
 };
 
+struct Volume {
+    mat4 textureToWorldSpace;
+    int data;
+    float maxDensity;
+};
+
 struct SurfaceInteraction {
     vec3 x;
+    vec3 xLocal;
+    vec3 nLocal;
     vec3 gN;
     vec3 sN;
     int material;
@@ -59,6 +71,11 @@ struct HitRecord {
     float t;
 };
 
+struct MediumHitRecord {
+    SurfaceInteraction isect;
+    float t;
+};
+
 layout(set = 0, binding = 1, scalar) uniform Uniforms {
     mat4 viewInverse;
     mat4 projInverse;
@@ -67,7 +84,8 @@ layout(set = 0, binding = 1, scalar) uniform Uniforms {
     uint maxBounce;
     uint frame;
     uint RayCount;
-    uint environment;
+    uint environment_id;
+    uint distribution_id;
 };
 
 layout(set = 2, binding = 0, scalar) buffer ObjectSSBO {
@@ -82,7 +100,12 @@ layout(set = 2, binding = 2, scalar) buffer MediumSSBO {
     Medium mediums[];
 };
 
+layout(set = 2, binding = 3, scalar) buffer VolumeSSBO {
+    Volume volumes[];
+};
+
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 10) uniform sampler3D global_textures3D[];
 
 void generateRay(inout HitRecord hRec, vec2 id, vec2 screenSize, vec2 offset) {
     const vec2 pixelCenter = id + offset;

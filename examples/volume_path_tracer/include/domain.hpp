@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "Texture.h"
 #include <glm/glm.hpp>
 
 #define DIFFUSE_BRDF_LAMBERTIAN (1 << 0)
@@ -17,7 +18,7 @@
 #define BRDF_SPECULAR (SPECULAR_BRDF_MICROFACET | SPECLUAR_BRDF_PHONG)
 
 enum class Shaders : int {
-    RayGen,
+    RayGen, EnvGen,
     Miss, VolumeMiss,
     Hit, VolumeHit,
     Count };
@@ -35,6 +36,7 @@ struct UniformData {
     uint32_t frame{};
     uint32_t RayCount{to<uint32_t>(Rays::Count) };
     uint32_t environment_id{~0u};
+    uint32_t environment_light{~0u};
 };
 
 struct SurfaceInfo {
@@ -53,6 +55,25 @@ struct MediumInfo {
     glm::vec3 scattering{0};
     glm::vec3 absorption{0};
     glm::vec3 extinction{0};
+    uint32_t volume{~0u};
     float g{0};
     int type{to<int>(MediumType::Homogeneous)};
+};
+
+struct Volume {
+    Texture texture;
+    glm::mat4 worldToLocal;
+    glm::mat4 localToWorld;
+    struct {
+        glm::vec3 min{MAX_FLOAT};
+        glm::vec3 max{MIN_FLOAT};
+    } bounds;
+    uint32_t binding_id{~0u};
+    float maxDensity{0};
+};
+
+struct VolumeInstance {
+    glm::mat4 textureToWorldSpace{1};
+    uint32_t data{~0u};
+    float maxDensity{0};
 };
