@@ -7,12 +7,17 @@
 
 TemporalAntiAliasingExample::TemporalAntiAliasingExample(const Settings& settings) : VulkanBaseApp("Temporal Anti-Aliasing", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/temporal_anti_aliasing");
-    fileManager().addSearchPathFront("../../examples/temporal_anti_aliasing/data");
-    fileManager().addSearchPathFront("../../examples/temporal_anti_aliasing/spv");
-    fileManager().addSearchPathFront("../../examples/temporal_anti_aliasing/models");
-    fileManager().addSearchPathFront("../../examples/temporal_anti_aliasing/textures");
-    fileManager().addSearchPathFront("../../dependencies/glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/textures/environment");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("temporal_anti_aliasing");
+    fileManager().addSearchPathFront("temporal_anti_aliasing/data");
+    fileManager().addSearchPathFront("temporal_anti_aliasing/spv");
+    fileManager().addSearchPathFront("temporal_anti_aliasing/models");
+    fileManager().addSearchPathFront("temporal_anti_aliasing/textures");
 }
 
 void TemporalAntiAliasingExample::initApp() {
@@ -49,7 +54,7 @@ void TemporalAntiAliasingExample::loadModel() {
     _model = _loader->loadGltf(resource("FlightHelmet/glTF/FlightHelmet.gltf"));
 //    _model = _loader->loadGltf(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
     _model->transform = glm::translate(glm::mat4{1}, -_model->bounds.min);
-//    _model2->sync();
+    _model->sync();
 }
 
 void TemporalAntiAliasingExample::initCamera() {
@@ -153,8 +158,8 @@ void TemporalAntiAliasingExample::initTextures() {
     _textures.velocity.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL, resourceRange);
 
     _offscreenInfo = Offscreen::RenderInfo{
-        .colorAttachments = {{ &_textures.color, VK_FORMAT_R32G32B32A32_SFLOAT}},
-        .depthAttachment = { { &_textures.depth, VK_FORMAT_D16_UNORM} },
+        .colorAttachments = {{ _textures.color.imageView, VK_FORMAT_R32G32B32A32_SFLOAT}},
+        .depthAttachment = { { _textures.depth.imageView, VK_FORMAT_D16_UNORM} },
         .renderArea = { _textures.width, _textures.height }
     };
 
@@ -318,8 +323,8 @@ void TemporalAntiAliasingExample::createRenderPipeline() {
                     .vertexShader(resource("render.vert.spv"))
                     .fragmentShader(resource("render.frag.spv"))
                 .vertexInputState().clear()
-                    .addVertexBindingDescriptions(Vertex::bindingDisc())
-                    .addVertexAttributeDescriptions(Vertex::attributeDisc())
+                    .addVertexBindingDescription(VertexMultiAttributes::bindingDescription())
+                    .addVertexAttributeDescriptions(VertexMultiAttributes::attributeDescription())
                 .inputAssemblyState()
                     .triangles()
                 .rasterizationState()
@@ -334,10 +339,12 @@ void TemporalAntiAliasingExample::createRenderPipeline() {
                     .srcAlphaBlendFactor().zero()
                     .dstAlphaBlendFactor().one()
                 .add()
+                .dynamicState()
+                    .colorBlendEnable()
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant())
                     .addDescriptorSetLayout(_loader->descriptorSetLayout())
-                    .addDescriptorSetLayout(_loader->descriptorSetLayout())
+                    .addDescriptorSetLayout(_loader->materialDescriptorSetLayout())
                     .addDescriptorSetLayout(*_bindlessDescriptor.descriptorSetLayout)
                 .name("model_pipeline")
             .build(_render.model.layout);
@@ -347,6 +354,9 @@ void TemporalAntiAliasingExample::createRenderPipeline() {
                 .shaderStage()
                     .vertexShader(resource("flat.vert.spv"))
                     .fragmentShader(resource("flat.frag.spv"))
+                .vertexInputState().clear()
+                    .addVertexBindingDescription(VertexMultiAttributes::bindingDescription())
+                    .addVertexAttributeDescriptions(VertexMultiAttributes::attributeDescription())
                 .inputAssemblyState()
                     .lines()
                 .rasterizationState()
@@ -465,23 +475,6 @@ void TemporalAntiAliasingExample::renderGround(VkCommandBuffer commandBuffer) {
 
 void TemporalAntiAliasingExample::renderScene(VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 3> sets;
-//    sets[0] = _model->mesh16descriptorSet;
-//    sets[1] = _model->materialDescriptorSet;
-//    sets[2] = _bindlessDescriptor.descriptorSet;
-//
-//    VkDeviceSize offset = 0;
-//    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.pipeline.handle);
-//    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-//    _camera->push(commandBuffer, _render.model.layout);
-//    vkCmdBindVertexBuffers(commandBuffer, 0, 1, _model->vertexBuffer, &offset);
-//
-//    vkCmdBindIndexBuffer(commandBuffer, _model->indexBufferUint16, 0, VK_INDEX_TYPE_UINT16);
-//    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw_16.gpu, 0, _model->draw_16.count, sizeof(VkDrawIndexedIndirectCommand));
-//
-//    sets[0] = _model->mesh32descriptorSet;
-//    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-//    vkCmdBindIndexBuffer(commandBuffer, _model->indexBufferUint32, 0, VK_INDEX_TYPE_UINT32);
-//    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw_32.gpu, 0, _model->draw_32.count, sizeof(VkDrawIndexedIndirectCommand));
 
     sets[0] = _model->meshDescriptorSet.u16.handle;
     sets[1] = _model->materialDescriptorSet;
@@ -489,10 +482,12 @@ void TemporalAntiAliasingExample::renderScene(VkCommandBuffer commandBuffer) {
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     _camera->push(commandBuffer, _render.model.layout);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, _model->vertices, &offset);
 
+    VkBool32 blendingEnabled = VK_TRUE;
+    vkCmdSetColorBlendEnableEXT(commandBuffer, 0, 1, &blendingEnabled);
     vkCmdBindIndexBuffer(commandBuffer, _model->indices.u16.handle, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexedIndirect(commandBuffer, _model->draw.u16.handle, 0, _model->draw.u16.count, sizeof(VkDrawIndexedIndirectCommand));
 
@@ -500,6 +495,13 @@ void TemporalAntiAliasingExample::renderScene(VkCommandBuffer commandBuffer) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdBindIndexBuffer(commandBuffer, _model->indices.u32.handle, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexedIndirect(commandBuffer, _model->draw.u32.handle, 0, _model->draw.u32.count, sizeof(VkDrawIndexedIndirectCommand));
+
+    sets[0] = _model->meshDescriptorSet.u8.handle;
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.model.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindIndexBuffer(commandBuffer, _model->indices.u8.handle, 0, VK_INDEX_TYPE_UINT8_EXT);
+    vkCmdDrawIndexedIndirect(commandBuffer, _model->draw.u8.handle, 0, _model->draw.u8.count, sizeof(VkDrawIndexedIndirectCommand));
+
+    _model->renderWithMaterial(commandBuffer, _render.model.layout, 0, true);
 
 }
 
@@ -586,19 +588,18 @@ void TemporalAntiAliasingExample::onPause() {
 
 void TemporalAntiAliasingExample::beforeDeviceCreation() {
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
 
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+    auto indexType8 = findExtension<VkPhysicalDeviceIndexTypeUint8FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT, deviceCreateNextChain);
+    indexType8->indexTypeUint8 = VK_TRUE;
+
+    auto dsFeatures = findExtension<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT, deviceCreateNextChain);
+    dsFeatures->extendedDynamicState3PolygonMode = VK_TRUE;
+    dsFeatures->extendedDynamicState3ColorBlendEnable = VK_TRUE;
+
+    AppContext::addExtensions(deviceCreateNextChain);
 }
 
 void TemporalAntiAliasingExample::initBindlessDescriptor() {
@@ -704,7 +705,7 @@ void TemporalAntiAliasingExample::taaResolve(VkCommandBuffer commandBuffer) {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1440;
         settings.height = 1280;
@@ -714,6 +715,8 @@ int main(){
         settings.depthTest = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;

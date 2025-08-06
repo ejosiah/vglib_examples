@@ -197,9 +197,12 @@ namespace gltf {
         tinyGltfLoad(*gltf, path.string());  // FIXME this is slow, write multi threaded loader
         const auto counts = getCounts(*gltf);
 
+
         const auto textureBindingOffset = _bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, gltf->textures.size());
         auto biTransferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        auto bvhUsage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
+        // TODO check if ray tracing is enabled before add this
+        auto bvhUsage = !_device->rayTracingEnabled() ? 0 : VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
         auto model = std::make_shared<Model>();
         model->numMeshes = counts.instances.count();

@@ -3,39 +3,52 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#define MATERIAL_SET 1
+#define MATERIAL_BINDING_POINT 0
+#define LIGHT_BINDING_POINT 1
+#define LIGHT_INSTANCE_BINDING_POINT 2
+#define TEXTURE_INFO_BINDING_POINT 3
+
 #define BASE_COLOR_INDEX 0
 #define NORMAL_INDEX 1
 #define METALLIC_ROUGHNESS_INDEX 2
 #define OCCLUSION_INDEX 3
-
-#define EMISSION_INDEX 0
+#define EMISSION_INDEX 4
+#define TEXTURE_INFO_PER_MATERIAL 20
 
 #define MATERIAL_ID meshes[nonuniformEXT(drawId)].materialId
 #define MATERIAL materials[MATERIAL_ID]
 
-#define BASE_COLOR_TEX_ID MATERIAL.textures0[BASE_COLOR_INDEX]
-#define METAL_ROUGHNESS_TEX_ID MATERIAL.textures0[METALLIC_ROUGHNESS_INDEX]
-#define OCCLUSION_TEX_ID MATERIAL.textures0[OCCLUSION_INDEX]
-#define NORMAL_TEX_ID MATERIAL.textures0[NORMAL_INDEX]
+#define TEXTURE_OFFSET (MATERIAL.textureInfoOffset * TEXTURE_INFO_PER_MATERIAL)
 
-#define EMISSION_TEX_ID MATERIAL.textures1[EMISSION_INDEX]
+#define BASE_COLOR_TEX_INFO textureInfos[TEXTURE_OFFSET + BASE_COLOR_INDEX]
+#define NORMAL_TEX_INFO textureInfos[TEXTURE_OFFSET + NORMAL_INDEX]
+#define METAL_ROUGHNESS_TEX_INFO textureInfos[TEXTURE_OFFSET + METALLIC_ROUGHNESS_INDEX]
+#define OCCLUSION_TEX_INFO textureInfos[TEXTURE_OFFSET + OCCLUSION_INDEX]
 
-#define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_ID)]
-#define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_ID)]
-#define OCCLUSION_TEXTURE global_textures[nonuniformEXT(OCCLUSION_TEX_ID)]
-#define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_ID)]
-#define EMISSION_TEXTURE global_textures[nonuniformEXT(EMISSION_TEX_ID)]
+#define EMISSION_TEX_INFO textureInfos[TEXTURE_OFFSET + EMISSION_INDEX]
+
+#define BASE_COLOR_TEXTURE global_textures[nonuniformEXT(BASE_COLOR_TEX_INFO.index)]
+#define NORMAL_TEXTURE global_textures[nonuniformEXT(NORMAL_TEX_INFO.index)]
+#define METAL_ROUGHNESS_TEXTURE global_textures[nonuniformEXT(METAL_ROUGHNESS_TEX_INFO.index)]
+#define OCCLUSION_TEXTURE global_textures[nonuniformEXT(OCCLUSION_TEX_INFO.index)]
+
 
 #include "gltf.glsl"
 #include "lighting.glsl"
 
-layout(set = 0, binding = 0) buffer MeshData {
+layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
 };
 
 layout(set = 1, binding = 0) buffer GLTF_MATERIAL {
     Material materials[];
 };
+
+layout(set = 1, binding = 3) buffer TextureInfos {
+    TextureInfo textureInfos[];
+};
+
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
@@ -46,16 +59,18 @@ layout(location = 0) in struct {
     vec3 bitangent;
     vec3 eyes;
     vec3 lightPos;
-    vec2 uv;
+    vec2 uv[2];
 } fs_in;
 
-layout(location = 7) in flat int drawId;
+layout(location = 8) in flat int drawId;
 
 float saturate(float x);
 vec4 getBaseColor();
 vec3 getNormal();
 vec3 getMRO();
-bool noTangets();
+bool hasTanget();
+bool hasNormal();
+vec2 transformUV(TextureInfo textureInfo);
 
 layout(location = 0) out vec4 fragColor;
 
@@ -120,11 +135,14 @@ float saturate(float x) {
 }
 
 vec4 getBaseColor() {
-    if(BASE_COLOR_TEX_ID == -1){
-        return vec4(MATERIAL.baseColor);
+    vec4 color =  MATERIAL.baseColor;
+    if (BASE_COLOR_TEX_INFO.index != -1){
+        vec2 uv = transformUV(BASE_COLOR_TEX_INFO);
+        vec4 texColor = texture(BASE_COLOR_TEXTURE, uv);
+        texColor.rgb = pow(texColor.rgb, vec3(2.2));
+        color *= texColor;
     }
-    vec4 color = texture(BASE_COLOR_TEXTURE, fs_in.uv);
-    color.rgb = pow(color.rgb, vec3(2.2));
+
     return color;
 }
 
@@ -134,37 +152,106 @@ vec3 getMRO() {
     mro.g = MATERIAL.roughness;
     mro.b = 1;
 
-    if(METAL_ROUGHNESS_TEX_ID != -1) {
-        vec3 res = texture(METAL_ROUGHNESS_TEXTURE, fs_in.uv).rgb;
-        mro.r = res.b;
-        mro.g = res.g;
 
-        if(OCCLUSION_TEX_ID != 1) {
-            if(OCCLUSION_TEX_ID == METAL_ROUGHNESS_TEX_ID) {
-                mro.b = res.r;
-            }else {
-                mro.b = texture(OCCLUSION_TEXTURE, fs_in.uv).r;
-            }
-        }
+    if(METAL_ROUGHNESS_TEX_INFO.index != -1) {
+        vec2 uv = transformUV(METAL_ROUGHNESS_TEX_INFO);
+        vec3 res = texture(METAL_ROUGHNESS_TEXTURE, uv).rgb;
+        mro.r *= res.b;
+        mro.g *= res.g;
+    }
+
+    if(OCCLUSION_TEX_INFO.index != -1) {
+        vec2 uv = transformUV(OCCLUSION_TEX_INFO);
+        mro.b = texture(OCCLUSION_TEXTURE, uv).r;
     }
     return mro;
 }
 
 vec3 getNormal() {
-    if(NORMAL_TEX_ID == -1 || noTangets()) {
-        return fs_in.normal;
-    }
-    mat3 TBN = mat3(fs_in.tangent, fs_in.bitangent, fs_in.normal);
-    vec3 normal = 2 * texture(NORMAL_TEXTURE, fs_in.uv).xyz - 1;
-    normal.y *= -1;
-    normal = normalize(TBN * normal);
 
-    if(MATERIAL.doubleSided == 1 && !gl_FrontFacing) {
-        normal *= -1;
+    vec2 uv = transformUV(NORMAL_TEX_INFO);
+    vec2 uv_dx = dFdx(uv);
+    vec2 uv_dy = dFdy(uv);
+
+    if (length(uv_dx) <= 1e-2) {
+        uv_dx = vec2(1.0, 0.0);
     }
-    return normal;
+
+    if (length(uv_dy) <= 1e-2) {
+        uv_dy = vec2(0.0, 1.0);
+    }
+
+    vec3 t_ = (uv_dy.t * dFdx(fs_in.position) - uv_dx.t * dFdy(fs_in.position)) /
+    (uv_dx.s * uv_dy.t - uv_dy.s * uv_dx.t);
+
+    vec3 n, t, b, ng;
+
+    // Compute geometrical TBN:
+    if(hasNormal()){
+        if (hasTanget()){
+            // Trivial TBN computation, present as vertex attribute.
+            // Normalize eigenvectors as matrix is linearly interpolated.
+            t = normalize(fs_in.tangent);
+            b = normalize(fs_in.bitangent);
+            ng = normalize(fs_in.normal);
+        } else {
+            // Normals are either present as vertex attributes or approximated.
+            ng = normalize(fs_in.normal);
+            t = normalize(t_ - ng * dot(ng, t_));
+            b = cross(ng, t);
+        }
+    } else {
+        ng = normalize(cross(dFdx(fs_in.position), dFdy(fs_in.position)));
+        t = normalize(t_ - ng * dot(ng, t_));
+        b = cross(ng, t);
+    }
+
+
+    // For a back-facing surface, the tangential basis vectors are negated.
+    if (gl_FrontFacing == false && MATERIAL.doubleSided == 1)
+    {
+        t *= -1.0;
+        b *= -1.0;
+        ng *= -1.0;
+    }
+
+    // Compute normals:
+    NormalInfo info;
+    info.Ng = ng;
+    if(NORMAL_TEX_INFO.index != -1){
+        info.Ntex = texture(NORMAL_TEXTURE, uv).rgb * 2.0 - vec3(1.0);
+        info.Ntex *= vec3(NORMAL_TEX_INFO.tScale, NORMAL_TEX_INFO.tScale, 1.0);
+        info.Ntex = normalize(info.Ntex);
+        info.N = normalize(mat3(t, b, ng) * info.Ntex);
+    } else {
+        info.N = ng;
+    }
+    info.T = t;
+    info.B = b;
+    return info.N;
+
 }
 
-bool noTangets() {
-    return all(equal(fs_in.tangent, vec3(0)));
+vec2 transformUV(TextureInfo ti) {
+    if(ti.index == -1) return fs_in.uv[0];
+
+    mat3 translation = mat3(1,0,0, 0,1,0, ti.offset.x, ti.offset.y, 1);
+    mat3 rotation = mat3(
+    cos(ti.rotation), -sin(ti.rotation), 0,
+    sin(ti.rotation), cos(ti.rotation), 0,
+    0,             0, 1
+    );
+    mat3 scale = mat3(ti.scale.x,0,0, 0,ti.scale.y,0, 0,0,1);
+
+    mat3 matrix = translation * rotation * scale;
+    return ( matrix * vec3(fs_in.uv[ti.texCoord], 1) ).xy;
+}
+
+
+bool hasTanget() {
+    return !all(equal(fs_in.tangent, vec3(0)));
+}
+
+bool hasNormal() {
+    return !all(equal(fs_in.normal, vec3(0)));
 }
