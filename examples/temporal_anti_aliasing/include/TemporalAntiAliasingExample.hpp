@@ -4,6 +4,7 @@
 #include "Canvas.hpp"
 #include "gltf/GltfLoader.hpp"
 #include "Sampler.hpp"
+#include "taa/Taa.hpp"
 
 struct SceneData {
     glm::mat4 current_view_projection{};
@@ -64,9 +65,9 @@ protected:
 
     void beforeDeviceCreation() override;
 
-    void initGpuData();
-
     void initLoader();
+
+    void initTaa();
 
     void loadModel();
 
@@ -88,8 +89,6 @@ protected:
 
     void createRenderPipeline();
 
-    void createComputePipeline();
-
     void onSwapChainDispose() override;
 
     void onSwapChainRecreation() override;
@@ -102,19 +101,11 @@ protected:
 
     void renderScene(VkCommandBuffer commandBuffer);
 
-    void renderPlaceHolders(VkCommandBuffer commandBuffer);
-
     void renderUI(VkCommandBuffer commandBuffer);
 
     void applyTaa(VkCommandBuffer commandBuffer);
 
-    void computeMotionVectors(VkCommandBuffer commandBuffer);
-
-    void taaResolve(VkCommandBuffer commandBuffer);
-
     void update(float time) override;
-
-    void updateScene(float time);
 
     void checkAppInputs() override;
 
@@ -144,33 +135,20 @@ protected:
         } ground;
     } _render;
 
-    struct {
-        struct {
-            VulkanPipelineLayout layout;
-            VulkanPipeline pipeline;
-        } velocity;
-        struct {
-            VulkanPipelineLayout layout;
-            VulkanPipeline pipeline;
-        } resolve;
-    } _compute;
-
     VulkanDescriptorPool _descriptorPool;
     VulkanCommandPool _commandPool;
     std::vector<VkCommandBuffer> _commandBuffers;
     VulkanPipelineCache _pipelineCache;
-    std::unique_ptr<FirstPersonCameraController> _camera;
-//    std::unique_ptr<OrbitingCameraController> _camera;
+    std::unique_ptr<BaseCameraController> _camera;
 
-    Scene _scene;
-    TaaConstants _taa;
+    std::unique_ptr<taa::Taa> taa;
+    glm::vec2 jitterValue{};
+    taa::Settings taa_settings{};
     BindlessDescriptor _bindlessDescriptor;
     VulkanBuffer _offScreenQuad;
     struct {
         Texture color;
         Texture depth;
-        Texture velocity;
-        std::array<Texture, 2> history;
         uint32_t width{};
         uint32_t height{};
     } _textures;
@@ -193,22 +171,15 @@ protected:
         const std::array<const char*, 2> filters{"Single", "Catmull Rom"};
         const std::array<const char*, 4> subSampleFilters{"None", "Mitchell", "Blackman Harris", "Catmull Rom"};
         const std::array<const char*, 5> historyConstraints{"None", "Clamp", "Clip", "Variance Clip", "Variance Clip with Clamp"};
+        bool dirty{false};
     } options;
 
     Offscreen::RenderInfo _offscreenInfo{};
     Canvas _canvas;
     VkDescriptorSet _displaySet{};
-    VkDescriptorSet _colorDisplaySet{};
-    std::array<VkDescriptorSet, 2> _historyDisplaySet;
     std::shared_ptr<gltf::Model> _model;
     std::unique_ptr<gltf::Loader> _loader;
-    VulkanDescriptorSetLayout _modelDescriptorSetLayout;
-    VkDescriptorSet _modelDescriptorSet;
-    VulkanBuffer _modelPlaceHolder;
 
-    static constexpr uint32_t HistoryBindingIndex = 0;
-    static constexpr uint32_t TaaOutputBindingIndex = 1;
-    static constexpr uint32_t VelocityBindingIndex = 2;
     static constexpr uint32_t ColorBindingIndex = 3;
     static constexpr uint32_t DepthBindingIndex = 4;
 };

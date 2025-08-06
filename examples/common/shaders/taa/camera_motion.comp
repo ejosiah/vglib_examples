@@ -1,0 +1,26 @@
+#version 460
+
+#include "uniforms.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    ivec2 iPos = ivec2(gl_GlobalInvocationID);
+
+    float depth = texelFetch(depth_buffer, iPos, 0).r;
+    vec2 screenUV = (vec2(iPos) + 0.5)/uniforms.resolution;
+    vec4 clipPos = vec4( 2 * screenUV - 1, depth, 1);
+
+    vec4 worldPos = uniforms.inverse_current_view_projection * clipPos;
+    worldPos.xyz /= worldPos.w;
+
+    vec4 prevClipPos = uniforms.previous_view_projection * vec4(worldPos.xyz, 1);
+    prevClipPos.xyz /= prevClipPos.w;
+
+    vec2 jitter_diff = (uniforms.jitter_xy - uniforms.previous_jitter_xy) * 0.5;
+
+    vec2 velocity = clipPos.xy - prevClipPos.xy;
+    velocity -= jitter_diff;
+
+    imageStore(velocity_out, iPos, vec4(velocity, 0, 0));
+}

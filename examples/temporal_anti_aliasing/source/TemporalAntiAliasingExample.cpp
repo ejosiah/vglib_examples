@@ -13,6 +13,7 @@ TemporalAntiAliasingExample::TemporalAntiAliasingExample(const Settings& setting
     fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("../common/spv");
     fileManager().addSearchPathFront("temporal_anti_aliasing");
     fileManager().addSearchPathFront("temporal_anti_aliasing/data");
     fileManager().addSearchPathFront("temporal_anti_aliasing/spv");
@@ -26,7 +27,6 @@ void TemporalAntiAliasingExample::initApp() {
     AppContext::init(device, _descriptorPool, swapChain, renderPass);
     initJitter();
     initLoader();
-    initGpuData();
     initTextures();
     initCanvas();
     initScreenQuad();
@@ -37,7 +37,13 @@ void TemporalAntiAliasingExample::initApp() {
     initCamera();
     createPipelineCache();
     createRenderPipeline();
-    createComputePipeline();
+    initTaa();
+}
+
+void TemporalAntiAliasingExample::initTaa() {
+    taa_settings.resolution = { width, height};
+    taa = std::make_unique<taa::Taa>(device, _descriptorPool, _bindlessDescriptor, _textures.color, _textures.depth, *_camera, jitterValue, taa_settings);
+    taa->init();
 }
 
 void TemporalAntiAliasingExample::initLoader() {
@@ -72,22 +78,6 @@ void TemporalAntiAliasingExample::initCamera() {
     _camera->lookAt(position, target, {0, 1, 0});
 }
 
-void TemporalAntiAliasingExample::initGpuData() {
-    _scene.gpu = device.createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(SceneData), "scene_constants");
-    _scene.cpu = reinterpret_cast<SceneData*>(_scene.gpu.map());
-    _scene.cpu->color_buffer_index = ColorBindingIndex;
-    _scene.cpu->depth_buffer_index = DepthBindingIndex;
-
-    _taa.gpu = device.createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(TaaConstants), "taa_constants");
-    _taa.cpu = reinterpret_cast<TaaData*>(_taa.gpu.map());
-    _taa.cpu->history_color_texture_index = HistoryBindingIndex;
-    _taa.cpu->taa_output_texture_index = TaaOutputBindingIndex;
-    _taa.cpu->velocity_texture_index = VelocityBindingIndex;
-
-    auto outline = primitives::cubeOutline({1, 1, 0, 1});
-    _modelPlaceHolder = device.createDeviceLocalBuffer(outline.vertices.data(), BYTE_SIZE(outline.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-}
-
 void TemporalAntiAliasingExample::initScreenQuad() {
     auto vertices = ClipSpace::Quad::positions;
     _offScreenQuad  = device.createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
@@ -117,16 +107,21 @@ void TemporalAntiAliasingExample::initTextures() {
 
     VkImageSubresourceRange resourceRange{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
     _textures.depth.imageView = _textures.depth.image.createView(format, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
-
     _textures.depth.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL, resourceRange);
+    device.setName<VK_OBJECT_TYPE_IMAGE>("depth_buffer", _textures.depth.image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>("depth_buffer_view", _textures.depth.imageView.handle);
 
     format = VK_FORMAT_R32G32B32A32_SFLOAT;
     imageInfo.format = format;
     imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     _textures.color.image = device.createImage(imageInfo);
+    _textures.color.format = format;
+
 
     resourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     _textures.color.imageView = _textures.color.image.createView(format, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
+    device.setName<VK_OBJECT_TYPE_IMAGE>("color_buffer", _textures.color.image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>("color_buffer_view", _textures.color.imageView.handle);
 
     _textures.color.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL, resourceRange);
 
@@ -141,70 +136,30 @@ void TemporalAntiAliasingExample::initTextures() {
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     _textures.color.sampler = device.createSampler(samplerInfo);
 
-    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
-    _textures.history[0].image = device.createImage(imageInfo);
-    _textures.history[0].imageView = _textures.history[0].image.createView(format, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
-    _textures.history[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL, resourceRange);
-
-    _textures.history[1].image = device.createImage(imageInfo);
-    _textures.history[1].imageView = _textures.history[1].image.createView(format, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
-    _textures.history[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL, resourceRange);
-
-    format = VK_FORMAT_R16G16_SFLOAT;
-    imageInfo.format = format;
-    imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    _textures.velocity.image = device.createImage(imageInfo);
-    _textures.velocity.imageView = _textures.velocity.image.createView(format, VK_IMAGE_VIEW_TYPE_2D, resourceRange);
-    _textures.velocity.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL, resourceRange);
-
     _offscreenInfo = Offscreen::RenderInfo{
         .colorAttachments = {{ _textures.color.imageView, VK_FORMAT_R32G32B32A32_SFLOAT}},
         .depthAttachment = { { _textures.depth.imageView, VK_FORMAT_D16_UNORM} },
         .renderArea = { _textures.width, _textures.height }
     };
 
-    _bindlessDescriptor.update({ &_textures.history[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, HistoryBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
-    _bindlessDescriptor.update({ &_textures.history[1], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, TaaOutputBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
-    _bindlessDescriptor.update({ &_textures.velocity, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VelocityBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
-    _bindlessDescriptor.update({ &_textures.color, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, ColorBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
-    _bindlessDescriptor.update({ &_textures.depth, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, DepthBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
-
-    _bindlessDescriptor.update({ &_textures.history[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, HistoryBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
-    _bindlessDescriptor.update({ &_textures.history[1], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, TaaOutputBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
-    _bindlessDescriptor.update({ &_textures.velocity, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VelocityBindingIndex, VK_IMAGE_LAYOUT_GENERAL });
 }
 
 void TemporalAntiAliasingExample::initCanvas() {
     _canvas = Canvas{ this };
     _canvas.init();
     
-    auto sets = _descriptorPool.allocate( { _canvas.getDescriptorSetLayout(), _canvas.getDescriptorSetLayout(), _canvas.getDescriptorSetLayout() } );
-    _colorDisplaySet = sets[0];
-    _historyDisplaySet[0] = sets[1];
-    _historyDisplaySet[1] = sets[2];
-    auto writes = initializers::writeDescriptorSets<3>();
+    auto sets = _descriptorPool.allocate( { _canvas.getDescriptorSetLayout() } );
+    _displaySet = sets[0];
 
-    writes[0].dstSet = _colorDisplaySet;
+    auto writes = initializers::writeDescriptorSets<1>();
+
+    writes[0].dstSet = _displaySet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
     VkDescriptorImageInfo info{ _textures.color.sampler.handle, _textures.color.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
     writes[0].pImageInfo = &info;
 
-    writes[1].dstSet = _historyDisplaySet[0];
-    writes[1].dstBinding = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo history0Info{ _textures.color.sampler.handle, _textures.history[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
-    writes[1].pImageInfo = &history0Info;
-
-    writes[2].dstSet = _historyDisplaySet[1];
-    writes[2].dstBinding = 0;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo history1Info{ _textures.color.sampler.handle, _textures.history[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
-    writes[2].pImageInfo = &history1Info;
-    
     device.updateDescriptorSets(writes);
 }
 
@@ -223,41 +178,12 @@ void TemporalAntiAliasingExample::createDescriptorPool() {
 }
 
 void TemporalAntiAliasingExample::createDescriptorSetLayouts() {
-    _modelDescriptorSetLayout =
-        device.descriptorSetLayoutBuilder()
-            .name("model_descriptor_set_layout")
-            .binding(0)
-                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(1)
-                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-        .createLayout();
-                
+
+
 }
 
 void TemporalAntiAliasingExample::updateDescriptorSets(){
-    auto sets = _descriptorPool.allocate({_modelDescriptorSetLayout });
-    _modelDescriptorSet = sets[0];
-    auto writes = initializers::writeDescriptorSets<2>();
-    
-    writes[0].dstSet = _modelDescriptorSet;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    VkDescriptorBufferInfo sceneInfo{ _scene.gpu, 0, VK_WHOLE_SIZE };
-    writes[0].pBufferInfo = &sceneInfo;
 
-    writes[1].dstSet = _modelDescriptorSet;
-    writes[1].dstBinding = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo taaInfo{ _taa.gpu, 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &taaInfo;
-
-    device.updateDescriptorSets(writes);
 }
 
 void TemporalAntiAliasingExample::createCommandPool() {
@@ -372,41 +298,9 @@ void TemporalAntiAliasingExample::createRenderPipeline() {
     //    @formatter:on
 }
 
-void TemporalAntiAliasingExample::createComputePipeline() {
-    auto module = device.createShaderModule(resource("camera_motion.comp.spv"));
-    auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
-    _compute.velocity.layout = device.createPipelineLayout({_modelDescriptorSetLayout, *_bindlessDescriptor.descriptorSetLayout });
-
-    auto computeCreateInfo = initializers::computePipelineCreateInfo();
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = _compute.velocity.layout.handle;
-
-    _compute.velocity.pipeline = device.createComputePipeline(computeCreateInfo, _pipelineCache.handle);
-
-    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("motion_vectors_layout", _compute.velocity.layout.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("motion_vectors_pipeline", _compute.velocity.pipeline.handle);
-
-    module = device.createShaderModule(resource("resolve.comp.spv"));
-    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
-
-    _compute.resolve.layout = device.createPipelineLayout({_modelDescriptorSetLayout, *_bindlessDescriptor.descriptorSetLayout });
-
-    computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = _compute.resolve.layout.handle;
-
-    _compute.resolve.pipeline = device.createComputePipeline(computeCreateInfo, _pipelineCache.handle);
-
-    device.setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("taa_resolve_layout", _compute.resolve.layout.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("taa_resolve_pipeline", _compute.resolve.pipeline.handle);
-
-}
-
-
 void TemporalAntiAliasingExample::onSwapChainDispose() {
     dispose(_render.model.pipeline);
     dispose(_render.ground.pipeline);
-    dispose(_compute.velocity.pipeline);
 }
 
 void TemporalAntiAliasingExample::onSwapChainRecreation() {
@@ -414,8 +308,8 @@ void TemporalAntiAliasingExample::onSwapChainRecreation() {
     initCanvas();
     updateDescriptorSets();
     createRenderPipeline();
-    createComputePipeline();
     _camera->perspective(swapChain.aspectRatio());
+    taa->resize({ width, height});
 }
 
 VkCommandBuffer *TemporalAntiAliasingExample::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -505,21 +399,6 @@ void TemporalAntiAliasingExample::renderScene(VkCommandBuffer commandBuffer) {
 
 }
 
-void TemporalAntiAliasingExample::renderPlaceHolders(VkCommandBuffer commandBuffer) {
-
-    static glm::mat4 model{1};
-    static VkDeviceSize offset{0};
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _render.placeHolder.pipeline.handle);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, _modelPlaceHolder, &offset);
-
-    for(auto& transform : _model->placeHolders) {
-        model = transform;
-        _camera->push(commandBuffer, _render.placeHolder.layout, model);
-        vkCmdDraw(commandBuffer, _modelPlaceHolder.sizeAs<Vertex>(), 1, 0, 0);
-    }
-
-}
-
 void TemporalAntiAliasingExample::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::Begin("TAA");
@@ -530,21 +409,21 @@ void TemporalAntiAliasingExample::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SliderInt("period", &options.jitterPeriod, 2, 16);
 
     if(!options.simple) {
-        ImGui::Combo("Filter", &options.filter, options.filters.data(), options.filters.size());
-        ImGui::Combo("Sub-Sample Filter", &options.sub_sample_filter, options.subSampleFilters.data(), options.subSampleFilters.size());
-        ImGui::Combo("History Constraint", &options.history_constraint, options.historyConstraints.data(), options.historyConstraints.size());
+        options.dirty |= ImGui::Combo("Filter", &options.filter, options.filters.data(), options.filters.size());
+        options.dirty |= ImGui::Combo("Sub-Sample Filter", &options.sub_sample_filter, options.subSampleFilters.data(), options.subSampleFilters.size());
+        options.dirty |= ImGui::Combo("History Constraint", &options.history_constraint, options.historyConstraints.data(), options.historyConstraints.size());
 
         ImGui::Text("Blending Weights filtering:");
         ImGui::Indent(16);
-        ImGui::Checkbox("Temporal", &options.temporal_filtering);
+        options.dirty |= ImGui::Checkbox("Temporal", &options.temporal_filtering);
         ImGui::SameLine();
-        ImGui::Checkbox("Inverse Luminance", &options.inverse_luminance_filtering);
+        options.dirty |= ImGui::Checkbox("Inverse Luminance", &options.inverse_luminance_filtering);
         ImGui::SameLine();
-        ImGui::Checkbox("Luminance Difference", &options.luminance_difference_filtering);
+        options.dirty |= ImGui::Checkbox("Luminance Difference", &options.luminance_difference_filtering);
         ImGui::Indent(-16);
     }
 
-    ImGui::Checkbox("Simple TAA", &options.simple);
+    options.dirty |= ImGui::Checkbox("Simple TAA", &options.simple);
 
     ImGui::End();
 
@@ -559,19 +438,6 @@ void TemporalAntiAliasingExample::update(float time) {
     glfwSetWindowTitle(window, fmt::format("{}, fps: {}", title, framePerSecond).c_str());
 }
 
-void TemporalAntiAliasingExample::updateScene(float time) {
-    const auto& cam = _camera->cam();
-    _scene.cpu->current_view_projection = cam.proj * cam.view;
-    _scene.cpu->inverse_current_view_projection = glm::inverse(cam.proj * cam.view);
-
-    const auto pCam = _camera->previousCamera();
-    _scene.cpu->previous_view_projection = pCam.proj * pCam.view;
-    _scene.cpu->inverse_previous_view_projection = glm::inverse(pCam.proj * pCam.view);
-
-    _scene.cpu->world_to_camera = cam.view;
-    _scene.cpu->camera_position = glm::vec4(_camera->position(), 0);
-    _scene.cpu->camera_direction = _camera->viewDir;
-}
 
 void TemporalAntiAliasingExample::checkAppInputs() {
     _camera->processInput();
@@ -604,111 +470,60 @@ void TemporalAntiAliasingExample::beforeDeviceCreation() {
 
 void TemporalAntiAliasingExample::initBindlessDescriptor() {
     _bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
-    _bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5);
-    _bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3);
 }
 
 void TemporalAntiAliasingExample::newFrame() {
-    _displaySet = options.taaEnabled ? _historyDisplaySet[_taa.cpu->taa_output_texture_index] : _colorDisplaySet;
-
     const auto w = swapChain.width<float>();
     const auto h = swapChain.height<float>();
-    _scene.cpu->resolution = glm::vec2(w, h);
 
 
     if(options.jitterEnabled) {
-        auto sample = -1.f + 2.f * jitter.nextSample();
-        sample /= _scene.cpu->resolution;
+        jitterValue = -1.f + 2.f * jitter.nextSample();
+        jitterValue /= glm::vec2(width, height);
 
         _camera->newFrame();
-        _camera->jitter(sample.x, sample.y);
+        _camera->jitter(jitterValue.x, jitterValue.y);
 
-        _scene.cpu->previous_jitter_xy = _scene.cpu->jitter_xy;
-        _scene.cpu->jitter_xy = sample;
     }else {
-        _scene.cpu->previous_jitter_xy = _scene.cpu->jitter_xy = glm::vec2(0);
+        jitterValue = glm::vec2(0);
     }
 
+    taa->newFrame();
+
     auto camera = _camera->cam();
-    _scene.cpu->current_view_projection = camera.proj * camera.view;
-    _scene.cpu->inverse_current_view_projection = glm::inverse(camera.proj * camera.view);
-
-    auto pCamera = _camera->previousCamera();
-    _scene.cpu->previous_view_projection = pCamera.proj * pCamera.view;
-    _scene.cpu->inverse_previous_view_projection = glm::inverse(pCamera.proj * pCamera.view);
-
-    _scene.cpu->world_to_camera = camera.view;
-    _scene.cpu->camera_position = glm::vec4(_camera->position(), 0);
-    _scene.cpu->camera_direction = _camera->viewDir;
-    _scene.cpu->current_frame++;
-    _taa.cpu->taaSimple = int(options.simple);
-    _taa.cpu->filter = options.filter;
-    _taa.cpu->sub_sample_filter = options.sub_sample_filter;
-    _taa.cpu->history_constraint = options.history_constraint;
-    _taa.cpu->temporal_filtering = int(options.temporal_filtering);
-    _taa.cpu->inverse_luminance_filtering = int(options.inverse_luminance_filtering);
-    _taa.cpu->luminance_difference_filtering = int(options.luminance_difference_filtering);
-    std::swap(_taa.cpu->taa_output_texture_index, _taa.cpu->history_color_texture_index);
-
-
 }
 
 void TemporalAntiAliasingExample::endFrame() {
+    taa->endFrame();
     jitter.sampler.type = static_cast<SamplerType>(options.samplerType);
     jitter.period(options.jitterPeriod);
+
+    if(options.dirty) {
+        taa->settings().historySamplingFilter = to<taa::HistorySamplingFilter>(options.filter);
+        taa->settings().subSampleFilter = to<taa::SubSampleFilter>(options.sub_sample_filter);
+        taa->settings().historyConstraint = to<taa::HistoryConstraint>(options.history_constraint);
+        taa->settings().enableTemporalFiltering = options.temporal_filtering;
+        taa->settings().enableInverseLuminanceFiltering = options.inverse_luminance_filtering;
+        taa->settings().enableLuminanceDifferenceFiltering = options.luminance_difference_filtering;
+        taa->settings().fullTaa = !options.simple;
+        invalidateSwapChain();
+        options.dirty = false;
+    }
 
 }
 
 void TemporalAntiAliasingExample::applyTaa(VkCommandBuffer commandBuffer) {
     if(!options.taaEnabled) return;
-    computeMotionVectors(commandBuffer);
-
-    VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.image = _textures.velocity.image;
-    barrier.subresourceRange = DEFAULT_SUB_RANGE;
-
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, 0, 0, 0, 1, &barrier);
-    taaResolve(commandBuffer);
-
-    VkImageMemoryBarrier taaDisplayBarrier = barrier;
-    taaDisplayBarrier.image = _textures.history[_taa.cpu->taa_output_texture_index].image;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, 0, 0, 0, 1, &taaDisplayBarrier);
+    taa->exec(commandBuffer);
 }
 
-void TemporalAntiAliasingExample::computeMotionVectors(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = _modelDescriptorSet;
-    sets[1] = _bindlessDescriptor.descriptorSet;
-
-    glm::uvec3 gc{ (swapChain.width() + 8)/8, (swapChain.height() + 8)/8, 1 };
-
-    static VkClearColorValue clearColor{ 0.f, 0.f, 0.f, 0.f};
-    vkCmdClearColorImage(commandBuffer, _textures.velocity.image, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &DEFAULT_SUB_RANGE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.velocity.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.velocity.layout.handle, 0, sets.size(), sets.data(), 0, 0);
-    vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
-}
-
-void TemporalAntiAliasingExample::taaResolve(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = _modelDescriptorSet;
-    sets[1] = _bindlessDescriptor.descriptorSet;
-
-    glm::uvec3 gc{ (swapChain.width() + 8)/8, (swapChain.height() + 8)/8, 1 };
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.resolve.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute.resolve.layout.handle, 0, sets.size(), sets.data(), 0, 0);
-    vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
-}
 
 int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 1440;
-        settings.height = 1280;
+        settings.width = 1280;
+        settings.height = 720;
         settings.numGraphicsQueues = 2;
         settings.vSync = true;
         settings.enabledFeatures.wideLines = true;
