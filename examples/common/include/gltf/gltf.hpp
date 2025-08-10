@@ -79,10 +79,10 @@ namespace gltf {
         glm::vec3 position{};
         glm::vec3 direction{0, 0, -1};
         glm::vec3 color{1};
-        float range{};
+        float range{0};
         float intensity{1};
-        float innerConeCos{};
-        float outerConeCos{};
+        float innerConeCos{0.785398163397448};
+        float outerConeCos{1.57079632679};
         int type{to<int>(LightType::DIRECTIONAL)};
         int shadowMapIndex{-1};
     };

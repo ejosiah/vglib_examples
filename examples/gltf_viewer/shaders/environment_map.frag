@@ -26,7 +26,5 @@ layout(location = 0) out vec4 fragColor;
 void main() {
     vec2 uv = 0.5 + 0.5 * octEncode(normalize(texCord));
     vec3 color = texture(global_textures[environment], uv).rgb * ibl_intensity;
-
-
     fragColor = vec4(color, 1);
 }

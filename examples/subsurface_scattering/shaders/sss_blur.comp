@@ -1,0 +1,71 @@
+#version 460
+
+#include "uniforms.glsl"
+#include "kernels.glsl"
+
+#define diffuse_buffer global_textures[uniforms.diffuse_tex_id]
+#define depth_buffer global_textures[uniforms.depth_tex_id]
+#define sss_output global_images[uniforms.sss_image_id]
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
+
+layout(push_constant) uniform Cosntants {
+    vec2 dir;
+};
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    vec4 color = texelFetch(diffuse_buffer, gid, 0);
+
+    if(color.a == 0) {
+        imageStore(sss_output, gid, color);
+        return;
+    }
+
+    float depth = linearizeDepth(texelFetch(depth_buffer, gid, 0).x);
+
+    float rayRadiusUV = 0.5 * uniforms.sssWidth / depth;
+
+    // early out if skin_kernel footprint is less than a pixel
+    if (rayRadiusUV <= uniforms.pixelSize.x) {
+        imageStore(sss_output, gid, color);
+        return;
+    }
+
+    // calculate the final step to fetch the surrounding pixels:
+    vec2 finalStep = rayRadiusUV * dir;
+    finalStep *= color.a;
+    finalStep *= 1.0 / 3.0; // divide by 3 as the skin_kernels range from -3 to 3
+
+    // accumulate the center sample:
+    vec4 colorBlurred = color;
+    colorBlurred.rgb *= skin_kernel[0].rgb;
+
+    vec2 texCoord = (gid + vec2(0.5)) * uniforms.pixelSize;
+
+    // accumulate the other samples:
+    for (int i = 1; i < 25; ++i)
+    {
+        // fetch color and depth for current sample:
+        vec2 offset = texCoord + skin_kernel[i].a * finalStep;
+        vec4 nColor = textureLod(diffuse_buffer, offset, 0.0);
+        float depth = linearizeDepth(textureLod(depth_buffer, offset, 0.0).x);
+
+        // lerp back to center sample if depth difference too big
+        float maxDepthDiff = 0.01;
+        float alpha = min(distance(depth, depth) / maxDepthDiff, maxDepthDiff);
+
+        // reject sample if it isnt tagged as SSS
+        alpha *= 1.0 - nColor.a;
+
+        nColor.rgb = mix(nColor.rgb, color.rgb, alpha);
+
+        // accumulate:
+        colorBlurred.rgb += skin_kernel[i].rgb * nColor.rgb;
+    }
+
+    imageStore(sss_output, gid, colorBlurred);
+}

@@ -19,6 +19,7 @@ public:
         VulkanImageView imageView;
         VkFormat format;
         glm::vec2 clearValue{1, 0};
+        bool clear{true};
     };
 
     struct RenderInfo {
@@ -56,11 +57,11 @@ public:
 
         VkRenderingAttachmentInfo depthAttachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
         if(renderInfo.depthAttachment.has_value()) {
-            auto [imageView, format, cv] = *renderInfo.depthAttachment;
+            auto [imageView, format, cv, clear]  = *renderInfo.depthAttachment;
 
             depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
             depthAttachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
-            depthAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            depthAttachmentInfo.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
             depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             depthAttachmentInfo.clearValue.depthStencil = {cv.x, static_cast<uint32_t>(cv.y)};
             depthAttachmentInfo.imageView = imageView.handle;
@@ -70,11 +71,11 @@ public:
 
         VkRenderingAttachmentInfo stencilAttachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
         if(renderInfo.stencilAttachment.has_value()) {
-            auto [imageView, format, cv] = *renderInfo.stencilAttachment;
+            auto [imageView, format, cv, clear] = *renderInfo.stencilAttachment;
 
             stencilAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL;
             stencilAttachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
-            stencilAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            stencilAttachmentInfo.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
             stencilAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             stencilAttachmentInfo.clearValue.depthStencil = {cv.x, static_cast<uint32_t>(cv.y)};
             stencilAttachmentInfo.imageView = imageView.handle;
