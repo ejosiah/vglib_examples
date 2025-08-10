@@ -28,6 +28,7 @@ void SubsurfaceScatteringDemo::initApp() {
     loadModel();
     initCamera();
     initUniforms();
+    initShadowMap();
     initGBuffers();
     createSkybox();
     loadEnvironment();
@@ -247,9 +248,37 @@ void SubsurfaceScatteringDemo::createRenderPipeline() {
             .layout()
                 .addDescriptorSetLayout(uniformDescriptorSetLayout)
                 .addDescriptorSetLayout(environment.descriptorSetLayout)
+                .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                 .addDescriptorSetLayout(model.descriptorSetLayout)
             .name("render")
             .build(render.lightingPass1.layout);
+
+    render.shadowMap.pipeline =
+        prototypes->cloneGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(resource("shadowmap.vert.spv"))
+                .fragmentShader(resource("shadowmap.frag.spv"))
+            .viewportState().clear()
+                .viewport()
+                    .origin(0, 0)
+                    .dimension(shadowMap.size, shadowMap.size)
+                    .minDepth(0)
+                    .maxDepth(1)
+                .scissor()
+                    .offset(0, 0)
+                    .extent(shadowMap.size, shadowMap.size)
+                .add()
+            .rasterizationState()
+                .enableDepthBias()
+                .depthBiasConstantFactor(shadowMap.depthBiasConstant)
+                .depthBiasSlopeFactor(shadowMap.depthBiasSlope)
+                .cullFrontFace()
+            .dynamicRenderPass()
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .layout().clear()
+                .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4))
+            .name("render")
+            .build(render.shadowMap.layout);
 
     render.environment.pipeline =
         prototypes->cloneGraphicsPipeline()
@@ -336,6 +365,8 @@ VkCommandBuffer *SubsurfaceScatteringDemo::buildCommandBuffers(uint32_t imageInd
 
     clearColor(0, 0, 1);
 
+    captureShadow(commandBuffer);
+
     renderModel(commandBuffer);
     renderScene(commandBuffer);
     sssBlur(commandBuffer);
@@ -378,9 +409,10 @@ void SubsurfaceScatteringDemo::renderUI(VkCommandBuffer commandBuffer) {
 
 void SubsurfaceScatteringDemo::renderModel(VkCommandBuffer commandBuffer) {
     offscreen.render(commandBuffer, lightingRenderInfo, [&]{
-        static std::array<VkDescriptorSet, 2> sets;
+        static std::array<VkDescriptorSet, 3> sets;
         sets[0] = uniformDescriptorSet;
         sets[1] = environment.descriptorSet;
+        sets[2] = bindlessDescriptor.descriptorSet;
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.lightingPass1.pipeline.handle);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.lightingPass1.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
@@ -424,8 +456,7 @@ void SubsurfaceScatteringDemo::onPause() {
 }
 
 void SubsurfaceScatteringDemo::loadModel() {
-//    phong::VulkanDrawableInfo info{ .transform = glm::rotate(glm::mat4{1}, glm::pi<float>(), {0, 1, 0}) };
-    phong::VulkanDrawableInfo info{ };
+    phong::VulkanDrawableInfo info{ .transform = glm::scale(glm::mat4{1}, glm::vec3(4)) };
     info.flipUv = true;
     phong::load2(resource("head/head_with_normals.obj"), device, descriptorPool, model, info);
 }
@@ -458,6 +489,12 @@ void SubsurfaceScatteringDemo::endFrame() {
     auto lightRotation = glm::rotate(glm::mat4{1}, glm::radians(options.lightAngle), {0, 1, 0});
     light.cpu->position =  (lightRotation * glm::vec4(0, 0, 2, 1)).xyz();
     light.cpu->direction = (lightRotation * glm::vec4(0, 0, -1, 0)).xyz();
+
+    const auto fov = glm::acos(light.cpu->outerConeCos) * 2.f;
+    const auto lPos = light.cpu->position;
+    const auto target = lPos + light.cpu->direction;
+    uniforms.cpu->lightSpaceMatrix = vkn::perspective(fov, 1.f, 1.f, 100.f) * glm::lookAt(lPos, target, {0, 1, 0});
+    shadowMap.lightViewMatrix = uniforms.cpu->lightSpaceMatrix * camera->cam().model;
 
     taa->endFrame();
 }
@@ -545,6 +582,26 @@ void SubsurfaceScatteringDemo::sssBlur(VkCommandBuffer commandBuffer) {
     Barrier::computeWriteToFragmentRead(commandBuffer);
 }
 
+void SubsurfaceScatteringDemo::initShadowMap() {
+    textures::create(device, shadowMap.texture, VK_IMAGE_TYPE_2D, shadowMap.format, {shadowMap.size, shadowMap.size, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+
+    shadowMap.renderInfo = Offscreen::RenderInfo{
+            .depthAttachment = {{shadowMap.texture.imageView, shadowMap.format}},
+            .renderArea = {shadowMap.size, shadowMap.size}
+    };
+    light.cpu->shadowMapIndex = bindlessDescriptor.update(shadowMap.texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+}
+
+void SubsurfaceScatteringDemo::captureShadow(VkCommandBuffer commandBuffer) {
+    Barrier::fragmentReadToFragmentWrite(commandBuffer);
+    offscreen.render(commandBuffer, shadowMap.renderInfo, [&]{
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.shadowMap.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, render.shadowMap.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &shadowMap.lightViewMatrix);
+        model.draw(commandBuffer);
+    });
+    Barrier::fragmentWriteToFragmentRead(commandBuffer);
+}
+
 int main(){
     try{
         fs::current_path("../../../../examples/");
@@ -554,6 +611,7 @@ int main(){
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;
+        settings.enabledFeatures.samplerAnisotropy = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);

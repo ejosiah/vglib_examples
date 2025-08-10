@@ -6,12 +6,17 @@
 #include "gltf_brdf.glsl"
 #include "uniforms.glsl"
 
+#define bumpMap model_textures[material.normalTex]
+#define shadowMap global_textures[light.shadowMapIndex]
+
 layout(set = 1, binding = 0) uniform sampler2D environment;
 layout(set = 1, binding = 1) uniform sampler2D env_specular;
 layout(set = 1, binding = 2) uniform sampler2D env_irradiance;
 layout(set = 1, binding = 3) uniform sampler2D brdfLUT;
+layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
-layout(set = 2, binding = 0, scalar) uniform Material {
+
+layout(set = 3, binding = 0, scalar) uniform Material {
     vec3 diffuse;
     vec3 ambient;
     vec3 specular;
@@ -29,9 +34,10 @@ layout(set = 2, binding = 0, scalar) uniform Material {
     uint ambientOcclusionTex;
 } material;
 
-layout(set = 2, binding = 1) uniform sampler2D model_textures[];
+layout(set = 3, binding = 1) uniform sampler2D model_textures[];
 
 layout(location = 0) in struct {
+    vec4 lightSpacePosition;
     vec3 position;
     vec3 normal;
     vec3 tangent;
@@ -44,62 +50,15 @@ layout(location = 0) in struct {
 layout(location = 0) out vec3 specular;
 layout(location = 1) out vec4 diffuse;
 
- uint u_MipCount = textureQueryLevels(env_specular);
-
 vec3 getIBLRadianceGGX(vec3 n, vec3 v, float roughness, vec3 F0, float specularWeight);
-
 vec3 getIBLRadianceLambertian(vec3 n, vec3 v, float roughness, vec3 diffuseColor, vec3 F0, float specularWeight);
+vec3 computeBumpNormalScreenSpace(vec2 uv, float bumpScale);
+vec3 bumpToNormal(vec2 uv, float bumpScale);
+mat3 calculateTBN( vec3 N, vec3 p, vec2 uv );
+float pcfFilteredShadow(vec4 lightSpacePos);
 
+uint u_MipCount = textureQueryLevels(env_specular);
 const vec3 F0 = vec3(0.04);
-
-#define bumpMap model_textures[material.normalTex]
-
-vec3 computeBumpNormalScreenSpace(vec2 uv, float bumpScale) {
-    vec3 bump = -1 + 2 * texture(bumpMap, uv).rgb;
-    return mix(vec3(0,0,1), bump, bumpScale);
-}
-
-vec3 bumpToNormal(vec2 uv, float bumpScale) {
-    const float bumpStrength = 25;
-    // Sample the bump map at the current texture coordinate
-    float heightL = texture(bumpMap, uv + vec2(-1.0, 0.0) / textureSize(bumpMap, 0)).r;
-    float heightR = texture(bumpMap, uv + vec2(1.0, 0.0) / textureSize(bumpMap, 0)).r;
-    float heightD = texture(bumpMap, uv + vec2(0.0, -1.0) / textureSize(bumpMap, 0)).r;
-    float heightU = texture(bumpMap, uv + vec2(0.0, 1.0) / textureSize(bumpMap, 0)).r;
-
-    // Calculate the gradients (dx, dy) with added bump strength factor
-    float dx = (heightR - heightL) * bumpStrength;
-    float dy = (heightU - heightD) * bumpStrength;
-
-    // The normal direction in 3D space, using the gradient
-    vec3 normal = normalize(vec3(-dx, -dy, 1.0));
-
-    // Remap the normal from [-1, 1] range to [0, 1] range for normal map encoding
-    // normal = normal * 0.5 + 0.5;
-
-    return mix(vec3(0, 0, 1), normal, bumpScale);
-//    return texture(bumpMap, uv).rgb;
-}
-
-mat3 calculateTBN( vec3 N, vec3 p, vec2 uv )
-{
-    // get edge vectors of the pixel triangle
-    vec3 dp1 = dFdx( p );
-    vec3 dp2 = dFdy( p );
-    vec2 duv1 = dFdx( uv );
-    vec2 duv2 = dFdy( uv );
-
-    // solve the linear system
-    vec3 dp2perp = cross( dp2, N );
-    vec3 dp1perp = cross( N, dp1 );
-    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-
-    // construct a scale-invariant frame
-    float invmax = inversesqrt( max( dot(T,T), dot(B,B) ) );
-    return mat3( T * -invmax, B * invmax, N );
-}
-
 
 void main() {
     vec4 baseColor = texture(model_textures[material.diffuseTex], fs_in.uv);
@@ -109,7 +68,7 @@ void main() {
     const float sIntensity = specularAO.r * uniforms.specularIntensity;
     const float perceptualRoughness = (specularAO.g / 0.3) * uniforms.specularRoughness;
     const float ao = specularAO.b;
-    const float alphaRoughness = perceptualRoughness * perceptualRoughness;
+    const float alphaRoughness = perceptualRoughness;
     const vec3 f0 = F0;
     const vec3 f90 = vec3(1);
     const vec3 c_diff = mix(baseColor.rgb, vec3(0), metalness);
@@ -155,8 +114,10 @@ void main() {
         vec3 l_diffuse = intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
         vec3 l_specular = intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
 
-        f_diffuse += l_diffuse;
-        f_specular += l_specular * sIntensity;
+        float shadow = 1 - pcfFilteredShadow(fs_in.lightSpacePosition);
+
+        f_diffuse += shadow * l_diffuse;
+        f_specular += shadow * l_specular * sIntensity;
     }
 
 
@@ -181,7 +142,7 @@ vec4 getSpecularSample(vec3 reflection, float lod) {
 
 vec3 getIBLRadianceGGX(vec3 n, vec3 v, float roughness, vec3 F0, float specularWeight) {
     float NdotV = clamp(dot(n, v), 0, 1);
-    float lod = roughness * float(u_MipCount - 1);
+    float lod = min(roughness, float(u_MipCount - 1));
     vec3 reflection = normalize(reflect(-v, n));
 
     vec2 brdfSamplePoint = clamp(vec2(NdotV, roughness), vec2(0.0, 0.0), vec2(1.0, 1.0));
@@ -225,4 +186,68 @@ vec3 getIBLRadianceLambertian(vec3 n, vec3 v, float roughness, vec3 diffuseColor
     vec3 k_D = diffuseColor * (1.0 - FssEss + FmsEms); // we use +FmsEms as indicated by the formula in the blog post (might be a typo in the implementation)
 
     return (FmsEms + k_D) * irradiance;
+}
+
+float pcfFilteredShadow(vec4 lightSpacePos){
+    vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+    projCoords.xy = projCoords.xy * 0.5 + 0.5;
+    if(projCoords.z > 1.0){
+        return 0.0;
+    }
+    float shadow = 0.0f;
+    float currentDepth = projCoords.z;
+    vec2 texelSize = 1.0/textureSize(shadowMap, 0);
+    for(int x = -1; x <= 1; x++){
+        for(int y = -1; y <= 1; y++){
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
+        }
+    }
+    return shadow/9.0;
+}
+
+vec3 computeBumpNormalScreenSpace(vec2 uv, float bumpScale) {
+    vec3 bump = -1 + 2 * texture(bumpMap, uv).rgb;
+    return mix(vec3(0,0,1), bump, bumpScale);
+}
+
+vec3 bumpToNormal(vec2 uv, float bumpScale) {
+    const float bumpStrength = 10;
+    // Sample the bump map at the current texture coordinate
+    float heightL = texture(bumpMap, uv + vec2(-1.0, 0.0) / textureSize(bumpMap, 0)).r;
+    float heightR = texture(bumpMap, uv + vec2(1.0, 0.0) / textureSize(bumpMap, 0)).r;
+    float heightD = texture(bumpMap, uv + vec2(0.0, -1.0) / textureSize(bumpMap, 0)).r;
+    float heightU = texture(bumpMap, uv + vec2(0.0, 1.0) / textureSize(bumpMap, 0)).r;
+
+    // Calculate the gradients (dx, dy) with added bump strength factor
+    float dx = (heightR - heightL) * bumpStrength;
+    float dy = (heightU - heightD) * bumpStrength;
+
+    // The normal direction in 3D space, using the gradient
+    vec3 normal = normalize(vec3(-dx, -dy, 1.0));
+
+    // Remap the normal from [-1, 1] range to [0, 1] range for normal map encoding
+    // normal = normal * 0.5 + 0.5;
+
+    return mix(vec3(0, 0, 1), normal, bumpScale);
+    //    return texture(bumpMap, uv).rgb;
+}
+
+mat3 calculateTBN( vec3 N, vec3 p, vec2 uv )
+{
+    // get edge vectors of the pixel triangle
+    vec3 dp1 = dFdx( p );
+    vec3 dp2 = dFdy( p );
+    vec2 duv1 = dFdx( uv );
+    vec2 duv2 = dFdy( uv );
+
+    // solve the linear system
+    vec3 dp2perp = cross( dp2, N );
+    vec3 dp1perp = cross( N, dp1 );
+    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+    // construct a scale-invariant frame
+    float invmax = inversesqrt( max( dot(T,T), dot(B,B) ) );
+    return mat3( T * -invmax, B * invmax, N );
 }

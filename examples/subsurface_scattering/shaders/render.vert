@@ -1,5 +1,7 @@
 #version 460 core
 
+#include "uniforms.glsl"
+
 layout(location = 0) in vec4 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 tangent;
@@ -14,6 +16,7 @@ layout(push_constant) uniform UniformBufferObject{
 };
 
 layout(location = 0) out struct {
+    vec4 lightSpacePosition;
     vec3 position;
     vec3 normal;
     vec3 tangent;
@@ -25,14 +28,16 @@ layout(location = 0) out struct {
 
 void main(){
     mat3 nmat = inverse(transpose(mat3(model)));
+    vec4 worldPosition = model * position;
 
-    vs_out.position = (model * position).xyz;
+    vs_out.position = worldPosition.xyz;
     vs_out.normal = normal;
     vs_out.tangent = tangent;
     vs_out.bitangent = bitangent;
     vs_out.eyes = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
+    vs_out.lightSpacePosition = uniforms.lightSpaceMatrix * worldPosition;
     vs_out.uv = uv;
 
     gl_PointSize = 2.0;
-    gl_Position = proj * view * model * position;
+    gl_Position = proj * view * worldPosition;
 }

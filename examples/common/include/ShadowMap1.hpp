@@ -11,13 +11,13 @@ class DirectionalShadowMap{};
 
 static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
 
-class OminiDirectionalShadowMap final {
+class PointDirectionalShadowMap final {
 public:
     using Scene = std::function<void()>;
 
-    OminiDirectionalShadowMap() = default;
+    PointDirectionalShadowMap() = default;
 
-    explicit OminiDirectionalShadowMap(
+    explicit PointDirectionalShadowMap(
             VulkanDevice& device,
             glm::vec3 lightPosition,
             VulkanDescriptorSetLayout meshSetLayout,
@@ -107,4 +107,4 @@ private:
 
 };
 
-using ShadowMap0 = std::variant<DirectionalShadowMap, OminiDirectionalShadowMap>;
+using ShadowMap0 = std::variant<DirectionalShadowMap, PointDirectionalShadowMap>;

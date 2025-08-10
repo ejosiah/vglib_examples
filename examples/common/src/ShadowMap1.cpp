@@ -7,7 +7,7 @@
 #include "Barrier.hpp"
 
 
-OminiDirectionalShadowMap::OminiDirectionalShadowMap(
+PointDirectionalShadowMap::PointDirectionalShadowMap(
         VulkanDevice& device,
         glm::vec3 lightPosition,
         VulkanDescriptorSetLayout meshSetLayout,
@@ -19,7 +19,7 @@ OminiDirectionalShadowMap::OminiDirectionalShadowMap(
 , _mesh{ .descriptorSetLayout = meshSetLayout, .descriptorSet = meshSet  }
 {}
 
-void OminiDirectionalShadowMap::init() {
+void PointDirectionalShadowMap::init() {
     createCube();
     createShadowMapTexture();
     initLightSpaceData();
@@ -28,7 +28,7 @@ void OminiDirectionalShadowMap::init() {
     createPipeline();
 }
 
-void OminiDirectionalShadowMap::update(const glm::vec3 &lightPosition) {
+void PointDirectionalShadowMap::update(const glm::vec3 &lightPosition) {
     _constants.lightPosition = lightPosition;
 
     _constants.farPlane = 1000.f;
@@ -40,7 +40,7 @@ void OminiDirectionalShadowMap::update(const glm::vec3 &lightPosition) {
     }
 }
 
-void OminiDirectionalShadowMap::capture(Scene&& scene, VkCommandBuffer commandBuffer) {
+void PointDirectionalShadowMap::capture(Scene&& scene, VkCommandBuffer commandBuffer) {
     static std::array<VkDescriptorSet, 1> sets;
     sets[0] = _mesh.descriptorSet;
 
@@ -87,20 +87,20 @@ void OminiDirectionalShadowMap::capture(Scene&& scene, VkCommandBuffer commandBu
     }
 }
 
-void OminiDirectionalShadowMap::modelTransform(VkCommandBuffer commandBuffer, const glm::mat4 &matrix) {
+void PointDirectionalShadowMap::modelTransform(VkCommandBuffer commandBuffer, const glm::mat4 &matrix) {
     auto constants = _constants;
     constants.model = matrix;
     vkCmdPushConstants(commandBuffer, _pipeline.layout.handle, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, sizeof(constants), &constants);
 }
 
-const Texture& OminiDirectionalShadowMap::depth() const {
+const Texture& PointDirectionalShadowMap::depth() const {
     return _depth;
 }
-const Texture& OminiDirectionalShadowMap::transmission() const {
+const Texture& PointDirectionalShadowMap::transmission() const {
     return _transmission;
 }
 
-void OminiDirectionalShadowMap::createShadowMapTexture() {
+void PointDirectionalShadowMap::createShadowMapTexture() {
     auto format = VK_FORMAT_D16_UNORM;
 
     VkImageCreateInfo imageInfo{};
@@ -159,13 +159,13 @@ void OminiDirectionalShadowMap::createShadowMapTexture() {
     }
 }
 
-void OminiDirectionalShadowMap::initLightSpaceData() {
+void PointDirectionalShadowMap::initLightSpaceData() {
     auto& device = AppContext::device();
     update(_constants.lightPosition);
     _cameras.gpu = device.createDeviceLocalBuffer(_cameras.cpu.data(), BYTE_SIZE(_cameras.cpu), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 }
 
-void OminiDirectionalShadowMap::createCube() {
+void PointDirectionalShadowMap::createCube() {
     auto geom = primitives::cube({1, 0, 0, 1});
     std::vector<glm::vec3> vertices;
     for(const auto& vertex : geom.vertices){
@@ -177,7 +177,7 @@ void OminiDirectionalShadowMap::createCube() {
     _cube.indices = device.createDeviceLocalBuffer(geom.indices.data(), BYTE_SIZE(geom.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 
-void OminiDirectionalShadowMap::createDescriptorSetLayout() {
+void PointDirectionalShadowMap::createDescriptorSetLayout() {
     auto& device = AppContext::device();
     
     _descriptorSetLayout = 
@@ -190,7 +190,7 @@ void OminiDirectionalShadowMap::createDescriptorSetLayout() {
             .createLayout();
 }
 
-void OminiDirectionalShadowMap::updateDescriptorSet() {
+void PointDirectionalShadowMap::updateDescriptorSet() {
     _descriptorSet = AppContext::descriptorPool().allocate( { _descriptorSetLayout  }).front();
     
     auto writes = initializers::writeDescriptorSets<1>();
@@ -204,7 +204,7 @@ void OminiDirectionalShadowMap::updateDescriptorSet() {
     AppContext::device().updateDescriptorSets(writes);
 }
 
-void OminiDirectionalShadowMap::createPipeline() {
+void PointDirectionalShadowMap::createPipeline() {
 	_pipeline.pipeline =
 		_device->graphicsPipelineBuilder()
 			.shaderStage()

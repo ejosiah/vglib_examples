@@ -8,6 +8,7 @@
 #include "punctual_lights.glsl"
 
 layout(set = 0, binding = 0, scalar) uniform Uniforms {
+    mat4 lightSpaceMatrix;
     mat3 envRotation;
     vec2 pixelSize;
     float sssWidth;

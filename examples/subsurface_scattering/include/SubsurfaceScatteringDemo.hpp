@@ -16,6 +16,8 @@ protected:
 
     void initTaa();
 
+    void initShadowMap();
+
     void initCamera();
 
     void initGBuffers();
@@ -58,6 +60,8 @@ protected:
 
     void renderScene(VkCommandBuffer commandBuffer);
 
+    void captureShadow(VkCommandBuffer commandBuffer);
+
     void finalLighting(VkCommandBuffer commandBuffer);
 
     void toneMapp(VkCommandBuffer commandBuffer);
@@ -84,6 +88,7 @@ protected:
         Pipeline lightingFinal;
         Pipeline environment;
         Pipeline tone_mapping;
+        Pipeline shadowMap;
     } render;
 
     VulkanDescriptorPool descriptorPool;
@@ -107,6 +112,7 @@ protected:
     Offscreen::RenderInfo renderInfo{};
 
     struct UniformData {
+        glm::mat4 lightSpaceMatrix{1};
         glm::mat3 envRotation{1};
         glm::vec2 pixelSize{1};
         float sssWidth{0.01};
@@ -140,8 +146,8 @@ protected:
     VkDescriptorSet uniformDescriptorSet{};
 
     struct {
-        bool ssEnabled{false};
-        bool taaEnabled{false};
+        bool ssEnabled{true};
+        bool taaEnabled{true};
         float scatteringRadius{12};
         float lightAngle{0};
         float envRotation{0};
@@ -161,6 +167,16 @@ protected:
         VulkanDescriptorSetLayout descriptorSetLayout;
         VkDescriptorSet descriptorSet{};
     } environment;
+
+    struct {
+        Texture texture;
+        Offscreen::RenderInfo renderInfo;
+        const VkFormat format{VK_FORMAT_D16_UNORM};
+        const uint size{2048};
+        const float depthBiasConstant{1.25f};
+        const float depthBiasSlope{1.75f};
+        glm::mat4 lightViewMatrix{1};
+    } shadowMap;
 
     struct {
         VulkanBuffer vertices;
