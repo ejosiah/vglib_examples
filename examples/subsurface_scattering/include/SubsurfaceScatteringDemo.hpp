@@ -148,16 +148,18 @@ protected:
     VkDescriptorSet uniformDescriptorSet{};
 
     struct {
-        bool ssEnabled{true};
-        bool taaEnabled{true};
-        float scatteringRadius{14};
-        float lightAngle{284};
+        glm::vec2 lightDirection{0};
+        float scatteringRadius{39};
+        float lightAngle{35};
+        float spotAngle{60};
         float envRotation{0};
         float sRoughness{0.95};
         float sIntensity{1.88};
         float bumpiness{0.9};
-        float ambientFactor{1};
+        float ambientFactor{0.3};
         float translucency{0.996};
+        bool ssEnabled{true};
+        bool taaEnabled{true};
     } options;
 
     struct {
@@ -165,6 +167,7 @@ protected:
         Texture specular;
         Texture irradiance;
         Texture brdfLut;
+        Texture beckmannLut;
         std::string path{"studio_small_09_2k.hdr"};
         VulkanDescriptorSetLayout descriptorSetLayout;
         VkDescriptorSet descriptorSet{};

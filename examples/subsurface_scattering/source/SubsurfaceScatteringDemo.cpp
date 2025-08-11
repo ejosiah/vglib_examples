@@ -11,6 +11,7 @@ SubsurfaceScatteringDemo::SubsurfaceScatteringDemo(const Settings& settings) : V
     fileManager().addSearchPathFront("../data");
     fileManager().addSearchPathFront("../data/textures");
     fileManager().addSearchPathFront("../data/textures/environment");
+    fileManager().addSearchPathFront("../data/textures/lut");
     fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("subsurface_scattering");
@@ -83,18 +84,16 @@ void SubsurfaceScatteringDemo::initUniforms() {
 }
 
 void SubsurfaceScatteringDemo::initCamera() {
-//    OrbitingCameraSettings cameraSettings;
-    FirstPersonSpectatorCameraSettings cameraSettings;
-//    cameraSettings.orbitMinZoom = 0.1;
-//    cameraSettings.orbitMaxZoom = 512.0f;
-//    cameraSettings.offsetDistance = 1.0f;
-//    cameraSettings.modelHeight = model.height();
+    OrbitingCameraSettings cameraSettings;
+//    FirstPersonSpectatorCameraSettings cameraSettings;
+    cameraSettings.orbitMinZoom = 0.1;
+    cameraSettings.orbitMaxZoom = 512.0f;
+    cameraSettings.offsetDistance = 1.0f;
+    cameraSettings.modelHeight = model.height();
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
-    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-
-    camera->lookAt({0, 0, 1}, glm::vec3(0), {0, 1, 0});
+    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 }
 
 void SubsurfaceScatteringDemo::initBindlessDescriptor() {
@@ -154,6 +153,10 @@ void SubsurfaceScatteringDemo::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+            .binding(4)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
         .createLayout();
 
     uniformDescriptorSetLayout =
@@ -175,7 +178,7 @@ void SubsurfaceScatteringDemo::updateDescriptorSets(){
     environment.descriptorSet = sets[0];
     uniformDescriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<6>();
+    auto writes = initializers::writeDescriptorSets<7>();
 
     writes[0].dstSet = environment.descriptorSet;
     writes[0].dstBinding = 0;
@@ -205,19 +208,26 @@ void SubsurfaceScatteringDemo::updateDescriptorSets(){
     VkDescriptorImageInfo brdfInfo{ environment.brdfLut.sampler.handle, environment.brdfLut.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[3].pImageInfo = &brdfInfo;
 
-    writes[4].dstSet = uniformDescriptorSet;
-    writes[4].dstBinding = 0;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[4].dstSet = environment.descriptorSet;
+    writes[4].dstBinding = 4;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[4].descriptorCount = 1;
-    VkDescriptorBufferInfo uniformInfo{ uniforms.gpu, 0, VK_WHOLE_SIZE };
-    writes[4].pBufferInfo = &uniformInfo;
+    VkDescriptorImageInfo beckmannInfo{ environment.beckmannLut.sampler.handle, environment.beckmannLut.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    writes[4].pImageInfo = &beckmannInfo;
 
     writes[5].dstSet = uniformDescriptorSet;
-    writes[5].dstBinding = 1;
+    writes[5].dstBinding = 0;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[5].descriptorCount = 1;
+    VkDescriptorBufferInfo uniformInfo{ uniforms.gpu, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &uniformInfo;
+
+    writes[6].dstSet = uniformDescriptorSet;
+    writes[6].dstBinding = 1;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[6].descriptorCount = 1;
     VkDescriptorBufferInfo lightInfo{ light.gpu, 0, VK_WHOLE_SIZE };
-    writes[5].pBufferInfo = &lightInfo;
+    writes[6].pBufferInfo = &lightInfo;
 
 
     device.updateDescriptorSets(writes);
@@ -402,7 +412,9 @@ void SubsurfaceScatteringDemo::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::Checkbox("Temporal AA", &options.taaEnabled);
 
-    ImGui::SliderFloat("light Angle", &options.lightAngle, 0, 360);
+    ImGui::SliderFloat2("Light direction", &options.lightDirection.x, -1, 1);
+    ImGui::SliderFloat("Light Angle", &options.lightAngle, 0, 360);
+    ImGui::SliderFloat("Light spot angle", &options.spotAngle, 1, 90);
     ImGui::SliderFloat("Env rotation", &options.envRotation, 0, 360);
 
     ImGui::End();
@@ -465,7 +477,8 @@ void SubsurfaceScatteringDemo::loadModel() {
 }
 
 void SubsurfaceScatteringDemo::loadEnvironment() {
-    textures::fromFile(device, environment.brdfLut, resource("lut/lut_ggx.png"));
+    textures::fromFile(device, environment.brdfLut, resource("lut_ggx.png"));
+    textures::fromFile(device, environment.beckmannLut, resource("lut_beckmann.png"));
     environment.albedo = textures::equirectangularToOctahedralMap(device, resource(environment.path), 2048);
     textures::ibl(device, environment.albedo, environment.irradiance, environment.specular);
 }
@@ -490,9 +503,12 @@ void SubsurfaceScatteringDemo::endFrame() {
     uniforms.cpu->sss_enabled = options.ssEnabled;
     uniforms.cpu->translucency = options.translucency;
 
+    auto v = options.lightDirection;
     auto lightRotation = glm::rotate(glm::mat4{1}, glm::radians(options.lightAngle), {0, 1, 0});
     light.cpu->position =  (lightRotation * glm::vec4(0, 0, 2, 1)).xyz();
-    light.cpu->direction = (lightRotation * glm::vec4(0, 0, -1, 0)).xyz();
+    light.cpu->direction = (lightRotation * glm::vec4(v.x, v.y, -1, 0)).xyz();
+    light.cpu->outerConeCos = glm::cos(glm::radians(options.spotAngle));
+    light.cpu->innerConeCos = glm::cos(glm::radians(options.spotAngle * 0.5f));
 
     const auto fov = glm::acos(light.cpu->outerConeCos) * 2.f;
     const auto lPos = light.cpu->position;

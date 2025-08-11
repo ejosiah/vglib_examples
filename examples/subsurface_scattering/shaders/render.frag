@@ -9,10 +9,12 @@
 #define bumpMap model_textures[material.normalTex]
 #define u_shadowMap global_textures[light.shadowMapIndex]
 
+// TODO move these to bindness
 layout(set = 1, binding = 0) uniform sampler2D environment;
 layout(set = 1, binding = 1) uniform sampler2D env_specular;
 layout(set = 1, binding = 2) uniform sampler2D env_irradiance;
 layout(set = 1, binding = 3) uniform sampler2D brdfLUT;
+layout(set = 1, binding = 4) uniform sampler2D beckmannLUT;
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
 
 
@@ -59,8 +61,12 @@ float pcfFilteredShadow(vec4 lightSpacePos);
 vec3 SSSTransmittance(float translucency, float sssWidth, vec3 worldPosition, vec3 worldNormal, vec3 light, sampler2D shadowMap, mat4 lightViewProjection, float lightFarPlane);
 float linearizeDepth1(float z);
 
+float fresnel(vec3 halfV, vec3 view, float f0);
+float specularKSK(sampler2D beckmannTex, vec3 normal, vec3 light, vec3 view, float roughness);
+vec3 IBLspecularKSK(sampler2D iblSpecularMap, vec3 normal, vec3 view, float roughness);
+
 uint u_MipCount = textureQueryLevels(env_specular);
-const vec3 F0 = vec3(0.04);
+const vec3 F0 = vec3(0.028);
 
 void main() {
     vec4 baseColor = texture(model_textures[material.diffuseTex], fs_in.uv);
@@ -68,9 +74,10 @@ void main() {
 
     const float metalness = 0;
     const float sIntensity = specularAO.r * uniforms.specularIntensity;
-    const float perceptualRoughness = (specularAO.g / 0.3) * uniforms.specularRoughness;
+    const float roughness = uniforms.specularRoughness;
+    const float sRoughness = (specularAO.g / 0.3) * uniforms.specularRoughness;
     const float ao = specularAO.b;
-    const float alphaRoughness = perceptualRoughness;
+    const float alphaRoughness = roughness * roughness;
     const vec3 f0 = F0;
     const vec3 f90 = vec3(1);
     const vec3 c_diff = mix(baseColor.rgb, vec3(0), metalness);
@@ -85,11 +92,11 @@ void main() {
     vec3 N = normalize(TBN * normal);
     vec3 V = normalize(fs_in.eyes - fs_in.position);
 
-    f_specular += getIBLRadianceGGX(N, V, perceptualRoughness, f0, specularWeight);
-    f_diffuse += getIBLRadianceLambertian(N, V, perceptualRoughness, c_diff, f0, specularWeight);
+    f_specular += getIBLRadianceGGX(N, V, roughness, f0, specularWeight);
+    f_diffuse += getIBLRadianceLambertian(N, V, roughness, c_diff, f0, specularWeight);
 
     vec3 f_diffuse_ibl = f_diffuse;
-    vec3 f_specular_ibl = f_specular;
+    vec3 f_specular_ibl = f_specular * sIntensity;
 
     f_diffuse = vec3(0);
     f_specular = vec3(0);
@@ -114,7 +121,7 @@ void main() {
     if (NdotL > 0.0 || NdotV > 0.0){
         vec3 lightIntensity = getLighIntensity(light, pointToLight);
         vec3 l_diffuse = lightIntensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
-        vec3 l_specular = lightIntensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
+        vec3 l_specular = lightIntensity * specularKSK(beckmannLUT, N, L, V, sRoughness);
 
         float shadow = 1 - pcfFilteredShadow(fs_in.lightSpacePosition);
 
@@ -166,6 +173,53 @@ vec3 getIBLRadianceGGX(vec3 n, vec3 v, float roughness, vec3 F0, float specularW
     vec3 FssEss = k_S * f_ab.x + f_ab.y;
 
     return specularWeight * specularLight * FssEss;
+}
+
+float fresnel(vec3 halfV, vec3 view, float f0) {
+    float base = 1.0 - dot(view, halfV);
+    float exponential = pow(base, 5.0);
+    return exponential + f0 * (1.0 - exponential);
+}
+
+const float specularFresnel = 0.8;
+
+float specularKSK(sampler2D beckmannTex, vec3 normal, vec3 light, vec3 view, float roughness) {
+    vec3 halfV = view + light;
+    vec3 halfVn = normalize(halfV);
+    float ndotl = max(dot(normal, light), 0.0);
+    float ndoth = max(dot(normal, halfVn), 0.0);
+
+    float ph = pow(2.0 * texture(beckmannTex, vec2(ndoth, roughness), 0).r, 10);
+    float f = mix(0.25, fresnel(halfVn, view, 0.028), specularFresnel);
+    float ksk = max(ph * f / dot(halfV, halfV), 0.0);
+
+    return ndotl * ksk;
+}
+
+vec3 IBLspecularKSK(sampler2D iblSpecularMap, vec3 normal, vec3 view, float roughness) {
+    // Calculate the reflection vector
+    vec3 reflection = reflect(-view, normal);  // Reflection direction based on the view vector and normal
+
+    // Compute the level of detail (LOD) for the IBL cubemap based on roughness
+    // Use the roughness to determine which mipmap level to sample from (higher roughness = more blurred)
+    float lod = roughness * float(u_MipCount - 1); // Map roughness to LOD
+
+    // Sample the IBL cubemap at the correct LOD (mipmap level)
+    vec2 uv = dirToUV(u_EnvRotation * reflection);
+    vec4 iblSpecular = textureLod(iblSpecularMap, uv, lod); // Sample from the cubemap
+
+    // Apply Fresnel-Schlick approximation for specular reflection
+    // We use the view vector and the reflected vector to calculate the Fresnel term
+    float f = mix(0.25, fresnel( reflection, view, 0.028), specularFresnel); // Fresnel factor
+
+    // Compute the microfacet distribution using the Beckmann model approximation
+    float ph = pow(2.0 * max(dot(normal, reflection), 0.0), 10.0);  // Use the normal-reflection dot product
+
+    // Final specular reflection term combining Fresnel, microfacet distribution, and IBL specular
+    float ksk = max(ph * f / dot(reflection, reflection), 0.0);
+
+    // Return the final specular result modulated by the IBL environment map
+    return ksk * iblSpecular.rgb; // `iblSpecular.r` holds the specular reflection intensity from IBL
 }
 
 vec3 getDiffuseLight(vec3 n) {
