@@ -120,9 +120,11 @@ protected:
         float specularIntensity{1.88};
         float bumpiness{0.9};
         float ambientFactor{1};
-        float translucency{0.83};
+        float translucency{0.996};
         float near{1};
         float far{50};
+        float lightNearPlane{0.01};
+        float lightFarPlane{100};
         uint diffuse_tex_id{~0u};
         uint specular_tex_id{~0u};
         uint color_tex_id{~0u};
@@ -148,14 +150,14 @@ protected:
     struct {
         bool ssEnabled{true};
         bool taaEnabled{true};
-        float scatteringRadius{12};
-        float lightAngle{0};
+        float scatteringRadius{14};
+        float lightAngle{284};
         float envRotation{0};
         float sRoughness{0.95};
         float sIntensity{1.88};
         float bumpiness{0.9};
         float ambientFactor{1};
-        float translucency{0.83};
+        float translucency{0.996};
     } options;
 
     struct {

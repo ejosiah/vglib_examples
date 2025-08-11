@@ -19,6 +19,8 @@ layout(set = 0, binding = 0, scalar) uniform Uniforms {
     float translucency;
     float near;
     float far;
+    float lightNearPlane;
+    float lightFarPlane;
     uint diffuse_tex_id;
     uint specular_tex_id;
     uint color_tex_id;

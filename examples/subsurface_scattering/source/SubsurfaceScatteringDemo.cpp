@@ -83,16 +83,18 @@ void SubsurfaceScatteringDemo::initUniforms() {
 }
 
 void SubsurfaceScatteringDemo::initCamera() {
-    OrbitingCameraSettings cameraSettings;
-//    FirstPersonSpectatorCameraSettings cameraSettings;
-    cameraSettings.orbitMinZoom = 0.1;
-    cameraSettings.orbitMaxZoom = 512.0f;
-    cameraSettings.offsetDistance = 1.0f;
-    cameraSettings.modelHeight = model.height();
+//    OrbitingCameraSettings cameraSettings;
+    FirstPersonSpectatorCameraSettings cameraSettings;
+//    cameraSettings.orbitMinZoom = 0.1;
+//    cameraSettings.orbitMaxZoom = 512.0f;
+//    cameraSettings.offsetDistance = 1.0f;
+//    cameraSettings.modelHeight = model.height();
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
-    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+
+    camera->lookAt({0, 0, 1}, glm::vec3(0), {0, 1, 0});
 }
 
 void SubsurfaceScatteringDemo::initBindlessDescriptor() {
@@ -272,7 +274,7 @@ void SubsurfaceScatteringDemo::createRenderPipeline() {
                 .enableDepthBias()
                 .depthBiasConstantFactor(shadowMap.depthBiasConstant)
                 .depthBiasSlopeFactor(shadowMap.depthBiasSlope)
-                .cullFrontFace()
+//                .cullFrontFace()
             .dynamicRenderPass()
                 .depthAttachment(VK_FORMAT_D16_UNORM)
             .layout().clear()
@@ -347,7 +349,7 @@ void SubsurfaceScatteringDemo::onSwapChainRecreation() {
 void SubsurfaceScatteringDemo::newFrame() {
 
     if(options.taaEnabled) {
-        jitterValue = (-1.f + 2.f * jitter.nextSample()) * 1.f;
+        jitterValue = (-1.f + 2.f * jitter.nextSample()) * .5f;
         jitterValue /= glm::vec2(width, height);
 
         camera->newFrame();
@@ -394,6 +396,7 @@ void SubsurfaceScatteringDemo::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SliderFloat("Ambient", &options.ambientFactor, 0, 1);
     ImGui::Checkbox("Subsurface Scattering", &options.ssEnabled);
     if(options.ssEnabled) {
+        ImGui::SliderFloat("Translucency", &options.translucency, 0, 1);
         ImGui::SliderFloat("Scattering radius", &options.scatteringRadius, 1, 40);
     }
 
@@ -485,6 +488,7 @@ void SubsurfaceScatteringDemo::endFrame() {
     uniforms.cpu->bumpiness = options.bumpiness;
     uniforms.cpu->ambientFactor = options.ambientFactor;
     uniforms.cpu->sss_enabled = options.ssEnabled;
+    uniforms.cpu->translucency = options.translucency;
 
     auto lightRotation = glm::rotate(glm::mat4{1}, glm::radians(options.lightAngle), {0, 1, 0});
     light.cpu->position =  (lightRotation * glm::vec4(0, 0, 2, 1)).xyz();
@@ -493,7 +497,9 @@ void SubsurfaceScatteringDemo::endFrame() {
     const auto fov = glm::acos(light.cpu->outerConeCos) * 2.f;
     const auto lPos = light.cpu->position;
     const auto target = lPos + light.cpu->direction;
-    uniforms.cpu->lightSpaceMatrix = vkn::perspective(fov, 1.f, 1.f, 100.f) * glm::lookAt(lPos, target, {0, 1, 0});
+    const auto near = uniforms.cpu->lightNearPlane;
+    const auto far = uniforms.cpu->lightFarPlane;
+    uniforms.cpu->lightSpaceMatrix = vkn::perspective(fov, 1.f, near, far) * glm::lookAt(lPos, target, {0, 1, 0});
     shadowMap.lightViewMatrix = uniforms.cpu->lightSpaceMatrix * camera->cam().model;
 
     taa->endFrame();

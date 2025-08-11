@@ -7,7 +7,7 @@
 #include "uniforms.glsl"
 
 #define bumpMap model_textures[material.normalTex]
-#define shadowMap global_textures[light.shadowMapIndex]
+#define u_shadowMap global_textures[light.shadowMapIndex]
 
 layout(set = 1, binding = 0) uniform sampler2D environment;
 layout(set = 1, binding = 1) uniform sampler2D env_specular;
@@ -56,6 +56,8 @@ vec3 computeBumpNormalScreenSpace(vec2 uv, float bumpScale);
 vec3 bumpToNormal(vec2 uv, float bumpScale);
 mat3 calculateTBN( vec3 N, vec3 p, vec2 uv );
 float pcfFilteredShadow(vec4 lightSpacePos);
+vec3 SSSTransmittance(float translucency, float sssWidth, vec3 worldPosition, vec3 worldNormal, vec3 light, sampler2D shadowMap, mat4 lightViewProjection, float lightFarPlane);
+float linearizeDepth1(float z);
 
 uint u_MipCount = textureQueryLevels(env_specular);
 const vec3 F0 = vec3(0.04);
@@ -110,14 +112,20 @@ void main() {
     float VdotH = clampedDot(V, H);
 
     if (NdotL > 0.0 || NdotV > 0.0){
-        vec3 intensity = getLighIntensity(light, pointToLight);
-        vec3 l_diffuse = intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
-        vec3 l_specular = intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
+        vec3 lightIntensity = getLighIntensity(light, pointToLight);
+        vec3 l_diffuse = lightIntensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
+        vec3 l_specular = lightIntensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
 
         float shadow = 1 - pcfFilteredShadow(fs_in.lightSpacePosition);
 
         f_diffuse += shadow * l_diffuse;
         f_specular += shadow * l_specular * sIntensity;
+
+        if(sssEnaled()) {
+            vec3 albedo = (lightIntensity * baseColor.rgb);
+            f_diffuse += albedo * SSSTransmittance(uniforms.translucency, uniforms.sssWidth, fs_in.position, N, pointToLight, u_shadowMap, uniforms.lightSpaceMatrix, 100);
+            f_specular += albedo * SSSTransmittance(uniforms.translucency, uniforms.sssWidth, fs_in.position, N, pointToLight, u_shadowMap, uniforms.lightSpaceMatrix, 100);
+        }
     }
 
 
@@ -196,10 +204,10 @@ float pcfFilteredShadow(vec4 lightSpacePos){
     }
     float shadow = 0.0f;
     float currentDepth = projCoords.z;
-    vec2 texelSize = 1.0/textureSize(shadowMap, 0);
+    vec2 texelSize = 1.0/textureSize(u_shadowMap, 0);
     for(int x = -1; x <= 1; x++){
         for(int y = -1; y <= 1; y++){
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            float pcfDepth = texture(u_shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
             shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
         }
     }
@@ -250,4 +258,55 @@ mat3 calculateTBN( vec3 N, vec3 p, vec2 uv )
     // construct a scale-invariant frame
     float invmax = inversesqrt( max( dot(T,T), dot(B,B) ) );
     return mat3( T * -invmax, B * invmax, N );
+}
+
+vec3 SSSTransmittance(float translucency, float sssWidth, vec3 worldPosition, vec3 worldNormal, vec3 light,
+                        sampler2D shadowMap, mat4 lightViewProjection, float lightFarPlane) {
+
+    /**
+ * Calculate the scale of the effect.
+ */
+    float scale = 8.25 * (1.0 - translucency) / sssWidth;
+
+    /**
+     * First we shrink the position inwards the surface to avoid artifacts:
+     * (Note that this can be done once for all the lights)
+     */
+    vec4 shrinkedPos = vec4(worldPosition - 0.005 * worldNormal, 1.0);
+
+    /**
+     * Now we calculate the thickness from the light point of view:
+     */
+    vec4 shadowPosition =  lightViewProjection * shrinkedPos;
+    vec2 uv = (shadowPosition.xy * 0.5 / shadowPosition.w) + 0.5;
+
+    float d1 = texture(shadowMap, uv).r; // 'd1' has a range of 0..1
+    float d2 = shadowPosition.z; // 'd2' has a range of 0..'lightFarPlane'
+    d1 = linearizeDepth1(d1); // So we scale 'd1' accordingly:
+    float d = scale * abs(d1 - d2);
+
+    /**
+     * Armed with the thickness, we can now calculate the color by means of the
+     * precalculated transmittance profile.
+     * (It can be precomputed into a texture, for maximum performance):
+     */
+    float dd = -d * d;
+    vec3 profile = vec3(0.233, 0.455, 0.649) * exp(dd / 0.0064) +
+    vec3(0.1,   0.336, 0.344) * exp(dd / 0.0484) +
+    vec3(0.118, 0.198, 0.0)   * exp(dd / 0.187)  +
+    vec3(0.113, 0.007, 0.007) * exp(dd / 0.567)  +
+    vec3(0.358, 0.004, 0.0)   * exp(dd / 1.99)   +
+    vec3(0.078, 0.0,   0.0)   * exp(dd / 7.41);
+
+    /**
+     * Using the profile, we finally approximate the transmitted lighting from
+     * the back of the object:
+     */
+    return profile * clamp(0.3 + dot(light, -worldNormal), 0, 1);
+}
+
+float linearizeDepth1(float z) {
+    const float near = uniforms.lightNearPlane;
+    const float far = uniforms.lightFarPlane;
+    return (near * far) / (z * (far - near) - far);
 }
