@@ -118,6 +118,7 @@ protected:
         float sssWidth{0.01};
         float specularRoughness{0.95};
         float specularIntensity{1.88};
+        float specularFresnel{1.88};
         float bumpiness{0.9};
         float ambientFactor{1};
         float translucency{0.996};
@@ -155,6 +156,7 @@ protected:
         float envRotation{0};
         float sRoughness{0.95};
         float sIntensity{1.88};
+        float sFresnel{0.82};
         float bumpiness{0.9};
         float ambientFactor{0.3};
         float translucency{0.996};

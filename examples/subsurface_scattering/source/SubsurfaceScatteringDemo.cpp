@@ -402,6 +402,7 @@ void SubsurfaceScatteringDemo::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SetWindowSize({});
     ImGui::SliderFloat("Spec. intensity", &options.sIntensity, 0, 4);
     ImGui::SliderFloat("Spec. roughness", &options.sRoughness, 0, 1);
+    ImGui::SliderFloat("Spec. fresnel", &options.sFresnel, 0, 1);
     ImGui::SliderFloat("Bumpiness", &options.bumpiness, 0, 1);
     ImGui::SliderFloat("Ambient", &options.ambientFactor, 0, 1);
     ImGui::Checkbox("Subsurface Scattering", &options.ssEnabled);
@@ -478,7 +479,7 @@ void SubsurfaceScatteringDemo::loadModel() {
 
 void SubsurfaceScatteringDemo::loadEnvironment() {
     textures::fromFile(device, environment.brdfLut, resource("lut_ggx.png"));
-    textures::fromFile(device, environment.beckmannLut, resource("lut_beckmann.png"));
+    textures::fromFile(device, environment.beckmannLut, resource("lut_beckmann.png"), true);
     environment.albedo = textures::equirectangularToOctahedralMap(device, resource(environment.path), 2048);
     textures::ibl(device, environment.albedo, environment.irradiance, environment.specular);
 }
@@ -498,6 +499,7 @@ void SubsurfaceScatteringDemo::endFrame() {
     uniforms.cpu->sssWidth = options.scatteringRadius * 0.001f;
     uniforms.cpu->specularRoughness = options.sRoughness;
     uniforms.cpu->specularIntensity = options.sIntensity;
+    uniforms.cpu->specularFresnel = options.sFresnel;
     uniforms.cpu->bumpiness = options.bumpiness;
     uniforms.cpu->ambientFactor = options.ambientFactor;
     uniforms.cpu->sss_enabled = options.ssEnabled;
@@ -533,7 +535,7 @@ void SubsurfaceScatteringDemo::initGBuffers() {
     gbuffer.sssOutput.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 
     lightingRenderInfo = Offscreen::RenderInfo{
-        .colorAttachments = { {gbuffer.specular.imageView, VK_FORMAT_R32G32B32A32_SFLOAT}, {gbuffer.diffuse.imageView, VK_FORMAT_R32G32B32A32_SFLOAT} },
+        .colorAttachments = { {gbuffer.specular.imageView, VK_FORMAT_R32G32B32A32_SFLOAT, glm::vec4(0)}, {gbuffer.diffuse.imageView, VK_FORMAT_R32G32B32A32_SFLOAT} },
         .depthAttachment = {{gbuffer.depth.imageView, VK_FORMAT_D16_UNORM}},
         .renderArea = {width, height}
     };

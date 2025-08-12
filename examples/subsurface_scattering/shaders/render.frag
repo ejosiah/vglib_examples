@@ -49,8 +49,6 @@ layout(location = 0) in struct {
 } fs_in;
 
 
-layout(location = 0) out vec3 specular;
-layout(location = 1) out vec4 diffuse;
 
 vec3 getIBLRadianceGGX(vec3 n, vec3 v, float roughness, vec3 F0, float specularWeight);
 vec3 getIBLRadianceLambertian(vec3 n, vec3 v, float roughness, vec3 diffuseColor, vec3 F0, float specularWeight);
@@ -63,10 +61,12 @@ float linearizeDepth1(float z);
 
 float fresnel(vec3 halfV, vec3 view, float f0);
 float specularKSK(sampler2D beckmannTex, vec3 normal, vec3 light, vec3 view, float roughness);
-vec3 IBLspecularKSK(sampler2D iblSpecularMap, vec3 normal, vec3 view, float roughness);
 
 uint u_MipCount = textureQueryLevels(env_specular);
 const vec3 F0 = vec3(0.028);
+
+layout(location = 0) out vec3 specular;
+layout(location = 1) out vec4 diffuse;
 
 void main() {
     vec4 baseColor = texture(model_textures[material.diffuseTex], fs_in.uv);
@@ -181,7 +181,6 @@ float fresnel(vec3 halfV, vec3 view, float f0) {
     return exponential + f0 * (1.0 - exponential);
 }
 
-const float specularFresnel = 0.8;
 
 float specularKSK(sampler2D beckmannTex, vec3 normal, vec3 light, vec3 view, float roughness) {
     vec3 halfV = view + light;
@@ -189,37 +188,12 @@ float specularKSK(sampler2D beckmannTex, vec3 normal, vec3 light, vec3 view, flo
     float ndotl = max(dot(normal, light), 0.0);
     float ndoth = max(dot(normal, halfVn), 0.0);
 
+    const float specularFresnel = uniforms.specularFresnel;
     float ph = pow(2.0 * texture(beckmannTex, vec2(ndoth, roughness), 0).r, 10);
-    float f = mix(0.25, fresnel(halfVn, view, 0.028), specularFresnel);
+    float f = mix(0.25, fresnel(halfVn, view, F0), specularFresnel);
     float ksk = max(ph * f / dot(halfV, halfV), 0.0);
 
     return ndotl * ksk;
-}
-
-vec3 IBLspecularKSK(sampler2D iblSpecularMap, vec3 normal, vec3 view, float roughness) {
-    // Calculate the reflection vector
-    vec3 reflection = reflect(-view, normal);  // Reflection direction based on the view vector and normal
-
-    // Compute the level of detail (LOD) for the IBL cubemap based on roughness
-    // Use the roughness to determine which mipmap level to sample from (higher roughness = more blurred)
-    float lod = roughness * float(u_MipCount - 1); // Map roughness to LOD
-
-    // Sample the IBL cubemap at the correct LOD (mipmap level)
-    vec2 uv = dirToUV(u_EnvRotation * reflection);
-    vec4 iblSpecular = textureLod(iblSpecularMap, uv, lod); // Sample from the cubemap
-
-    // Apply Fresnel-Schlick approximation for specular reflection
-    // We use the view vector and the reflected vector to calculate the Fresnel term
-    float f = mix(0.25, fresnel( reflection, view, 0.028), specularFresnel); // Fresnel factor
-
-    // Compute the microfacet distribution using the Beckmann model approximation
-    float ph = pow(2.0 * max(dot(normal, reflection), 0.0), 10.0);  // Use the normal-reflection dot product
-
-    // Final specular reflection term combining Fresnel, microfacet distribution, and IBL specular
-    float ksk = max(ph * f / dot(reflection, reflection), 0.0);
-
-    // Return the final specular result modulated by the IBL environment map
-    return ksk * iblSpecular.rgb; // `iblSpecular.r` holds the specular reflection intensity from IBL
 }
 
 vec3 getDiffuseLight(vec3 n) {

@@ -14,6 +14,7 @@ layout(set = 0, binding = 0, scalar) uniform Uniforms {
     float sssWidth;
     float specularRoughness;
     float specularIntensity;
+    float specularFresnel;
     float bumpiness;
     float ambientFactor;
     float translucency;
