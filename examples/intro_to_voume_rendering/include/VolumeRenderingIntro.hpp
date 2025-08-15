@@ -111,6 +111,8 @@ protected:
         glm::mat4 worldToTextureSpace{1};
         glm::vec4 bmin{-1.1};
         glm::vec4 bmax{1.1};
+        glm::vec4 scatter{1, 1, 1, 10};
+        glm::vec4 absorption{1, 1, 1, 5};
         glm::vec2 resolution;
         float near{1};
         float far{1};

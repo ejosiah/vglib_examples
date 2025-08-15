@@ -259,6 +259,10 @@ void VolumeRenderingIntro::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SliderFloat("frequency", &uniforms.cpu->frequency, 0.5, 16);
     ImGui::SliderFloat("bias", &uniforms.cpu->bias, 0, 0.9);
     ImGui::SliderFloat("falloff", &uniforms.cpu->falloff, 0, 1);
+    ImGui::SliderFloat("scattering", &uniforms.cpu->scatter.w, 0, 100);
+    ImGui::ColorEdit3("scattering color.", &uniforms.cpu->scatter.x);
+    ImGui::SliderFloat("absorption", &uniforms.cpu->absorption.w, 0, 100);
+    ImGui::ColorEdit3("absorption color.", &uniforms.cpu->absorption.x);
     ImGui::Checkbox("TAA", &taaEnabled);
     ImGui::End();
 

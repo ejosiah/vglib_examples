@@ -3,37 +3,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#include "random.glsl"
-#include "sampling.glsl"
-#include "raytracing_implicits/implicits.glsl"
-#include "perlin_noise.glsl"
-
-#define noise_texture global_textures_array[blue_noise_tex_id]
-#define volume_texture global_textures_3d[volume_tex_id]
-
-layout(set = 1, binding = 0, scalar) uniform Globals {
-    mat4 projection;
-    mat4 view;
-    mat4 worldToTextureSpace;
-    vec4 bmin;
-    vec4 bmax;
-    vec2 resolution;
-    float near;
-    float far;
-    int density_method;
-    float frequency;
-    float falloff;
-    float bias;
-    uint frame;
-    uint color_tex_id;
-    uint depth_tex_id;
-    uint blue_noise_tex_id;
-    uint volume_tex_id;
-};
-
-layout(set = 0, binding = 10) uniform sampler2D global_textures[];
-layout(set = 0, binding = 10) uniform sampler2DArray global_textures_array[];
-layout(set = 0, binding = 10) uniform sampler3D global_textures_3d[];
+#include "shared.glsl"
 
 layout(location = 0) in Ray ray;
 layout(location = 2) in mat4 model;
@@ -49,13 +19,7 @@ const vec3 background_color = vec3(0.572, 0.772, 0.921);
 const float g = 0;
 float step_size = 0.1;
 float light_step_size = 0.2;
-const float sigma_a = 10;
-const float sigma_s = 5;
-const float sigma_t = sigma_a + sigma_s;
-const float epsilon = 1e-3;
-const float rr = 2;
-uint seed = 0;
-RngStateType rngState;
+
 
 float updateDepthBuffer(vec3 p);
 float phase(float g, float cos_theta);
@@ -71,7 +35,7 @@ void main(){
     vec2 cam_isect;
     if(!box_ray_test(box, cam_ray, cam_isect)) discard;
 
-    float transparancy = 1;
+    vec3 transparancy = vec3(1);
     vec3 result = vec3(0);
     vec3 V = normalize(-cam_ray.direction);
     vec3 L = normalize(lightDirection);
@@ -90,7 +54,7 @@ void main(){
 
 
         float density = sampleDensity(sample_pos);
-        float sample_attenuation = exp(-step_size * density * sigma_t);
+        vec3 sample_attenuation = exp(-step_size * density * sigma_t);
         transparancy *= sample_attenuation;
 
         Ray rl = Ray(sample_pos, lightDirection);
@@ -105,7 +69,7 @@ void main(){
                 vec3 light_sample_pos = rl.origin + t_light * rl.direction;
                 tau += sampleDensity(light_sample_pos);
             }
-            float light_ray_att = exp(-tau * light_step_size * sigma_t);
+            vec3 light_ray_att = exp(-tau * light_step_size * sigma_t);
 
             result += lightColor * light_ray_att * phase(g, VDotL) * sigma_s * transparancy * step_size * density;
         }
@@ -115,7 +79,7 @@ void main(){
             firstHit = false;
         }
 
-        if(transparancy < epsilon) {
+        if(luminance(transparancy) < epsilon) {
             if(rand(rngState) > 1/rr) break;
             else transparancy *= rr;
         }
