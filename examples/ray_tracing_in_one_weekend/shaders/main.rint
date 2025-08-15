@@ -20,12 +20,12 @@ hitAttributeEXT vec2 attribs;
 
 void main() {
     Ray ray = Ray(gl_WorldRayOrigin, gl_WorldRayDirection);
-    float t = 0;
+    vec2 t = vec2(0);
 
     Sphere sphere = spheres.at[gl_PrimitiveID];
     if (sphere_ray_test(sphere, ray, t)){
-        attribs = getUV(sphere, ray, t);
+        attribs = getUV(sphere, ray, t.x);
 
-        reportIntersection(t, IMPLICIT_TYPE_SPHERE);
+        reportIntersection(t.x, IMPLICIT_TYPE_SPHERE);
     }
 }

@@ -1,6 +1,7 @@
-#define PI 3.1415926535897932384626433832795
-#define TWO_PI 6.283185307179586476925286766559
-#define EPSILON 0.000001
+#ifndef IMPLICITS_GLSL
+#define IMPLICITS_GLSL
+
+#include "constants.glsl"
 
 const uint IMPLICIT_TYPE_PLANE = 1;
 const uint IMPLICIT_TYPE_SPHERE = 2;
@@ -28,6 +29,77 @@ struct Ray{
     vec3 direction;
 };
 
+struct Box {
+    vec3 min;
+    vec3 max;
+};
+
+//bool box_ray_test(Box box, Ray ray, out vec2 t) {
+//    float tmin = -FLT_MAX;
+//    float tmax = FLT_MAX;
+//    const vec3 o = ray.origin;
+//    const vec3 d = ray.direction;
+//    const Box b = box;
+//
+//    for(int i = 0; i < 3; ++i) {
+//        if(abs(d[i]) < EPSILON) {
+//            if(o[i] < b.min[i] || o[i] > b.max[i]) return false;
+//        } else {
+//            float ood = 1/d[i];
+//            float t1 = (b.min[i] - o[i]) * ood;
+//            float t2 = (b.max[i] - o[i]) * ood;
+//
+//            if (t1 > t2) {
+//                float tmp = t1;
+//                t1 = t2;
+//                t2 = tmp;
+//            }
+//
+//            tmin = max(tmin, t1);
+//            tmax = min(tmax, t2);
+//
+//            if(tmin > tmax) return false;
+//        }
+//    }
+//    t.x = max(0, tmin);
+//    t.y = tmax;
+//
+//    return true;
+//}
+
+bool box_ray_test(Box box, Ray ray, out vec2 t) {
+    float tmin = -1e10;
+    float tmax = 1e10;
+
+    vec3 o = ray.origin;
+    vec3 rd = ray.direction;
+    vec3 bmin = box.min;
+    vec3 bmax = box.max;
+
+    for(int i = 0; i < 3; ++i) {
+        if(abs(rd[i]) < 1e-6){
+            // ray is parallel to slab. No hit if origin not within slab
+            if(o[i] < bmin[i] || o[i] > bmax[i]) return false;
+        }else {
+            float invRd = 1.0/rd[i];
+            float t1 = (bmin[i] - o[i]) * invRd;
+            float t2 = (bmax[i] - o[i]) * invRd;
+
+            if(t1 > t2) {
+                float temp = t1;
+                t1 = t2;
+                t2 = temp;
+            }
+            tmin = max(tmin, t1);
+            tmax = min(tmax, t2);
+            if(tmin > tmax) return false;
+        }
+    }
+    t.x = max(0, tmin);
+    t.y = tmax;
+    return true;
+}
+
 bool plane_ray_test(Plane p, Ray r, out float t){
 
     t = p.d - dot(p.normal, r.origin);
@@ -36,7 +108,7 @@ bool plane_ray_test(Plane p, Ray r, out float t){
     return t > 0;
 }
 
-bool sphere_ray_test(Sphere s, Ray r, out float t){
+bool sphere_ray_test(Sphere s, Ray r, out vec2 t){
     vec3 m = r.origin - s.center;
     float a = dot(r.direction, r.direction);
     float b = dot(m, r.direction);
@@ -47,10 +119,18 @@ bool sphere_ray_test(Sphere s, Ray r, out float t){
     float discr = b * b - c * a;
     if(discr < 0) return false; // no real roots
 
-    t = -b - sqrt(discr);
-    t /= a;
+    float t0 = (-b - sqrt(discr))/a;
+    float t1 = (-b + sqrt(discr))/a;
 
-    if(t < 0) t = 0; // ray origin is inside sphere
+    if(t1 < t0) {
+        float tmp = t0;
+        t0 = t1;
+        t1 = tmp;
+    }
+    t0 = max(0, t0);
+
+    t.x = t0; t.y = t1;
+
     return true;
 }
 
@@ -133,3 +213,5 @@ void getTangents(Sphere s, Ray r, float t, out vec3 tangent, out vec3 bitangent)
 //vec2 getUV(Plane p, Ray r, float t);
 //
 //vec2 getUV(Cylinder cylinder, Ray r, float t);
+
+#endif // IMPLICITS_GLSL

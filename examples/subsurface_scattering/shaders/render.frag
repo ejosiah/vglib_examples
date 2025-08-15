@@ -63,7 +63,7 @@ float fresnel(vec3 halfV, vec3 view, float f0);
 float specularKSK(sampler2D beckmannTex, vec3 normal, vec3 light, vec3 view, float roughness);
 
 uint u_MipCount = textureQueryLevels(env_specular);
-const vec3 F0 = vec3(0.028);
+const float F0 = 0.028;
 
 layout(location = 0) out vec3 specular;
 layout(location = 1) out vec4 diffuse;
@@ -78,7 +78,7 @@ void main() {
     const float sRoughness = (specularAO.g / 0.3) * uniforms.specularRoughness;
     const float ao = specularAO.b;
     const float alphaRoughness = roughness * roughness;
-    const vec3 f0 = F0;
+    const vec3 f0 = vec3(F0);
     const vec3 f90 = vec3(1);
     const vec3 c_diff = mix(baseColor.rgb, vec3(0), metalness);
     const float specularWeight = 1;
@@ -197,7 +197,7 @@ float specularKSK(sampler2D beckmannTex, vec3 normal, vec3 light, vec3 view, flo
 }
 
 vec3 getDiffuseLight(vec3 n) {
-    return texture(env_irradiance, dirToUV(u_EnvRotation * n)).rgb ;
+    return texture(env_irradiance, dirToUV(u_EnvRotation * n)).rgb;
 }
 
 

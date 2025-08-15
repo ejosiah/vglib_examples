@@ -20,7 +20,7 @@ vec3 offsetRay(in vec3 p, in vec3 n)
     abs(p.z) < origin ? p.z + floatScale * n.z : p_i.z);
 }
 
-void othonormalBasis(out vec3 tangent, out vec3 binormal, inout vec3 normal){
+void orthonormalBasis(out vec3 tangent, out vec3 binormal, inout vec3 normal){
     normal = normalize(normal);
     vec3 a;
     if(abs(normal.x) > 0.9){

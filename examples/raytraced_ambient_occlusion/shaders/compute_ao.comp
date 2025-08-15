@@ -33,7 +33,7 @@ void main() {
 
     vec3 tangent;
     vec3 bitangent;
-    othonormalBasis(tangent, bitangent, normal);
+    orthonormalBasis(tangent, bitangent, normal);
 
     mat3 TBN = mat3(tangent, bitangent, normal);
 
