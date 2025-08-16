@@ -14,7 +14,7 @@ layout(location = 0) out vec4 fragColor;
 Sphere sphere = Sphere((model * vec4(0, 0, 0, 1)).xyz, 0.8);
 
 const vec3 lightColor = vec3(20);
-const vec3 lightDirection = vec3(-0.315798, 0.719361, 0.618702);
+vec3 lightDirection = vec3(-0.315798, 0.719361, 0.618702);
 const vec3 background_color = vec3(0.572, 0.772, 0.921);
 const float g = 0;
 float step_size = 0.1;
@@ -29,8 +29,12 @@ float sampleNoise(inout uint seed);
 void main(){
     rngState = initRNG(gl_FragCoord.xy, resolution, frame);
 
-    Ray cam_ray = Ray(ray.origin, normalize(ray.direction));
-    Box box = Box(bmin.xyz, bmax.xyz);
+    Ray cam_ray;
+    cam_ray.origin = (worldToTextureSpace * vec4(ray.origin, 1)).xyz;
+    cam_ray.direction = (worldToTextureSpace * vec4(ray.direction, 0)).xyz;
+    lightDirection = (worldToTextureSpace * vec4(lightDirection, 0)).xyz;
+
+    Box box = Box(vec3(0), vec3(1));
 
     vec2 cam_isect;
     if(!box_ray_test(box, cam_ray, cam_isect)) discard;
@@ -75,7 +79,8 @@ void main(){
         }
 
         if(firstHit && density > 0) {
-            updateDepthBuffer(sample_pos);
+            vec4 p = inverse(worldToTextureSpace) * vec4(sample_pos, 1);
+            updateDepthBuffer(p.xyz);
             firstHit = false;
         }
 
@@ -115,6 +120,5 @@ float sampleNoise(inout uint seed) {
 }
 
 float sampleDensity(vec3 pos) {
-    vec4 p = worldToTextureSpace * vec4(pos, 1);
-    return texture(volume_texture, p.xyz).r;
+    return texture(volume_texture, pos).r;
 }
