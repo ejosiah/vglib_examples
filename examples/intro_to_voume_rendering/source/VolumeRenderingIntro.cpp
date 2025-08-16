@@ -356,12 +356,14 @@ void VolumeRenderingIntro::initUniforms() {
 
     auto center = (volume.bounds.min + volume.bounds.max) * 0.5f;
     auto moveToOrigin = glm::translate(glm::mat4{1}, -center);
-    auto textureToWorldSpace = glm::scale(glm::mat4{1}, glm::vec3(0.02)) * moveToOrigin * volume.localToWorld;
+    auto textureToWorldSpace = glm::scale(glm::mat4{1}, glm::vec3(0.5)) * moveToOrigin * volume.localToWorld;
 
     uniforms.cpu->bmin = (textureToWorldSpace * glm::vec4(0, 0, 0, 1));
     uniforms.cpu->bmax = (textureToWorldSpace * glm::vec4(1, 1, 1, 1));
     uniforms.cpu->volume_tex_id = volume.binding_id;
     uniforms.cpu->worldToTextureSpace = glm::inverse(textureToWorldSpace);
+
+    spdlog::error("volume instance bounds [{}, {}]", uniforms.cpu->bmin, uniforms.cpu->bmax);
 }
 
 void VolumeRenderingIntro::loadPrimitives() {
@@ -431,9 +433,12 @@ void VolumeRenderingIntro::loadVolume() {
     ss << fmt::format("\nvolume: {}\n", grid->getName());
     ss << fmt::format("\nvoxel size: [{}, {}, {}]\n", vs.x(), vs.y(), vs.z());
     ss << fmt::format("\tvoxel count: {}\n", numVoxels);
-    ss << fmt::format("\tbounds: [[{}, {}, {}], [{}, {}, {}]]\n"
+    ss << fmt::format("\tindex bounds: [[{}, {}, {}], [{}, {}, {}]]\n"
             , b.min().x(), b.min().y(), b.min().z()
             , b.max().x(), b.max().y(), b.max().z());
+    ss << fmt::format("\tworld bounds: [[{}, {}, {}], [{}, {}, {}]]\n"
+            , bmin.x(), bmin.y(), bmin.z()
+            , bmax.x(), bmax.y(), bmax.z());
     ss << fmt::format("\tdimension: [{}, {}, {}]\n", dim.x(), dim.y(), dim.z());
     ss << fmt::format("\tdimension: [{}, {}, {}]\n", b.max().x() - b.min().x(), b.max().y() - b.min().y(), b.max().z() - b.min().z());
 
@@ -465,35 +470,13 @@ void VolumeRenderingIntro::loadVolume() {
         maxValue = std::max(*v, maxValue);
     }
 
-    glm::vec3 translate = -glm::vec3(b.min().x(), b.min().y(), b.min().z());
-    glm::vec3 scale = glm::vec3(1.0f) / glm::vec3(dim.x(), dim.y(), dim.z());
-
-    glm::mat4 indexToTextureSpace = glm::scale(glm::mat4(1.0f), scale) * glm::translate(glm::mat4(1.0f), translate);
-    glm::mat4 indexToWorld = extractIndexToWorldMatrix(grid);
-    glm::mat4 worldToIndex = glm::inverse(indexToWorld);
-    glm::mat4 worldToTextureSpace = indexToTextureSpace * worldToIndex;
-
-    // Check
-    glm::vec3 imin{b.min().x(), b.min().y(), b.min().z()};
-    glm::vec3 imax{b.max().x(), b.max().y(), b.max().z()};
-
     glm::vec3 wmin{bmin.x(), bmin.y(), bmin.z()};
     glm::vec3 wmax{bmax.x(), bmax.y(), bmax.z()};
-    spdlog::info("index: [{}, {}]", wmin, wmax);
 
-    spdlog::info("index: [{}, {}]", imin, imax);
+    glm::vec3 translate = -wmin;
+    glm::vec3 scale = 1.f/(wmax - wmin);
+    glm::mat4 worldToTextureSpace = glm::scale(glm::mat4(1.0f), scale) * glm::translate(glm::mat4(1.0f), translate);
 
-    auto ca = indexToWorld * glm::vec4(imin, 1);
-    auto cb = indexToWorld * glm::vec4(imax, 1);
-
-//    assert(glm::all(glm::epsilonEqual(ca.xyz(), wmin, glm::vec3(1e-3))));
-//    assert(glm::all(glm::epsilonEqual(cb.xyz(), wmax, glm::vec3(1e-3))));
-//
-//    ca = worldToIndex * glm::vec4(wmin, 1);
-//    cb = worldToIndex * glm::vec4(wmax, 1);
-//
-//    assert(glm::all(glm::epsilonEqual(ca.xyz(), imin, glm::vec3(1e-3))));
-//    assert(glm::all(glm::epsilonEqual(cb.xyz(), imax, glm::vec3(1e-3))));
 
     textures::createNoTransition(device, volume.texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, {dim.x(), dim.y(), dim.z()});
 

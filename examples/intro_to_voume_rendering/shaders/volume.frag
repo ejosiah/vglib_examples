@@ -93,7 +93,7 @@ void updateDepthBuffer(vec3 p) {
 
 float phase(float g, float cos_theta) {
     float denom = 1 + g * g - 2 * g * cos_theta;
-    return 1 / (4 * 3.14159265358979323846) * (1 - g * g) / (denom * sqrt(denom));
+    return 1 / (4 * PI) * (1 - g * g) / (denom * sqrt(denom));
 }
 
 float eval_density(vec3 sample_pos, vec3 sphere_center, float sphere_radius){
@@ -105,11 +105,11 @@ float eval_density(vec3 sample_pos, vec3 sphere_center, float sphere_radius){
 
 float fbm(vec3 p) {
     vec3 vp = p - sphere.center;
-    vp *= frequency; // scale the initial point value if necessary
-    uint numOctaves = 5; // number of layers
-    float lacunarity = 2.f; // gap between successive frequencies
-    float H = 0.4; // fractal increment parameter
-    float value = 0; // result of the fBm (use this for our density)
+    vp *= frequency;
+    uint numOctaves = 5;
+    float lacunarity = 2.f;
+    float H = 0.4;
+    float value = 0;
     for (uint i = 0; i < numOctaves; ++i) {
         value += perlin(vp) * pow(lacunarity, -H * i);
         vp *= lacunarity;
