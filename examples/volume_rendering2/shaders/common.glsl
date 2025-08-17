@@ -10,7 +10,7 @@
 #define DENSITY_TEXTURE (global_textures[scene.currentFrame])
 #define EMISSION_TEXTURE (global_textures[scene.texturePoolSize + scene.currentFrame])
 
-uint rngState;
+RngStateType rngState;
 
 struct Scene {
     vec3 lightDirection;

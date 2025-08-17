@@ -263,6 +263,8 @@ void VolumeRenderingIntro::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::ColorEdit3("scattering color.", &uniforms.cpu->scatter.x);
     ImGui::SliderFloat("absorption", &uniforms.cpu->absorption.w, 0, 100);
     ImGui::ColorEdit3("absorption color.", &uniforms.cpu->absorption.x);
+    ImGui::SliderFloat("emission zero", &uniforms.cpu->emission_zero, 0, volume.maxEmission);
+    ImGui::SliderFloat("scale", &scale, 0.1, 100);
     ImGui::Checkbox("TAA", &taaEnabled);
     ImGui::End();
 
@@ -356,14 +358,15 @@ void VolumeRenderingIntro::initUniforms() {
 
     auto center = (volume.bounds.min + volume.bounds.max) * 0.5f;
     auto moveToOrigin = glm::translate(glm::mat4{1}, -center);
-    auto textureToWorldSpace = glm::scale(glm::mat4{1}, glm::vec3(0.5)) * moveToOrigin * volume.localToWorld;
+    auto textureToWorldSpace = glm::scale(glm::mat4{1}, glm::vec3(0.1)) * moveToOrigin * volume.localToWorld;
 
     uniforms.cpu->bmin = (textureToWorldSpace * glm::vec4(0, 0, 0, 1));
     uniforms.cpu->bmax = (textureToWorldSpace * glm::vec4(1, 1, 1, 1));
     uniforms.cpu->volume_tex_id = volume.binding_id;
+    uniforms.cpu->volume_emission_tex_id = volume.emission_binding_id;
+    uniforms.cpu->max_density = volume.maxDensity;
+    uniforms.cpu->max_emission = volume.maxEmission;
     uniforms.cpu->worldToTextureSpace = glm::inverse(textureToWorldSpace);
-
-    spdlog::error("volume instance bounds [{}, {}]", uniforms.cpu->bmin, uniforms.cpu->bmax);
 }
 
 void VolumeRenderingIntro::loadPrimitives() {
@@ -374,15 +377,16 @@ void VolumeRenderingIntro::loadPrimitives() {
 
 void VolumeRenderingIntro::endFrame() {
     static bool once = true;
-    if(once) {
-        spdlog::info("camera pos: {}, direction: {}", camera->position(), camera->viewDir);
-        once = false;
-    }
     auto& cam = camera->cam();
     uniforms.cpu->projection = cam.proj;
     uniforms.cpu->view = cam.view;
     uniforms.cpu->frame++;
     taa->endFrame();
+
+    auto center = (volume.bounds.min + volume.bounds.max) * 0.5f;
+    auto moveToOrigin = glm::translate(glm::mat4{1}, -center);
+    auto textureToWorldSpace = glm::scale(glm::mat4{1}, glm::vec3(scale/100)) * moveToOrigin * volume.localToWorld;
+    uniforms.cpu->worldToTextureSpace = glm::inverse(textureToWorldSpace);
 }
 
 void VolumeRenderingIntro::loadBlueNoise() {
@@ -414,13 +418,8 @@ glm::mat4 extractIndexToWorldMatrix(openvdb::GridBase::ConstPtr grid)
     return glm::mat4{1};
 }
 
-void VolumeRenderingIntro::loadVolume() {
-    openvdb::initialize();
-    openvdb::io::File file(resource("bunny_cloud.vdb"));
-
-    assert(file.open());
-
-    auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(file.readGrid(file.beginName().gridName()));
+void loadVdbVolume(VulkanDevice& device, openvdb::io::File& vdbFile, const std::string name, Texture& texture, glm::mat4& worldToTextureSpace, float& maxValue) {
+    auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(vdbFile.readGrid(name));
     auto numVoxels = grid->activeVoxelCount();
     auto b = grid->evalActiveVoxelBoundingBox();
     auto bmin = grid->indexToWorld(b.min());
@@ -448,7 +447,7 @@ void VolumeRenderingIntro::loadVolume() {
     auto voxels = stagingBuffer.span<float>();
     std::fill(voxels.begin(), voxels.end(), grid->background());
 
-    float maxValue = std::numeric_limits<float>::lowest();
+    maxValue = std::numeric_limits<float>::lowest();
     auto v = grid->beginValueOn();
     for (; v.next() ;) {
         openvdb::Coord p = v.getCoord() - b.min();
@@ -475,13 +474,13 @@ void VolumeRenderingIntro::loadVolume() {
 
     glm::vec3 translate = -wmin;
     glm::vec3 scale = 1.f/(wmax - wmin);
-    glm::mat4 worldToTextureSpace = glm::scale(glm::mat4(1.0f), scale) * glm::translate(glm::mat4(1.0f), translate);
+    worldToTextureSpace = glm::scale(glm::mat4(1.0f), scale) * glm::translate(glm::mat4(1.0f), translate);
 
 
-    textures::createNoTransition(device, volume.texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, {dim.x(), dim.y(), dim.z()});
+    textures::createNoTransition(device, texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, {dim.x(), dim.y(), dim.z()});
 
     device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        Barriers::pushAndFlush(commandBuffer, volume.texture.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE
+        Barriers::pushAndFlush(commandBuffer, texture.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE
                 , VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_NONE, VK_ACCESS_TRANSFER_WRITE_BIT
                 , VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
@@ -495,24 +494,42 @@ void VolumeRenderingIntro::loadVolume() {
         VkCopyBufferToImageInfo2 copyInfo{
                 .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
                 .srcBuffer = stagingBuffer.buffer,
-                .dstImage = volume.texture.image,
+                .dstImage = texture.image,
                 .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 .regionCount = 1,
                 .pRegions = &region
         };
         vkCmdCopyBufferToImage2(commandBuffer, &copyInfo);
 
-        Barriers::pushAndFlush(commandBuffer, volume.texture.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_TRANSFER_BIT
+        Barriers::pushAndFlush(commandBuffer, texture.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_TRANSFER_BIT
                 , VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT
                 , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     });
 
-    volume.maxDensity = maxValue + std::numeric_limits<float>::epsilon();
-    volume.worldToLocal = worldToTextureSpace;
-    volume.localToWorld = glm::inverse(worldToTextureSpace);
+}
+
+void VolumeRenderingIntro::loadVolume() {
+    openvdb::initialize();
+    openvdb::io::File file(resource("explosion.vdb"));
+
+    assert(file.open());
+
+    loadVdbVolume(device, file, "density", volume.density, volume.worldToLocal, volume.maxDensity);
+
+    volume.maxDensity += std::numeric_limits<float>::epsilon();
+    volume.localToWorld = glm::inverse(volume.worldToLocal);
     volume.bounds.min = (volume.localToWorld * glm::vec4(0, 0, 0, 1)).xyz;
     volume.bounds.max = (volume.localToWorld * glm::vec4(1)).xyz;
-    volume.binding_id = bindlessDescriptor.update(volume.texture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    volume.binding_id = bindlessDescriptor.update(volume.density, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+    for(auto nameItr = file.beginName(); nameItr != file.endName(); ++nameItr) {
+        auto name = nameItr.gridName();
+        if(name == "temperature") {
+            glm::mat4 worldToTextureSpace;
+            loadVdbVolume(device, file, "temperature", volume.emission, worldToTextureSpace, volume.maxEmission);
+            volume.emission_binding_id = bindlessDescriptor.update(volume.emission, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        }
+    }
 }
 
 

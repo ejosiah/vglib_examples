@@ -25,6 +25,7 @@ float updateDepthBuffer(vec3 p);
 float phase(float g, float cos_theta);
 float sampleDensity(vec3 p);
 float sampleNoise(inout uint seed);
+vec3 sampleEmission(vec3 pos);
 
 void main(){
     rngState = initRNG(gl_FragCoord.xy, resolution, frame);
@@ -78,6 +79,8 @@ void main(){
             result += lightColor * light_ray_att * phase(g, VDotL) * sigma_s * transparancy * step_size * density;
         }
 
+        result += sampleEmission(sample_pos) * sigma_a * density;
+
         if(firstHit && density > 0) {
             vec4 p = inverse(worldToTextureSpace) * vec4(sample_pos, 1);
             updateDepthBuffer(p.xyz);
@@ -90,7 +93,7 @@ void main(){
         }
     }
 
-    fragColor = vec4(result, transparancy);
+    fragColor = vec4(result, luminance(transparancy));
 
 }
 
@@ -121,4 +124,13 @@ float sampleNoise(inout uint seed) {
 
 float sampleDensity(vec3 pos) {
     return texture(volume_texture, pos).r;
+}
+
+vec3 sampleEmission(vec3 pos) {
+    if(volume_emission_tex_id == ~0u) return vec3(0);
+
+    float intensity = texture(volume_emission, pos).r;
+
+    float t =  smoothstep( intensity_zero, max_intensity, intensity);
+    return fire_ramp2(t);
 }

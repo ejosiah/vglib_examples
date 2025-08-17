@@ -6,7 +6,8 @@
 #include "ComputePipelins.hpp"
 
 struct Grid {
-    Texture texture;
+    Texture density;
+    Texture emission;
     glm::mat4 worldToLocal;
     glm::mat4 localToWorld;
     struct {
@@ -14,7 +15,9 @@ struct Grid {
         glm::vec3 max{MIN_FLOAT};
     } bounds;
     uint32_t binding_id{~0u};
-    float maxDensity{0};
+    uint32_t emission_binding_id{~0u};
+    float maxDensity{1};
+    float maxEmission{0};
 };
 
 class VolumeRenderingIntro : public VulkanBaseApp{
@@ -120,11 +123,15 @@ protected:
         float frequency{4};
         float falloff{0.2};
         float bias{0.2};
+        float max_density{1};
+        float max_emission{0};
+        float emission_zero{0};
         uint frame{0};
         uint color_tex_id{0u};
         uint depth_tex_id{~0u};
         uint blue_noise_tex_id{~0u};
         uint volume_tex_id{~0u};
+        uint volume_emission_tex_id{~0u};
     };
 
     struct {
@@ -146,5 +153,6 @@ protected:
     std::unique_ptr<taa::Taa> taa;
     Texture blueNoise;
     Grid volume;
+    float scale{50};
     bool taaEnabled{true};
 };

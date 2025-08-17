@@ -8,6 +8,7 @@
 
 #define noise_texture global_textures_array[blue_noise_tex_id]
 #define volume_texture global_textures_3d[volume_tex_id]
+#define volume_emission global_textures_3d[volume_emission_tex_id]
 
 layout(set = 1, binding = 0, scalar) uniform Globals {
     mat4 projection;
@@ -24,11 +25,15 @@ layout(set = 1, binding = 0, scalar) uniform Globals {
     float frequency;
     float falloff;
     float bias;
+    float max_density;
+    float max_intensity;
+    float intensity_zero;
     uint frame;
     uint color_tex_id;
     uint depth_tex_id;
     uint blue_noise_tex_id;
     uint volume_tex_id;
+    uint volume_emission_tex_id;
 };
 
 layout(set = 0, binding = 10) uniform sampler2D global_textures[];
@@ -47,5 +52,44 @@ RngStateType rngState;
 float luminance(vec3 rgb){
     return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f));
 }
+
+vec3 fire_ramp(float t) {
+    if (t < 0.33) {
+        return mix(vec3(120.0/255.0, 0.0, 0.0),
+        vec3(1.0, 0.24, 0.0),
+        t / 0.33);
+    } else if (t < 0.66) {
+        return mix(vec3(1.0, 0.24, 0.0),
+        vec3(1.0, 0.71, 0.20),
+        (t - 0.33) / 0.33);
+    } else {
+        return mix(vec3(1.0, 0.71, 0.20),
+        vec3(1.0, 0.94, 0.78),
+        (t - 0.66) / 0.34);
+    }
+}
+
+vec3 fire_ramp2(float t){
+    // Clamp to [0,1]
+    t = clamp(t, 0.0, 1.0);
+
+    if (t < 0.25) {
+        return mix(vec3(0.0), vec3(120.0/255.0, 0.0, 0.0), t / 0.25);
+    } else if (t < 0.5) {
+        return mix(vec3(120.0/255.0, 0.0, 0.0),
+        vec3(1.0, 60.0/255.0, 0.0),
+        (t - 0.25) / 0.25);
+    } else if (t < 0.75) {
+        return mix(vec3(1.0, 60.0/255.0, 0.0),
+        vec3(1.0, 180.0/255.0, 50.0/255.0),
+        (t - 0.5) / 0.25);
+    } else {
+        return mix(vec3(1.0, 180.0/255.0, 50.0/255.0),
+        vec3(1.0, 240.0/255.0, 200.0/255.0),
+        (t - 0.75) / 0.25);
+    }
+}
+
+
 
 #endif // INTRO_VOLUME_RENDERING_SHARED_GLSL
