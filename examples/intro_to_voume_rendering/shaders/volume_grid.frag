@@ -79,7 +79,7 @@ void main(){
             result += lightColor * light_ray_att * phase(g, VDotL) * sigma_s * transparancy * step_size * density;
         }
 
-        result += sampleEmission(sample_pos) * sigma_a * density;
+        result += sampleEmission(sample_pos) * sigma_a * density * transparancy;
 
         if(firstHit && density > 0) {
             vec4 p = inverse(worldToTextureSpace) * vec4(sample_pos, 1);

@@ -4,6 +4,7 @@
 #include "Sampler.hpp"
 #include "taa/Taa.hpp"
 #include "ComputePipelins.hpp"
+#include <latch>
 
 struct Grid {
     Texture density;
@@ -119,8 +120,8 @@ protected:
         glm::vec2 resolution;
         float near{1};
         float far{1};
-        int density_method{5};
-        float frequency{4};
+        int density_method{3};
+        float frequency{8};
         float falloff{0.2};
         float bias{0.2};
         float max_density{1};
