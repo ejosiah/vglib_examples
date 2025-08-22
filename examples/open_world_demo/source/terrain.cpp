@@ -788,4 +788,3 @@ void Terrain::renderTerrain() {
         vkCmdEndRenderPass(commandBuffer);
     });
 }
-

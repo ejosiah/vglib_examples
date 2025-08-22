@@ -1,0 +1,29 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define CBT_HEAP_BUFFER_BINDING 0
+#include "cbt.glsl"
+
+layout(constant_id = 0) const int cbtID = 0;
+
+layout(local_size_x_id = 1) in;
+
+layout(push_constant) uniform Constants {
+    int u_PassID;
+};
+
+
+void main() {
+    uint cnt = (1u << u_PassID);
+    uint threadID = gl_GlobalInvocationID.x;
+
+    if (threadID < cnt) {
+        uint nodeID = threadID + cnt;
+        uint x0 = cbt_HeapRead(cbtID, cbt_CreateNode(nodeID << 1u     , u_PassID + 1));
+        uint x1 = cbt_HeapRead(cbtID, cbt_CreateNode(nodeID << 1u | 1u, u_PassID + 1));
+
+        cbt__HeapWrite(cbtID, cbt_CreateNode(nodeID, u_PassID), x0 + x1);
+    }
+}

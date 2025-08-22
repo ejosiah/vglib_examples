@@ -32,7 +32,7 @@ public:
     };
     Offscreen() = default;
 
-    void render(VkCommandBuffer commandBuffer, const RenderInfo renderInfo, auto scene) {
+    static void render(VkCommandBuffer commandBuffer, const RenderInfo renderInfo, auto scene) {
         VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
         info.flags = 0;
         info.renderArea = {{0, 0}, {renderInfo.renderArea.x, renderInfo.renderArea.y}};
@@ -40,7 +40,7 @@ public:
         info.viewMask = renderInfo.viewMask;
 
         std::vector<VkRenderingAttachmentInfo> colorAttachments;
-        for(auto [imageView, format, cv] : renderInfo.colorAttachments) {
+        for(const auto& [imageView, format, cv] : renderInfo.colorAttachments) {
             VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
             attachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             attachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;

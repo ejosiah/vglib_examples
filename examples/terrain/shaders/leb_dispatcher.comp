@@ -1,0 +1,41 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define CBT_HEAP_BUFFER_BINDING 0
+#include "cbt.glsl"
+#include "leb.glsl"
+
+struct DrawIndexedIndirectCommand {
+    uint    indexCount;
+    uint    instanceCount;
+    uint    firstIndex;
+    int     vertexOffset;
+    uint    firstInstance;
+};
+
+struct DrawIndirectCommand {
+    uint  vertexCount;
+    uint  instanceCount;
+    uint  firstVertex;
+    uint  firstInstance;
+};
+
+layout(set = 0, binding = 1, scalar) buffer SsboDrawIndexedIndirect {
+    DrawIndexedIndirectCommand drawIndexedCmd;
+};
+
+layout(set = 0, binding = 2, scalar) buffer SsboDrawIndirect {
+    DrawIndirectCommand drawCmd;
+};
+
+layout(constant_id = 0) const int cbtID = 0;
+
+layout(local_size_x = 1) in;
+
+void main() {
+    uint instanceCount = cbt_NodeCount(cbtID);
+    drawIndexedCmd.instanceCount = instanceCount;
+    drawCmd.vertexCount = instanceCount;
+}
