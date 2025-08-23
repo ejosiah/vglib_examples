@@ -3,6 +3,7 @@
 #include "Offscreen.hpp"
 #include "Shared.hpp"
 #include "Terrain.hpp"
+#include "ComputePipelins.hpp"
 
 class TerrainDemo : public VulkanBaseApp{
 public:
@@ -34,6 +35,10 @@ protected:
     void initLoader();
 
     void createRenderPipeline();
+
+    void createComputePipelines();
+
+    void loadHeightMap();
 
     void onSwapChainDispose() override;
 
@@ -70,4 +75,10 @@ protected:
     Offscreen::RenderInfo renderInfo;
     Context context;
     std::unique_ptr<Terrain> terrain;
+    Texture heightMap;
+    Texture normalMap;
+    uint heightMapTextureId{~0u};
+    uint normalMapTextureId{~0u};
+    ComputePipelines compute;
+
 };

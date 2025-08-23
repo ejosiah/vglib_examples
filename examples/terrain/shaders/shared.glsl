@@ -41,16 +41,19 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
     mat4 viewProjectionMatrix;
     mat4 modelViewProjectionMatrix;
     vec4 frustumPlanes[6];
+    vec2 resolution;
     float lodFactor;
     float minLodVariance;
     float dmapFactor;
     uint damp_tex_index;
+    uint dmap_normal_tex_index;
 } globals;
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 
 // TODO add damp_tex_index to uniforms
 #define u_DmapSampler global_textures[globals.damp_tex_index]
+#define u_NormalSampler global_textures[globals.dmap_normal_tex_index]
 
 /*******************************************************************************
  * FrustumCullingTest -- Checks if the triangle lies inside the view frutsum

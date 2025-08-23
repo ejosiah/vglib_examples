@@ -8,9 +8,28 @@
 Terrain::Terrain(Context &context)
 :m_context{&context}{
     m_sets[1] = context.bindlessDescriptor->descriptorSet;
+
+    static uint WorkGroupSize = 256;
+    static uint cbtID = 0;
+    static uint should_displace = 1;
+    static uint projection_method = 0;
+    static uint should_cull_triangle = 0;
+    static std::array<uint, 5> entries{ cbtID, WorkGroupSize, should_displace, projection_method, should_cull_triangle};
+    specializationConstants = {
+        .entries = {
+                {0, sizeof(uint) * 0, sizeof(uint)},
+                {1, sizeof(uint) * 1, sizeof(uint)},
+                {2, sizeof(uint) * 2, sizeof(uint)},
+                {3, sizeof(uint) * 3, sizeof(uint)},
+                {4, sizeof(uint) * 4, sizeof(uint)},
+        },
+        .data = entries.data(),
+        .dataSize = BYTE_SIZE(entries)
+    };
 }
 
 void Terrain::init() {
+    initUniforms();
     initVertexBuffer();
     initBuffers();
     createDescriptorSetLayout();
@@ -22,24 +41,13 @@ void Terrain::init() {
 void Terrain::newFrame() {
     auto& cam = camera().camera;
 
-    const float width = m_dmap.width;
-    const float height = m_dmap.height;
-    const float zMin = m_dmap.zMin;
-    const float zMax = m_dmap.zMax;
-    glm::vec3 scale{width, 0, height};
-
-    glm::mat4 model = glm::mat4{1};
-    model = glm::translate(model, {-width / 2.0f, 0, -height / 2.0f});
-    model = glm::scale(model, scale);
-    model = glm::rotate(model, glm::half_pi<float>(), {1, 0, 0});
-    const auto mvp = cam.proj * cam.view * model;
-
-    m_uniforms.cpu->modelMatrix = model;
+    glm::mat4 model = m_uniforms.cpu->modelMatrix;
+    auto mvp = cam.proj * cam.view * model;
     m_uniforms.cpu->modelViewMatrix = cam.view * model;
     m_uniforms.cpu->viewMatrix = cam.view;
     m_uniforms.cpu->cameraMatrix = glm::inverse(cam.view);
     m_uniforms.cpu->viewProjectionMatrix = cam.proj * cam.view;
-    m_uniforms.cpu->modelViewProjectionMatrix = cam.proj * cam.view * model;
+    m_uniforms.cpu->modelViewProjectionMatrix = mvp;
     m_uniforms.cpu->lodFactor = computeLodFactor();
 
     static Frustum frustum;
@@ -67,9 +75,11 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
 }
 
 void Terrain::renderTerrain(VkCommandBuffer commandBuffer) {
+    auto pipeline = options.wire ? m_renderWire.pipeline.handle : m_render.pipeline.handle;
+    auto layout = options.wire ? m_renderWire.layout.handle : m_render.layout.handle;
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
     vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
@@ -83,6 +93,28 @@ void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.layout.handle, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_emptyBuffer.buffer, &offset);
     vkCmdDrawIndirect(commandBuffer, m_topViewDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+}
+
+void Terrain::initUniforms() {
+    defaultValues.damp_tex_index = context().dmap_tex_index;
+    defaultValues.dmap_normal_tex_index = context().dmap_normal_tex_index;
+
+    const float width = m_dmap.width;
+    const float height = m_dmap.height;
+    const float zMin = m_dmap.zMin;
+    const float zMax = m_dmap.zMax;
+    glm::vec3 scale{width, zMax - zMin, height};
+
+    glm::mat4 model = glm::mat4{1};
+    model = glm::translate(model, {-width / 2.0f, zMin, -height / 2.0f});
+    model = glm::scale(model, scale);
+    model = glm::rotate(model, glm::half_pi<float>(), {1, 0, 0});
+    defaultValues.modelMatrix = model;
+    defaultValues.resolution = { m_context->screenWidth, m_context->screenHeight };
+
+    m_uniforms.gpu = device().createCpuVisibleBuffer(&defaultValues, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
+    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_uniforms", m_uniforms.gpu.buffer);
 }
 
 void Terrain::initBuffers() {
@@ -109,10 +141,6 @@ void Terrain::initBuffers() {
     m_cbtInfo.gpu = device().createCpuVisibleBuffer(&cbtData, sizeof(CbtData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     m_cbtInfo.cpu = reinterpret_cast<CbtData*>(m_cbtInfo.gpu.map());
     device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_cbt_info", m_cbtInfo.gpu.buffer);
-
-    m_uniforms.gpu = device().createCpuVisibleBuffer(&defaultValues, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_uniforms", m_uniforms.gpu.buffer);
 }
 
 void Terrain::initVertexBuffer() {
@@ -159,22 +187,36 @@ void Terrain::initVertexBuffer() {
 void Terrain::createRenderPipelines() {
     const auto w = m_context->screenWidth;
     const auto h = m_context->screenHeight;
+    auto renderBuilder = graphicsPipelineBuilder();
     m_render.pipeline =
-        graphicsPipelineBuilder()
+        renderBuilder
             .shaderStage()
                 .vertexShader(FileManager::resource("terrain_render.vert.spv"))
+                    .addSpecialization(0u, 0)
+                    .addSpecialization(256u, 1)
+                    .addSpecialization(1u, 2)
+                    .addSpecialization(0u, 3)
+                    .addSpecialization(0u, 4)
                 .fragmentShader(FileManager::resource("terrain_render.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
             .rasterizationState()
-                .polygonModeLine()
+//                .polygonModeLine()
                 .cullNone()
             .layout().clear()
                 .addDescriptorSetLayout(m_descriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())
             .name("terrain_render")
         .build(m_render.layout);
+
+    m_renderWire.pipeline =
+        renderBuilder
+            .shaderStage()
+                .geometryShader(FileManager::resource("terrain_render.geom.spv"))
+                .fragmentShader(FileManager::resource("terrain_render_wire.frag.spv"))
+            .name("terrain_render_wire")
+        .build(m_renderWire.layout);
 
     m_topView.pipeline =
         graphicsPipelineBuilder()
@@ -338,14 +380,6 @@ void Terrain::createComputePipelines() {
 }
 
 std::vector<PipelineMetaData> Terrain::metadata() {
-    static int WorkGroupSize = 256;
-    static int cbtID = 0;
-    static std::array<int, 2> entries{ cbtID, WorkGroupSize };
-    SpecializationConstants specializationConstants{
-        .entries = {{0, 0, sizeof(int)}, {1, sizeof(int), sizeof(int)}},
-        .data = entries.data(),
-        .dataSize = BYTE_SIZE(entries)
-    };
     std::vector<VulkanDescriptorSetLayout*> layouts{ &m_descriptorSetLayout, &bindlessDescriptorSetLayout() };
     return {
         {
@@ -458,4 +492,20 @@ uint Terrain::nodeCount() const {
 
 VulkanDescriptorSetLayout& Terrain::bindlessDescriptorSetLayout() {
     return *const_cast<VulkanDescriptorSetLayout*>(m_context->bindlessDescriptor->descriptorSetLayout);
+}
+
+void Terrain::wireOn() {
+    options.wire = true;
+}
+
+void Terrain::wireOff() {
+    options.wire = false;
+}
+
+void Terrain::topViewOn() {
+    options.topView = true;
+}
+
+void Terrain::topViewOff() {
+    options.topView = true;
 }

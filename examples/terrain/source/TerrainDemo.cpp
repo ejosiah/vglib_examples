@@ -10,6 +10,7 @@ TerrainDemo::TerrainDemo(const Settings& settings) : VulkanBaseApp("Terrain", se
     fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
     fileManager().addSearchPathFront("../data");
     fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/textures/height_map");
     fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("terrain");
@@ -27,6 +28,8 @@ void TerrainDemo::initApp() {
     initLoader();
     createDescriptorSetLayouts();
     updateDescriptorSets();
+    createComputePipelines();
+    loadHeightMap();
     initContext();
     createCommandPool();
     createPipelineCache();
@@ -43,8 +46,8 @@ void TerrainDemo::initCamera() {
 //    cameraSettings.modelHeight = 0.5;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.zFar = 64000;
-//    cameraSettings.acceleration = glm::vec3(60);
-//    cameraSettings.velocity = glm::vec3(120);
+    cameraSettings.acceleration = glm::vec3(500);
+    cameraSettings.velocity = glm::vec3(1000);
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
@@ -147,7 +150,7 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 void TerrainDemo::update(float time) {
     camera->update(time);
 
-    setTitle(fmt::format("{}, nodes - {}, FPS - {}", title, terrain->nodeCount(), framePerSecond));
+    setTitle(fmt::format("{}, camera - {}, nodes - {}, FPS - {}", title, camera->position(), terrain->nodeCount(), framePerSecond));
 }
 
 void TerrainDemo::checkAppInputs() {
@@ -172,6 +175,8 @@ void TerrainDemo::initContext() {
     context.gBuffer = &gBuffer;
     context.bindlessDescriptor = &bindlessDescriptor;
     context.prototypes = std::make_unique<Prototypes>(device, swapChain, renderPass);
+    context.dmap_tex_index = heightMapTextureId;
+    context.dmap_normal_tex_index = normalMapTextureId;
 }
 
 void TerrainDemo::initTerrain() {
@@ -186,6 +191,48 @@ void TerrainDemo::endFrame() {
 
 void TerrainDemo::newFrame() {
     terrain->newFrame();
+}
+
+void TerrainDemo::createComputePipelines() {
+    compute = ComputePipelines(&device, {{
+         .name = "generate_normals",
+         .shadePath = resource("generate_normal_map.comp.spv"),
+         .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
+         .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
+     }});
+    compute.createPipelines();
+}
+
+void TerrainDemo::loadHeightMap() {
+    textures::fromFile(device, heightMap, resource("kauai.png"));
+    textures::createNoTransition(device, normalMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {heightMap.width, heightMap.height, 1});
+
+    heightMapTextureId = bindlessDescriptor.update(heightMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    normalMapTextureId = bindlessDescriptor.update(normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    auto normalMapImageId = bindlessDescriptor.update(normalMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+       Barriers::pushAndFlush(commandBuffer, normalMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+       const auto gx = (heightMap.width + 15)/16;
+       const auto gy = (heightMap.height + 15)/16;
+
+       struct {
+           float bump_strength{};
+           uint dmap_tex_id{};
+           uint normal_image_id{};
+       } constants { 10.f, heightMapTextureId, normalMapImageId } ;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("generate_normals"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("generate_normals"), 0, 1, &bindlessDescriptor.descriptorSet, 0, 0);
+        vkCmdPushConstants(commandBuffer, compute.layout("generate_normals"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+
+        Barriers::pushAndFlush(commandBuffer, normalMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                       VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    });
+
 }
 
 int main(){

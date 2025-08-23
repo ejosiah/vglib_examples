@@ -29,12 +29,20 @@ public:
 
     void topViewOn();
 
+    void topViewOff();
+
+    void wireOn();
+
+    void wireOff();
+
 protected:
     void renderTerrain(VkCommandBuffer commandBuffer);
 
     void renderTopView(VkCommandBuffer commandBuffer);
 
     void initBuffers();
+
+    void initUniforms();
 
     void initVertexBuffer();
 
@@ -86,9 +94,12 @@ private:
         glm::mat4 viewProjectionMatrix{1};
         glm::mat4 modelViewProjectionMatrix{1};
         std::array<glm::vec4, 6> frustumPlanes;
+        glm::vec2 resolution{0};
         float lodFactor{0};
-        float minLodVariance{};
+        float minLodVariance{0.1};
+        float dmapFactor{1};
         uint damp_tex_index{~0u};
+        uint dmap_normal_tex_index{~0u};
     } defaultValues{};
 
     Context* m_context{};
@@ -130,9 +141,12 @@ private:
 
     struct {
         bool topView{true};
+        bool wire{true};
     } options;
 
     Pipeline m_render;
+    Pipeline m_renderWire;
     Pipeline m_topView;
     std::array<VkDescriptorSet, 2> m_sets;
+    SpecializationConstants specializationConstants{};
 };

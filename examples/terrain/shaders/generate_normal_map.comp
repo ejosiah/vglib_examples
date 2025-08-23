@@ -1,0 +1,39 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
+
+#define depth_map global_textures[dmap_tex_id]
+
+layout(push_constant) uniform Contanst {
+    float bump_strength;
+    uint dmap_tex_id;
+    uint nornal_image_id;
+};
+
+vec3 depthToNormal(vec2 uv) {
+    float heightL = texture(depth_map, uv + vec2(-1.0, 0.0) / textureSize(depth_map, 0)).r;
+    float heightR = texture(depth_map, uv + vec2(1.0, 0.0) / textureSize(depth_map, 0)).r;
+    float heightD = texture(depth_map, uv + vec2(0.0, -1.0) / textureSize(depth_map, 0)).r;
+    float heightU = texture(depth_map, uv + vec2(0.0, 1.0) / textureSize(depth_map, 0)).r;
+
+    // Calculate the gradients (dx, dy) with added bump strength factor
+    float dx = (heightR - heightL) * bump_strength;
+    float dy = (heightU - heightD) * bump_strength;
+
+    vec3 normal = normalize(vec3(-dx, 1-dy, 1.0));
+
+    return 0.5 + 0.5 * normal;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    vec2 uv = (0.5 + vec2(gid))/textureSize(depth_map, 0);
+
+    vec3 normal = depthToNormal(uv);
+    imageStore(global_images[nornal_image_id], gid, vec4(normal, 0));
+}

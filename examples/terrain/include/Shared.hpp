@@ -22,6 +22,8 @@ struct Context {
     BaseCameraController* camera{};
     BindlessDescriptor* bindlessDescriptor{};
     std::unique_ptr<Prototypes> prototypes;
-    uint32_t screenWidth;
-    uint32_t screenHeight;
+    uint screenWidth;
+    uint screenHeight;
+    uint dmap_tex_index{~0u};
+    uint dmap_normal_tex_index{~0u};
 };
