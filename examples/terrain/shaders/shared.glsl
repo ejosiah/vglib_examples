@@ -2,12 +2,36 @@
 #define TERRAIN_SHARED_GLSL
 
 #extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_debug_printf : enable
 
 #define CBT_HEAP_BUFFER_BINDING 0
 
 #include "leb.glsl"
 #include "frustum_culling.glsl"
+
+const uint PROJECTION_RECTILINEAR = 0u;
+const uint PROJECTION_ORTHOGRAPHIC = 1u;
+const uint PROJECTION_FISHEYE = 2u;
+
+#ifndef DISPLACE_CONST_ID
+#define DISPLACE_CONST_ID 2
+#endif // DISPLACE_CONST_ID
+
+#ifndef PROJECTION_METHOD_CONST_ID
+#define PROJECTION_METHOD_CONST_ID 3
+#endif // PROJECTION_METHOD_CONST_ID
+
+#ifndef TRIANGLE_CULL_CONST_ID
+#define TRIANGLE_CULL_CONST_ID 4
+#endif // TRIANGLE_CULL_CONST_ID
+
+layout(constant_id = DISPLACE_CONST_ID) const uint flag_displace = 0;
+layout(constant_id = PROJECTION_METHOD_CONST_ID) const uint projection_method = PROJECTION_RECTILINEAR;
+layout(constant_id = TRIANGLE_CULL_CONST_ID) const uint cull_triangle = 0;
+
+const bool should_displace = flag_displace == 1;
+const bool should_cull_triangle = cull_triangle == 1;
 
 layout(set = 0, binding = 5, scalar) uniform Constants {
     mat4 modelMatrix;
@@ -18,7 +42,15 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
     mat4 modelViewProjectionMatrix;
     vec4 frustumPlanes[6];
     float lodFactor;
+    float minLodVariance;
+    float dmapFactor;
+    uint damp_tex_index;
 } globals;
+
+layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+
+// TODO add damp_tex_index to uniforms
+#define u_DmapSampler global_textures[globals.damp_tex_index]
 
 /*******************************************************************************
  * FrustumCullingTest -- Checks if the triangle lies inside the view frutsum
@@ -47,11 +79,11 @@ vec4[3] DecodeTriangleVertices(in const cbt_Node node)
     vec4 p2 = vec4(pos[0][1], pos[1][1], 0.0, 1.0);
     vec4 p3 = vec4(pos[0][2], pos[1][2], 0.0, 1.0);
 
-    #if FLAG_DISPLACE
-    p1.z = u_DmapFactor * texture(u_DmapSampler, p1.xy).r;
-    p2.z = u_DmapFactor * texture(u_DmapSampler, p2.xy).r;
-    p3.z = u_DmapFactor * texture(u_DmapSampler, p3.xy).r;
-    #endif
+    if(should_displace) {
+        p1.z = globals.dmapFactor * texture(u_DmapSampler, p1.xy).r;
+        p2.z = globals.dmapFactor * texture(u_DmapSampler, p2.xy).r;
+        p3.z = globals.dmapFactor * texture(u_DmapSampler, p3.xy).r;
+    }
 
     return vec4[3](p1, p2, p3);
 }
@@ -114,21 +146,49 @@ float TriangleLevelOfDetail_Orthographic(in const vec4[3] patchVertices)
     return globals.lodFactor + log2(edgeLengthSqr);
 }
 
-#define PROJECTION_RECTILINEAR 1
-
-float TriangleLevelOfDetail(in const vec4[3] patchVertices)
+float TriangleLevelOfDetail_Fisheye(in const vec4[3] patchVertices)
 {
     vec3 v0 = (globals.modelViewMatrix * patchVertices[0]).xyz;
     vec3 v2 = (globals.modelViewMatrix * patchVertices[2]).xyz;
-    #if defined(PROJECTION_RECTILINEAR)
-    return TriangleLevelOfDetail_Perspective(patchVertices);
-    #elif defined(PROJECTION_ORTHOGRAPHIC)
-    return TriangleLevelOfDetail_Orthographic(patchVertices);
-    #elif defined(PROJECTION_FISHEYE)
-    return TriangleLevelOfDetail_Perspective(patchVertices);
-    #else
-    return 0.0;
-    #endif
+    vec3 edgeVector = (v2 - v0);
+    float edgeLengthSqr = dot(edgeVector, edgeVector);
+
+    return globals.lodFactor + log2(edgeLengthSqr);
+}
+
+float TriangleLevelOfDetail(in const vec4[3] patchVertices) {
+    switch(projection_method){
+        case PROJECTION_RECTILINEAR:
+            return TriangleLevelOfDetail_Perspective(patchVertices);
+        case PROJECTION_ORTHOGRAPHIC:
+            return TriangleLevelOfDetail_Orthographic(patchVertices);
+        case PROJECTION_FISHEYE:
+            return TriangleLevelOfDetail_Fisheye(patchVertices);
+        default:
+            return 0.0;
+    }
+}
+
+/*******************************************************************************
+ * DisplacementVarianceTest -- Checks if the height variance criteria is met
+ *
+ * Terrains tend to have locally flat regions, which don't need large amounts
+ * of polygons to be represented faithfully. This function checks the
+ * local flatness of the terrain.
+ *
+ */
+bool DisplacementVarianceTest(in const vec4[3] patchVertices) {
+    vec2 P0 = patchVertices[0].xy;
+    vec2 P1 = patchVertices[1].xy;
+    vec2 P2 = patchVertices[2].xy;
+    vec2 P = (P0 + P1 + P2) / 3.0;
+    vec2 dx = (P0 - P1);
+    vec2 dy = (P2 - P1);
+    vec2 dmap = textureGrad(u_DmapSampler, P, dx, dy).rg;
+    float dmapVariance = clamp(dmap.y - dmap.x * dmap.x, 0.0, 1.0);
+
+    return (dmapVariance >= globals.minLodVariance);
+
 }
 
 /*******************************************************************************
@@ -141,18 +201,11 @@ float TriangleLevelOfDetail(in const vec4[3] patchVertices)
 vec2 LevelOfDetail(in const vec4[3] patchVertices)
 {
     // culling test
-    if (!FrustumCullingTest(patchVertices))
-    #if FLAG_CULL
-    return vec2(0.0f, 0.0f);
-    #else
-    return vec2(0.0f, 1.0f);
-    #endif
+    if (!FrustumCullingTest(patchVertices)) {
+        return should_cull_triangle ? vec2(0.0f, 0.0f) : vec2(0.0f, 1.0f);
+    }
 
-    #if FLAG_DISPLACE
-    // variance test
-    if (!DisplacementVarianceTest(patchVertices))
-    return vec2(0.0f, 1.0f);
-    #endif
+    if(should_displace && !DisplacementVarianceTest(patchVertices)) return vec2(0.0f, 1.0f);
 
     // compute triangle LOD
     return vec2(TriangleLevelOfDetail(patchVertices), 1.0f);
@@ -184,9 +237,9 @@ VertexAttribute TessellateTriangle(in const vec2 texCoords[3], in vec2 tessCoord
     vec2 texCoord = BarycentricInterpolation(texCoords, tessCoord);
     vec4 position = vec4(texCoord, 0, 1);
 
-    #if FLAG_DISPLACE
-    position.z = u_DmapFactor * textureLod(u_DmapSampler, texCoord, 0.0).r;
-    #endif
+    if(should_displace) {
+        position.z = globals.dmapFactor * textureLod(u_DmapSampler, texCoord, 0.0).r;
+    }
 
     return VertexAttribute(position, texCoord);
 }

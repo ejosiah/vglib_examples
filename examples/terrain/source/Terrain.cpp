@@ -6,7 +6,9 @@
 #include <glm/glm.hpp>
 
 Terrain::Terrain(Context &context)
-:m_context{&context}{}
+:m_context{&context}{
+    m_sets[1] = context.bindlessDescriptor->descriptorSet;
+}
 
 void Terrain::init() {
     initVertexBuffer();
@@ -67,7 +69,7 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
 void Terrain::renderTerrain(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, 1, &m_descriptorSet, 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
     vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
@@ -78,7 +80,7 @@ void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.layout.handle, 0, 1, &m_descriptorSet, 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.layout.handle, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_emptyBuffer.buffer, &offset);
     vkCmdDrawIndirect(commandBuffer, m_topViewDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
 }
@@ -170,6 +172,7 @@ void Terrain::createRenderPipelines() {
                 .cullNone()
             .layout().clear()
                 .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
             .name("terrain_render")
         .build(m_render.layout);
 
@@ -207,6 +210,7 @@ void Terrain::createRenderPipelines() {
                 .maxDepthBounds(1)
             .layout().clear()
                 .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
             .name("terrain_top_view")
         .build(m_topView.layout);
 }
@@ -320,6 +324,8 @@ void Terrain::updateDescriptorSets() {
     writes[5].pBufferInfo = &uniformInfo;
 
     device().updateDescriptorSets(writes);
+    
+    m_sets[0] = m_descriptorSet;
 }
 
 VulkanDescriptorPool &Terrain::descriptorPool() const {
@@ -336,50 +342,51 @@ std::vector<PipelineMetaData> Terrain::metadata() {
     static int cbtID = 0;
     static std::array<int, 2> entries{ cbtID, WorkGroupSize };
     SpecializationConstants specializationConstants{
-            .entries = {{0, 0, sizeof(int)}, {1, sizeof(int), sizeof(int)}},
-            .data = entries.data(),
-            .dataSize = BYTE_SIZE(entries)
+        .entries = {{0, 0, sizeof(int)}, {1, sizeof(int), sizeof(int)}},
+        .data = entries.data(),
+        .dataSize = BYTE_SIZE(entries)
     };
+    std::vector<VulkanDescriptorSetLayout*> layouts{ &m_descriptorSetLayout, &bindlessDescriptorSetLayout() };
     return {
         {
             .name = "terrain_leb_dispatcher",
             .shadePath = FileManager::resource("leb_dispatcher.comp.spv"),
-            .layouts = { &m_descriptorSetLayout },
+            .layouts = layouts,
             .ranges = {},
             .specializationConstants = specializationConstants
         },
         {
             .name = "terrain_cbt_dispatcher",
             .shadePath = FileManager::resource("cbt_dispatcher.comp.spv"),
-            .layouts = { &m_descriptorSetLayout },
+            .layouts = layouts,
             .ranges = {},
             .specializationConstants = specializationConstants
         },
         {
             .name = "terrain_cbt_sum_reduce_prepass",
             .shadePath = FileManager::resource("cbt_sum_reduce_prepass.comp.spv"),
-            .layouts = { &m_descriptorSetLayout },
+            .layouts = layouts,
             .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
             .specializationConstants = specializationConstants
         },
         {
             .name = "terrain_cbt_sum_reduce",
             .shadePath = FileManager::resource("cbt_sum_reduce.comp.spv"),
-            .layouts = { &m_descriptorSetLayout },
+            .layouts = layouts,
             .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
             .specializationConstants = specializationConstants
         },
         {
             .name = "terrain_subdivide",
             .shadePath = FileManager::resource("terrain_subdivide.comp.spv"),
-            .layouts = { &m_descriptorSetLayout },
+            .layouts = layouts,
             .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
             .specializationConstants = specializationConstants
         },
         {
             .name = "terrain_cbt_info",
             .shadePath = FileManager::resource("cbt_info.comp.spv"),
-            .layouts = { &m_descriptorSetLayout },
+            .layouts = layouts,
             .specializationConstants = specializationConstants
         }
     };
@@ -387,14 +394,14 @@ std::vector<PipelineMetaData> Terrain::metadata() {
 
 void Terrain::cbtDispatch(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_dispatcher"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_dispatcher"), 0, 1, &m_descriptorSet, 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_dispatcher"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
     Barriers::pushAndFlush(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
 }
 
 void Terrain::lebSubdivision(VkCommandBuffer commandBuffer, int pingPong) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_subdivide"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_subdivide"), 0, 1, &m_descriptorSet, 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_subdivide"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_subdivide"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pingPong);
     vkCmdDispatchIndirect(commandBuffer, m_dispatchBuffer, 0);
     Barrier::computeWriteToRead(commandBuffer);
@@ -406,7 +413,7 @@ void Terrain::sumReducePrePass(VkCommandBuffer commandBuffer) {
     auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce_prepass"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce_prepass"), 0, 1, &m_descriptorSet, 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce_prepass"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce_prepass"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &itr);
     vkCmdDispatch(commandBuffer, numGroup, 1, 1);
     Barrier::computeWriteToRead(commandBuffer);
@@ -421,7 +428,7 @@ void Terrain::sumReduceCbt(VkCommandBuffer commandBuffer) {
         auto pass = itr;
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce"));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce"), 0, 1, &m_descriptorSet, 0,nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
         vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
         vkCmdDispatch(commandBuffer, numGroup, 1, 1);
         Barrier::computeWriteToRead(commandBuffer);
@@ -430,7 +437,7 @@ void Terrain::sumReduceCbt(VkCommandBuffer commandBuffer) {
 
 void Terrain::lebDispatch(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_leb_dispatcher"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_leb_dispatcher"), 0, 1, &m_descriptorSet, 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_leb_dispatcher"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
 
     static auto dstStageMask = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
@@ -440,11 +447,15 @@ void Terrain::lebDispatch(VkCommandBuffer commandBuffer) {
 
 void Terrain::getCbtInfo(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_info"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_info"), 0, 1, &m_descriptorSet, 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_info"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
     Barrier::computeWriteToFragmentRead(commandBuffer);
 }
 
 uint Terrain::nodeCount() const {
     return m_cbtInfo.cpu->nodeCount;
+}
+
+VulkanDescriptorSetLayout& Terrain::bindlessDescriptorSetLayout() {
+    return *const_cast<VulkanDescriptorSetLayout*>(m_context->bindlessDescriptor->descriptorSetLayout);
 }

@@ -72,6 +72,8 @@ protected:
 
     std::vector<PipelineMetaData> metadata();
 
+    VulkanDescriptorSetLayout& bindlessDescriptorSetLayout();
+
 private:
     static constexpr int64_t CBT_MAX_DEPTH = 25;
     static constexpr int64_t CBT_INIT_MAX_DEPTH = 1;
@@ -85,6 +87,8 @@ private:
         glm::mat4 modelViewProjectionMatrix{1};
         std::array<glm::vec4, 6> frustumPlanes;
         float lodFactor{0};
+        float minLodVariance{};
+        uint damp_tex_index{~0u};
     } defaultValues{};
 
     Context* m_context{};
@@ -130,4 +134,5 @@ private:
 
     Pipeline m_render;
     Pipeline m_topView;
+    std::array<VkDescriptorSet, 2> m_sets;
 };
