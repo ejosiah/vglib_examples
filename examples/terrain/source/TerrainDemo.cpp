@@ -198,6 +198,7 @@ int main(){
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;
         settings.enabledFeatures.geometryShader = true;
+        settings.enabledFeatures.tessellationShader = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);

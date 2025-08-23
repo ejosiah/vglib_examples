@@ -389,8 +389,7 @@ void Terrain::cbtDispatch(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_dispatcher"));
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_dispatcher"), 0, 1, &m_descriptorSet, 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
-    // TODO add indirect draw write to read barrier
-    Barrier::computeWriteToRead(commandBuffer);
+    Barriers::pushAndFlush(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
 }
 
 void Terrain::lebSubdivision(VkCommandBuffer commandBuffer, int pingPong) {
@@ -434,8 +433,9 @@ void Terrain::lebDispatch(VkCommandBuffer commandBuffer) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_leb_dispatcher"), 0, 1, &m_descriptorSet, 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
 
-    // TODO add indirect draw write to read barrier
-    Barrier::computeWriteToFragmentRead(commandBuffer);
+    static auto dstStageMask = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+    static auto dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+    Barriers::pushAndFlush(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, dstStageMask , VK_ACCESS_SHADER_WRITE_BIT, dstAccessMask);
 }
 
 void Terrain::getCbtInfo(VkCommandBuffer commandBuffer) {
