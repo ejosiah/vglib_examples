@@ -4,6 +4,7 @@
 #include <cbt/cbt.hpp>
 #include <leb/leb.hpp>
 #include <glm/glm.hpp>
+#include <imgui.h>
 
 Terrain::Terrain(Context &context)
 :m_context{&context}{
@@ -49,6 +50,8 @@ void Terrain::newFrame() {
     m_uniforms.cpu->viewProjectionMatrix = cam.proj * cam.view;
     m_uniforms.cpu->modelViewProjectionMatrix = mvp;
     m_uniforms.cpu->lodFactor = computeLodFactor();
+    m_uniforms.cpu->dmapFactor = m_options.dmapScale;
+    m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
@@ -75,8 +78,8 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
 }
 
 void Terrain::renderTerrain(VkCommandBuffer commandBuffer) {
-    auto pipeline = options.wire ? m_renderWire.pipeline.handle : m_render.pipeline.handle;
-    auto layout = options.wire ? m_renderWire.layout.handle : m_render.layout.handle;
+    auto pipeline = m_options.wire ? m_renderWire.pipeline.handle : m_render.pipeline.handle;
+    auto layout = m_options.wire ? m_renderWire.layout.handle : m_render.layout.handle;
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
@@ -86,7 +89,7 @@ void Terrain::renderTerrain(VkCommandBuffer commandBuffer) {
 }
 
 void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
-    if(!options.topView) return;
+    if(!m_options.topView) return;
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.pipeline.handle);
@@ -118,7 +121,7 @@ void Terrain::initUniforms() {
 }
 
 void Terrain::initBuffers() {
-    VkDrawIndexedIndirectCommand drawIndexedCmd{(3u << (2 * m_gpuSubDivisions)), 1, 0, 0, 0};
+    VkDrawIndexedIndirectCommand drawIndexedCmd{(3u << (2 * m_options.gpuSubDivisions)), 1, 0, 0, 0};
     VkDrawIndirectCommand drawCmd{1, 1, 0, 0};
     VkDispatchIndirectCommand dispatchCmd{1, 1, 1};
 
@@ -144,7 +147,7 @@ void Terrain::initBuffers() {
 }
 
 void Terrain::initVertexBuffer() {
-    const auto gpuSubd = static_cast<uint64_t>(m_gpuSubDivisions);
+    const auto gpuSubd = static_cast<uint64_t>(m_options.gpuSubDivisions);
     std::vector<uint16_t> cIndexes;
     std::vector<glm::vec2> cVertices;
     std::map<uint32_t, uint16_t> hashMap;
@@ -271,9 +274,9 @@ GraphicsPipelineBuilder Terrain::graphicsPipelineBuilder() const {
 
 float Terrain::computeLodFactor() {
     const auto h = m_context->screenHeight;
-    const auto gpuSubd = m_gpuSubDivisions;
+    const auto gpuSubd = m_options.gpuSubDivisions;
 
-    float tmp = 2.0f * tan(glm::radians(camera().fov) / 2.0f) / h * (1 << gpuSubd) * m_primitivePixelLengthTarget;
+    float tmp = 2.0f * tan(glm::radians(camera().fov) / 2.0f) / h * (1 << gpuSubd) * m_options.primitivePixelLengthTarget;
     auto rtVal =  -2.0f * std::log2(tmp) + 2.0f;
     spdlog::debug("[terrain] lod factor {}", rtVal);
     return rtVal;
@@ -495,17 +498,29 @@ VulkanDescriptorSetLayout& Terrain::bindlessDescriptorSetLayout() {
 }
 
 void Terrain::wireOn() {
-    options.wire = true;
+    m_options.wire = true;
 }
 
 void Terrain::wireOff() {
-    options.wire = false;
+    m_options.wire = false;
 }
 
 void Terrain::topViewOn() {
-    options.topView = true;
+    m_options.topView = true;
 }
 
 void Terrain::topViewOff() {
-    options.topView = true;
+    m_options.topView = true;
+}
+
+void Terrain::controls() {
+    ImGui::Begin("terrain");
+    ImGui::SetWindowSize({});
+
+    ImGui::SliderFloat("Pixels/Edge", &m_options.primitivePixelLengthTarget, 1, 32);
+    ImGui::SliderFloat("Dmap scale", &m_options.dmapScale, 0, 1);
+    ImGui::SliderFloat("Lod Std", &m_options.minLodStdev, 0, 1);
+    ImGui::Checkbox("Wire", &m_options.wire);
+
+    ImGui::End();
 }

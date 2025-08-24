@@ -23,6 +23,8 @@ public:
 
     void render(VkCommandBuffer commandBuffer);
 
+    void controls();
+
     void endFrame();
 
     uint nodeCount() const;
@@ -119,9 +121,7 @@ private:
         UniformData* cpu{};
     } m_uniforms;
 
-    int m_gpuSubDivisions{3};
-    float m_primitivePixelLengthTarget{7};
-    float m_minLodStdev{0.1};
+
     int m_maxDepth{CBT_MAX_DEPTH};
     float m_size{52660};
 
@@ -140,9 +140,13 @@ private:
     } m_cbtInfo;
 
     struct {
+        int gpuSubDivisions{3};
+        float primitivePixelLengthTarget{7};
+        float minLodStdev{0.1};
         bool topView{true};
         bool wire{true};
-    } options;
+        float dmapScale{1};
+    } m_options;
 
     Pipeline m_render;
     Pipeline m_renderWire;

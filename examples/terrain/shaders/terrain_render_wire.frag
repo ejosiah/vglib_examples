@@ -26,5 +26,6 @@ void main() {
     vec3 albedo = fs_in.color;
 
     vec3 radiance = albedo * max(0, dot(N, L));
+    radiance = pow(radiance, vec3(0.454));
     fragColor.rgb = mix(radiance, wireColor.xyz, blendFactor);
 }

@@ -3,6 +3,7 @@
 #include "Offscreen.hpp"
 #include "Shared.hpp"
 #include "Terrain.hpp"
+#include "DisplacementMapGenerator.hpp"
 #include "ComputePipelins.hpp"
 
 class TerrainDemo : public VulkanBaseApp{
@@ -15,6 +16,8 @@ protected:
     void initCamera();
 
     void initContext();
+
+    void initDisplacementMapGenerator();
 
     void initTerrain();
 
@@ -38,8 +41,6 @@ protected:
 
     void createComputePipelines();
 
-    void loadHeightMap();
-
     void onSwapChainDispose() override;
 
     void onSwapChainRecreation() override;
@@ -47,6 +48,8 @@ protected:
     void newFrame() override;
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
+
+    void renderUI(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -74,6 +77,7 @@ protected:
     GBuffer gBuffer;
     Offscreen::RenderInfo renderInfo;
     Context context;
+    std::unique_ptr<DisplacementMapGenerator> displacementMapGenerator;
     std::unique_ptr<Terrain> terrain;
     Texture heightMap;
     Texture normalMap;

@@ -29,11 +29,11 @@ void TerrainDemo::initApp() {
     createDescriptorSetLayouts();
     updateDescriptorSets();
     createComputePipelines();
-    loadHeightMap();
     initContext();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+    initDisplacementMapGenerator();
     initTerrain();
 }
 
@@ -140,6 +140,7 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     clearColor(0, 0, 1);
     renderToSwapChain([&]{
         terrain->render(commandBuffer);
+        renderUI(commandBuffer);
     }, commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -147,8 +148,15 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     return &commandBuffer;
 }
 
+void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
+    terrain->controls();
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+}
+
 void TerrainDemo::update(float time) {
-    camera->update(time);
+    if(!ImGui::IsAnyItemActive()){
+        camera->update(time);
+    }
 
     setTitle(fmt::format("{}, camera - {}, nodes - {}, FPS - {}", title, camera->position(), terrain->nodeCount(), framePerSecond));
 }
@@ -175,8 +183,6 @@ void TerrainDemo::initContext() {
     context.gBuffer = &gBuffer;
     context.bindlessDescriptor = &bindlessDescriptor;
     context.prototypes = std::make_unique<Prototypes>(device, swapChain, renderPass);
-    context.dmap_tex_index = heightMapTextureId;
-    context.dmap_normal_tex_index = normalMapTextureId;
 }
 
 void TerrainDemo::initTerrain() {
@@ -184,6 +190,12 @@ void TerrainDemo::initTerrain() {
     terrain->init();
 }
 
+void TerrainDemo::initDisplacementMapGenerator() {
+    displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::File, 3601, 3601, resource("kauai.png"));
+    displacementMapGenerator->init();
+    context.dmap_tex_index = displacementMapGenerator->displacementMapInfo().values_tex_id;
+    context.dmap_normal_tex_index = displacementMapGenerator->displacementMapInfo().normal_tex_id;
+}
 
 void TerrainDemo::endFrame() {
     terrain->endFrame();
@@ -201,38 +213,6 @@ void TerrainDemo::createComputePipelines() {
          .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
      }});
     compute.createPipelines();
-}
-
-void TerrainDemo::loadHeightMap() {
-    textures::fromFile(device, heightMap, resource("kauai.png"));
-    textures::createNoTransition(device, normalMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {heightMap.width, heightMap.height, 1});
-
-    heightMapTextureId = bindlessDescriptor.update(heightMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    normalMapTextureId = bindlessDescriptor.update(normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    auto normalMapImageId = bindlessDescriptor.update(normalMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
-
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-       Barriers::pushAndFlush(commandBuffer, normalMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                      VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-
-       const auto gx = (heightMap.width + 15)/16;
-       const auto gy = (heightMap.height + 15)/16;
-
-       struct {
-           float bump_strength{};
-           uint dmap_tex_id{};
-           uint normal_image_id{};
-       } constants { 10.f, heightMapTextureId, normalMapImageId } ;
-
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("generate_normals"));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("generate_normals"), 0, 1, &bindlessDescriptor.descriptorSet, 0, 0);
-        vkCmdPushConstants(commandBuffer, compute.layout("generate_normals"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commandBuffer, gx, gy, 1);
-
-        Barriers::pushAndFlush(commandBuffer, normalMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                       VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    });
-
 }
 
 int main(){
