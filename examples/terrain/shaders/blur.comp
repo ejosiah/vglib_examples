@@ -1,0 +1,43 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+// https://www.rastergrid.com/blog/2010/09/efficient-gaussian-blur-with-linear-sampling/
+#define N_TAP 3
+
+#define blur_input global_textures[blur_input_index]
+#define blur_output global_images[blur_output_index]
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
+
+layout(push_constant) uniform CONTANTS{
+    uint horizontal;
+    uint blur_input_index;
+    uint blur_output_index;
+};
+
+shared vec3 results[N_TAP];
+
+float offsets[N_TAP] = float[]( 0.0, 1.3846153846, 3.2307692308 );
+float weights[N_TAP] = float[]( 0.2270270270, 0.3162162162, 0.0702702703 );
+
+void main(){
+    vec2 resolution = vec2(gl_NumWorkGroups * gl_WorkGroupSize);
+    vec2 uv = (vec2(gl_GlobalInvocationID) + 0.5)/resolution;
+
+    vec4 fragColor = texture(blur_input, uv);
+    fragColor.rgb *= weights[0];
+
+    for(int i = 1; i < 3; i++){
+        vec2 coord = bool(horizontal) ? vec2(offsets[i], 0) : vec2(0, offsets[i]);
+        coord /= resolution;
+        fragColor.rgb += texture(blur_input, uv + coord).rgb * weights[i];
+        fragColor.rgb += texture(blur_input, uv - coord).rgb * weights[i];
+    }
+
+    imageStore(blur_output, ivec2(gl_GlobalInvocationID), fragColor);
+
+}

@@ -53,6 +53,7 @@ void TerrainDemo::initCamera() {
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 //    camera->position({1000.0f, 2000.5f, 1000.0f});
     camera->position({0, 1, 0});
+    camera->lookAt({0, 0, 1}, glm::vec3(0), {0, 1, 0});
 }
 
 void TerrainDemo::initBindlessDescriptor() {

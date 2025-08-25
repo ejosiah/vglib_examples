@@ -18,8 +18,7 @@ struct DisplacementMapInfo {
     uint height{};
 };
 
-enum class DisplacementMethod { File };
-
+enum class DisplacementMethod { File, FaultFormation };
 
 class DisplacementMapGenerator {
 public:
@@ -37,6 +36,10 @@ protected:
     void loadDisplacementMap();
 
     void computeFileDisplacementMap(VkCommandBuffer commandBuffer);
+
+    void faultFormation(VkCommandBuffer commandBuffer);
+
+    void blur(VkCommandBuffer commandBuffer);
 
     void generateNormalMap(VkCommandBuffer commandBuffer);
 
@@ -57,6 +60,20 @@ private:
         int height;
         int channels;
     };
+
+    struct {
+        glm::vec2 seed{2 << 20, 2 << 21};
+        uint maxIterations{100};
+        uint iteration{0};
+        uint dmap_image_index{~0u};
+    } ff_constants;
+
+    struct {
+        glm::vec2 seed{2 << 20, 2 << 21};
+        uint maxIterations{100};
+        bool blur{true};
+        int blurIterations{18};
+    } ff_options;
 
     Context* m_context;
     std::string m_path;

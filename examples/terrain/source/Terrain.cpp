@@ -12,7 +12,6 @@ Terrain::Terrain(Context &context)
 
     static uint WorkGroupSize = 256;
     static uint cbtID = 0;
-    static uint should_displace = 1;
     static uint projection_method = 0;
     static uint should_cull_triangle = 0;
     static std::array<uint, 5> entries{ cbtID, WorkGroupSize, should_displace, projection_method, should_cull_triangle};
@@ -106,12 +105,11 @@ void Terrain::initUniforms() {
     const float height = m_dmap.height;
     const float zMin = m_dmap.zMin;
     const float zMax = m_dmap.zMax;
-    glm::vec3 scale{width, zMax - zMin, height};
 
     glm::mat4 model = glm::mat4{1};
-    model = glm::translate(model, {-width / 2.0f, zMin, -height / 2.0f});
-    model = glm::scale(model, scale);
-    model = glm::rotate(model, glm::half_pi<float>(), {1, 0, 0});
+    model = glm::scale(model, {width, zMax - zMin, height});
+    model = glm::rotate(model, -glm::half_pi<float>(), {1, 0, 0});
+    model = glm::translate(model, {-0.5f, -0.5f, 0.0f});
     defaultValues.modelMatrix = model;
     defaultValues.resolution = { m_context->screenWidth, m_context->screenHeight };
 
@@ -197,7 +195,7 @@ void Terrain::createRenderPipelines() {
                 .vertexShader(FileManager::resource("terrain_render.vert.spv"))
                     .addSpecialization(0u, 0)
                     .addSpecialization(256u, 1)
-                    .addSpecialization(1u, 2)
+                    .addSpecialization(should_displace, 2)
                     .addSpecialization(0u, 3)
                     .addSpecialization(0u, 4)
                 .fragmentShader(FileManager::resource("terrain_render.frag.spv"))
@@ -206,7 +204,7 @@ void Terrain::createRenderPipelines() {
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
             .rasterizationState()
 //                .polygonModeLine()
-                .cullNone()
+//                .cullNone()
             .layout().clear()
                 .addDescriptorSetLayout(m_descriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())

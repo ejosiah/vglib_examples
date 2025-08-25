@@ -27,6 +27,9 @@ void DisplacementMapGenerator::exec(VkCommandBuffer commandBuffer) {
         case DisplacementMethod::File:
             computeFileDisplacementMap(commandBuffer);
             break;
+        case DisplacementMethod::FaultFormation:
+            faultFormation(commandBuffer);
+            break;
         default:
             assert(false && "method not not yet implemented!");
     }
@@ -91,6 +94,55 @@ void DisplacementMapGenerator::computeFileDisplacementMap(VkCommandBuffer comman
 
 }
 
+void DisplacementMapGenerator::faultFormation(VkCommandBuffer commandBuffer) {
+    auto info = displacementMapInfo();
+    auto& dispMap = m_displacementMap.values;
+
+    VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    VkAccessFlagBits srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    VkImageLayout srcLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if(dispMap.format == VK_FORMAT_R16G16B16A16_SFLOAT || dispMap.width != info.width || dispMap.height != info.height) {
+        srcStageMask = VK_PIPELINE_STAGE_NONE;
+        srcLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        srcAccessMask = VK_ACCESS_NONE;
+        textures::createNoTransition(device(), m_displacementMap.values, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R16G16B16A16_SFLOAT, {info.width, info.height, 1});
+    }
+
+    static auto dispMapImageId = bindlessDescriptor().update(dispMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
+
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, srcStageMask, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           srcAccessMask, VK_ACCESS_SHADER_WRITE_BIT, srcLayout, VK_IMAGE_LAYOUT_GENERAL);
+
+    const auto gx = (info.width + 15)/16;
+    const auto gy = (info.height + 15)/16;
+
+    auto descriptorSet = bindlessDescriptorSet();
+    const auto N = ff_constants.maxIterations;
+    ff_constants.dmap_image_index = dispMapImageId;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fault_formation"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fault_formation"), 0, 1, &descriptorSet, 0, 0);
+
+    for(int i = 0; i <= N; ++i) {
+        ff_constants.iteration = i;
+        vkCmdPushConstants(commandBuffer, m_compute.layout("fault_formation"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ff_constants), &ff_constants);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+
+        Barrier::computeWriteToRead(commandBuffer);
+    }
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                           VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    dispMap.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    blur(commandBuffer);
+
+}
+
 std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
     return {
             {
@@ -98,7 +150,19 @@ std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
                 .shadePath = FileManager::resource("generate_normal_map.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
-            }
+            },
+            {
+                .name = "fault_formation",
+                .shadePath = FileManager::resource("fault_formation.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ff_constants)} }
+            },
+            {
+                .name = "blur",
+                .shadePath = FileManager::resource("blur.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint) * 3} }
+            },
     };
 }
 
@@ -166,6 +230,78 @@ VkDescriptorSet DisplacementMapGenerator::bindlessDescriptorSet() {
 
 BindlessDescriptor &DisplacementMapGenerator::bindlessDescriptor() {
     return *m_context->bindlessDescriptor;
+}
+
+void DisplacementMapGenerator::blur(VkCommandBuffer commandBuffer) {
+    auto info = displacementMapInfo();
+    static struct {
+        uint horizontal;
+        uint blur_input_index;
+        uint blur_output_index;
+    } constants {0 ,0, 0};
+
+    static Texture blurInput{};
+    static Texture blurOutput{};
+
+
+    if(blurOutput.format == VK_FORMAT_UNDEFINED || blurOutput.width != info.width || blurOutput.height != info.height) {
+        auto format = m_displacementMap.values.format;
+        textures::createNoTransition(device(), blurOutput, VK_IMAGE_TYPE_2D, format, {info.width, info.height, 1});
+        textures::createNoTransition(device(), blurInput, VK_IMAGE_TYPE_2D, format, {info.width, info.height, 1});
+
+        Barriers::push(blurInput.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+        Barriers::push(blurOutput.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+        Barriers::flush(commandBuffer);
+        blurInput.image.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+        blurOutput.image.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+    }
+
+    textures::copy(commandBuffer, m_displacementMap.values, blurInput);
+
+    static auto blur_input_offset = to<uint>(bindlessDescriptor().reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2));
+    static auto blur_output_offset = to<uint>(bindlessDescriptor().reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2));
+
+    static std::array<uint, 2> blur_input_index{blur_input_offset, blur_input_offset+1};
+    static std::array<uint, 2> blur_output_index{blur_output_offset, blur_output_offset+1};
+
+    bindlessDescriptor().update({ &blurInput, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, blur_input_index[0], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &blurOutput, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, blur_input_index[1], VK_IMAGE_LAYOUT_GENERAL });
+
+    bindlessDescriptor().update({ &blurOutput, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, blur_output_index[0], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &blurInput, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, blur_output_index[1], VK_IMAGE_LAYOUT_GENERAL });
+
+
+    int pingPong = 0;
+    const auto iterations = ff_options.blurIterations;  // use odd number iterations so blurOut will always be final output
+    const auto gx = (info.width + 15)/16;
+    const auto gy = (info.height + 15)/16;
+    auto descriptorSet = bindlessDescriptorSet();
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("blur"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("blur"), 0, 1, &descriptorSet, 0, 0);
+
+    for(auto i = 0; i < iterations; ++i) {
+        constants.horizontal = 1;
+        constants.blur_input_index = blur_input_index[pingPong];
+        constants.blur_output_index = blur_output_index[pingPong];
+
+        vkCmdPushConstants(commandBuffer, m_compute.layout("blur"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+        Barrier::computeWriteToRead(commandBuffer);
+
+        constants.horizontal = 0;
+        vkCmdPushConstants(commandBuffer, m_compute.layout("blur"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+        Barrier::computeWriteToRead(commandBuffer);
+
+        pingPong = 1 - pingPong;
+    }
+
+    textures::copy(commandBuffer, blurOutput, m_displacementMap.values);
+
 }
 
 

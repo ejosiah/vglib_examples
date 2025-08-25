@@ -153,4 +153,5 @@ private:
     Pipeline m_topView;
     std::array<VkDescriptorSet, 2> m_sets;
     SpecializationConstants specializationConstants{};
+    uint should_displace = 1;
 };
