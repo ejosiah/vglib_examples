@@ -51,6 +51,7 @@ void Terrain::newFrame() {
     m_uniforms.cpu->lodFactor = computeLodFactor();
     m_uniforms.cpu->dmapFactor = m_options.dmapScale;
     m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
+    m_uniforms.cpu->lightDirection = *context().lightDirection;
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
@@ -100,6 +101,7 @@ void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
 void Terrain::initUniforms() {
     defaultValues.damp_tex_index = context().dmap_tex_index;
     defaultValues.dmap_normal_tex_index = context().dmap_normal_tex_index;
+    defaultValues.shadow_tex_index = context().dmap_shadow_tex_index;
 
     const float width = m_dmap.width;
     const float height = m_dmap.height;
@@ -107,6 +109,7 @@ void Terrain::initUniforms() {
     const float zMax = m_dmap.zMax;
 
     glm::mat4 model = glm::mat4{1};
+    model = glm::translate(model, {0, -zMin, 0});
     model = glm::scale(model, {width, zMax - zMin, height});
     model = glm::rotate(model, -glm::half_pi<float>(), {1, 0, 0});
     model = glm::translate(model, {-0.5f, -0.5f, 0.0f});
@@ -246,7 +249,7 @@ void Terrain::createRenderPipelines() {
             .rasterizationState()
                 .cullNone()
             .depthStencilState()
-                .enableDepthWrite()
+                .disableDepthWrite()
                 .enableDepthTest()
                 .compareOpAlways()
                 .minDepthBounds(0)
@@ -262,14 +265,6 @@ Context &Terrain::context() {
     return *m_context;
 }
 
-VulkanDevice &Terrain::device() {
-    return *m_context->device;
-}
-
-GraphicsPipelineBuilder Terrain::graphicsPipelineBuilder() const {
-    return m_context->prototypes->cloneGraphicsPipeline();
-}
-
 float Terrain::computeLodFactor() {
     const auto h = m_context->screenHeight;
     const auto gpuSubd = m_options.gpuSubDivisions;
@@ -278,10 +273,6 @@ float Terrain::computeLodFactor() {
     auto rtVal =  -2.0f * std::log2(tmp) + 2.0f;
     spdlog::debug("[terrain] lod factor {}", rtVal);
     return rtVal;
-}
-
-BaseCameraController &Terrain::camera() {
-    return *m_context->camera;
 }
 
 void Terrain::endFrame() {
@@ -371,10 +362,6 @@ void Terrain::updateDescriptorSets() {
     m_sets[0] = m_descriptorSet;
 }
 
-VulkanDescriptorPool &Terrain::descriptorPool() const {
-    return *m_context->descriptorPool;
-}
-
 void Terrain::createComputePipelines() {
     m_compute = ComputePipelines{ m_context->device, metadata() };
     m_compute.createPipelines();
@@ -423,7 +410,7 @@ std::vector<PipelineMetaData> Terrain::metadata() {
             .shadePath = FileManager::resource("cbt_info.comp.spv"),
             .layouts = layouts,
             .specializationConstants = specializationConstants
-        }
+        },
     };
 }
 
@@ -491,10 +478,6 @@ uint Terrain::nodeCount() const {
     return m_cbtInfo.cpu->nodeCount;
 }
 
-VulkanDescriptorSetLayout& Terrain::bindlessDescriptorSetLayout() {
-    return *const_cast<VulkanDescriptorSetLayout*>(m_context->bindlessDescriptor->descriptorSetLayout);
-}
-
 void Terrain::wireOn() {
     m_options.wire = true;
 }
@@ -518,7 +501,14 @@ void Terrain::controls() {
     ImGui::SliderFloat("Pixels/Edge", &m_options.primitivePixelLengthTarget, 1, 32);
     ImGui::SliderFloat("Dmap scale", &m_options.dmapScale, 0, 1);
     ImGui::SliderFloat("Lod Std", &m_options.minLodStdev, 0, 1);
+
     ImGui::Checkbox("Wire", &m_options.wire);
+    ImGui::SameLine();
+    ImGui::Checkbox("topView", &m_options.topView);
 
     ImGui::End();
+}
+
+TerrainInfo Terrain::getInfo() const {
+    return { m_dmap.width, m_dmap.height, m_dmap.zMin, m_dmap.zMax };
 }

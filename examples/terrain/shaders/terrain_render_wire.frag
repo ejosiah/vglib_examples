@@ -1,8 +1,9 @@
 #version 460
 
+#include "shared.glsl"
+
 layout(location = 0) in struct {
     vec3 worldPos;
-    vec3 normal;
     vec3 color;
     vec2 uv;
 } fs_in;
@@ -21,8 +22,10 @@ void main() {
     float nearestDistance = min(min(distanceSquared.x, distanceSquared.y), distanceSquared.z);
     float blendFactor = exp2(-nearestDistance / wireScale);
 
+    vec3 normal = -1 + 2 * texture(u_NormalSampler, fs_in.uv).xzy;
+    vec3 N = normalize(normal);
+
     vec3 L = normalize(vec3(1));
-    vec3 N = normalize(fs_in.normal);
     vec3 albedo = fs_in.color;
 
     vec3 radiance = albedo * max(0, dot(N, L));

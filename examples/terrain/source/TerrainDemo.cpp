@@ -35,15 +35,11 @@ void TerrainDemo::initApp() {
     createRenderPipeline();
     initDisplacementMapGenerator();
     initTerrain();
+    initDisplacementShadowMap();
 }
 
 void TerrainDemo::initCamera() {
-//    OrbitingCameraSettings cameraSettings;
     FirstPersonSpectatorCameraSettings cameraSettings;
-//    cameraSettings.orbitMinZoom = 0.1;
-//    cameraSettings.orbitMaxZoom = 512.0f;
-//    cameraSettings.offsetDistance = 1.0f;
-//    cameraSettings.modelHeight = 0.5;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.zFar = 64000;
     cameraSettings.acceleration = glm::vec3(500);
@@ -51,9 +47,7 @@ void TerrainDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-//    camera->position({1000.0f, 2000.5f, 1000.0f});
-    camera->position({0, 1, 0});
-    camera->lookAt({0, 0, 1}, glm::vec3(0), {0, 1, 0});
+    camera->position({0, 1000, 0});
 }
 
 void TerrainDemo::initBindlessDescriptor() {
@@ -136,6 +130,7 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
+    displacementShadowMap->exec(commandBuffer);
     terrain->preProcess(commandBuffer);
 
     clearColor(0, 0, 1);
@@ -151,6 +146,13 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 
 void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     terrain->controls();
+
+    ImGui::Begin("Lighting");
+    ImGui::SetWindowSize({0, 0});
+    ImGui::SliderFloat("Zenith Angle", &options.lightZenith, 0, 180);
+    ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
+    ImGui::End();   // End lighting
+
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
@@ -176,6 +178,8 @@ void TerrainDemo::onPause() {
 }
 
 void TerrainDemo::initContext() {
+    static glm::vec3 lightDirection{1};
+
     context.screenWidth = swapChain.width();
     context.screenHeight = swapChain.height();
     context.device = &device;
@@ -184,6 +188,10 @@ void TerrainDemo::initContext() {
     context.gBuffer = &gBuffer;
     context.bindlessDescriptor = &bindlessDescriptor;
     context.prototypes = std::make_unique<Prototypes>(device, swapChain, renderPass);
+    context.lightDirection = &lightDirection;
+    context.dmap_tex_index = bindlessDescriptor.reserveTextureSlots(1);
+    context.dmap_normal_tex_index = bindlessDescriptor.reserveTextureSlots(1);
+    context.dmap_shadow_tex_index = bindlessDescriptor.reserveTextureSlots(1);
 }
 
 void TerrainDemo::initTerrain() {
@@ -192,13 +200,17 @@ void TerrainDemo::initTerrain() {
 }
 
 void TerrainDemo::initDisplacementMapGenerator() {
-    displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::File, 3601, 3601, resource("kauai.png"));
+    auto path = "kauai.png";
+    displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::File, 3601, 3601, resource(path));
     displacementMapGenerator->init();
-    context.dmap_tex_index = displacementMapGenerator->displacementMapInfo().values_tex_id;
-    context.dmap_normal_tex_index = displacementMapGenerator->displacementMapInfo().normal_tex_id;
 }
 
 void TerrainDemo::endFrame() {
+
+    glm::mat4 rot = glm::rotate(glm::mat4{1}, glm::radians(options.lightAzimuth), {0, 1, 0});
+    rot = glm::rotate(rot, glm::radians(options.lightZenith), {0, 0, 1});
+    *context.lightDirection = (rot * glm::vec4{1, 0, 0, 1}).xyz();
+
     terrain->endFrame();
 }
 
@@ -214,6 +226,14 @@ void TerrainDemo::createComputePipelines() {
          .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
      }});
     compute.createPipelines();
+}
+
+void TerrainDemo::initDisplacementShadowMap() {
+    auto dmapInfo = displacementMapGenerator->displacementMapInfo();
+    auto terrainInfo = terrain->getInfo();
+
+    displacementShadowMap = std::make_unique<DisplacementShadowMap>(context, dmapInfo, terrainInfo);
+    displacementShadowMap->init();
 }
 
 int main(){

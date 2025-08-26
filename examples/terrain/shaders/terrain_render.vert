@@ -7,7 +7,6 @@ layout(location = 0) in vec2 pos;
 
 layout(location = 0) out struct {
     vec3 worldPos;
-    vec3 normal;
     vec3 color;
     vec2 uv;
 } v;
@@ -29,10 +28,7 @@ void main() {
         pos
     );
 
-    vec3 normal = -1 + 2 * texture(u_NormalSampler, attrib.texCoord).xyz;
-
     v.worldPos = (globals.modelMatrix * attrib.position).xyz;
-    v.normal = normal.xzy;
     v.color = vec3(252, 197, 150) / 255.0f;
     v.uv = attrib.texCoord;
 

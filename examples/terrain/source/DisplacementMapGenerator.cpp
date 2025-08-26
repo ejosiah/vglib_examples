@@ -6,8 +6,8 @@ DisplacementMapGenerator::DisplacementMapGenerator(Context &context, Displacemen
      m_method{method},
      m_displacementMap{.width = width,.height = height },
      m_info{
-        .values_tex_id = to<uint>(context.bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)),
-        .normal_tex_id = to<uint>(context.bindlessDescriptor->reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)),
+        .values_tex_id = context.dmap_tex_index,
+        .normal_tex_id = context.dmap_normal_tex_index,
         .width = width,
         .height = height
     },

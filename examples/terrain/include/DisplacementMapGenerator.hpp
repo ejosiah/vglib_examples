@@ -1,22 +1,9 @@
 #pragma once
 
 #include "Shared.hpp"
+#include "DisplacementMap.hpp"
 #include "ComputePipelins.hpp"
 #include <string>
-
-struct DisplacementMap {
-    Texture values;
-    Texture normals;
-    uint width{};
-    uint height{};
-};
-
-struct DisplacementMapInfo {
-    uint values_tex_id{~0u};
-    uint normal_tex_id{~0u};
-    uint width{};
-    uint height{};
-};
 
 enum class DisplacementMethod { File, FaultFormation };
 

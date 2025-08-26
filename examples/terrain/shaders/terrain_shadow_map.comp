@@ -1,0 +1,91 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
+
+#define displacement_map global_textures[dmap_tex_index]
+#define shadow_map  global_images[shadow_image_index]
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
+
+// --- Parameters ---------------------------------------------------------------
+// Height units: worldY = heightTex * heightScale
+// Horizontal units: each texel step in X/Z equals uXZScale world units.
+layout(push_constant) uniform Constants {
+    vec3  lightDir;     // normalized direction FROM point TOWARD light (e.g., sun)
+    float heightScale;  // world units per height [0..1]
+    vec2 xzScale;      // world units per texel in X/Z
+    float stepStride;   // step size in texels along X/Z (e.g., 1.0)
+    int   maxSteps;     // e.g., 256 (tradeoff: quality vs. speed)
+    float slopeBias;    // small bias to avoid self-shadowing (e.g., 0.001)
+    float softness;     // >0 enables soft shadows; try 0.05..0.2, 0 disables
+    uint dmap_tex_index;
+    uint shadow_image_index;
+};
+
+// clamp helper
+float saturate(float x) { return clamp(x, 0.0, 1.0); }
+
+bool  leftBounds = false;
+
+void main() {
+    ivec2 gid  = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(displacement_map, 0);
+    if (gid.x >= size.x || gid.y >= size.y) return;
+
+    // Centered UV and initial height
+    vec2 uv   = (vec2(gid) + 0.5) / vec2(size);
+    float h0  = texelFetch(displacement_map, gid, 0).r * heightScale;
+
+    // Projected light direction on XZ plane (heightmap plane)
+    vec2 Lxz     = lightDir.xz;
+    float lenLxz = length(Lxz);
+
+    // If light is perfectly vertical, there are no lateral occluders in the height field
+    if (lenLxz < 1e-5) {
+        imageStore(shadow_map, gid, vec4(1.0, 0.0, 0.0, 1.0));
+        return;
+    }
+
+    vec2  v          = normalize(Lxz);                          // march direction in XZ
+    vec2  texelSize  = 1.0 / vec2(size);
+    vec2  duv        = v * texelSize * stepStride;          // step in texture space
+    float hStepWorld = stepStride * length(vec2(v.x * xzScale.x, v.y * xzScale.y));
+    float slopeLight = lightDir.y / lenLxz - slopeBias; // target slope (Y per XZ)
+
+    float maxSlope = -1e20; // running maximum slope to the horizon
+    vec2  posUV    = uv;
+
+    // March toward the light
+    for (int i = 1; i <= maxSteps; ++i) {
+        posUV += duv;
+        // If we leave the heightfield, we can consider the point lit
+        if (any(lessThan(posUV, vec2(0.0))) || any(greaterThan(posUV, vec2(1.0)))) {
+            leftBounds = true;
+            break;
+        }
+
+        float s_world = float(i) * hStepWorld; // horizontal distance in world units
+        float h1      = textureLod(displacement_map, posUV, 0.0).r * heightScale;
+        float slope   = (h1 - h0) / max(s_world, 1e-6);          // slope from current texel to this sample
+        // Track the steepest horizon
+        maxSlope = max(maxSlope, slope);
+
+        // Early exit if the horizon already exceeds the sun's slope
+        if (maxSlope > slopeLight && softness <= 0.0) {
+            imageStore(shadow_map, gid, vec4(0.0, 0.0, 0.0, 1.0));
+            return;
+        }
+    }
+
+    if (softness > 0.0) {
+        float margin = slopeLight - maxSlope;                // >0 lit, <0 shadow
+        float vis    = smoothstep(-softness, softness, margin);
+        imageStore(shadow_map, gid, vec4(vis, 0.0, 0.0, 1.0));
+    } else {
+        imageStore(shadow_map, gid, vec4(maxSlope > slopeLight ? 0.0 : 1.0, 0.0, 0.0, 1.0));
+    }
+}

@@ -4,6 +4,7 @@
 #include "Shared.hpp"
 #include "Terrain.hpp"
 #include "DisplacementMapGenerator.hpp"
+#include "DisplacementShadowMap.hpp"
 #include "ComputePipelins.hpp"
 
 class TerrainDemo : public VulkanBaseApp{
@@ -18,6 +19,8 @@ protected:
     void initContext();
 
     void initDisplacementMapGenerator();
+
+    void initDisplacementShadowMap();
 
     void initTerrain();
 
@@ -79,10 +82,13 @@ protected:
     Context context;
     std::unique_ptr<DisplacementMapGenerator> displacementMapGenerator;
     std::unique_ptr<Terrain> terrain;
+    std::unique_ptr<DisplacementShadowMap> displacementShadowMap;
     Texture heightMap;
     Texture normalMap;
-    uint heightMapTextureId{~0u};
-    uint normalMapTextureId{~0u};
     ComputePipelines compute;
 
+    struct {
+        float lightZenith{45};
+        float lightAzimuth{45};
+    } options;
 };

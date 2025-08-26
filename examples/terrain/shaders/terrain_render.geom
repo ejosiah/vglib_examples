@@ -7,14 +7,12 @@ layout(triangle_strip, max_vertices = 3) out;
 
 layout(location = 0) in struct {
     vec3 worldPos;
-    vec3 normal;
     vec3 color;
     vec2 uv;
 } gs_in[];
 
 layout(location = 0) out struct {
     vec3 worldPos;
-    vec3 normal;
     vec3 color;
     vec2 uv;
 } gs_out;
@@ -30,7 +28,6 @@ void main() {
 
     for (int i = 0; i < 3; ++i) {
         gs_out.worldPos = gs_in[i].worldPos;
-        gs_out.normal = gs_in[i].normal;
         gs_out.color = gs_in[i].color;
         gs_out.uv = gs_in[i].uv;
 

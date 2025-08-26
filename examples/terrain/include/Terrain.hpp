@@ -1,19 +1,19 @@
 #pragma once
 
-#include "Shared.hpp"
+#include "ContextAware.hpp"
 #include "ComputePipelins.hpp"
 #include <glm/glm.hpp>
 #include <array>
 #include <vector>
 
-class Terrain {
+class Terrain : public ContextAware {
 public:
     struct CbtData {
         uint maxDepth{0};
         uint nodeCount{0};
     };
 
-    Terrain(Context& context);
+    explicit Terrain(Context& context);
 
     void init();
 
@@ -36,6 +36,8 @@ public:
     void wireOn();
 
     void wireOff();
+
+    TerrainInfo getInfo() const;
 
 protected:
     void renderTerrain(VkCommandBuffer commandBuffer);
@@ -68,21 +70,11 @@ protected:
 
     void getCbtInfo(VkCommandBuffer commandBuffer);
 
-    Context& context();
-
-    VulkanDevice& device();
-
-    BaseCameraController& camera();
-
-    VulkanDescriptorPool& descriptorPool() const;
-
-    GraphicsPipelineBuilder graphicsPipelineBuilder() const;
+    Context& context() final;
 
     float computeLodFactor();
 
     std::vector<PipelineMetaData> metadata();
-
-    VulkanDescriptorSetLayout& bindlessDescriptorSetLayout();
 
 private:
     static constexpr int64_t CBT_MAX_DEPTH = 25;
@@ -96,12 +88,14 @@ private:
         glm::mat4 viewProjectionMatrix{1};
         glm::mat4 modelViewProjectionMatrix{1};
         std::array<glm::vec4, 6> frustumPlanes;
+        glm::vec3 lightDirection;
         glm::vec2 resolution{0};
         float lodFactor{0};
         float minLodVariance{0.1};
         float dmapFactor{1};
         uint damp_tex_index{~0u};
         uint dmap_normal_tex_index{~0u};
+        uint shadow_tex_index{~0u};
     } defaultValues{};
 
     Context* m_context{};
@@ -144,7 +138,7 @@ private:
         float primitivePixelLengthTarget{7};
         float minLodStdev{0.1};
         bool topView{true};
-        bool wire{true};
+        bool wire{false};
         float dmapScale{1};
     } m_options;
 
