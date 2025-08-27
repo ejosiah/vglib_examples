@@ -1,4 +1,5 @@
 #include "DisplacementShadowMap.hpp"
+#include <imgui.h>
 
 DisplacementShadowMap::DisplacementShadowMap(Context &context, const DisplacementMapInfo &displacement, const TerrainInfo& terrain)
 : m_context{&context}
@@ -16,7 +17,9 @@ void DisplacementShadowMap::init() {
 void DisplacementShadowMap::exec(VkCommandBuffer commandBuffer) {
     auto& pc = m_Constants;
     pc.lightDir = glm::normalize(*context().lightDirection);
-    pc.softness = 0;
+    pc.softness = m_options.softness;
+    pc.slopeBias = m_options.slopeBias;
+    pc.enabled = to<int>(m_options.enabled);
 
     const auto gx = (m_displacementMap.width + 15)/16;
     const auto gy = (m_displacementMap.height + 15)/16;
@@ -58,9 +61,13 @@ void DisplacementShadowMap::initConstants() {
     pc.stepStride = max(1.0f, ceil(max(m_displacementMap.width, m_displacementMap.height)/float(targetMaxSteps)));
     pc.maxSteps   = int(ceil(float(max(m_displacementMap.width, m_displacementMap.height)) / pc.stepStride));
     pc.slopeBias  = 0.001f;
-    pc.softness   = 0.1f;
+    pc.softness   = 0.002f;
     pc.shadow_image_index = m_shadowMapImageIndex;
     pc.dmap_tex_index = context().dmap_tex_index;
+
+    m_options.softness = pc.softness;
+    m_options.maxSteps = pc.maxSteps;
+    m_options.slopeBias = pc.slopeBias;
 }
 
 std::vector<PipelineMetaData> DisplacementShadowMap::metadata() {
@@ -76,4 +83,13 @@ std::vector<PipelineMetaData> DisplacementShadowMap::metadata() {
 
 Context& DisplacementShadowMap::context()  {
     return *m_context;
+}
+
+void DisplacementShadowMap::controls() {
+    ImGui::Begin("Shadow");
+    ImGui::SetWindowSize({});
+    ImGui::SliderFloat("slope bias", &m_options.slopeBias, 0.001, 0.1);
+    ImGui::SliderFloat("softness", &m_options.softness, 0, 0.0006);
+    ImGui::Checkbox("enabled", &m_options.enabled);
+    ImGui::End();
 }

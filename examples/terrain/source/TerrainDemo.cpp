@@ -146,7 +146,7 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 
 void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     terrain->controls();
-
+    displacementShadowMap->controls();
     ImGui::Begin("Lighting");
     ImGui::SetWindowSize({0, 0});
     ImGui::SliderFloat("Zenith Angle", &options.lightZenith, 0, 180);

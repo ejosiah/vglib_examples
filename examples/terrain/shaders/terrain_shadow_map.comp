@@ -22,6 +22,7 @@ layout(push_constant) uniform Constants {
     int   maxSteps;     // e.g., 256 (tradeoff: quality vs. speed)
     float slopeBias;    // small bias to avoid self-shadowing (e.g., 0.001)
     float softness;     // >0 enables soft shadows; try 0.05..0.2, 0 disables
+    uint enabled;
     uint dmap_tex_index;
     uint shadow_image_index;
 };
@@ -33,6 +34,12 @@ bool  leftBounds = false;
 
 void main() {
     ivec2 gid  = ivec2(gl_GlobalInvocationID.xy);
+
+    if(enabled != 1) {
+        imageStore(shadow_map, gid, vec4(1.0, 0.0, 0.0, 1.0));
+        return;
+    }
+
     ivec2 size = textureSize(displacement_map, 0);
     if (gid.x >= size.x || gid.y >= size.y) return;
 

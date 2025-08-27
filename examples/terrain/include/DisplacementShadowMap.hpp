@@ -11,6 +11,8 @@ public:
 
     void exec(VkCommandBuffer commandBuffer);
 
+    void controls();
+
 protected:
     void createShadowMapTexture();
 
@@ -30,19 +32,23 @@ private:
     uint m_shadowMapImageIndex{~0u};
 
     struct {
-        glm::vec3  lightDir;     // normalized direction FROM point TOWARD light (e.g., sun)
-        float heightScale;  // world units per height [0..1]
-        glm::vec2 xzScale;      // world units per texel in X/Z
-        float stepStride;   // step size in texels along X/Z (e.g., 1.0)
-        int   maxSteps;     // e.g., 256 (tradeoff: quality vs. speed)
-        float slopeBias;    // small bias to avoid self-shadowing (e.g., 0.001)
-        float softness;     // >0 enables soft shadows; try 0.05..0.2, 0 disables
-        uint dmap_tex_index;
-        uint shadow_image_index;
+        glm::vec3  lightDir{1};
+        float heightScale{1};
+        glm::vec2 xzScale{1};
+        float stepStride{1};
+        int maxSteps{256};
+        float slopeBias{0.001};
+        float softness{0.002};
+        uint enabled{1};
+        uint dmap_tex_index{~0u};
+        uint shadow_image_index{~0u};
     } m_Constants{};
 
     struct {
-        float softness{0.1};
+        float slopeBias{0.01};
+        float softness{0.002};
+        float maxSteps{256};
+        bool enabled{true};
     } m_options{};
 
     ComputePipelines m_compute;
