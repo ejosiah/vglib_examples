@@ -42,6 +42,7 @@ void DisplacementMapGenerator::exec(VkCommandBuffer commandBuffer) {
 void DisplacementMapGenerator::loadDisplacementMap() {
     if(m_path.empty()) return;
 
+    stbi_set_flip_vertically_on_load(0);
     auto pixels = stbi_load(m_path.c_str(), &m_fileInfo.width, &m_fileInfo.height, &m_fileInfo.channels, STBI_rgb_alpha);
     if(!pixels){
         throw std::runtime_error{fmt::format("failed to load texture image {}!", m_path)};

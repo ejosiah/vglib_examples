@@ -19,6 +19,7 @@ void main() {
         o_Distance = vec3(0);
         o_Distance[i] = area * inversesqrt(dot(v[i],v[i]));
         gl_Position = gl_in[i].gl_Position;
+        gl_Position.y *= -1;
         EmitVertex();
     }
     EndPrimitive();

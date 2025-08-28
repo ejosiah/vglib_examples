@@ -74,7 +74,6 @@ void Terrain::preProcess(VkCommandBuffer commandBuffer) {
 
 void Terrain::render(VkCommandBuffer commandBuffer) {
     renderTerrain(commandBuffer);
-    renderTopView(commandBuffer);
 }
 
 void Terrain::renderTerrain(VkCommandBuffer commandBuffer) {
@@ -206,8 +205,7 @@ void Terrain::createRenderPipelines() {
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
             .rasterizationState()
-//                .polygonModeLine()
-//                .cullNone()
+                .cullNone()
             .layout().clear()
                 .addDescriptorSetLayout(m_descriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())

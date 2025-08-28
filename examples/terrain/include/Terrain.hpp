@@ -23,6 +23,8 @@ public:
 
     void render(VkCommandBuffer commandBuffer);
 
+    void renderTopView(VkCommandBuffer commandBuffer);
+
     void controls();
 
     void endFrame();
@@ -41,8 +43,6 @@ public:
 
 protected:
     void renderTerrain(VkCommandBuffer commandBuffer);
-
-    void renderTopView(VkCommandBuffer commandBuffer);
 
     void initBuffers();
 

@@ -87,6 +87,8 @@ protected:
     Texture normalMap;
     ComputePipelines compute;
 
+    glm::vec3 lightDirection;
+
     struct {
         float lightZenith{45};
         float lightAzimuth{45};

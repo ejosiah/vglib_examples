@@ -32,10 +32,11 @@ private:
     uint m_shadowMapImageIndex{~0u};
 
     struct {
+        Frustum frustum;
         glm::vec3  lightDir{1};
-        float heightScale{1};
-        glm::vec2 xzScale{1};
         float stepStride{1};
+        glm::vec2 heightRange{1};
+        glm::vec2 xzScale{1};
         int maxSteps{256};
         float slopeBias{0.001};
         float softness{0.002};

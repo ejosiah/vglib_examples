@@ -47,7 +47,8 @@ void TerrainDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->position({0, 1000, 0});
+    camera->position({-1130, 3796, 5057});
+    camera->lookAt({-901, 215, 4442}, glm::vec3(0.2, 0.1, -1.0), {0, 1, 0});
 }
 
 void TerrainDemo::initBindlessDescriptor() {
@@ -61,6 +62,9 @@ void TerrainDemo::beforeDeviceCreation() {
     devFeatures13->synchronization2 = VK_TRUE;
     devFeatures13->dynamicRendering = VK_TRUE;
     devFeatures13->maintenance4 = VK_TRUE;
+
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    devFeatures12->scalarBlockLayout = VK_TRUE;
 
     AppContext::addExtensions(deviceCreateNextChain);
 }
@@ -136,6 +140,8 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     clearColor(0, 0, 1);
     renderToSwapChain([&]{
         terrain->render(commandBuffer);
+        AppContext::renderAtmosphere(commandBuffer, *camera);
+        terrain->renderTopView(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
@@ -161,7 +167,7 @@ void TerrainDemo::update(float time) {
         camera->update(time);
     }
 
-    setTitle(fmt::format("{}, camera - {}, nodes - {}, FPS - {}", title, camera->position(), terrain->nodeCount(), framePerSecond));
+    setTitle(fmt::format("{}, camera - {}, direction - {}, lightDirection - {}, nodes - {}, FPS - {}", title, camera->position(), camera->viewDir, lightDirection, terrain->nodeCount(), framePerSecond));
 }
 
 void TerrainDemo::checkAppInputs() {
@@ -209,12 +215,15 @@ void TerrainDemo::endFrame() {
 
     glm::mat4 rot = glm::rotate(glm::mat4{1}, glm::radians(options.lightAzimuth), {0, 1, 0});
     rot = glm::rotate(rot, glm::radians(options.lightZenith), {0, 0, 1});
-    *context.lightDirection = (rot * glm::vec4{1, 0, 0, 1}).xyz();
+    lightDirection = (rot * glm::vec4{1, 0, 0, 1}).xyz();
+    *context.lightDirection = lightDirection;
+    AppContext::updateSunDirection(lightDirection);
 
     terrain->endFrame();
 }
 
 void TerrainDemo::newFrame() {
+    camera->newFrame();
     terrain->newFrame();
 }
 

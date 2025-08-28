@@ -3,8 +3,8 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_debug_printf : enable
 
-#define displacement_map global_textures[dmap_tex_index]
-#define shadow_map  global_images[shadow_image_index]
+#define displacement_map global_textures[nonuniformEXT(dmap_tex_index)]
+#define shadow_map  global_images[nonuniformEXT(shadow_image_index)]
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
@@ -14,11 +14,13 @@ layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
 // --- Parameters ---------------------------------------------------------------
 // Height units: worldY = heightTex * heightScale
 // Horizontal units: each texel step in X/Z equals uXZScale world units.
+struct Frustum { vec4 p[6]; };
 layout(push_constant) uniform Constants {
+    Frustum frustum;
     vec3  lightDir;     // normalized direction FROM point TOWARD light (e.g., sun)
-    float heightScale;  // world units per height [0..1]
-    vec2 xzScale;      // world units per texel in X/Z
     float stepStride;   // step size in texels along X/Z (e.g., 1.0)
+    vec2 heightRange;  // world units per height [0..1]
+    vec2 xzScale;      // world units per texel in X/Z
     int   maxSteps;     // e.g., 256 (tradeoff: quality vs. speed)
     float slopeBias;    // small bias to avoid self-shadowing (e.g., 0.001)
     float softness;     // >0 enables soft shadows; try 0.05..0.2, 0 disables
@@ -30,9 +32,85 @@ layout(push_constant) uniform Constants {
 // clamp helper
 float saturate(float x) { return clamp(x, 0.0, 1.0); }
 
-bool  leftBounds = false;
+vec3 toWorldCoords(vec2 uv, float h) {
+    ivec2 size = textureSize(displacement_map, 0);
+    h = mix(heightRange.x, heightRange.y, h);
+    vec3 p = vec3(uv.x, h, uv.y);
+    p.xz -= 0.5; // [0, 1] -> [-0.5, 0.5]
+    p.xz *= xzScale * vec2(size);
+    return p;
+}
 
+bool inFrustumClip(vec3 worldPos, mat4 VP){
+    vec4 c = VP * vec4(worldPos, 1.0);
+    // perspective: w <= 0 means behind the eye
+    if (c.w <= 0.0) return false;
+
+    if ( c.x < -c.w || c.x > c.w ) return false;
+    if ( c.y < -c.w || c.y > c.w ) return false;
+    if ( c.z < 0.0  || c.z > c.w ) return false;
+
+    return true;
+}
+
+Frustum makeFrustum(mat4 VP) {
+    Frustum f;
+    // Column-major indexing: VP[0..3] are columns
+    f.p[0] = VP[3] + VP[0]; // Left
+    f.p[1] = VP[3] - VP[0]; // Right
+    f.p[2] = VP[3] + VP[1]; // Bottom
+    f.p[3] = VP[3] - VP[1]; // Top
+    f.p[4] = VP[3] + VP[2]; // Near  (handles GL/VK; the P matrix encodes the convention)
+    f.p[5] = VP[3] - VP[2]; // Far
+
+    // Normalize planes so distance is in *world units*
+    for (int i = 0; i < 6; ++i) {
+        float invLen = inversesqrt(dot(f.p[i].xyz, f.p[i].xyz));
+        f.p[i] *= invLen;
+    }
+    return f;
+}
+
+// Returns true if inside a *padded* frustum.
+// padXY_m: expand L/R/T/B by this world distance (meters)
+// nearBehind_m: allow this much *behind the near plane* (toward camera)
+// farPad_m: expand the far plane by this many meters
+bool inFrustumPaddedWorld(vec3 worldPos, float padXY_m, float nearBehind_m, float farPad_m)
+{
+    Frustum F = frustum;
+
+    // Left, Right, Bottom, Top: allow padXY_m outside
+    if (dot(F.p[0], vec4(worldPos,1.0)) < -padXY_m) return false; // Left
+    if (dot(F.p[1], vec4(worldPos,1.0)) < -padXY_m) return false; // Right
+    if (dot(F.p[2], vec4(worldPos,1.0)) < -padXY_m) return false; // Bottom
+    if (dot(F.p[3], vec4(worldPos,1.0)) < -padXY_m) return false; // Top
+
+    // Near: allow *negative* distance up to nearBehind_m (i.e., a slice in front of the eye)
+    if (dot(F.p[4], vec4(worldPos,1.0)) < -nearBehind_m) return false;
+
+    // Far: allow farPad_m beyond far plane
+    if (dot(F.p[5], vec4(worldPos,1.0)) < -farPad_m) return false;
+
+    return true;
+}
+
+
+bool inBounds(vec2 uv, float h) {
+    vec3 p = toWorldCoords(uv, h);
+
+    float texelWorld = max(xzScale.x, xzScale.y);   // meters per texel
+    float padXY      = 2.0 * texelWorld;            // 2 texels guard
+    float nearBehind = 4.0 * texelWorld;            // admit 4 texels behind near
+    float farPad     = 20.0 * texelWorld;
+
+    return inFrustumPaddedWorld(p, padXY, nearBehind, farPad);
+
+//    return inFrustumClip(p, viewProjection);
+}
+
+bool  leftBounds = false;
 void main() {
+    ivec2 size = textureSize(displacement_map, 0);
     ivec2 gid  = ivec2(gl_GlobalInvocationID.xy);
 
     if(enabled != 1) {
@@ -40,12 +118,20 @@ void main() {
         return;
     }
 
-    ivec2 size = textureSize(displacement_map, 0);
     if (gid.x >= size.x || gid.y >= size.y) return;
+
+    float heightScale = heightRange.y - heightRange.x;
 
     // Centered UV and initial height
     vec2 uv   = (vec2(gid) + 0.5) / vec2(size);
-    float h0  = texelFetch(displacement_map, gid, 0).r * heightScale;
+    float h0  = texelFetch(displacement_map, gid, 0).r;
+
+    if(!inBounds(uv, h0)){
+        imageStore(shadow_map, gid, vec4(1.0, 1.0, 0.0, 1.0));
+        return;
+    }
+
+    h0 *= heightScale;
 
     // Projected light direction on XZ plane (heightmap plane)
     vec2 Lxz     = lightDir.xz;

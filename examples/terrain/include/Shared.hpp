@@ -38,4 +38,8 @@ struct Context {
     uint dmap_tex_index{~0u};
     uint dmap_normal_tex_index{~0u};
     uint dmap_shadow_tex_index{~0u};
+    uint transmittanceTextureIndex{~0u};
+    uint multiScatteringTextureIndex{~0u};
+    uint skyViewTextureIndex{~0u};
+    uint arealPerspectiveTextureIndex{~0u};
 };

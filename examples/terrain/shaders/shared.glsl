@@ -54,9 +54,9 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 
 // TODO add damp_tex_index to uniforms
-#define u_DmapSampler global_textures[globals.damp_tex_index]
-#define u_NormalSampler global_textures[globals.dmap_normal_tex_index]
-#define u_DmapShadowSampler global_textures[globals.shadow_tex_index]
+#define u_DmapSampler global_textures[nonuniformEXT(globals.damp_tex_index)]
+#define u_NormalSampler global_textures[nonuniformEXT(globals.dmap_normal_tex_index)]
+#define u_DmapShadowSampler global_textures[nonuniformEXT(globals.shadow_tex_index)]
 
 /*******************************************************************************
  * FrustumCullingTest -- Checks if the triangle lies inside the view frutsum
@@ -243,11 +243,12 @@ VertexAttribute TessellateTriangle(in const vec2 texCoords[3], in vec2 tessCoord
     vec2 texCoord = BarycentricInterpolation(texCoords, tessCoord);
     vec4 position = vec4(texCoord, 0, 1);
 
+    vec2 uv = vec2(texCoord.x, 1 - texCoord.y);
     if(should_displace) {
-        position.z = globals.dmapFactor * textureLod(u_DmapSampler, texCoord, 0.0).r;
+        position.z = globals.dmapFactor * textureLod(u_DmapSampler, uv, 0.0).r;
     }
 
-    return VertexAttribute(position, texCoord);
+    return VertexAttribute(position, uv);
 }
 
 #endif // TERRAIN_SHARED_GLSL

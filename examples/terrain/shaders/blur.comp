@@ -5,8 +5,8 @@
 // https://www.rastergrid.com/blog/2010/09/efficient-gaussian-blur-with-linear-sampling/
 #define N_TAP 3
 
-#define blur_input global_textures[blur_input_index]
-#define blur_output global_images[blur_output_index]
+#define blur_input global_textures[nonuniformEXT(blur_input_index)]
+#define blur_output global_images[nonuniformEXT(blur_output_index)]
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
