@@ -184,8 +184,6 @@ void TerrainDemo::onPause() {
 }
 
 void TerrainDemo::initContext() {
-    static glm::vec3 lightDirection{1};
-
     context.screenWidth = swapChain.width();
     context.screenHeight = swapChain.height();
     context.device = &device;
@@ -194,7 +192,7 @@ void TerrainDemo::initContext() {
     context.gBuffer = &gBuffer;
     context.bindlessDescriptor = &bindlessDescriptor;
     context.prototypes = std::make_unique<Prototypes>(device, swapChain, renderPass);
-    context.lightDirection = &lightDirection;
+    context.lightDirection = glm::normalize(glm::vec3{1});
     context.dmap_tex_index = bindlessDescriptor.reserveTextureSlots(1);
     context.dmap_normal_tex_index = bindlessDescriptor.reserveTextureSlots(1);
     context.dmap_shadow_tex_index = bindlessDescriptor.reserveTextureSlots(1);
@@ -213,17 +211,24 @@ void TerrainDemo::initDisplacementMapGenerator() {
 
 void TerrainDemo::endFrame() {
 
-    glm::mat4 rot = glm::rotate(glm::mat4{1}, glm::radians(options.lightAzimuth), {0, 1, 0});
-    rot = glm::rotate(rot, glm::radians(options.lightZenith), {0, 0, 1});
-    lightDirection = (rot * glm::vec4{1, 0, 0, 1}).xyz();
-    *context.lightDirection = lightDirection;
-    AppContext::updateSunDirection(lightDirection);
-
     terrain->endFrame();
 }
 
 void TerrainDemo::newFrame() {
     camera->newFrame();
+    auto& cam = camera->cam();
+
+    glm::mat4 rot = glm::rotate(glm::mat4{1}, glm::radians(options.lightAzimuth), {0, 1, 0});
+    rot = glm::rotate(rot, glm::radians(options.lightZenith), {0, 0, 1});
+    lightDirection = (rot * glm::vec4{1, 0, 0, 1}).xyz();
+
+    context.lightDirection = lightDirection;
+    context.view = cam.view;
+    context.viewProjection = cam.proj * cam.view;
+    context.inverseViewProjection = glm::inverse(context.viewProjection);
+    Frustum::extractFrustum(context.viewProjectionFrustum, context.viewProjection);
+
+    AppContext::updateSunDirection(lightDirection);
     terrain->newFrame();
 }
 

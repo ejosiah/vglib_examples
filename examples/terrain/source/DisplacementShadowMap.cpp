@@ -17,14 +17,12 @@ void DisplacementShadowMap::init() {
 void DisplacementShadowMap::exec(VkCommandBuffer commandBuffer) {
 //    if(!camera().moved()) return;
     auto& pc = m_Constants;
-    pc.lightDir = glm::normalize(*context().lightDirection);
+    pc.lightDir = glm::normalize(context().lightDirection);
     pc.softness = m_options.softness;
     pc.slopeBias = m_options.slopeBias;
     pc.enabled = to<int>(m_options.enabled);
 
-    const auto& cam = camera().cam();
-    auto vp = cam.proj * cam.view;
-    Frustum::extractFrustum(pc.frustum, vp);
+    pc.frustum = context().viewProjectionFrustum;
 
     const auto gx = (m_displacementMap.width + 15)/16;
     const auto gy = (m_displacementMap.height + 15)/16;
@@ -57,7 +55,7 @@ void DisplacementShadowMap::createComputePipelines() {
 
 void DisplacementShadowMap::initConstants() {
     auto& pc = m_Constants;
-    pc.lightDir = glm::normalize(*context().lightDirection);
+    pc.lightDir = glm::normalize(context().lightDirection);
     pc.xzScale = { m_terrain.width/m_displacementMap.width, m_terrain.height/m_displacementMap.height };
     pc.heightRange = {m_terrain.zMin, m_terrain.zMax };
 

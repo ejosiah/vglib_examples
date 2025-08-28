@@ -39,19 +39,18 @@ void Terrain::init() {
 }
 
 void Terrain::newFrame() {
-    auto& cam = camera().camera;
 
     glm::mat4 model = m_uniforms.cpu->modelMatrix;
-    auto mvp = cam.proj * cam.view * model;
-    m_uniforms.cpu->modelViewMatrix = cam.view * model;
-    m_uniforms.cpu->viewMatrix = cam.view;
-    m_uniforms.cpu->cameraMatrix = glm::inverse(cam.view);
-    m_uniforms.cpu->viewProjectionMatrix = cam.proj * cam.view;
+    auto mvp = m_context->viewProjection * model;
+    m_uniforms.cpu->modelViewMatrix = m_context->view * model;
+    m_uniforms.cpu->viewMatrix = m_context->view;
+    m_uniforms.cpu->cameraMatrix = glm::inverse(m_context->view);
+    m_uniforms.cpu->viewProjectionMatrix = m_context->viewProjection;
     m_uniforms.cpu->modelViewProjectionMatrix = mvp;
     m_uniforms.cpu->lodFactor = computeLodFactor();
     m_uniforms.cpu->dmapFactor = m_options.dmapScale;
     m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
-    m_uniforms.cpu->lightDirection = *context().lightDirection;
+    m_uniforms.cpu->lightDirection = context().lightDirection;
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);

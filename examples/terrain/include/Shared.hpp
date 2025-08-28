@@ -31,7 +31,11 @@ struct Context {
     BaseCameraController* camera{};
     BindlessDescriptor* bindlessDescriptor{};
     std::unique_ptr<Prototypes> prototypes;
-    glm::vec3* lightDirection{};
+    Frustum viewProjectionFrustum;
+    glm::mat4 view{1};
+    glm::mat4 viewProjection{1};
+    glm::mat4 inverseViewProjection{1};
+    glm::vec3 lightDirection{};
     float lightIntensity{1};
     uint screenWidth;
     uint screenHeight;

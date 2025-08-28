@@ -48,7 +48,7 @@ private:
     struct {
         float slopeBias{0.01};
         float softness{0.002};
-        float maxSteps{256};
+        int maxSteps{256};
         bool enabled{true};
     } m_options{};
 
