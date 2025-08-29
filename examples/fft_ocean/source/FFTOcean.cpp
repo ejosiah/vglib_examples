@@ -10,6 +10,11 @@
 FFTOcean::FFTOcean(const Settings& settings)
 : VulkanBaseApp("FFT Ocean", settings) {
     fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/textures/height_map");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("fft_ocean");
     fileManager().addSearchPathFront("fft_ocean/data");
     fileManager().addSearchPathFront("fft_ocean/spv");
@@ -250,21 +255,11 @@ void FFTOcean::initBindlessDescriptor() {
 
 void FFTOcean::beforeDeviceCreation() {
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-        devFeatures13.value()->maintenance4 = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        devFeatures13.maintenance4 = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
 
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+    AppContext::addExtensions(deviceCreateNextChain);
 }
 
 void FFTOcean::createDescriptorPool() {
@@ -894,7 +889,7 @@ void FFTOcean::createWindControl() {
     windControl.textureId = plugin<ImGuiPlugin>(IM_GUI_PLUGIN).addTexture(windControl.ColorBuffer);
 
     windControl.renderInfo = {
-        .colorAttachments = { { .texture = &windControl.ColorBuffer, .format = VK_FORMAT_R8G8B8A8_UNORM } },
+        .colorAttachments = { { .imageView = windControl.ColorBuffer.imageView, .format = VK_FORMAT_R8G8B8A8_UNORM } },
         .renderArea{ 1024 }
     };
 }

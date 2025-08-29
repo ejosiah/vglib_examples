@@ -510,7 +510,7 @@ void loadVdbVolume(VulkanDevice& device, openvdb::io::File& vdbFile, const std::
 
 void VolumeRenderingIntro::loadVolume() {
     openvdb::initialize();
-    openvdb::io::File file(resource("explosion.vdb"));
+    openvdb::io::File file(resource("bunny_cloud.vdb"));
 
     assert(file.open());
 
