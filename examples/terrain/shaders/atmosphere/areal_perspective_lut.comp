@@ -1,0 +1,106 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_debug_printf : enable
+
+#define AP_SLICE_COUNT AREAL_PERSPECTIVE_TEXTURE_SIZE_F.z
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 10) uniform sampler2D global_textures_3d[];
+layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
+layout(set = 1, binding = 11) uniform writeonly image3D global_images_3d[];
+
+#include "common.glsl"
+
+
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    vec2 pixPos = vec2(gid) + 0.5f;
+    vec2 uv =(pixPos / AREAL_PERSPECTIVE_TEXTURE_SIZE_F.xy) ;
+    AtmosphereParameters Atmosphere = GetAtmosphereParameters();
+
+    vec2 d = uv * 2 - 1;
+    mat4 SkyInvViewMat = atm.inverseViewProjection;
+    vec4 target = SkyInvViewMat * vec4(d, 1, 1);
+    vec3 WorldDir = normalize(target.xyz/target.w);
+
+//    if(gid.x == 16 && gid.y == 16){
+//        vec3 wp = atm.cameraPosition;
+//        vec3 wd = WorldDir;
+//        debugPrintfEXT("before offset, uv: [%f, %f] pos: [%f, %f, %f], dir: [%f, %f, %f]\n",uv.x, uv.y,  wp.x, wp.y, wp.z, wd.x, wd.y, wd.z);
+//    }
+
+    float earthR = Atmosphere.bottom_radius;
+    vec3 camPos = atm.cameraPosition / atm.lengthUnitInMeters + vec3(0, earthR, 0);
+    vec3 SunDir = atm.sunDirection;
+    vec3 SunLuminance = vec3(0.0);
+
+    float Slice = ((float(gl_GlobalInvocationID.z) + 0.5f) / AP_SLICE_COUNT);
+    Slice *= Slice;// squared distribution
+    Slice *= AP_SLICE_COUNT;
+
+    vec3 WorldPos = camPos;
+    float viewHeight;
+
+
+    // Compute position from froxel information
+    float tMax = AerialPerspectiveSliceToDepth(Slice);
+    vec3 newWorldPos = WorldPos + tMax * WorldDir;
+
+
+    // If the voxel is under the ground, make sure to offset it out on the ground.
+    viewHeight = length(newWorldPos);
+    if (viewHeight <= (Atmosphere.bottom_radius + PLANET_RADIUS_OFFSET))
+    {
+        // Apply a position offset to make sure no artefact are visible close to the earth boundaries for large voxel.
+        newWorldPos = normalize(newWorldPos) * (Atmosphere.bottom_radius + PLANET_RADIUS_OFFSET + 0.001f);
+        WorldDir = normalize(newWorldPos - camPos);
+        tMax = length(newWorldPos - camPos);
+    }
+    float tMaxMax = tMax;
+
+
+    // Move ray marching start up to top atmosphere.
+    viewHeight = length(WorldPos);
+    if (viewHeight >= Atmosphere.top_radius)
+    {
+        vec3 prevWorlPos = WorldPos;
+        if (!MoveToTopAtmosphere(WorldPos, WorldDir, Atmosphere.top_radius))
+        {
+            // Ray is not intersecting the atmosphere
+            imageStore(arealPerspectiveImage, gid, vec4(0));
+            return;
+        }
+        float LengthToAtmosphere = length(prevWorlPos - WorldPos);
+        if (tMaxMax < LengthToAtmosphere)
+        {
+            // tMaxMax for this voxel is not within earth atmosphere
+            imageStore(arealPerspectiveImage, gid, vec4(0));
+            return;
+        }
+        // Now world position has been moved to the atmosphere boundary: we need to reduce tMaxMax accordingly.
+        tMaxMax = max(0.0, tMaxMax - LengthToAtmosphere);
+    }
+
+
+    const bool ground = false;
+    const float SampleCountIni = max(1.0, float(gl_GlobalInvocationID.z + 1.0) * 2.0f);
+    const float DepthBufferValue = -1.0;
+    const bool VariableSampleCount = false;
+    const bool MieRayPhase = true;
+
+//    if(gid.x == 16 && gid.y == 16){
+//        vec3 sd = SunDir;
+//        vec3 wp = WorldPos;
+//        vec3 wd = WorldDir;
+//        debugPrintfEXT("frag: [%f, %f], pos: [%f, %f, %f], w_dir: [%f, %f, %f], s_dir [%f, %f, %f]\n", uv.x, uv.y, wp.x, wp.y, wp.z, wd.x, wd.y, wd.z, sd.x, sd.y, sd.z);
+//    }
+
+    SingleScatteringResult ss = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, SunDir, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase, tMaxMax, gid.xy);
+
+
+    const float Transmittance = dot(ss.Transmittance, vec3(1.0f / 3.0f));
+    vec4 scatterTransmission = vec4(ss.L, 1.0 - Transmittance);
+    imageStore(arealPerspectiveImage, gid, scatterTransmission);
+}

@@ -1,0 +1,38 @@
+#version 460
+
+#include "atm_uniforms.glsl"
+
+layout(local_size_x = 8, local_size_y = 4) in;
+
+layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 10) uniform sampler2D global_textures_3d[];
+layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
+
+#include "common_functions.glsl"
+
+void GetRMuFromTransmittanceTextureUv(AtmosphereParameters atmosphere, vec2 uv, out float r, out float mu) {
+    ivec2 size = ivec2(TRANSMITTANCE_TEXTURE_SIZE.x, TRANSMITTANCE_TEXTURE_SIZE.y);
+    GetRMuFromTextureUv(atmosphere, uv, size, r, mu);
+}
+
+vec3 ComputeTransmittanceToTopAtmosphereBoundary(AtmosphereParameters atmosphere, float r, float mu) {
+    return exp(-(
+    atmosphere.rayleigh_scattering * OPTICAL_DEPTH(atmosphere, atmosphere.rayleigh_density, r, mu) +
+    atmosphere.mie_extinction * OPTICAL_DEPTH(atmosphere, atmosphere.mie_density, r, mu) +
+    atmosphere.ozone_extinction * OPTICAL_DEPTH(atmosphere, atmosphere.ozone_density, r, mu)));
+}
+
+
+vec3 ComputeTransmittanceToTopAtmosphereBoundaryTexture(AtmosphereParameters atmosphere, vec2 frag_coord) {
+    float r;
+    float mu;
+    GetRMuFromTransmittanceTextureUv(atmosphere, frag_coord / vec2(TRANSMITTANCE_TEXTURE_SIZE), r, mu);
+    return ComputeTransmittanceToTopAtmosphereBoundary(atmosphere, r, mu);
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    vec3 transmittance = ComputeTransmittanceToTopAtmosphereBoundaryTexture(ATMOSPHERE, vec2(gid + 0.5));
+    imageStore(transmittanceImage, gid, vec4(transmittance, 0));
+}
+

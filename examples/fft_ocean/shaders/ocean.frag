@@ -113,7 +113,7 @@ void main(){
     float denominator = 4.0 * max(dot(N, E), 0.0) * max(dot(N, L), 0.0) + preventDivideByZero;
     vec3 specular = numerator / denominator;
 
-    uint NSamples = 100;
+    uint NSamples = 10;
     vec3 indirect = vec3(0);
     for(uint i = 0; i < NSamples; ++i) {
         vec2 Xi = hammersley(i, NSamples);

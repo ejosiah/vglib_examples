@@ -1,0 +1,52 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 10) uniform sampler2D global_textures_3d[];
+layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
+
+#include "common.glsl"
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    vec2 pixPos = vec2(gid) + 0.5f;
+    AtmosphereParameters Atmosphere = GetAtmosphereParameters();
+
+    vec3 WorldPos = atm.cameraPosition / atm.lengthUnitInMeters + vec3(0, Atmosphere.bottom_radius, 0);
+
+    vec2 uv = pixPos / SKY_VIEW_TEXTURE_SIZE_F;
+
+    float viewHeight = length(WorldPos);
+
+    float viewZenithCosAngle;
+    float lightViewCosAngle;
+    UvToSkyViewLutParams(Atmosphere, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
+
+    vec3 UpVector = WorldPos / viewHeight;
+    float sunZenithCosAngle = dot(UpVector, atm.sunDirection);
+    vec3 SunDir = normalize(vec3(sqrt(1.0 - sunZenithCosAngle * sunZenithCosAngle), 0.0, sunZenithCosAngle));
+
+    WorldPos = vec3(0.0f, 0.0f, viewHeight);
+
+    float viewZenithSinAngle = sqrt(1 - viewZenithCosAngle * viewZenithCosAngle);
+    vec3 WorldDir = vec3(viewZenithSinAngle * lightViewCosAngle, viewZenithCosAngle,
+            viewZenithSinAngle * sqrt(1.0 - lightViewCosAngle * lightViewCosAngle));
+
+
+    // Move to top atmospehre
+    if (!MoveToTopAtmosphere(WorldPos, WorldDir, Atmosphere.top_radius)) {
+        imageStore(skyViewImage, gid, vec4(0));
+        return;
+    }
+
+    const bool ground = false;
+    const float SampleCountIni = 30;
+    const float DepthBufferValue = -1.0;
+    const bool VariableSampleCount = false;
+    const bool MieRayPhase = true;
+    SingleScatteringResult ss = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, SunDir, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase, T_MAX_MAX, ivec2(0));
+
+    imageStore(skyViewImage, gid, vec4(ss.L, 1));
+}

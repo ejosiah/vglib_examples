@@ -36,6 +36,7 @@ void TerrainDemo::initApp() {
     initDisplacementMapGenerator();
     initTerrain();
     initDisplacementShadowMap();
+    initAtmosphere();
 }
 
 void TerrainDemo::initCamera() {
@@ -48,7 +49,6 @@ void TerrainDemo::initCamera() {
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     camera->position({-1130, 3796, 5057});
-    camera->lookAt({-901, 215, 4442}, glm::vec3(0.2, 0.1, -1.0), {0, 1, 0});
 }
 
 void TerrainDemo::initBindlessDescriptor() {
@@ -135,6 +135,8 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     displacementShadowMap->exec(commandBuffer);
+
+    atmosphere->preProcess(commandBuffer);
     terrain->preProcess(commandBuffer);
 
     clearColor(0, 0, 1);
@@ -196,6 +198,10 @@ void TerrainDemo::initContext() {
     context.dmap_tex_index = bindlessDescriptor.reserveTextureSlots(1);
     context.dmap_normal_tex_index = bindlessDescriptor.reserveTextureSlots(1);
     context.dmap_shadow_tex_index = bindlessDescriptor.reserveTextureSlots(1);
+    context.transmittanceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
+    context.multiScatteringTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
+    context.skyViewTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
+    context.arealPerspectiveTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
 }
 
 void TerrainDemo::initTerrain() {
@@ -207,6 +213,11 @@ void TerrainDemo::initDisplacementMapGenerator() {
     auto path = "kauai.png";
     displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::File, 3601, 3601, resource(path));
     displacementMapGenerator->init();
+}
+
+void TerrainDemo::initAtmosphere() {
+    atmosphere = std::make_unique<AtmosphereModel>(context);
+    atmosphere->init();
 }
 
 void TerrainDemo::endFrame() {
@@ -229,6 +240,7 @@ void TerrainDemo::newFrame() {
     Frustum::extractFrustum(context.viewProjectionFrustum, context.viewProjection);
 
     AppContext::updateSunDirection(lightDirection);
+    atmosphere->newFrame();
     terrain->newFrame();
 }
 

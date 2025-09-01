@@ -209,7 +209,7 @@ void generateCameraRay(
 ) {
     // Convert screenUV to normalized device coordinates [-1, 1]
     vec2 ndc = screenUV * 2.0 - 1.0;
-    vec4 clipPos = vec4(ndc, -1.0, 1.0); // z = -1 for near plane
+    vec4 clipPos = vec4(ndc, -1.0, 1.0); // z = -1 for near plane, TODO change this to z = 0 (vulkan)
 
     // Transform from clip space to view space
     vec4 viewPos = invProjMatrix * clipPos;

@@ -12,6 +12,8 @@ public:
 
     void init();
 
+    void newFrame();
+
     void preProcess(VkCommandBuffer commandBuffer);
 
     void render(VkCommandBuffer commandBuffer);
@@ -21,22 +23,67 @@ public:
 protected:
     Context& context() final;
 
+    void computeTransmittanceLUT(VkCommandBuffer commandBuffer);
+
+    void computeMultipleScatteringLUT(VkCommandBuffer commandBuffer);
+
+    void computeSkyViewLUT(VkCommandBuffer commandBuffer);
+
+    void computeArealPerspectiveLut(VkCommandBuffer commandBuffer);
+
+    void prepareForWriting(VkCommandBuffer commandBuffer, const VulkanImage& image);
+
+    void prepareForReading(VkCommandBuffer commandBuffer, const VulkanImage& image);
+
+    void initUniforms();
+
+    void createDescriptorSetLayout();
+
+    void updateDescriptorSet();
+
     void createLoopUpTextures();
 
     void createComputePipelines();
 
     void createRenderPipelines();
 
+    std::vector<PipelineMetaData> metadata();
+
 private:
+    static constexpr uint BOTTOM = 0;
+    static constexpr uint TOP = 1;
+
+    static constexpr uint TRANSMITTANCE_TEXTURE_WIDTH = 256;
+    static constexpr uint TRANSMITTANCE_TEXTURE_HEIGHT = 64;
+
+    static constexpr uint MULTI_SCATTERING_TEXTURE_WIDTH = 32;
+    static constexpr uint MULTI_SCATTERING_TEXTURE_HEIGHT = 32;
+
+    static constexpr uint SKY_VIEW_TEXTURE_WIDTH = 192;
+    static constexpr uint SKY_VIEW_TEXTURE_HEIGHT = 128;
+
+    static constexpr uint AREAL_PERSPECTIVE_TEXTURE_WIDTH = 32;
+    static constexpr uint AREAL_PERSPECTIVE_TEXTURE_HEIGHT = 32;
+    static constexpr uint AREAL_PERSPECTIVE_TEXTURE_DEPTH = 32;
+
     Context* m_context{};
     ComputePipelines m_compute;
 
+     struct DensityProfileLayer {
+        float width{};
+        float exp_term{};
+        float exp_scale{};
+        float linear_term{};
+        float constant_term{};
+    };
+
     struct UniformData {
-        std::array<float, 12> rayleighDensity[12];
-        std::array<float, 12> mieDensity[12];
-        std::array<float, 12> absorptionDensity[12];
+        glm::mat4 inverseViewProjection;
+        std::array<DensityProfileLayer, 2> rayleighDensity;
+        std::array<DensityProfileLayer, 2> mieDensity;
+        std::array<DensityProfileLayer, 2> ozone;
         glm::vec3 solarIrradiance;
-        glm::vec3 absorptionExtinction;
+        glm::vec3 ozoneExtinction;
         glm::vec3 rayleighScattering;
         glm::vec3 mieScattering;
         glm::vec3 mieExtinction;
@@ -44,12 +91,14 @@ private:
         glm::vec3 groundAlbedo;
         glm::vec3 sunDirection;
         glm::vec3 cameraPosition;
-        float miePhaseFunctionG;
+        float mieAnisotropicFactor;
         float bottomRadius;
         float topRadius;
         float sunAngularRadius;
         float sunPhiAngle;
         float sunThetaAngle;
+        float mu_s_min;
+        float lengthUnitInMeters;
         uint transmittanceTextureIndex{~0u};
         uint multiScatteringTextureIndex{~0u};
         uint skyViewTextureIndex{~0u};
@@ -58,7 +107,12 @@ private:
         uint multiScatteringImageIndex{~0u};
         uint skyViewImageIndex{~0u};
         uint arealPerspectiveImageIndex{~0u};
-    } initialValues{};
+    };
+
+    struct {
+        VulkanBuffer gpu;
+        UniformData* cpu{};
+    } m_uniforms;
 
     struct {
         Texture transmittance;
@@ -66,4 +120,8 @@ private:
         Texture skyView;
         Texture arealPerspective;
     } m_lut;
+
+    VulkanDescriptorSetLayout m_descriptorSetLayout;
+    VkDescriptorSet m_descriptorSet{};
+    std::array<VkDescriptorSet, 2> m_sets;
 };

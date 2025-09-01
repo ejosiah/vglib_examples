@@ -6,6 +6,7 @@
 #include "DisplacementMapGenerator.hpp"
 #include "DisplacementShadowMap.hpp"
 #include "ComputePipelins.hpp"
+#include "AtmosphereModel.hpp"
 
 class TerrainDemo : public VulkanBaseApp{
 public:
@@ -23,6 +24,8 @@ protected:
     void initDisplacementShadowMap();
 
     void initTerrain();
+
+    void initAtmosphere();
 
     void initBindlessDescriptor();
 
@@ -83,6 +86,7 @@ protected:
     std::unique_ptr<DisplacementMapGenerator> displacementMapGenerator;
     std::unique_ptr<Terrain> terrain;
     std::unique_ptr<DisplacementShadowMap> displacementShadowMap;
+    std::unique_ptr<AtmosphereModel> atmosphere;
     Texture heightMap;
     Texture normalMap;
     ComputePipelines compute;
