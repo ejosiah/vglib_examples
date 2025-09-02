@@ -1,6 +1,7 @@
 #include "AtmosphereModel.hpp"
 #include "atmosphere/Atmosphere.hpp"
 #include "Barrier.hpp"
+#include "AppContext.hpp"
 
 AtmosphereModel::AtmosphereModel(Context &context)
 : m_context{&context} {
@@ -27,7 +28,8 @@ void AtmosphereModel::initUniforms() {
     Atmosphere::Params params{};
     initialValues.cameraPosition = camera().position();
     initialValues.sunDirection = context().lightDirection;
-    initialValues.inverseViewProjection = context().inverseViewProjection;
+    initialValues.inverseProjection = context().inverseProjection;
+    initialValues.inverseView = context().inverseView;
 
     initialValues.solarIrradiance = params.solarIrradiance;
     initialValues.sunAngularRadius = params.sunAngularRadius;
@@ -87,7 +89,8 @@ void AtmosphereModel::initUniforms() {
 void AtmosphereModel::newFrame() {
     m_uniforms.cpu->cameraPosition = camera().position();
     m_uniforms.cpu->sunDirection = context().lightDirection;
-    m_uniforms.cpu->inverseViewProjection = context().inverseViewProjection;
+    m_uniforms.cpu->inverseProjection = context().inverseProjection;
+    m_uniforms.cpu->inverseView = context().inverseView;
 }
 
 void AtmosphereModel::preProcess(VkCommandBuffer commandBuffer) {
@@ -99,6 +102,13 @@ void AtmosphereModel::preProcess(VkCommandBuffer commandBuffer) {
 
 void AtmosphereModel::render(VkCommandBuffer commandBuffer) {
 
+}
+
+
+void AtmosphereModel::renderSkyView(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.layout.handle , 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+    AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
 void AtmosphereModel::controls() {
@@ -132,6 +142,18 @@ void AtmosphereModel::createComputePipelines() {
 }
 
 void AtmosphereModel::createRenderPipelines() {
+    m_render.skyView.pipeline =
+        clipSpacePipelineBuilder()
+            .shaderStage()
+                .vertexShader(resource("atmosphere_render_sky_view.vert.spv"))
+                .fragmentShader(resource("atmosphere_render_sky_view.frag.spv"))
+            .depthStencilState()
+                .compareOpLessOrEqual()
+            .layout()
+                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+            .name("render_sky_view")
+        .build(m_render.skyView.layout);
 
 }
 

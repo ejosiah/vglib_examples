@@ -18,6 +18,8 @@ public:
 
     void render(VkCommandBuffer commandBuffer);
 
+    void renderSkyView(VkCommandBuffer commandBuffer);
+
     void controls();
 
 protected:
@@ -78,7 +80,8 @@ private:
     };
 
     struct UniformData {
-        glm::mat4 inverseViewProjection;
+        glm::mat4 inverseProjection;
+        glm::mat4 inverseView;
         std::array<DensityProfileLayer, 2> rayleighDensity;
         std::array<DensityProfileLayer, 2> mieDensity;
         std::array<DensityProfileLayer, 2> ozone;
@@ -124,4 +127,7 @@ private:
     VulkanDescriptorSetLayout m_descriptorSetLayout;
     VkDescriptorSet m_descriptorSet{};
     std::array<VkDescriptorSet, 2> m_sets;
+    struct {
+        Pipeline skyView;
+    } m_render;
 };

@@ -21,15 +21,10 @@ void main() {
     AtmosphereParameters Atmosphere = GetAtmosphereParameters();
 
     vec2 d = uv * 2 - 1;
-    mat4 SkyInvViewMat = atm.inverseViewProjection;
-    vec4 target = SkyInvViewMat * vec4(d, 1, 1);
-    vec3 WorldDir = normalize(target.xyz/target.w);
+    vec4 viewDir = atm.inverseProjection * vec4(d, 1, 1);
+    viewDir.xyz /= viewDir.w;
+    vec3 WorldDir = normalize((atm.inverseView * vec4(viewDir.xyz, 0)).xyz);
 
-//    if(gid.x == 16 && gid.y == 16){
-//        vec3 wp = atm.cameraPosition;
-//        vec3 wd = WorldDir;
-//        debugPrintfEXT("before offset, uv: [%f, %f] pos: [%f, %f, %f], dir: [%f, %f, %f]\n",uv.x, uv.y,  wp.x, wp.y, wp.z, wd.x, wd.y, wd.z);
-//    }
 
     float earthR = Atmosphere.bottom_radius;
     vec3 camPos = atm.cameraPosition / atm.lengthUnitInMeters + vec3(0, earthR, 0);
@@ -90,14 +85,7 @@ void main() {
     const bool VariableSampleCount = false;
     const bool MieRayPhase = true;
 
-//    if(gid.x == 16 && gid.y == 16){
-//        vec3 sd = SunDir;
-//        vec3 wp = WorldPos;
-//        vec3 wd = WorldDir;
-//        debugPrintfEXT("frag: [%f, %f], pos: [%f, %f, %f], w_dir: [%f, %f, %f], s_dir [%f, %f, %f]\n", uv.x, uv.y, wp.x, wp.y, wp.z, wd.x, wd.y, wd.z, sd.x, sd.y, sd.z);
-//    }
-
-    SingleScatteringResult ss = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, SunDir, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase, tMaxMax, gid.xy);
+    SingleScatteringResult ss = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, SunDir, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase, tMaxMax);
 
 
     const float Transmittance = dot(ss.Transmittance, vec3(1.0f / 3.0f));

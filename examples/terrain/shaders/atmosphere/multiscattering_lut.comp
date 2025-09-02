@@ -61,7 +61,7 @@ void main() {
         WorldDir.x = cosTheta * sinPhi;
         WorldDir.y = sinTheta * sinPhi;
         WorldDir.z = cosPhi;
-        SingleScatteringResult result = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, sunDir, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase, T_MAX_MAX, ivec2(0));
+        SingleScatteringResult result = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, sunDir, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase, T_MAX_MAX);
 
         MultiScatAs1SharedMem[gl_GlobalInvocationID.z] = result.MultiScatAs1 * SphereSolidAngle / (sqrtSample * sqrtSample);
         LSharedMem[gl_GlobalInvocationID.z] = result.L * SphereSolidAngle / (sqrtSample * sqrtSample);

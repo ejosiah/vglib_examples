@@ -134,12 +134,13 @@ private:
     } m_cbtInfo;
 
     struct {
-        int gpuSubDivisions{3};
         float primitivePixelLengthTarget{7};
         float minLodStdev{0.1};
+        float dmapScale{1};
+        int gpuSubDivisions{3};
         bool topView{true};
         bool wire{false};
-        float dmapScale{1};
+        bool useBruneton{false};
     } m_options;
 
     Pipeline m_render;

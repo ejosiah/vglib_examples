@@ -96,5 +96,6 @@ protected:
     struct {
         float lightZenith{45};
         float lightAzimuth{45};
+        bool bruneton{false};
     } options;
 };

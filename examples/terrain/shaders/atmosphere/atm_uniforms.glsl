@@ -14,7 +14,8 @@
 #endif // ATMOSPHERE_UNIFORM_SET
 
 layout(set = ATMOSPHERE_UNIFORM_SET, binding = ATMOSPHERE_UNIFORM_BINDING, scalar) uniform AtmosphereParams {
-    mat4 inverseViewProjection;
+    mat4 inverseProjection;
+    mat4 inverseView;
     DensityProfileLayer rayleighDensityBottom;
     DensityProfileLayer rayleighDensityTop;
     DensityProfileLayer mieDensityBottom;

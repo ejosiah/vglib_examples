@@ -124,7 +124,7 @@ vec2 GetUnitRangeFromTextureCoord(vec2 u, ivec2 texture_size) {
 
 
 float ComputeOpticalLengthToTopAtmosphereBoundary(AtmosphereParameters atmosphere, DensityProfile profile, float r, float mu) {
-    const int SAMPLE_COUNT = 500;
+    const int SAMPLE_COUNT = 40;
     float dx = DistanceToTopAtmosphereBoundary(atmosphere, r, mu) / float(SAMPLE_COUNT);
     float result = 0.0 * m;
     for (int i = 0; i <= SAMPLE_COUNT; ++i) {
@@ -136,6 +136,7 @@ float ComputeOpticalLengthToTopAtmosphereBoundary(AtmosphereParameters atmospher
     }
     return result;
 }
+
 
 float ComputeOpticalLengthAt(AtmosphereParameters atmosphere, DensityProfile profile, vec3 position) {
     const float altitude = length(position) - atmosphere.bottom_radius;
@@ -175,6 +176,5 @@ vec3 GetTransmittanceToTopAtmosphereBoundary(AtmosphereParameters atmosphere, fl
     vec2 uv = GetTransmittanceTextureUvFromRMu(atmosphere, r, mu);
     return texture(transmittanceTexture, uv).rgb;
 }
-
 
 #endif // ATMOSPHERE_COMON_FUNCTIONS_GLSL

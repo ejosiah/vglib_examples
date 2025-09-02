@@ -1,6 +1,8 @@
 #ifndef ATMOSPHERE_COMMON_GLSL
 #define ATMOSPHERE_COMMON_GLSL
 
+#extension GL_EXT_debug_printf : require
+
 #include "atm_uniforms.glsl"
 #include "common_defs.glsl"
 #include "common_functions.glsl"
@@ -70,7 +72,7 @@ float fromSubUvsToUnit(float u, float resolution) { return (u - 0.5f / resolutio
 
 void UvToLutTransmittanceParams(AtmosphereParameters Atmosphere, out float viewHeight, out float viewZenithCosAngle, in vec2 uv)
 {
-    //uv = vec2(fromSubUvsToUnit(uv.x, TRANSMITTANCE_TEXTURE_WIDTH), fromSubUvsToUnit(uv.y, TRANSMITTANCE_TEXTURE_HEIGHT)); // No real impact so off
+    uv = vec2(fromSubUvsToUnit(uv.x, TRANSMITTANCE_TEXTURE_SIZE.y), fromSubUvsToUnit(uv.y, TRANSMITTANCE_TEXTURE_SIZE.y)); // No real impact so off
     float x_mu = uv.x;
     float x_r = uv.y;
 
@@ -91,7 +93,7 @@ void LutTransmittanceParamsToUv(AtmosphereParameters Atmosphere, in float viewHe
     float rho = sqrt(max(0.0f, viewHeight * viewHeight - Atmosphere.bottom_radius * Atmosphere.bottom_radius));
 
     float discriminant = viewHeight * viewHeight * (viewZenithCosAngle * viewZenithCosAngle - 1.0) + Atmosphere.top_radius * Atmosphere.top_radius;
-    float d = max(0.0, (-viewHeight * viewZenithCosAngle + sqrt(discriminant))); // Distance to atmosphere boundary
+    float d = max(0.0, (-viewHeight * viewZenithCosAngle + sqrt(discriminant)));// Distance to atmosphere boundary
 
     float d_min = Atmosphere.top_radius - viewHeight;
     float d_max = rho + H;
@@ -144,14 +146,14 @@ MediumSampleRGB sampleMediumRGB(in vec3 WorldPos, in AtmosphereParameters Atmosp
 {
     const float viewHeight = length(WorldPos) - Atmosphere.bottom_radius;
 
-    const float densityMie = exp(GetLayerDensity(ATMOSPHERE.mie_density.layers[0], viewHeight));
-    const float densityRay = exp(GetLayerDensity(ATMOSPHERE.rayleigh_density.layers[0], viewHeight));
+    const float densityMie = GetProfileDensity(ATMOSPHERE.mie_density, viewHeight);
+    const float densityRay = GetProfileDensity(ATMOSPHERE.rayleigh_density, viewHeight);
     const float densityOzo = GetProfileDensity(ATMOSPHERE.ozone_density, viewHeight);
 
     MediumSampleRGB s;
 
     s.scatteringMie = densityMie * Atmosphere.mie_scattering;
-    s.absorptionMie = densityMie * Atmosphere.mie_extinction - Atmosphere.mie_scattering;
+    s.absorptionMie = densityMie * (Atmosphere.mie_extinction - Atmosphere.mie_scattering);
     s.extinctionMie = densityMie * Atmosphere.mie_extinction;
 
     s.scatteringRay = densityRay * Atmosphere.rayleigh_scattering;
@@ -181,9 +183,9 @@ vec3 GetMultipleScattering(AtmosphereParameters Atmosphere, vec3 scattering, vec
 
 struct SingleScatteringResult
 {
-    vec3 L;						// Scattered light (luminance)
-    vec3 OpticalDepth;			// Optical depth (1/m)
-    vec3 Transmittance;			// Transmittance in [0,1] (unitless)
+    vec3 L;// Scattered light (luminance)
+    vec3 OpticalDepth;// Optical depth (1/m)
+    vec3 Transmittance;// Transmittance in [0,1] (unitless)
     vec3 MultiScatAs1;
 
     vec3 NewMultiScatStep0Out;
@@ -194,10 +196,57 @@ SingleScatteringResult SingleScatteringResult_init() {
     return SingleScatteringResult(vec3(0), vec3(0), vec3(0), vec3(0), vec3(0), vec3(0));
 }
 
+float interspectAtmosphere(AtmosphereParameters Atmosphere, vec3 WorldPos, vec3 WorldDir) {
+    vec3 earthO = vec3(0.0f, 0.0f, 0.0f);
+    float tBottom = raySphereIntersectNearest(WorldPos, WorldDir, vec3(0), Atmosphere.bottom_radius);
+    float tTop = raySphereIntersectNearest(WorldPos, WorldDir, vec3(0), Atmosphere.top_radius);
+    float tMin = 0.0f;
+    if (tBottom < 0.0f){
+        if (tTop < 0.0f){
+            tMin = 0.0f;
+        }
+        else {
+            tMin = tTop;
+        }
+    }
+    else {
+        if (tTop > 0.0f){
+            tMin = min(tTop, tBottom);
+        }
+    }
+    return tMin;
+}
+
+
+vec3 IntegrateTransmission(AtmosphereParameters Atmosphere, vec3 WorldPos, vec3 WorldDir, float SampleCount, ivec2 gid) {
+    float tMax = raySphereIntersectNearest(WorldPos, WorldDir, vec3(0), Atmosphere.top_radius);
+    if(tMax == 0) return vec3(0);
+
+    vec3 OpticalDepth = vec3(0.0);
+
+    if(gid.x == 0 && gid.y == 0) {
+        vec3 wp = WorldPos;
+        vec3 wd = WorldDir;
+        debugPrintfEXT("wp: [%f, %f, %f], wd: [%f, %f, %f], tMax: %f\n", wp.x, wp.y, wp.z, wd.x, wd.y, wd.z, tMax);;
+    }
+
+
+    const float dt = tMax / SampleCount;
+    for (int i = 0; i < SampleCount; ++i){
+        float t = float(i) * dt;
+        vec3 P = WorldPos + t * WorldDir;
+        const MediumSampleRGB medium = sampleMediumRGB(P, Atmosphere);
+        const vec3 SampleOpticalDepth = medium.extinction * dt;
+        OpticalDepth += SampleOpticalDepth;
+    }
+
+    return OpticalDepth;
+}
+
 SingleScatteringResult IntegrateScatteredLuminance(
 in vec2 pixPos, in vec3 WorldPos, in vec3 WorldDir, in vec3 SunDir, in AtmosphereParameters Atmosphere,
 in bool ground, in float SampleCountIni, in float DepthBufferValue, in bool VariableSampleCount,
-in bool MieRayPhase, in float tMaxMax, ivec2 gid)
+in bool MieRayPhase, in float tMaxMax)
 {
     //    const bool debugEnabled = all(ivec2(pixPos.xx) == gMouseLastDownPos.xx) && uint(pixPos.y) % 10 == 0 && DepthBufferValue != -1.0f;
     const bool debugEnabled = false;
@@ -211,22 +260,17 @@ in bool MieRayPhase, in float tMaxMax, ivec2 gid)
     float tBottom = raySphereIntersectNearest(WorldPos, WorldDir, earthO, Atmosphere.bottom_radius);
     float tTop = raySphereIntersectNearest(WorldPos, WorldDir, earthO, Atmosphere.top_radius);
     float tMax = 0.0f;
-    if (tBottom < 0.0f)
-    {
-        if (tTop < 0.0f)
-        {
-            tMax = 0.0f; // No intersection with earth nor atmosphere: stop right away
+    if (tBottom < 0.0f){
+        if (tTop < 0.0f){
+            tMax = 0.0f;// No intersection with earth nor atmosphere: stop right away
             return result;
         }
-        else
-        {
+        else {
             tMax = tTop;
         }
     }
-    else
-    {
-        if (tTop > 0.0f)
-        {
+    else {
+        if (tTop > 0.0f){
             tMax = min(tTop, tBottom);
         }
     }
@@ -267,13 +311,13 @@ in bool MieRayPhase, in float tMaxMax, ivec2 gid)
     const vec3 wi = SunDir;
     const vec3 wo = WorldDir;
     float cosTheta = dot(wi, wo);
-    float MiePhaseValue = hgPhase(Atmosphere.mie_phase_function_g, -cosTheta);	// mnegate cosTheta because due to WorldDir being a "in" direction.
+    float MiePhaseValue = hgPhase(Atmosphere.mie_phase_function_g, -cosTheta);// mnegate cosTheta because due to WorldDir being a "in" direction.
     float RayleighPhaseValue = RayleighPhase(cosTheta);
 
     //    #ifdef ILLUMINANCE_IS_ONE
     // When building the scattering factor, we assume light illuminance is 1 to compute a transfert function relative to identity illuminance of 1.
     // This make the scattering factor independent of the light. It is now only linked to the atmosphere properties.
-    vec3 globalL = vec3(1.0);
+    vec3 globalL = vec3(10.0);
     //    #else
     //    vec3 globalL = gSunIlluminance;
     //    #endif
@@ -285,10 +329,8 @@ in bool MieRayPhase, in float tMaxMax, ivec2 gid)
     float t = 0.0f;
     float tPrev = 0.0;
     const float SampleSegmentT = 0.3f;
-    for (float s = 0.0f; s < SampleCount; s += 1.0f)
-    {
-        if (VariableSampleCount)
-        {
+    for (float s = 0.0f; s < SampleCount; s += 1.0f){
+        if (VariableSampleCount){
             // More expenssive but artefact free
             float t0 = (s) / SampleCountFloor;
             float t1 = (s + 1.0f) / SampleCountFloor;
@@ -297,21 +339,18 @@ in bool MieRayPhase, in float tMaxMax, ivec2 gid)
             t1 = t1 * t1;
             // Make t0 and t1 world space distances.
             t0 = tMaxFloor * t0;
-            if (t1 > 1.0)
-            {
+            if (t1 > 1.0) {
                 t1 = tMax;
                 //	t1 = tMaxFloor;	// this reveal depth slices
             }
-            else
-            {
+            else {
                 t1 = tMaxFloor * t1;
             }
             //t = t0 + (t1 - t0) * (whangHashNoise(pixPos.x, pixPos.y, gFrameId * 1920 * 1080)); // With dithering required to hide some sampling artefact relying on TAA later? This may even allow volumetric shadow?
             t = t0 + (t1 - t0)*SampleSegmentT;
             dt = t1 - t0;
         }
-        else
-        {
+        else {
             //t = tMax * (s + SampleSegmentT) / SampleCount;
             // Exact difference, important for accuracy of multiple scattering
             float NewT = tMax * (s + SampleSegmentT) / SampleCount;
@@ -319,16 +358,6 @@ in bool MieRayPhase, in float tMaxMax, ivec2 gid)
             t = NewT;
         }
         vec3 P = WorldPos + t * WorldDir;
-
-        //        #if DEBUGENABLED
-        //        if (debugEnabled)
-        //        {
-        //            vec3 Pprev = WorldPos + tPrev * WorldDir;
-        //            vec3 TxToDebugWorld = vec3(0, 0, -Atmosphere.bottom_radius);
-        //            addGpuDebugLine(TxToDebugWorld + Pprev, TxToDebugWorld + P, vec3(0.2, 1, 0.2));
-        //            addGpuDebugCross(TxToDebugWorld + P, vec3(0.2, 0.2, 1.0), 0.2);
-        //        }
-        //        #endif
 
         MediumSampleRGB medium = sampleMediumRGB(P, Atmosphere);
         const vec3 SampleOpticalDepth = medium.extinction * dt;
@@ -344,12 +373,10 @@ in bool MieRayPhase, in float tMaxMax, ivec2 gid)
 
 
         vec3 PhaseTimesScattering;
-        if (MieRayPhase)
-        {
+        if (MieRayPhase){
             PhaseTimesScattering = medium.scatteringMie * MiePhaseValue + medium.scatteringRay * RayleighPhaseValue;
         }
-        else
-        {
+        else {
             PhaseTimesScattering = medium.scattering * uniformPhase;
         }
 
@@ -405,16 +432,15 @@ in bool MieRayPhase, in float tMaxMax, ivec2 gid)
         throughput *= SampleTransmittance;
         #else
         // See slide 28 at http://www.frostbite.com/2015/08/physically-based-unified-volumetric-rendering-in-frostbite/
-        vec3 Sint = (S - S * SampleTransmittance) / medium.extinction;	// integrate along the current step segment
-        L += throughput * Sint;														// accumulate and also take into account the transmittance from previous steps
+        vec3 Sint = (S - S * SampleTransmittance) / medium.extinction;// integrate along the current step segment
+        L += throughput * Sint;// accumulate and also take into account the transmittance from previous steps
         throughput *= SampleTransmittance;
         #endif
 
         tPrev = t;
     }
 
-    if (ground && tMax == tBottom && tBottom > 0.0)
-    {
+    if (ground && tMax == tBottom && tBottom > 0.0){
         // Account for bounced light off the earth
         vec3 P = WorldPos + tBottom * WorldDir;
         float pHeight = length(P);
@@ -452,17 +478,17 @@ bool MoveToTopAtmosphere(inout vec3 WorldPos, in vec3 WorldDir, in float Atmosph
             return false;
         }
     }
-    return true; // ok to start tracing
+    return true;// ok to start tracing
 }
 
 #define NONLINEARSKYVIEWLUT 1
 void UvToSkyViewLutParams(AtmosphereParameters Atmosphere, out float viewZenithCosAngle, out float lightViewCosAngle, in float viewHeight, in vec2 uv)
 {
     // Constrain uvs to valid sub texel range (avoid zenith derivative issue making LUT usage visible)
-    uv = vec2(fromSubUvsToUnit(uv.x, 192.0f), fromSubUvsToUnit(uv.y, 108.0f));
+    uv = vec2(fromSubUvsToUnit(uv.x, SKY_VIEW_TEXTURE_SIZE_F.x), fromSubUvsToUnit(uv.y, SKY_VIEW_TEXTURE_SIZE_F.y));
 
     float Vhorizon = sqrt(viewHeight * viewHeight - Atmosphere.bottom_radius * Atmosphere.bottom_radius);
-    float CosBeta = Vhorizon / viewHeight;				// GroundToHorizonCos
+    float CosBeta = Vhorizon / viewHeight;// GroundToHorizonCos
     float Beta = acos(CosBeta);
     float ZenithHorizonAngle = PI - Beta;
 
@@ -493,7 +519,7 @@ void UvToSkyViewLutParams(AtmosphereParameters Atmosphere, out float viewZenithC
 void SkyViewLutParamsToUv(AtmosphereParameters Atmosphere, in bool IntersectGround, in float viewZenithCosAngle, in float lightViewCosAngle, in float viewHeight, out vec2 uv)
 {
     float Vhorizon = sqrt(viewHeight * viewHeight - Atmosphere.bottom_radius * Atmosphere.bottom_radius);
-    float CosBeta = Vhorizon / viewHeight;				// GroundToHorizonCos
+    float CosBeta = Vhorizon / viewHeight;// GroundToHorizonCos
     float Beta = acos(CosBeta);
     float ZenithHorizonAngle = PI - Beta;
 
@@ -523,18 +549,34 @@ void SkyViewLutParamsToUv(AtmosphereParameters Atmosphere, in bool IntersectGrou
     }
 
     // Constrain uvs to valid sub texel range (avoid zenith derivative issue making LUT usage visible)
-    uv = vec2(fromUnitToSubUvs(uv.x, 192.0f), fromUnitToSubUvs(uv.y, 108.0f));
+    uv = vec2(fromUnitToSubUvs(uv.x, SKY_VIEW_TEXTURE_SIZE_F.x), fromUnitToSubUvs(uv.y, SKY_VIEW_TEXTURE_SIZE_F.y));
 }
 
 #define AP_KM_PER_SLICE 4.0f
 
-float AerialPerspectiveDepthToSlice(float depth)
-{
+float AerialPerspectiveDepthToSlice(float depth){
     return depth * (1.0f / AP_KM_PER_SLICE);
 }
-float AerialPerspectiveSliceToDepth(float slice)
-{
+
+float AerialPerspectiveSliceToDepth(float slice){
     return slice * AP_KM_PER_SLICE;
 }
 
-#endif // ATMOSPHERE_COMMON_GLSL
+vec3 GetSolarRadiance() {
+    return ATMOSPHERE.solar_float /
+    (PI * ATMOSPHERE.sun_angular_radius * ATMOSPHERE.sun_angular_radius);
+}
+
+
+vec3 GetSunLuminance(vec3 WorldPos, vec3 WorldDir, vec3 sunDirection, float PlanetRadius) {
+//    return vec3(0);
+//    if (dot(WorldDir, sunDirection) > cos(0.5*0.505*3.14159 / 180.0)) {
+//            return vec3(1000000.0);
+//    }
+//    return vec3(0);
+    if (dot(WorldDir, sunDirection) > cos(ATMOSPHERE.sun_angular_radius)) {
+        return ATMOSPHERE.solar_float;
+    }
+    return vec3(0);
+}
+#endif// ATMOSPHERE_COMMON_GLSL

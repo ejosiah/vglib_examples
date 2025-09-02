@@ -9,6 +9,7 @@
 #define arealPerspectiveImage global_images_3d[nonuniformEXT(atm.arealPerspectiveImageIndex)]
 
 #define TRANSMITTANCE_TEXTURE_SIZE imageSize(transmittanceImage)
+#define TRANSMITTANCE_TEXTURE_SIZE_F vec2(TRANSMITTANCE_TEXTURE_SIZE)
 #define MULTI_SCATTERING_TEXTURE_SIZE imageSize(multiScatteringImage)
 
 #define SKY_VIEW_TEXTURE_SIZE imageSize(skyViewImage)

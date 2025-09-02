@@ -35,6 +35,8 @@ struct Context {
     glm::mat4 view{1};
     glm::mat4 viewProjection{1};
     glm::mat4 inverseViewProjection{1};
+    glm::mat4 inverseView{1};
+    glm::mat4 inverseProjection{1};
     glm::vec3 lightDirection{};
     float lightIntensity{1};
     uint screenWidth;

@@ -22,6 +22,10 @@ protected:
         return context().prototypes->cloneGraphicsPipeline();
     }
 
+    GraphicsPipelineBuilder clipSpacePipelineBuilder() {
+        return context().prototypes->cloneScreenSpaceGraphicsPipeline();
+    }
+
     VulkanDescriptorSetLayout& bindlessDescriptorSetLayout() {
         return *const_cast<VulkanDescriptorSetLayout*>(context().bindlessDescriptor->descriptorSetLayout);
     }
@@ -32,5 +36,9 @@ protected:
 
     BindlessDescriptor& bindlessDescriptor() {
         return *context().bindlessDescriptor;
+    }
+
+    auto resource(auto path) const {
+        return FileManager::resource(path);
     }
 };

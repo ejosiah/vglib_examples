@@ -141,8 +141,12 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 
     clearColor(0, 0, 1);
     renderToSwapChain([&]{
+        if(!options.bruneton) {
+            atmosphere->renderSkyView(commandBuffer);
+        }else {
+            AppContext::renderAtmosphere(commandBuffer, *camera);
+        }
         terrain->render(commandBuffer);
-        AppContext::renderAtmosphere(commandBuffer, *camera);
         terrain->renderTopView(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
@@ -159,6 +163,7 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SetWindowSize({0, 0});
     ImGui::SliderFloat("Zenith Angle", &options.lightZenith, 0, 180);
     ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
+    ImGui::Checkbox("Bruneton", &options.bruneton);
     ImGui::End();   // End lighting
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
@@ -221,7 +226,6 @@ void TerrainDemo::initAtmosphere() {
 }
 
 void TerrainDemo::endFrame() {
-
     terrain->endFrame();
 }
 
@@ -237,6 +241,8 @@ void TerrainDemo::newFrame() {
     context.view = cam.view;
     context.viewProjection = cam.proj * cam.view;
     context.inverseViewProjection = glm::inverse(context.viewProjection);
+    context.inverseView = glm::inverse(cam.view);
+    context.inverseProjection = glm::inverse(cam.proj);
     Frustum::extractFrustum(context.viewProjectionFrustum, context.viewProjection);
 
     AppContext::updateSunDirection(lightDirection);
