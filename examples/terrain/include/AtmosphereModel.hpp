@@ -8,6 +8,11 @@
 
 class AtmosphereModel : public ContextAware {
 public:
+    struct Descriptor {
+        VulkanDescriptorSetLayout setLayout;
+        VkDescriptorSet set{};
+    };
+
     AtmosphereModel(Context& context);
 
     void init();
@@ -21,6 +26,8 @@ public:
     void renderSkyView(VkCommandBuffer commandBuffer);
 
     void controls();
+
+    Descriptor descriptor() const;
 
 protected:
     Context& context() final;
@@ -50,6 +57,9 @@ protected:
     void createRenderPipelines();
 
     std::vector<PipelineMetaData> metadata();
+
+    void useBruneton(bool flag);
+
 
 private:
     static constexpr uint BOTTOM = 0;
@@ -124,8 +134,9 @@ private:
         Texture arealPerspective;
     } m_lut;
 
-    VulkanDescriptorSetLayout m_descriptorSetLayout;
-    VkDescriptorSet m_descriptorSet{};
+    bool m_useBruneton{false};
+
+    Descriptor m_descriptor;
     std::array<VkDescriptorSet, 2> m_sets;
     struct {
         Pipeline skyView;

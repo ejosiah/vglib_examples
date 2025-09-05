@@ -91,6 +91,7 @@ void AtmosphereModel::newFrame() {
     m_uniforms.cpu->sunDirection = context().lightDirection;
     m_uniforms.cpu->inverseProjection = context().inverseProjection;
     m_uniforms.cpu->inverseView = context().inverseView;
+    m_useBruneton = context().useBruneton;
 }
 
 void AtmosphereModel::preProcess(VkCommandBuffer commandBuffer) {
@@ -106,9 +107,13 @@ void AtmosphereModel::render(VkCommandBuffer commandBuffer) {
 
 
 void AtmosphereModel::renderSkyView(VkCommandBuffer commandBuffer) {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.layout.handle , 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-    AppContext::renderClipSpaceQuad(commandBuffer);
+    if(!m_useBruneton) {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+        AppContext::renderClipSpaceQuad(commandBuffer);
+    }else {
+        AppContext::renderAtmosphere(commandBuffer, camera());
+    }
 }
 
 void AtmosphereModel::controls() {
@@ -150,7 +155,7 @@ void AtmosphereModel::createRenderPipelines() {
             .depthStencilState()
                 .compareOpLessOrEqual()
             .layout()
-                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(m_descriptor.setLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())
             .name("render_sky_view")
         .build(m_render.skyView.layout);
@@ -197,7 +202,7 @@ void AtmosphereModel::computeArealPerspectiveLut(VkCommandBuffer commandBuffer) 
 
 
 void AtmosphereModel::createDescriptorSetLayout() {
-    m_descriptorSetLayout =
+    m_descriptor.setLayout =
         device().descriptorSetLayoutBuilder()
             .name("atmosphere_descriptor_set_layout")
             .binding(0)
@@ -208,10 +213,10 @@ void AtmosphereModel::createDescriptorSetLayout() {
 }
 
 void AtmosphereModel::updateDescriptorSet() {
-    m_descriptorSet = descriptorPool().allocate({ m_descriptorSetLayout }).front();
+    m_descriptor.set = descriptorPool().allocate({ m_descriptor.setLayout }).front();
     auto writes = initializers::writeDescriptorSets<1>();
 
-    writes[0].dstSet = m_descriptorSet;
+    writes[0].dstSet = m_descriptor.set;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[0].descriptorCount = 1;
@@ -220,7 +225,7 @@ void AtmosphereModel::updateDescriptorSet() {
 
     device().updateDescriptorSets(writes);
 
-    m_sets[0] = m_descriptorSet;
+    m_sets[0] = m_descriptor.set;
     m_sets[1] = bindlessDescriptorSet();
 }
 
@@ -241,22 +246,30 @@ std::vector<PipelineMetaData> AtmosphereModel::metadata() {
         {
             .name = "compute_transmittance",
             .shadePath = FileManager::resource("atmosphere_transmission_lut.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &bindlessDescriptorSetLayout() },
+            .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
         {
             .name = "compute_multiscattering",
             .shadePath = FileManager::resource("atmosphere_multiscattering_lut.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &bindlessDescriptorSetLayout() },
+            .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
         {
             .name = "compute_skyview",
             .shadePath = FileManager::resource("atmosphere_sky_view_lut.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &bindlessDescriptorSetLayout() },
+            .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
         {
             .name = "compute_areal_perspective",
             .shadePath = FileManager::resource("atmosphere_areal_perspective_lut.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &bindlessDescriptorSetLayout() },
+            .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
     };
+}
+
+AtmosphereModel::Descriptor AtmosphereModel::descriptor() const {
+    return m_descriptor;
+}
+
+void AtmosphereModel::useBruneton(bool flag) {
+    m_useBruneton = flag;
 }

@@ -4,6 +4,7 @@
 #include "DisplacementMap.hpp"
 #include "ComputePipelins.hpp"
 #include <string>
+#include "ContextAware.hpp"
 
 enum class DisplacementMethod { File, FaultFormation };
 

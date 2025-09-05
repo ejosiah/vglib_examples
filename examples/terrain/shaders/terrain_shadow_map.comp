@@ -35,7 +35,7 @@ float saturate(float x) { return clamp(x, 0.0, 1.0); }
 vec3 toWorldCoords(vec2 uv, float h) {
     ivec2 size = textureSize(displacement_map, 0);
     h = mix(heightRange.x, heightRange.y, h);
-    vec3 p = vec3(uv.x, h, uv.y);
+    vec3 p = vec3(uv.x, h, 1 - uv.y);
     p.xz -= 0.5; // [0, 1] -> [-0.5, 0.5]
     p.xz *= xzScale * vec2(size);
     return p;
@@ -124,7 +124,7 @@ void main() {
 
     // Centered UV and initial height
     vec2 uv   = (vec2(gid) + 0.5) / vec2(size);
-    float h0  = texelFetch(displacement_map, gid, 0).r;
+    float h0  = texture(displacement_map, uv).r;
 
     if(!inBounds(uv, h0)){
         imageStore(shadow_map, gid, vec4(1.0, 1.0, 0.0, 1.0));
@@ -135,6 +135,7 @@ void main() {
 
     // Projected light direction on XZ plane (heightmap plane)
     vec2 Lxz     = lightDir.xz;
+    Lxz.y = -Lxz.y;
     float lenLxz = length(Lxz);
 
     // If light is perfectly vertical, there are no lateral occluders in the height field
@@ -162,7 +163,7 @@ void main() {
         }
 
         float s_world = float(i) * hStepWorld; // horizontal distance in world units
-        float h1      = textureLod(displacement_map, posUV, 0.0).r * heightScale;
+        float h1      = texture(displacement_map, posUV).r * heightScale;
         float slope   = (h1 - h0) / max(s_world, 1e-6);          // slope from current texel to this sample
         // Track the steepest horizon
         maxSlope = max(maxSlope, slope);

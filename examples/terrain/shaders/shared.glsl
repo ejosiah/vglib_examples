@@ -41,8 +41,12 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
     mat4 viewProjectionMatrix;
     mat4 modelViewProjectionMatrix;
     vec4 frustumPlanes[6];
+    ivec4 mouse;
     vec3 lightDirection;
+    vec3 whitePoint;
     vec2 resolution;
+    vec2 sunSize;
+    float exposure;
     float lodFactor;
     float minLodVariance;
     float dmapFactor;
@@ -52,6 +56,7 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
 } globals;
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
+layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 
 // TODO add damp_tex_index to uniforms
 #define u_DmapSampler global_textures[nonuniformEXT(globals.damp_tex_index)]
@@ -243,7 +248,8 @@ VertexAttribute TessellateTriangle(in const vec2 texCoords[3], in vec2 tessCoord
     vec2 texCoord = BarycentricInterpolation(texCoords, tessCoord);
     vec4 position = vec4(texCoord, 0, 1);
 
-    vec2 uv = vec2(texCoord.x, 1 - texCoord.y);
+//    vec2 uv = vec2(texCoord.x, 1 - texCoord.y);
+    vec2 uv = vec2(texCoord.x, texCoord.y);
     if(should_displace) {
         position.z = globals.dmapFactor * textureLod(u_DmapSampler, uv, 0.0).r;
     }

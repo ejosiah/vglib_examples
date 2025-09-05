@@ -2,11 +2,16 @@
 
 #include "shared.glsl"
 
+#define ATMOSPHERE_UNIFORM_SET 2
+#include "atmosphere/atm_uniforms.glsl"
+
 layout(location = 0) in struct {
     vec3 worldPos;
     vec3 color;
     vec2 uv;
 } f;
+
+layout(location = 3) flat in int isVisible;
 
 layout(location = 0) out vec4 fragColor;
 

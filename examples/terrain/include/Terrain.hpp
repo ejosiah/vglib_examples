@@ -2,6 +2,8 @@
 
 #include "ContextAware.hpp"
 #include "ComputePipelins.hpp"
+#include "AtmosphereModel.hpp"
+#include "Offscreen.hpp"
 #include <glm/glm.hpp>
 #include <array>
 #include <vector>
@@ -13,7 +15,7 @@ public:
         uint nodeCount{0};
     };
 
-    explicit Terrain(Context& context);
+    explicit Terrain(Context& context, AtmosphereModel::Descriptor atmDescriptor);
 
     void init();
 
@@ -24,6 +26,8 @@ public:
     void render(VkCommandBuffer commandBuffer);
 
     void renderTopView(VkCommandBuffer commandBuffer);
+
+    void renderToGBuffer(VkCommandBuffer commandBuffer);
 
     void controls();
 
@@ -43,6 +47,10 @@ public:
 
 protected:
     void renderTerrain(VkCommandBuffer commandBuffer);
+
+    void renderTerrainDefault(VkCommandBuffer commandBuffer);
+
+    void renderTerrainBruneton(VkCommandBuffer commandBuffer);
 
     void initBuffers();
 
@@ -88,8 +96,12 @@ private:
         glm::mat4 viewProjectionMatrix{1};
         glm::mat4 modelViewProjectionMatrix{1};
         std::array<glm::vec4, 6> frustumPlanes;
+        glm::ivec4 mouse{0};
         glm::vec3 lightDirection;
-        glm::vec2 resolution{0};
+        glm::vec3 whitePoint;
+        glm::vec2 resolution;
+        glm::vec2 sunSize;
+        float exposure;
         float lodFactor{0};
         float minLodVariance{0.1};
         float dmapFactor{1};
@@ -135,7 +147,7 @@ private:
 
     struct {
         float primitivePixelLengthTarget{7};
-        float minLodStdev{0.1};
+        float minLodStdev{0};
         float dmapScale{1};
         int gpuSubDivisions{3};
         bool topView{true};
@@ -145,8 +157,12 @@ private:
 
     Pipeline m_render;
     Pipeline m_renderWire;
+    Pipeline m_renderBruneton;
+    Pipeline m_renderBrunetonWire;
     Pipeline m_topView;
+    Pipeline m_gbuffer;
     std::array<VkDescriptorSet, 2> m_sets;
     SpecializationConstants specializationConstants{};
     uint should_displace = 1;
+    AtmosphereModel::Descriptor m_atmosphereDescriptor;
 };

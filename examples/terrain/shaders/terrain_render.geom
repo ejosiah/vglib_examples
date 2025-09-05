@@ -11,11 +11,15 @@ layout(location = 0) in struct {
     vec2 uv;
 } gs_in[];
 
+layout(location = 3) flat in int iIsVisible[];
+
 layout(location = 0) out struct {
     vec3 worldPos;
     vec3 color;
     vec2 uv;
 } gs_out;
+
+layout(location = 3) flat out int isVisible;
 
 layout(location = 4) noperspective out vec3 o_Distance;
 
@@ -33,6 +37,7 @@ void main() {
 
         o_Distance = vec3(0);
         o_Distance[i] = area * inversesqrt(dot(v[i],v[i]));
+        isVisible = iIsVisible[i];
         gl_Position = gl_in[i].gl_Position;
         EmitVertex();
     }

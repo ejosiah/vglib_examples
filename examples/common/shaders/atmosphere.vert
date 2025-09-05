@@ -24,8 +24,9 @@ layout(location = 0) out struct {
 void main() {
     vec4 viewPos = inverse_projection * vec4(clipPos, 1, 1);
     vec4 viewDirection =  inverse_view * vec4(viewPos.xyz, 0);
+    viewPos = inverse_view * viewPos;
 
-    vs_out.position = viewPos.xyz;
+    vs_out.position = viewPos.xyz/viewPos.w;
     vs_out.direction = viewDirection.xyz;
 
     gl_Position = vec4(clipPos, 0, 1);

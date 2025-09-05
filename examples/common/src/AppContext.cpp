@@ -248,4 +248,8 @@ void AppContext::addExtensions(void*& extensions) {
     dsFeatures->extendedDynamicState3PolygonMode = VK_TRUE;
 }
 
+AppContext::Atmosphere& AppContext::atmosphere() {
+    return instance._atmosphere;
+}
+
 AppContext AppContext::instance;

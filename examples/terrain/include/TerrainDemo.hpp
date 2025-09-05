@@ -19,6 +19,10 @@ protected:
 
     void initContext();
 
+    void initGBuffer();
+
+    void initUniforms();
+
     void initDisplacementMapGenerator();
 
     void initDisplacementShadowMap();
@@ -54,6 +58,8 @@ protected:
     void newFrame() override;
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
+
+    void computeLighting(VkCommandBuffer commandBuffer);
 
     void renderUI(VkCommandBuffer commandBuffer);
 
@@ -93,9 +99,40 @@ protected:
 
     glm::vec3 lightDirection;
 
+    struct UniformData {
+        glm::mat4 inverseProjection{};
+        glm::mat4 inverseView{};
+
+        glm::vec3 sunDirection{};
+        uint gBufferColorIndex{~0u};
+
+        glm::vec3 cameraPosition{};
+        uint gBufferPositionIndex{~0u};
+
+        glm::vec3 whitePoint{1};
+        uint gBufferNormalIndex{~0u};
+
+        glm::vec2 resolution{};
+        glm::vec2 sunSize{};
+
+        float exposure{10};
+        uint gBufferDepthIndex{~0u};
+        uint shadowMapIndex{~0u};
+    };
+
+    VulkanDescriptorSetLayout uniformDescriptorSetLayout;
+    VkDescriptorSet uniformDescriptorSet{};
+
+    struct  {
+        VulkanBuffer gpu;
+        UniformData* cpu{};
+    } uniforms;
+
     struct {
         float lightZenith{45};
         float lightAzimuth{45};
-        bool bruneton{false};
+        float exposure{10};
+        bool bruneton{true};
+        bool debug{false};
     } options;
 };

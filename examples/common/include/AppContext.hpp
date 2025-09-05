@@ -25,6 +25,15 @@ public:
         float exposure{10};
     };
 
+    struct Atmosphere {
+        AtmosphereDescriptor descriptor;
+        struct {
+            VulkanBuffer gpu;
+            AtmosphereInfo* cpu{};
+            VkDescriptorSet descriptorSet{};
+        } info;
+    };
+
     static void init(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, VulkanSwapChain& swapChain, VulkanRenderPass& renderPass);
 
     static VulkanDevice& device();
@@ -46,6 +55,8 @@ public:
     static std::vector<VkDescriptorSet> allocateDescriptorSets(const std::vector<VulkanDescriptorSetLayout>& setLayouts);
 
     static std::string resource(const std::string& name);
+
+    static Atmosphere& atmosphere();
 
     static  void addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std::vector<std::reference_wrapper<VulkanImage>> &images
             ,VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
@@ -162,13 +173,6 @@ private:
     } _shading;
     Floor _floor;
 
-    struct {
-        AtmosphereDescriptor descriptor;
-        struct {
-            VulkanBuffer gpu;
-            AtmosphereInfo* cpu{};
-            VkDescriptorSet descriptorSet{};
-        } info;
-    } _atmosphere;
+    Atmosphere _atmosphere;
 
 };

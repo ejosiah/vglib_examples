@@ -5,10 +5,14 @@
 #include <leb/leb.hpp>
 #include <glm/glm.hpp>
 #include <imgui.h>
+#include "AppContext.hpp"
 
-Terrain::Terrain(Context &context)
-:m_context{&context}{
+Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
+: m_context{&context}
+, m_atmosphereDescriptor(atmDescriptor)
+{
     m_sets[1] = context.bindlessDescriptor->descriptorSet;
+//    m_sets[2] = atmDescriptor.set;
 
     static uint WorkGroupSize = 256;
     static uint cbtID = 0;
@@ -51,7 +55,9 @@ void Terrain::newFrame() {
     m_uniforms.cpu->dmapFactor = m_options.dmapScale;
     m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
     m_uniforms.cpu->lightDirection = context().lightDirection;
-
+    m_uniforms.cpu->exposure = context().exposure;
+    m_uniforms.cpu->mouse = context().mouse;
+    m_options.useBruneton = context().useBruneton;
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
@@ -76,11 +82,53 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
 }
 
 void Terrain::renderTerrain(VkCommandBuffer commandBuffer) {
+    if(m_options.useBruneton) {
+        renderTerrainBruneton(commandBuffer);
+    }else {
+        renderTerrainDefault(commandBuffer);
+    }
+}
+
+void Terrain::renderTerrainDefault(VkCommandBuffer commandBuffer) {
     auto pipeline = m_options.wire ? m_renderWire.pipeline.handle : m_render.pipeline.handle;
     auto layout = m_options.wire ? m_renderWire.layout.handle : m_render.layout.handle;
+
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = m_sets[0];
+    sets[1] = m_sets[1];
+    sets[2] = m_atmosphereDescriptor.set;
+
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(sets), sets.data(), 0,nullptr);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+}
+
+void Terrain::renderTerrainBruneton(VkCommandBuffer commandBuffer) {
+    auto pipeline = m_options.wire ? m_renderBrunetonWire.pipeline.handle : m_renderBruneton.pipeline.handle;
+    auto layout = m_options.wire ? m_renderBrunetonWire.layout.handle : m_renderBruneton.layout.handle;
+
+    static std::array<VkDescriptorSet, 4> sets;
+    sets[0] = m_sets[0];
+    sets[1] = m_sets[1];
+    sets[2] = AppContext::atmosphere().descriptor.uboDescriptorSet;
+    sets[3] = AppContext::atmosphere().descriptor.lutDescriptorSet;
+
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(sets), sets.data(), 0,nullptr);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+}
+
+
+void Terrain::renderToGBuffer(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gbuffer.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gbuffer.layout.handle, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
     vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
@@ -100,6 +148,9 @@ void Terrain::initUniforms() {
     defaultValues.damp_tex_index = context().dmap_tex_index;
     defaultValues.dmap_normal_tex_index = context().dmap_normal_tex_index;
     defaultValues.shadow_tex_index = context().dmap_shadow_tex_index;
+    defaultValues.sunSize = AppContext::atmosphere().info.cpu->sunSize;
+    defaultValues.whitePoint = AppContext::atmosphere().info.cpu->whitePoint;
+    defaultValues.exposure = AppContext::atmosphere().info.cpu->exposure;
 
     const float width = m_dmap.width;
     const float height = m_dmap.height;
@@ -189,6 +240,66 @@ void Terrain::initVertexBuffer() {
 void Terrain::createRenderPipelines() {
     const auto w = m_context->screenWidth;
     const auto h = m_context->screenHeight;
+
+    m_gbuffer.pipeline =
+        graphicsPipelineBuilder()
+            .shaderStage()
+                .vertexShader(FileManager::resource("terrain_render.vert.spv"))
+                    .addSpecialization(0u, 0)
+                    .addSpecialization(256u, 1)
+                    .addSpecialization(should_displace, 2)
+                    .addSpecialization(0u, 3)
+                    .addSpecialization(0u, 4)
+                .fragmentShader(FileManager::resource("terrain_gbuffer.frag.spv"))
+            .vertexInputState().clear()
+                .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
+                .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
+            .rasterizationState()
+                .cullNone()
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .colorBlendState()
+                .attachments(3)
+            .layout().clear()
+                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+            .name("terrain_gbuffer")
+        .build(m_gbuffer.layout);
+
+    auto renderBrunetonBuilder = graphicsPipelineBuilder();
+    m_renderBruneton.pipeline =
+            renderBrunetonBuilder
+            .shaderStage()
+                .vertexShader(FileManager::resource("terrain_render.vert.spv"))
+                    .addSpecialization(0u, 0)
+                    .addSpecialization(256u, 1)
+                    .addSpecialization(should_displace, 2)
+                    .addSpecialization(0u, 3)
+                    .addSpecialization(0u, 4)
+                .fragmentShader(FileManager::resource("terrain_render_bruneton.frag.spv"))
+            .vertexInputState().clear()
+                .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
+                .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
+            .rasterizationState()
+            .layout().clear()
+                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
+            .name("terrain_render_bruneton")
+        .build(m_renderBruneton.layout);
+
+    m_renderBrunetonWire.pipeline =
+            renderBrunetonBuilder
+            .shaderStage()
+                .geometryShader(FileManager::resource("terrain_render.geom.spv"))
+                .fragmentShader(FileManager::resource("terrain_render_wire.frag.spv"))
+            .name("terrain_render_bruneton_wire")
+        .build(m_renderBrunetonWire.layout);
+
     auto renderBuilder = graphicsPipelineBuilder();
     m_render.pipeline =
         renderBuilder
@@ -204,10 +315,10 @@ void Terrain::createRenderPipelines() {
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
             .rasterizationState()
-                .cullNone()
             .layout().clear()
                 .addDescriptorSetLayout(m_descriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+                .addDescriptorSetLayout(m_atmosphereDescriptor.setLayout)
             .name("terrain_render")
         .build(m_render.layout);
 

@@ -14,6 +14,8 @@
 
 struct GBuffer {
     Texture color;
+    Texture normal;
+    Texture position;
     Texture depth;
 };
 
@@ -22,30 +24,4 @@ struct TerrainInfo {
     float height{};
     float zMin{};
     float zMax{};
-};
-
-struct Context {
-    VulkanDevice* device{};
-    VulkanDescriptorPool* descriptorPool{};
-    GBuffer* gBuffer{};
-    BaseCameraController* camera{};
-    BindlessDescriptor* bindlessDescriptor{};
-    std::unique_ptr<Prototypes> prototypes;
-    Frustum viewProjectionFrustum;
-    glm::mat4 view{1};
-    glm::mat4 viewProjection{1};
-    glm::mat4 inverseViewProjection{1};
-    glm::mat4 inverseView{1};
-    glm::mat4 inverseProjection{1};
-    glm::vec3 lightDirection{};
-    float lightIntensity{1};
-    uint screenWidth;
-    uint screenHeight;
-    uint dmap_tex_index{~0u};
-    uint dmap_normal_tex_index{~0u};
-    uint dmap_shadow_tex_index{~0u};
-    uint transmittanceTextureIndex{~0u};
-    uint multiScatteringTextureIndex{~0u};
-    uint skyViewTextureIndex{~0u};
-    uint arealPerspectiveTextureIndex{~0u};
 };

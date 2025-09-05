@@ -3,7 +3,7 @@
 #define RADIANCE_API_ENABLED
 #define ATMOSPHERE_PARAMS_SET 1
 #define ATMOSPHERE_LUT_SET 2
-#include "atmosphere_api.glsl"
+#include "atmosphere/bruneton_api.glsl"
 
 layout(set = 0, binding = 0) uniform Info {
     mat4 inverse_model;

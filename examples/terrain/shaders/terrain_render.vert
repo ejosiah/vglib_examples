@@ -11,6 +11,8 @@ layout(location = 0) out struct {
     vec2 uv;
 } v;
 
+layout(location = 3) flat out int isVisible;
+
 void main() {
     const int cbtID = 0;
     uint nodeID = gl_InstanceIndex;
@@ -21,6 +23,8 @@ void main() {
         triangleVertices[1].xy,
         triangleVertices[2].xy
     );
+
+     isVisible = FrustumCullingTest(triangleVertices) ? 1 : 0;
 
     // compute final vertex attributes
     VertexAttribute attrib = TessellateTriangle(

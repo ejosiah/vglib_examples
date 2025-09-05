@@ -8,10 +8,11 @@
 
 #ifndef ATMOSPHERE_UNIFORM_SET
 #define ATMOSPHERE_UNIFORM_SET 0
+#endif // ATMOSPHERE_UNIFORM_SET
+
 #ifndef ATMOSPHERE_UNIFORM_BINDING
 #define ATMOSPHERE_UNIFORM_BINDING 0
 #endif // ATMOSPHERE_UNIFORM_BINDING
-#endif // ATMOSPHERE_UNIFORM_SET
 
 layout(set = ATMOSPHERE_UNIFORM_SET, binding = ATMOSPHERE_UNIFORM_BINDING, scalar) uniform AtmosphereParams {
     mat4 inverseProjection;
@@ -89,6 +90,6 @@ AtmosphereParameters GetAtmosphereParameters() {
 #define transmittanceLUT global_textures[nonUniformEXT(atm.transmittanceTextureIndex)]
 #define multiscatteringLUT global_textures[nonUniformEXT(atm.multiScatteringTextureIndex)]
 #define skyViewLUT global_textures[nonUniformEXT(atm.skyViewTextureIndex)]
-#define ArealPerspective global_textures_3d[nonUniformEXT(atm.arealPerspectiveTextureIndex)]
+#define ArealPerspectiveLUT global_textures_3d[nonUniformEXT(atm.arealPerspectiveTextureIndex)]
 
 #endif // ATMOSPHERE_UNIFORM_GLSL
