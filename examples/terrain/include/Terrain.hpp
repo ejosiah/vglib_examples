@@ -29,6 +29,8 @@ public:
 
     void renderToGBuffer(VkCommandBuffer commandBuffer);
 
+    void renderTerrainBruneton(VkCommandBuffer commandBuffer);
+
     void controls();
 
     void endFrame();
@@ -49,8 +51,6 @@ protected:
     void renderTerrain(VkCommandBuffer commandBuffer);
 
     void renderTerrainDefault(VkCommandBuffer commandBuffer);
-
-    void renderTerrainBruneton(VkCommandBuffer commandBuffer);
 
     void initBuffers();
 

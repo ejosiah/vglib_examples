@@ -23,6 +23,9 @@ const float kcd = 1000.0 * cd;
 const float cd_per_square_meter = cd / m2;
 const float kcd_per_square_meter = kcd / m2;
 
+const vec3 SKY_SPECTRAL_RADIANCE_TO_LUMINANCE = vec3(114974.916437, 71305.954816, 65310.548555);
+const vec3 SUN_SPECTRAL_RADIANCE_TO_LUMINANCE = vec3(98242.786222, 69954.398112, 66475.012354);
+
 struct DensityProfileLayer {
     float width;
     float exp_term;
@@ -34,7 +37,7 @@ struct DensityProfile {
     DensityProfileLayer layers[2];
 };
 struct AtmosphereParameters {
-    vec3 solar_float;
+    vec3 solar_irradiance;
     float sun_angular_radius;
     float bottom_radius;
     float top_radius;

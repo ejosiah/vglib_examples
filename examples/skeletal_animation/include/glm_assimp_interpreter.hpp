@@ -2,6 +2,7 @@
 
 #include <assimp/types.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 inline glm::vec3 to_vec3(const aiVector3D& v){
     return {v.x, v.y, v.z};

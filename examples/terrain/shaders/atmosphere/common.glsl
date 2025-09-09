@@ -5,7 +5,7 @@
 
 #include "atm_uniforms.glsl"
 #include "common_defs.glsl"
-#include "common_functions.glsl"
+#include "bruneton/functions.glsl"
 
 #define PLANET_RADIUS_OFFSET 0.01f
 #define SYNC_THREADS groupMemoryBarrier(); barrier();
@@ -563,7 +563,7 @@ float AerialPerspectiveSliceToDepth(float slice){
 }
 
 vec3 GetSolarRadiance() {
-    return ATMOSPHERE.solar_float /
+    return ATMOSPHERE.solar_irradiance /
     (PI * ATMOSPHERE.sun_angular_radius * ATMOSPHERE.sun_angular_radius);
 }
 
@@ -575,7 +575,7 @@ vec3 GetSunLuminance(vec3 WorldPos, vec3 WorldDir, vec3 sunDirection, float Plan
 //    }
 //    return vec3(0);
     if (dot(WorldDir, sunDirection) > cos(ATMOSPHERE.sun_angular_radius)) {
-        return ATMOSPHERE.solar_float;
+        return ATMOSPHERE.solar_irradiance;
     }
     return vec3(0);
 }

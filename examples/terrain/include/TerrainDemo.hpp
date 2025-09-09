@@ -59,9 +59,17 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void runRenderGraph(VkCommandBuffer commandBuffer);
+
+    void renderToDisplay(VkCommandBuffer commandBuffer);
+
+    void toneMap(VkCommandBuffer commandBuffer);
+
     void computeLighting(VkCommandBuffer commandBuffer);
 
     void renderUI(VkCommandBuffer commandBuffer);
+
+    static void localReadBarrier(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -79,6 +87,15 @@ protected:
         VulkanPipeline pipeline;
     } render;
 
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+        struct {
+            int method{3};
+            float exposureValue{0};
+        } constants;
+    } toneMapper;
+
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
@@ -88,6 +105,9 @@ protected:
     BindlessDescriptor bindlessDescriptor;
     GBuffer gBuffer;
     Offscreen::RenderInfo renderInfo;
+    Offscreen::RenderInfo renderInfo1;
+
+    RenderGraphInputs renderGraphInputs;
     Context context;
     std::unique_ptr<DisplacementMapGenerator> displacementMapGenerator;
     std::unique_ptr<Terrain> terrain;
@@ -123,6 +143,9 @@ protected:
     VulkanDescriptorSetLayout uniformDescriptorSetLayout;
     VkDescriptorSet uniformDescriptorSet{};
 
+    VulkanDescriptorSetLayout displayDescriptorSetLayout;
+    VkDescriptorSet displayDescriptorSet{};
+
     struct  {
         VulkanBuffer gpu;
         UniformData* cpu{};
@@ -132,7 +155,7 @@ protected:
         float lightZenith{45};
         float lightAzimuth{45};
         float exposure{10};
-        bool bruneton{true};
-        bool debug{false};
+        bool bruneton{false};
+        bool debug{true};
     } options;
 };

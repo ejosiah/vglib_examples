@@ -82,11 +82,7 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
 }
 
 void Terrain::renderTerrain(VkCommandBuffer commandBuffer) {
-    if(m_options.useBruneton) {
-        renderTerrainBruneton(commandBuffer);
-    }else {
-        renderTerrainDefault(commandBuffer);
-    }
+    renderTerrainDefault(commandBuffer);
 }
 
 void Terrain::renderTerrainDefault(VkCommandBuffer commandBuffer) {
@@ -283,7 +279,12 @@ void Terrain::createRenderPipelines() {
             .vertexInputState().clear()
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
-            .rasterizationState()
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .colorBlendState()
+                .attachments(2)
             .layout().clear()
                 .addDescriptorSetLayout(m_descriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())

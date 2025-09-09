@@ -6,6 +6,7 @@ struct Context {
     VulkanDevice* device{};
     VulkanDescriptorPool* descriptorPool{};
     GBuffer* gBuffer{};
+    RenderGraphInputs* rgInputs{};
     BaseCameraController* camera{};
     BindlessDescriptor* bindlessDescriptor{};
     std::unique_ptr<Prototypes> prototypes;
@@ -33,6 +34,11 @@ struct Context {
     uint gBufferPositionIndex{~0u};
     uint gBufferNormalIndex{~0u};
     uint gBufferDepthIndex{~0u};
+    uint brunetonScatteringTextureIndex{~0u};
+    uint brunetonSingleScatteringTextureIndex{~0u};
+    uint brunetonIrradianceTextureIndex{~0u};
+    VulkanDescriptorSetLayout subpassInputDescriptorSetLayout;
+    VkDescriptorSet subpassInputDescriptorSet{};
 };
 
 class ContextAware {
@@ -69,6 +75,10 @@ protected:
 
     BindlessDescriptor& bindlessDescriptor() {
         return *context().bindlessDescriptor;
+    }
+
+    RenderGraphInputs& renderGraphInputs() {
+        return *context().rgInputs;
     }
 
     auto resource(auto path) const {

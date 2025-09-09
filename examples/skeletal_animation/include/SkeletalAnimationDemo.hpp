@@ -1,6 +1,6 @@
 #include "VulkanBaseApp.h"
 #include "model.hpp"
-#include "animation.hpp"
+#include "skAnimation.hpp"
 
 class SkeletalAnimationDemo : public VulkanBaseApp{
 public:
@@ -37,6 +37,7 @@ protected:
 
     void onPause() override;
 
+    void beforeDeviceCreation() override;
 
 
 protected:

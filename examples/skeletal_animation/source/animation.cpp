@@ -1,4 +1,4 @@
-#include "animation.hpp"
+#include "skAnimation.hpp"
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
 #include "glm_assimp_interpreter.hpp"

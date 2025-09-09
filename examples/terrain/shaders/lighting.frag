@@ -77,12 +77,12 @@ void main(){
     vec4 clipPos = vec4(2 * uv - 1, 1, 1);
     vec4 viewPos = inverseProjection * clipPos;
     viewPos /= viewPos.w;
-    vec3 cameraDir = normalize((inverseView * vec4(viewPos.xyz, 0)).xyz);
     vec3 earthCenter = atmosphereToLocalUnits(vec3(0, -ATMOSPHERE.bottom_radius, 0));
 
     vec3 radiance = vec3(0);
     vec3 camera = cameraPos - earthCenter;
     float shadow_length = 0;
+    float scatterFactor = 15.0;
 
     float depth = texture(depth_buffer, uv).r;
     vec3 debug = vec3(0);
@@ -99,23 +99,23 @@ void main(){
         vec3 point = worldPos - earthCenter;
         vec3 skyIrradiance;
         vec3 sunIrradiance = GetSunAndSkyIrradiance(point, N, L, skyIrradiance);
-        radiance = (albedo / PI) * (skyIrradiance + sunIrradiance * visibility) ;
+        radiance = (albedo / PI) * (skyIrradiance + sunIrradiance * visibility);
 
 //        float shadow_length = length(worldPos - camera);
         vec3 transmittance;
-        vec3 in_scatter = GetSkyRadianceToPoint(camera, point, shadow_length, sunDirection, transmittance);
+        vec3 in_scatter = GetSkyRadianceToPoint(camera, point, shadow_length, sunDirection, transmittance) * scatterFactor;
         radiance = radiance * transmittance + in_scatter;
 
     } else {
         vec3 transmittance;
 
-
+        vec3 cameraDir = normalize((inverseView * vec4(viewPos.xyz, 0)).xyz);
         radiance = GetSkyRadiance(camera , cameraDir, shadow_length, sunDirection, transmittance);
         if (dot(cameraDir, sunDirection) > sunSize.y) {
             radiance = radiance + transmittance * GetSolarRadiance();
         }
         vec3 point = camera + cameraDir * 100000;
-        vec3 in_scatter = GetSkyRadianceToPoint(camera, point, shadow_length, sunDirection, transmittance);
+        vec3 in_scatter = GetSkyRadianceToPoint(camera, point, shadow_length, sunDirection, transmittance) * scatterFactor;
         radiance = radiance * transmittance + in_scatter;
     }
 

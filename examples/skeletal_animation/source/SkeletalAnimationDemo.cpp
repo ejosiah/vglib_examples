@@ -2,15 +2,16 @@
 #include "GraphicsPipelineBuilder.hpp"
 
 SkeletalAnimationDemo::SkeletalAnimationDemo(const Settings& settings) : VulkanBaseApp("Skeletal Animation", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/skeletal_animation");
-    fileManager.addSearchPath("../../examples/skeletal_animation/spv");
-    fileManager.addSearchPath("../../examples/skeletal_animation/models");
-    fileManager.addSearchPath("../../examples/skeletal_animation/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("skeletal_animation");
+    fileManager().addSearchPath("skeletal_animation/spv");
+    fileManager().addSearchPath("skeletal_animation/models");
+    fileManager().addSearchPath("skeletal_animation/textures");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data/models");
+    fileManager().addSearchPath("../data/models/character");
+    fileManager().addSearchPath("../data/textures");
+    fileManager().addSearchPath("../data");
     jump = &mapToKey(Key::SPACE_BAR, "jump", Action::detectInitialPressOnly());
     dance = &mapToKey(Key::O, "dance", Action::detectInitialPressOnly());
     walk = &mapToKey(Key::M, "walk", Action::detectInitialPressOnly());
@@ -26,9 +27,16 @@ void SkeletalAnimationDemo::initApp() {
     createComputePipeline();
 }
 
+void SkeletalAnimationDemo::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+}
+
 void SkeletalAnimationDemo::createDescriptorPool() {
     constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 16> poolSizes{
+    std::array<VkDescriptorPoolSize, 9> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
@@ -37,15 +45,8 @@ void SkeletalAnimationDemo::createDescriptorPool() {
                     { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets }
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
@@ -131,7 +132,7 @@ void SkeletalAnimationDemo::createRenderPipeline() {
 }
 
 void SkeletalAnimationDemo::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
+    auto module = device.createShaderModule( resource("pass_through.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
@@ -245,15 +246,15 @@ void walkBoneHierarchy1(const anim::Animation& animation, const anim::AnimationN
 }
 
 void SkeletalAnimationDemo::initModel() {
-    auto path = std::string{ "../../data/models/character/Wave_Hip_Hop_Dance.fbx" };
-    auto path0 = std::string{ "../../data/models/character/Backflip.fbx" };
+    auto path = resource( "Wave_Hip_Hop_Dance.fbx" );
+    auto path0 = resource( "Backflip.fbx" );
 //    auto path = std::string{ "../../data/models/character/Walking.fbx" };
     model = mdl::load(device, path);
     model->updateDescriptorSet(device, descriptorPool);
-    auto dance = anim::load(model.get(), "../../data/models/character/Wave_Hip_Hop_Dance.fbx" ).front();
-    auto backFlip = anim::load(model.get(), "../../data/models/character/Backflip.fbx" ).front();
-    auto idle = anim::load(model.get(), "../../data/models/character/Idle.fbx" ).front();
-    auto walking = anim::load(model.get(), "../../data/models/character/Walking.fbx" ).front();
+    auto dance = anim::load(model.get(), resource("Wave_Hip_Hop_Dance.fbx") ).front();
+    auto backFlip = anim::load(model.get(), resource("Backflip.fbx") ).front();
+    auto idle = anim::load(model.get(), resource("Idle.fbx") ).front();
+    auto walking = anim::load(model.get(), resource("Walking.fbx") ).front();
     dance.name = "dance";
 
     backFlip.name = "back_flip";
@@ -310,7 +311,7 @@ void walkBoneHierarchy(const mdl::Model& model, const mdl::Bone& bone, int depth
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
 

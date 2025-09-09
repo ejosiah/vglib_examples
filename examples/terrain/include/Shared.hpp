@@ -19,6 +19,12 @@ struct GBuffer {
     Texture depth;
 };
 
+struct RenderGraphInputs {
+    Texture color;
+    Texture position;
+    Texture depth;
+};
+
 struct TerrainInfo {
     float width{};
     float height{};

@@ -4,7 +4,7 @@
 #define skyViewLut global_textures[nonuniformEXT(atm.skyViewTextureIndex)]
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
-layout(set = 1, binding = 10) uniform sampler2D global_textures_3d[];
+layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 layout(set = 1, binding = 11) uniform writeonly image3D global_images_3d[];
 

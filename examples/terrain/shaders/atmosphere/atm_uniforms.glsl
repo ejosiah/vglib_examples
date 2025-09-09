@@ -48,6 +48,9 @@ layout(set = ATMOSPHERE_UNIFORM_SET, binding = ATMOSPHERE_UNIFORM_BINDING, scala
     uint multiScatteringImageIndex;
     uint skyViewImageIndex;
     uint arealPerspectiveImageIndex;
+    uint brunetonScatteringTextureIndex;
+    uint brunetonSingleScatteringTextureIndex;
+    uint brunetonIrradianceTextureIndex;
 } atm;
 
 AtmosphereParameters ATMOSPHERE = AtmosphereParameters(
@@ -85,6 +88,28 @@ AtmosphereParameters GetAtmosphereParameters() {
         atm.groundAlbedo,
         atm.mu_s_min
     );
+}
+
+float atmosphereToLocalUnits(float v) {
+    return v * atm.lengthUnitInMeters;
+}
+
+float localUnitsToAtmosphere(float v) {
+    return v / atm.lengthUnitInMeters;
+}
+
+vec3 atmosphereToLocalUnits(vec3 v) {
+    return v * atm.lengthUnitInMeters;
+}
+vec4 atmosphereToLocalUnits(vec4 v) {
+    return v * atm.lengthUnitInMeters;
+}
+
+vec3 localUnitsToAtmosphere(vec3 v) {
+    return v / atm.lengthUnitInMeters;
+}
+vec4 localUnitsToAtmosphere(vec4 v) {
+    return v / atm.lengthUnitInMeters;
 }
 
 #define transmittanceLUT global_textures[nonUniformEXT(atm.transmittanceTextureIndex)]

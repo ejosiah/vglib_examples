@@ -81,6 +81,10 @@ void AtmosphereModel::initUniforms() {
     initialValues.skyViewImageIndex = bindlessDescriptor().reserveImageSlots(1);
     initialValues.arealPerspectiveImageIndex = bindlessDescriptor().reserveImageSlots(1);
 
+    initialValues.brunetonScatteringTextureIndex = context().brunetonScatteringTextureIndex;
+    initialValues.brunetonSingleScatteringTextureIndex = context().brunetonSingleScatteringTextureIndex;
+    initialValues.brunetonIrradianceTextureIndex = context().brunetonIrradianceTextureIndex;
+
     spdlog::info("Atmosphere ubo size; {}", sizeof(UniformData));
     m_uniforms.gpu = device().createCpuVisibleBuffer(&initialValues, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
@@ -107,13 +111,31 @@ void AtmosphereModel::render(VkCommandBuffer commandBuffer) {
 
 
 void AtmosphereModel::renderSkyView(VkCommandBuffer commandBuffer) {
-    if(!m_useBruneton) {
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.pipeline.handle);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-        AppContext::renderClipSpaceQuad(commandBuffer);
-    }else {
-        AppContext::renderAtmosphere(commandBuffer, camera());
-    }
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+    AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void AtmosphereModel::renderSkyViewBruneton(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.skyView.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.skyView.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+    AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void AtmosphereModel::renderArealPerspective(VkCommandBuffer commandBuffer) {
+
+
+}
+
+void AtmosphereModel::renderArealPerspectiveBruneton(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = m_sets[0];
+    sets[1] = m_sets[1];
+    sets[2] = context().subpassInputDescriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.arealPerspective.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.arealPerspective.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
 void AtmosphereModel::controls() {
@@ -139,6 +161,11 @@ void AtmosphereModel::createLoopUpTextures() {
     bindlessDescriptor().update({ &m_lut.multiScattering, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_uniforms.cpu->multiScatteringImageIndex, VK_IMAGE_LAYOUT_GENERAL });
     bindlessDescriptor().update({ &m_lut.skyView, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_uniforms.cpu->skyViewImageIndex, VK_IMAGE_LAYOUT_GENERAL });
     bindlessDescriptor().update({ &m_lut.arealPerspective, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_uniforms.cpu->arealPerspectiveImageIndex, VK_IMAGE_LAYOUT_GENERAL });
+
+    auto& atmosphere = AppContext::atmosphere().descriptor;
+    bindlessDescriptor().update({ &atmosphere.irradianceLut, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context().brunetonIrradianceTextureIndex });
+    bindlessDescriptor().update({ &atmosphere.scatteringLUT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context().brunetonScatteringTextureIndex});
+    bindlessDescriptor().update({ &atmosphere.scatteringLUT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context().brunetonSingleScatteringTextureIndex });
 }
 
 void AtmosphereModel::createComputePipelines() {
@@ -159,6 +186,44 @@ void AtmosphereModel::createRenderPipelines() {
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())
             .name("render_sky_view")
         .build(m_render.skyView.layout);
+
+    m_render.bruneton.skyView.pipeline =
+        clipSpacePipelineBuilder()
+            .shaderStage()
+                .vertexShader(resource("atmosphere_render_sky_view.vert.spv"))
+                .fragmentShader(resource("atmosphere_render_sky_view_bruneton.frag.spv"))
+            .depthStencilState()
+                .compareOpLessOrEqual()
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .colorBlendState()
+                .attachments(2)
+            .layout()
+                .addDescriptorSetLayout(m_descriptor.setLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+            .name("render_sky_view_bruneton")
+        .build(m_render.bruneton.skyView.layout);
+
+
+    m_render.bruneton.arealPerspective.pipeline =
+        clipSpacePipelineBuilder()
+            .shaderStage()
+                .vertexShader(resource("quad.vert.spv"))
+                .fragmentShader(resource("atmosphere_areal_perspective_bruneton.frag.spv"))
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+                .colorBlendState()
+                .attachments(2)
+            .layout()
+                .addDescriptorSetLayout(m_descriptor.setLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+                .addDescriptorSetLayout(context().subpassInputDescriptorSetLayout)
+            .name("render_areal_perspective_bruneton")
+        .build(m_render.bruneton.arealPerspective.layout);
 
 }
 
@@ -213,7 +278,9 @@ void AtmosphereModel::createDescriptorSetLayout() {
 }
 
 void AtmosphereModel::updateDescriptorSet() {
-    m_descriptor.set = descriptorPool().allocate({ m_descriptor.setLayout }).front();
+    auto sets = descriptorPool().allocate({ m_descriptor.setLayout});
+    m_descriptor.set = sets[0];
+
     auto writes = initializers::writeDescriptorSets<1>();
 
     writes[0].dstSet = m_descriptor.set;

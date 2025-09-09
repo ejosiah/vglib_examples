@@ -25,6 +25,12 @@ public:
 
     void renderSkyView(VkCommandBuffer commandBuffer);
 
+    void renderSkyViewBruneton(VkCommandBuffer commandBuffer);
+
+    void renderArealPerspective(VkCommandBuffer commandBuffer);
+
+    void renderArealPerspectiveBruneton(VkCommandBuffer commandBuffer);
+
     void controls();
 
     Descriptor descriptor() const;
@@ -120,6 +126,9 @@ private:
         uint multiScatteringImageIndex{~0u};
         uint skyViewImageIndex{~0u};
         uint arealPerspectiveImageIndex{~0u};
+        uint brunetonScatteringTextureIndex{~0u};
+        uint brunetonSingleScatteringTextureIndex{~0u};
+        uint brunetonIrradianceTextureIndex{~0u};
     };
 
     struct {
@@ -140,5 +149,9 @@ private:
     std::array<VkDescriptorSet, 2> m_sets;
     struct {
         Pipeline skyView;
+        struct {
+            Pipeline skyView;
+            Pipeline arealPerspective;
+        } bruneton;
     } m_render;
 };

@@ -7,7 +7,7 @@
 layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
-layout(set = 1, binding = 10) uniform sampler2D global_textures_3d[];
+layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 layout(set = 1, binding = 11) uniform writeonly image3D global_images_3d[];
 

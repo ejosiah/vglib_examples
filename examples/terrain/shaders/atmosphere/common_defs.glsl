@@ -3,6 +3,7 @@
 
 #define transmittanceTexture global_textures[nonuniformEXT(atm.transmittanceTextureIndex)]
 
+#define TRANSMITTANCE_TEXTURE global_textures[nonuniformEXT(atm.transmittanceTextureIndex)]
 #define transmittanceImage global_images[nonuniformEXT(atm.transmittanceImageIndex)]
 #define multiScatteringImage global_images[nonuniformEXT(atm.multiScatteringImageIndex)]
 #define skyViewImage global_images[nonuniformEXT(atm.skyViewImageIndex)]
