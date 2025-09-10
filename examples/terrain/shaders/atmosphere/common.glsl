@@ -568,12 +568,20 @@ vec3 GetSolarRadiance() {
 }
 
 
+vec3 sunWithBloom(vec3 worldDir, vec3 sunDir)
+{
+    const float sunSolidAngle = 1.0 * PI / 180.0;
+    const float minSunCosTheta = cos(sunSolidAngle);
+
+    float cosTheta = dot(worldDir, sunDir);
+    if(cosTheta >= minSunCosTheta) {return vec3(0.5) ;}
+    float offset = minSunCosTheta - cosTheta;
+    float gaussianBloom = exp(-offset * 50000.0) * 0.5;
+    float invBloom = 1.0/(0.02 + offset * 300.0) * 0.01;
+    return vec3(gaussianBloom + invBloom);
+}
+
 vec3 GetSunLuminance(vec3 WorldPos, vec3 WorldDir, vec3 sunDirection, float PlanetRadius) {
-//    return vec3(0);
-//    if (dot(WorldDir, sunDirection) > cos(0.5*0.505*3.14159 / 180.0)) {
-//            return vec3(1000000.0);
-//    }
-//    return vec3(0);
     if (dot(WorldDir, sunDirection) > cos(ATMOSPHERE.sun_angular_radius)) {
         return ATMOSPHERE.solar_irradiance;
     }

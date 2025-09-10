@@ -201,6 +201,19 @@ void TerrainDemo::createRenderPipeline() {
             .name("lighting")
         .build(render.layout);
 
+    lighting.pipeline =
+        prototypes->cloneScreenSpaceGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(resource("quad.vert.spv"))
+                .fragmentShader(resource("lighting.frag.spv"))
+            .layout()
+                .addDescriptorSetLayout(uniformDescriptorSetLayout)
+                .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
+            .name("lighting")
+        .build(lighting.layout);
+
     toneMapper.pipeline =
         prototypes->cloneScreenSpaceGraphicsPipeline()
             .shaderStage()
@@ -240,14 +253,21 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     displacementShadowMap->exec(commandBuffer);
-//    atmosphere->preProcess(commandBuffer);
+    atmosphere->preProcess(commandBuffer);
     terrain->preProcess(commandBuffer);
 
     runRenderGraph(commandBuffer);
+    Offscreen::render(commandBuffer, renderInfo, [&]{
+        terrain->renderToGBuffer(commandBuffer);
+    });
 
     clearColor(0, 0, 1);
     renderToSwapChain([&]{
-        renderToDisplay(commandBuffer);
+        if(!options.renderGBuffer) {
+            renderToDisplay(commandBuffer);
+        }else {
+            computeLighting(commandBuffer);
+        }
         terrain->renderTopView(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
@@ -264,8 +284,8 @@ void TerrainDemo::computeLighting(VkCommandBuffer commandBuffer) {
     sets[2] = AppContext::atmosphere().descriptor.uboDescriptorSet;
     sets[3] = AppContext::atmosphere().descriptor.lutDescriptorSet;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, COUNT(sets), sets.data(), 0,nullptr);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.layout.handle, 0, COUNT(sets), sets.data(), 0,nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
 
 }
@@ -273,14 +293,21 @@ void TerrainDemo::computeLighting(VkCommandBuffer commandBuffer) {
 void TerrainDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo1, [&]{
-        terrain->renderTerrainBruneton(commandBuffer);
-        atmosphere->renderSkyViewBruneton(commandBuffer);
-        localReadBarrier(commandBuffer);
-        atmosphere->renderArealPerspectiveBruneton(commandBuffer);
+        terrain->renderTerrain(commandBuffer);
+        atmosphere->renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
         toneMap(commandBuffer);
     });
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+//    Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+//    Barriers::pushAndFlush(commandBuffer, renderGraphInputs.position.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+//    Barriers::pushAndFlush(commandBuffer, renderGraphInputs.depth.image, DEFAULT_DEPTH_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+//    Offscreen::render(commandBuffer, renderInfo2, [&]{
+//        atmosphere->renderArealPerspectiveBruneton(commandBuffer);
+//        localReadBarrier(commandBuffer);
+//        toneMap(commandBuffer);
+//    }, false);
 }
 
 void TerrainDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
@@ -294,7 +321,7 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     displacementShadowMap->controls();
     ImGui::Begin("Lighting");
     ImGui::SetWindowSize({0, 0});
-    ImGui::SliderFloat("Zenith Angle", &options.lightZenith, 0, 180);
+    ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
     ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
 
     static float exposureScale = 0.5;
@@ -309,6 +336,7 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     }
     ImGui::Checkbox("Debug", &options.debug);
     ImGui::Checkbox("Bruneton", &options.bruneton);
+    ImGui::Checkbox("gbuffer", &options.renderGBuffer);
     ImGui::End();   // End lighting
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
@@ -365,6 +393,9 @@ void TerrainDemo::initContext() {
     context.brunetonScatteringTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.brunetonSingleScatteringTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.brunetonIrradianceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
+    context.radianceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
+    context.positionTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
+    context.depthTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
 }
 
 void TerrainDemo::initTerrain() {
@@ -461,6 +492,11 @@ void TerrainDemo::initGBuffer() {
     textures::create(device, renderGraphInputs.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
     textures::create(device, renderGraphInputs.position, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
     textures::create(device, renderGraphInputs.depth, VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {width, height, 1});
+    textures::create(device, renderGraphInputs.depth1, VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {width, height, 1});
+
+    bindlessDescriptor.update({&renderGraphInputs.color, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.radianceTextureIndex});
+    bindlessDescriptor.update({&renderGraphInputs.position, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.positionTextureIndex});
+    bindlessDescriptor.update({&renderGraphInputs.depth, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.depthTextureIndex});
 
     renderInfo1 = Offscreen::RenderInfo{
             .colorAttachments = {
@@ -468,6 +504,15 @@ void TerrainDemo::initGBuffer() {
                     {renderGraphInputs.position.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
             },
             .depthAttachment = {{renderGraphInputs.depth.imageView, VK_FORMAT_D16_UNORM}},
+            .renderArea = {width, height}
+    };
+
+    renderInfo2 = Offscreen::RenderInfo{
+            .colorAttachments = {
+                    {renderGraphInputs.color.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
+                    {renderGraphInputs.position.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
+            },
+            .depthAttachment = {{ .imageView = renderGraphInputs.depth1.imageView, .format = VK_FORMAT_D16_UNORM, }},
             .renderArea = {width, height}
     };
 
@@ -497,10 +542,10 @@ void TerrainDemo::initUniforms() {
 
 void TerrainDemo::localReadBarrier(VkCommandBuffer commandBuffer) {
     Barriers::push(
-               VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+               VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-               VK_ACCESS_INPUT_ATTACHMENT_READ_BIT);
+               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+               VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
     Barriers::flush(commandBuffer, VK_DEPENDENCY_BY_REGION_BIT);
 
 }

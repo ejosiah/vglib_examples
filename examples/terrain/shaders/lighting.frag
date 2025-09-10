@@ -73,6 +73,15 @@ bool raySphere(in vec3 ro, in vec3 rd, in float radius, out float t0, out float 
     return t1 > 0.0;
 }
 
+float linearizeDepth(float z){
+    const float near = 1;
+    const float far = 64000;
+
+    float dist = (near * far) / (far + near - z * (far - near));
+    return clamp((dist - near) / (far - near), 0.0, 1.0);
+}
+
+
 void main(){
     vec4 clipPos = vec4(2 * uv - 1, 1, 1);
     vec4 viewPos = inverseProjection * clipPos;
@@ -82,10 +91,13 @@ void main(){
     vec3 radiance = vec3(0);
     vec3 camera = cameraPos - earthCenter;
     float shadow_length = 0;
-    float scatterFactor = 15.0;
+    float scatterFactor = 1.0;
 
     float depth = texture(depth_buffer, uv).r;
     vec3 debug = vec3(0);
+    radiance = vec3(linearizeDepth(depth));
+//    fragColor = vec4(radiance, 1);
+//    return;
     if(depth < 1){
         vec3 normal = -1 + 2 * texture(normals, uv).xzy;
         vec3 L = normalize(sunDirection);

@@ -32,6 +32,4 @@ void main() {
         radiance = radiance + transmittance * GetSolarRadiance();
     }
 
-    radiance /= radiance + 1;
-    radiance = pow(radiance, vec3(0.454545));
 }

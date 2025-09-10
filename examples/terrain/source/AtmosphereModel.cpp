@@ -2,6 +2,7 @@
 #include "atmosphere/Atmosphere.hpp"
 #include "Barrier.hpp"
 #include "AppContext.hpp"
+#include "ExtensionChain.hpp"
 
 AtmosphereModel::AtmosphereModel(Context &context)
 : m_context{&context} {
@@ -34,7 +35,7 @@ void AtmosphereModel::initUniforms() {
     initialValues.solarIrradiance = params.solarIrradiance;
     initialValues.sunAngularRadius = params.sunAngularRadius;
     initialValues.bottomRadius = params.radius.bottom / params.lengthUnitInMeters;
-    initialValues.topRadius = params.radius.top / params.lengthUnitInMeters;
+    initialValues.topRadius = initialValues.bottomRadius + 100;
 
     initialValues.rayleighScattering = params.rayleigh.scattering * params.lengthUnitInMeters;
     initialValues.mieScattering = params.mie.scattering * params.lengthUnitInMeters;
@@ -85,6 +86,10 @@ void AtmosphereModel::initUniforms() {
     initialValues.brunetonSingleScatteringTextureIndex = context().brunetonSingleScatteringTextureIndex;
     initialValues.brunetonIrradianceTextureIndex = context().brunetonIrradianceTextureIndex;
 
+    initialValues.radianceTextureIndex = context().radianceTextureIndex;
+    initialValues.positionTextureIndex = context().positionTextureIndex;
+    initialValues.depthTextureIndex = context().depthTextureIndex;
+
     spdlog::info("Atmosphere ubo size; {}", sizeof(UniformData));
     m_uniforms.gpu = device().createCpuVisibleBuffer(&initialValues, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
@@ -96,6 +101,7 @@ void AtmosphereModel::newFrame() {
     m_uniforms.cpu->inverseProjection = context().inverseProjection;
     m_uniforms.cpu->inverseView = context().inverseView;
     m_useBruneton = context().useBruneton;
+    m_uniforms.cpu->exposure = context().exposure;
 }
 
 void AtmosphereModel::preProcess(VkCommandBuffer commandBuffer) {
@@ -133,6 +139,16 @@ void AtmosphereModel::renderArealPerspectiveBruneton(VkCommandBuffer commandBuff
     sets[1] = m_sets[1];
     sets[2] = context().subpassInputDescriptorSet;
 
+//    std::array<uint32_t, 2> colors{ 0u, 1u };
+//    uint32_t depthIndex = 2;
+//    VkRenderingInputAttachmentIndexInfoKHR idx{
+//        .sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR,
+//        .colorAttachmentCount = COUNT(colors),
+//        .pColorAttachmentInputIndices = colors.data(),
+//        .pDepthInputAttachmentIndex = &depthIndex
+//    };
+//
+//    vkCmdSetRenderingInputAttachmentIndicesKHR(commandBuffer, &idx);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.arealPerspective.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.arealPerspective.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     AppContext::renderClipSpaceQuad(commandBuffer);
@@ -181,6 +197,12 @@ void AtmosphereModel::createRenderPipelines() {
                 .fragmentShader(resource("atmosphere_render_sky_view.frag.spv"))
             .depthStencilState()
                 .compareOpLessOrEqual()
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .colorBlendState()
+                .attachments(2)
             .layout()
                 .addDescriptorSetLayout(m_descriptor.setLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())
@@ -207,6 +229,40 @@ void AtmosphereModel::createRenderPipelines() {
         .build(m_render.bruneton.skyView.layout);
 
 
+//    std::array<uint32_t, 2> colors{ 0u, 1u };
+//    uint32_t depthIndex = 2;
+//    VkRenderingInputAttachmentIndexInfoKHR inputAttachments{
+//            .sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR,
+//            .colorAttachmentCount = COUNT(colors),
+//            .pColorAttachmentInputIndices = colors.data(),
+//            .pDepthInputAttachmentIndex = &depthIndex
+//    };
+//
+//    auto builder = clipSpacePipelineBuilder() ;
+//    auto info =
+//        builder
+//            .shaderStage()
+//                .vertexShader(resource("quad.vert.spv"))
+//                .fragmentShader(resource("atmosphere_areal_perspective_bruneton.frag.spv"))
+//            .dynamicRenderPass()
+//                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+//                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+//                .depthAttachment(VK_FORMAT_D16_UNORM)
+//                .colorBlendState()
+//                .attachments(2)
+//            .layout()
+//                .addDescriptorSetLayout(m_descriptor.setLayout)
+//                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+//                .addDescriptorSetLayout(context().subpassInputDescriptorSetLayout)
+//            .name("render_areal_perspective_bruneton")
+//        .createInfo();
+//
+//    auto dynamicRenderPass = const_cast<VkPipelineRenderingCreateInfo*>(reinterpret_cast<const VkPipelineRenderingCreateInfo*>(info.pNext));
+//    dynamicRenderPass->pNext = &inputAttachments;
+//
+//    m_render.bruneton.arealPerspective.layout = builder.pipelineLayout();
+//    m_render.bruneton.arealPerspective.pipeline = device().createGraphicsPipeline(info);
+
     m_render.bruneton.arealPerspective.pipeline =
         clipSpacePipelineBuilder()
             .shaderStage()
@@ -216,7 +272,7 @@ void AtmosphereModel::createRenderPipelines() {
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
                 .depthAttachment(VK_FORMAT_D16_UNORM)
-                .colorBlendState()
+            .colorBlendState()
                 .attachments(2)
             .layout()
                 .addDescriptorSetLayout(m_descriptor.setLayout)

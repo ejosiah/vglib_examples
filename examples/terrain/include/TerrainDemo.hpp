@@ -87,6 +87,8 @@ protected:
         VulkanPipeline pipeline;
     } render;
 
+    Pipeline lighting;
+
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
@@ -106,6 +108,7 @@ protected:
     GBuffer gBuffer;
     Offscreen::RenderInfo renderInfo;
     Offscreen::RenderInfo renderInfo1;
+    Offscreen::RenderInfo renderInfo2;
 
     RenderGraphInputs renderGraphInputs;
     Context context;
@@ -156,6 +159,7 @@ protected:
         float lightAzimuth{45};
         float exposure{10};
         bool bruneton{false};
+        bool renderGBuffer{false};
         bool debug{true};
     } options;
 };

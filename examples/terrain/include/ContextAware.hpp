@@ -37,6 +37,9 @@ struct Context {
     uint brunetonScatteringTextureIndex{~0u};
     uint brunetonSingleScatteringTextureIndex{~0u};
     uint brunetonIrradianceTextureIndex{~0u};
+    uint radianceTextureIndex{~0u};
+    uint positionTextureIndex{~0u};
+    uint depthTextureIndex{~0u};
     VulkanDescriptorSetLayout subpassInputDescriptorSetLayout;
     VkDescriptorSet subpassInputDescriptorSet{};
 };

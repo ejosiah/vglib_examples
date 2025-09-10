@@ -39,6 +39,7 @@ layout(set = ATMOSPHERE_UNIFORM_SET, binding = ATMOSPHERE_UNIFORM_BINDING, scala
     float sunPhiAngle;
     float sunThetaAngle;
     float mu_s_min;
+    float exposure;
     float lengthUnitInMeters;
     uint transmittanceTextureIndex;
     uint multiScatteringTextureIndex;
@@ -51,6 +52,9 @@ layout(set = ATMOSPHERE_UNIFORM_SET, binding = ATMOSPHERE_UNIFORM_BINDING, scala
     uint brunetonScatteringTextureIndex;
     uint brunetonSingleScatteringTextureIndex;
     uint brunetonIrradianceTextureIndex;
+    uint radianceTextureIndex;
+    uint positionTextureIndex;
+    uint depthTextureIndex;
 } atm;
 
 AtmosphereParameters ATMOSPHERE = AtmosphereParameters(
@@ -112,9 +116,17 @@ vec4 localUnitsToAtmosphere(vec4 v) {
     return v / atm.lengthUnitInMeters;
 }
 
-#define transmittanceLUT global_textures[nonUniformEXT(atm.transmittanceTextureIndex)]
-#define multiscatteringLUT global_textures[nonUniformEXT(atm.multiScatteringTextureIndex)]
-#define skyViewLUT global_textures[nonUniformEXT(atm.skyViewTextureIndex)]
-#define ArealPerspectiveLUT global_textures_3d[nonUniformEXT(atm.arealPerspectiveTextureIndex)]
+#define transmittanceLUT global_textures[nonuniformEXT(atm.transmittanceTextureIndex)]
+#define multiscatteringLUT global_textures[nonuniformEXT(atm.multiScatteringTextureIndex)]
+#define skyViewLUT global_textures[nonuniformEXT(atm.skyViewTextureIndex)]
+#define ArealPerspectiveLUT global_textures_3d[nonuniformEXT(atm.arealPerspectiveTextureIndex)]
+
+float linearizeDepth(float z){
+    const float near = 1;
+    const float far = 64000;
+
+    float dist = (near * far) / (far + near - z * (far - near));
+    return clamp((dist - near) / (far - near), 0.0, 1.0);
+}
 
 #endif // ATMOSPHERE_UNIFORM_GLSL

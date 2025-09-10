@@ -14,7 +14,7 @@ void main() {
     vec2 pixPos = vec2(gid) + 0.5f;
     AtmosphereParameters Atmosphere = GetAtmosphereParameters();
 
-    vec3 WorldPos = atm.cameraPosition / atm.lengthUnitInMeters + vec3(0, 0, Atmosphere.bottom_radius);
+    vec3 WorldPos = localUnitsToAtmosphere(atm.cameraPosition.xzy) + vec3(0, 0, Atmosphere.bottom_radius);
 
     vec2 uv = pixPos / SKY_VIEW_TEXTURE_SIZE_F;
 

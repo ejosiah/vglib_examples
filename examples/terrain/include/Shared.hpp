@@ -23,6 +23,7 @@ struct RenderGraphInputs {
     Texture color;
     Texture position;
     Texture depth;
+    Texture depth1;
 };
 
 struct TerrainInfo {

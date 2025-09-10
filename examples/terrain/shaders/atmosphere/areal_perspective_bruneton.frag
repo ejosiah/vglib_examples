@@ -10,9 +10,9 @@ layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 #include "atm_uniforms.glsl"
 #include "bruneton_common.glsl"
 
-layout(set = 2, binding = 0, input_attachment_index = 0) uniform subpassInput radianceInput;
-layout(set = 2, binding = 1, input_attachment_index = 1) uniform subpassInput positionInput;
-layout(set = 2, binding = 2, input_attachment_index = 2) uniform subpassInput depthInput;
+#define radianceInput global_textures[nonuniformEXT(atm.radianceTextureIndex)]
+#define positionInput global_textures[nonuniformEXT(atm.positionTextureIndex)]
+#define depthInput global_textures[nonuniformEXT(atm.depthTextureIndex)]
 
 layout(location = 0) in vec2 uv;
 
@@ -31,12 +31,11 @@ void main() {
     float scatterFactor = 1.0;
 
     vec3 sunDirection = atm.sunDirection;
-    radiance = subpassLoad(radianceInput).rgb;
-    float depth = subpassLoad(depthInput).x;
-    gl_FragDepth = depth;
-
+    radiance = texture(radianceInput, uv).rgb;
+    float depth = texture(depthInput, uv).x;
+//    radiance = vec3(linearizeDepth(depth));
     if(depth < 1) {
-        vec3 worldPos = subpassLoad(positionInput).xyz;
+        vec3 worldPos = texture(positionInput, uv).xyz;
         vec3 point = localUnitsToAtmosphere(worldPos) - earthCenter;
 
         vec3 transmittance;
@@ -50,4 +49,11 @@ void main() {
         vec3 in_scatter = GetSkyRadianceToPoint(camera, point, shadow_length, sunDirection, transmittance) * scatterFactor;
         radiance = radiance * transmittance + in_scatter;
     }
+//    vec3 whitePoint = vec3(1);
+//    float exposure = atm.exposure;
+//    vec3 toneMapped = pow(vec3(1.0) - exp(-radiance / whitePoint * exposure), vec3(1.0 / 2.2));
+//    vec3 toneMapped = tone_map(radiance, ACES);
+//    toneMapped = pow(toneMapped, vec3(0.454));
+//    radiance = toneMapped;
+//    gl_FragDepth = depth;
 }

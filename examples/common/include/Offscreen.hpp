@@ -32,7 +32,7 @@ public:
     };
     Offscreen() = default;
 
-    static void render(VkCommandBuffer commandBuffer, const RenderInfo renderInfo, auto scene) {
+    static void render(VkCommandBuffer commandBuffer, const RenderInfo renderInfo, auto scene, bool clearAll = true) {
         VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
         info.flags = 0;
         info.renderArea = {{0, 0}, {renderInfo.renderArea.x, renderInfo.renderArea.y}};
@@ -44,7 +44,7 @@ public:
             VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
             attachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             attachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
-            attachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            attachmentInfo.loadOp = clearAll ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
             attachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             attachmentInfo.clearValue.color = {cv.r, cv.g, cv.b, cv.a};
             attachmentInfo.imageView = imageView.handle;
@@ -61,7 +61,7 @@ public:
 
             depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
             depthAttachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
-            depthAttachmentInfo.loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+            depthAttachmentInfo.loadOp = (clear || clearAll) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
             depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             depthAttachmentInfo.clearValue.depthStencil = {cv.x, static_cast<uint32_t>(cv.y)};
             depthAttachmentInfo.imageView = imageView.handle;

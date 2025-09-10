@@ -1,7 +1,6 @@
 #version 460 core
 
 #include "atm_uniforms.glsl"
-#define skyViewLut global_textures[nonuniformEXT(atm.skyViewTextureIndex)]
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
@@ -9,19 +8,19 @@ layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 layout(set = 1, binding = 11) uniform writeonly image3D global_images_3d[];
 
 #include "common.glsl"
-
+layout(early_fragment_tests) in;
 
 layout(location = 0) in struct {
     vec3 viewDirection;
 } fs_in;
 
-layout(location = 0) out vec4 fragColor;
+layout(location = 0) out vec3 luminance;
 
 void main() {
     vec3 WorldDir = normalize(fs_in.viewDirection);
     vec3 sunDirection = atm.sunDirection;
     AtmosphereParameters Atmosphere = GetAtmosphereParameters();
-    vec3 cameraPos = atm.cameraPosition / atm.lengthUnitInMeters + vec3(0, Atmosphere.bottom_radius, 0);
+    vec3 cameraPos = localUnitsToAtmosphere(atm.cameraPosition) + vec3(0, Atmosphere.bottom_radius, 0);
 //
     float viewHeight = length(cameraPos);
     vec2 uv;
@@ -37,7 +36,5 @@ void main() {
     bool IntersectGround = raySphereIntersectNearest(cameraPos, WorldDir, vec3(0, 0, 0), Atmosphere.bottom_radius) >= 0.0f;
 
     SkyViewLutParamsToUv(Atmosphere, IntersectGround, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
-    vec3 luminance = texture(skyViewLut, uv).rgb + GetSunLuminance(cameraPos, WorldDir, sunDirection, Atmosphere.bottom_radius);
-
-    fragColor = vec4(luminance, 1);
+     luminance = texture(skyViewLUT, uv).rgb + GetSunLuminance(cameraPos, WorldDir, sunDirection, Atmosphere.bottom_radius);
 }

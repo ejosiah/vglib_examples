@@ -117,6 +117,7 @@ private:
         float sunPhiAngle;
         float sunThetaAngle;
         float mu_s_min;
+        float exposure{10};
         float lengthUnitInMeters;
         uint transmittanceTextureIndex{~0u};
         uint multiScatteringTextureIndex{~0u};
@@ -129,6 +130,9 @@ private:
         uint brunetonScatteringTextureIndex{~0u};
         uint brunetonSingleScatteringTextureIndex{~0u};
         uint brunetonIrradianceTextureIndex{~0u};
+        uint radianceTextureIndex{~0u};
+        uint positionTextureIndex{~0u};
+        uint depthTextureIndex{~0u};
     };
 
     struct {

@@ -29,6 +29,8 @@ public:
 
     void renderToGBuffer(VkCommandBuffer commandBuffer);
 
+    void renderTerrain(VkCommandBuffer commandBuffer);
+
     void renderTerrainBruneton(VkCommandBuffer commandBuffer);
 
     void controls();
@@ -48,8 +50,6 @@ public:
     TerrainInfo getInfo() const;
 
 protected:
-    void renderTerrain(VkCommandBuffer commandBuffer);
-
     void renderTerrainDefault(VkCommandBuffer commandBuffer);
 
     void initBuffers();
@@ -150,7 +150,7 @@ private:
         float minLodStdev{0};
         float dmapScale{1};
         int gpuSubDivisions{3};
-        bool topView{true};
+        bool topView{false};
         bool wire{false};
         bool useBruneton{false};
     } m_options;
