@@ -15,6 +15,7 @@ layout(location = 0) in struct {
 } fs_in;
 
 layout(location = 0) out vec3 luminance;
+layout(location = 1) out vec4 worldPos;
 
 void main() {
     vec3 WorldDir = normalize(fs_in.viewDirection);
@@ -36,5 +37,6 @@ void main() {
     bool IntersectGround = raySphereIntersectNearest(cameraPos, WorldDir, vec3(0, 0, 0), Atmosphere.bottom_radius) >= 0.0f;
 
     SkyViewLutParamsToUv(Atmosphere, IntersectGround, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
-     luminance = texture(skyViewLUT, uv).rgb + GetSunLuminance(cameraPos, WorldDir, sunDirection, Atmosphere.bottom_radius);
+    luminance = texture(skyViewLUT, uv).rgb + GetSunLuminance(cameraPos, WorldDir, sunDirection, Atmosphere.bottom_radius);
+    worldPos.w = gl_FragCoord.z;
 }

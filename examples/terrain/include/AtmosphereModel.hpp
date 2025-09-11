@@ -153,6 +153,7 @@ private:
     std::array<VkDescriptorSet, 2> m_sets;
     struct {
         Pipeline skyView;
+        Pipeline arealPerspective;
         struct {
             Pipeline skyView;
             Pipeline arealPerspective;

@@ -21,7 +21,7 @@ layout(location = 0) in struct {
 layout(location = 3) flat in int isVisible;
 
 layout(location = 0) out vec3 radiance;
-layout(location = 1) out vec3 worldPos;
+layout(location = 1) out vec4 worldPos;
 
 float sampleShadowPCF(vec2 uv) {
     ivec2 sz    = textureSize(u_DmapShadowSampler, 0);
@@ -37,7 +37,7 @@ float sampleShadowPCF(vec2 uv) {
 }
 
 void main() {
-    worldPos = f.worldPos;
+    worldPos = vec4(f.worldPos, gl_FragCoord.z);
     radiance = vec3(0);
 
     vec3 L = normalize(globals.lightDirection);
@@ -46,7 +46,7 @@ void main() {
     vec3 albedo = f.color;
 
     AtmosphereParameters Atmosphere = GetAtmosphereParameters();
-    vec3 P0 = localUnitsToAtmosphere(worldPos) + vec3(0, Atmosphere.bottom_radius, 0);
+    vec3 P0 = localUnitsToAtmosphere(worldPos.xyz) + vec3(0, Atmosphere.bottom_radius, 0);
     float viewHeight = length(P0);
     const vec3 UpVector = P0 / viewHeight;
     float viewZenithCosAngle = dot(atm.sunDirection, UpVector);

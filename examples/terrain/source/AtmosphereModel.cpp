@@ -129,7 +129,14 @@ void AtmosphereModel::renderSkyViewBruneton(VkCommandBuffer commandBuffer) {
 }
 
 void AtmosphereModel::renderArealPerspective(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = m_sets[0];
+    sets[1] = m_sets[1];
+    sets[2] = context().subpassInputDescriptorSet;
 
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.arealPerspective.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.arealPerspective.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+    AppContext::renderClipSpaceQuad(commandBuffer);
 
 }
 
@@ -139,16 +146,6 @@ void AtmosphereModel::renderArealPerspectiveBruneton(VkCommandBuffer commandBuff
     sets[1] = m_sets[1];
     sets[2] = context().subpassInputDescriptorSet;
 
-//    std::array<uint32_t, 2> colors{ 0u, 1u };
-//    uint32_t depthIndex = 2;
-//    VkRenderingInputAttachmentIndexInfoKHR idx{
-//        .sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR,
-//        .colorAttachmentCount = COUNT(colors),
-//        .pColorAttachmentInputIndices = colors.data(),
-//        .pDepthInputAttachmentIndex = &depthIndex
-//    };
-//
-//    vkCmdSetRenderingInputAttachmentIndicesKHR(commandBuffer, &idx);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.arealPerspective.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.bruneton.arealPerspective.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     AppContext::renderClipSpaceQuad(commandBuffer);
@@ -229,39 +226,61 @@ void AtmosphereModel::createRenderPipelines() {
         .build(m_render.bruneton.skyView.layout);
 
 
-//    std::array<uint32_t, 2> colors{ 0u, 1u };
-//    uint32_t depthIndex = 2;
-//    VkRenderingInputAttachmentIndexInfoKHR inputAttachments{
-//            .sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR,
-//            .colorAttachmentCount = COUNT(colors),
-//            .pColorAttachmentInputIndices = colors.data(),
-//            .pDepthInputAttachmentIndex = &depthIndex
-//    };
-//
-//    auto builder = clipSpacePipelineBuilder() ;
-//    auto info =
-//        builder
-//            .shaderStage()
-//                .vertexShader(resource("quad.vert.spv"))
-//                .fragmentShader(resource("atmosphere_areal_perspective_bruneton.frag.spv"))
-//            .dynamicRenderPass()
-//                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
-//                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
-//                .depthAttachment(VK_FORMAT_D16_UNORM)
-//                .colorBlendState()
-//                .attachments(2)
-//            .layout()
-//                .addDescriptorSetLayout(m_descriptor.setLayout)
-//                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
-//                .addDescriptorSetLayout(context().subpassInputDescriptorSetLayout)
-//            .name("render_areal_perspective_bruneton")
-//        .createInfo();
-//
-//    auto dynamicRenderPass = const_cast<VkPipelineRenderingCreateInfo*>(reinterpret_cast<const VkPipelineRenderingCreateInfo*>(info.pNext));
-//    dynamicRenderPass->pNext = &inputAttachments;
-//
-//    m_render.bruneton.arealPerspective.layout = builder.pipelineLayout();
-//    m_render.bruneton.arealPerspective.pipeline = device().createGraphicsPipeline(info);
+    std::array<uint32_t, 2> colors{ 0u, 1u };
+    uint32_t depthIndex = 2;
+    VkRenderingInputAttachmentIndexInfoKHR inputAttachments{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR,
+            .colorAttachmentCount = COUNT(colors),
+            .pColorAttachmentInputIndices = colors.data(),
+            .pDepthInputAttachmentIndex = &depthIndex
+    };
+
+    auto builder = clipSpacePipelineBuilder() ;
+    auto info =
+        builder
+            .shaderStage()
+                .vertexShader(resource("quad.vert.spv"))
+                .fragmentShader(resource("atmosphere_areal_perspective.frag.spv"))
+            .depthStencilState()
+                .disableDepthTest()
+                .disableDepthWrite()
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .colorBlendState()
+                .attachment().clear()
+                    .enableBlend()
+                    .colorBlendOp().add()
+                    .alphaBlendOp().add()
+                    .srcColorBlendFactor().one()
+                    .dstColorBlendFactor().srcAlpha()
+                    .srcAlphaBlendFactor().one()
+                    .dstAlphaBlendFactor().one()
+                .add()
+                .attachment() // TODO Blending second output not required, lookup how to enable independentBlend
+                    .enableBlend()
+                    .colorBlendOp().add()
+                    .alphaBlendOp().add()
+                    .srcColorBlendFactor().one()
+                    .dstColorBlendFactor().srcAlpha()
+                    .srcAlphaBlendFactor().one()
+                    .dstAlphaBlendFactor().one()
+                .add()
+            .layout()
+                .addDescriptorSetLayout(m_descriptor.setLayout)
+                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+                .addDescriptorSetLayout(context().subpassInputDescriptorSetLayout)
+            .name("render_areal_perspective")
+        .createInfo();
+
+    auto dynamicRenderPass = const_cast<VkPipelineRenderingCreateInfo*>(reinterpret_cast<const VkPipelineRenderingCreateInfo*>(info.pNext));
+    dynamicRenderPass->pNext = &inputAttachments;
+
+    m_render.arealPerspective.layout = builder.pipelineLayout();
+    m_render.arealPerspective.pipeline = device().createGraphicsPipeline(info);
+    device().setName<VK_OBJECT_TYPE_PIPELINE>("render_areal_perspective", m_render.arealPerspective.pipeline.handle);
+    device().setName<VK_OBJECT_TYPE_PIPELINE_LAYOUT>("render_areal_perspective", m_render.arealPerspective.layout.handle);
 
     m_render.bruneton.arealPerspective.pipeline =
         clipSpacePipelineBuilder()

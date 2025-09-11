@@ -296,18 +296,11 @@ void TerrainDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
         terrain->renderTerrain(commandBuffer);
         atmosphere->renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
+        atmosphere->renderArealPerspective(commandBuffer);
+        localReadBarrier(commandBuffer);
         toneMap(commandBuffer);
     });
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-//    Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-//    Barriers::pushAndFlush(commandBuffer, renderGraphInputs.position.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-//    Barriers::pushAndFlush(commandBuffer, renderGraphInputs.depth.image, DEFAULT_DEPTH_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-//    Offscreen::render(commandBuffer, renderInfo2, [&]{
-//        atmosphere->renderArealPerspectiveBruneton(commandBuffer);
-//        localReadBarrier(commandBuffer);
-//        toneMap(commandBuffer);
-//    }, false);
 }
 
 void TerrainDemo::renderToDisplay(VkCommandBuffer commandBuffer) {

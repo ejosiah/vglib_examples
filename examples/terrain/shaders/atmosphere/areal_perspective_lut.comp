@@ -89,6 +89,6 @@ void main() {
 
 
     const float Transmittance = dot(ss.Transmittance, vec3(1.0f / 3.0f));
-    vec4 scatterTransmission = vec4(ss.L, 1.0 - Transmittance);
+    vec4 scatterTransmission = vec4(ss.L, Transmittance);
     imageStore(arealPerspectiveImage, gid, scatterTransmission);
 }
