@@ -1,10 +1,9 @@
 # Terrain Demo
 
 ## Todo
-- use clamp sampler for atmosphere LUT
-- remove bruneton 
 - enable independent blending
 - configurable atmosphere
+- use subgroup for multiple scattering reduction 
 - clouds
 - perf stats
 - render ui in one pane

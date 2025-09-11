@@ -5,12 +5,12 @@
 struct Context {
     VulkanDevice* device{};
     VulkanDescriptorPool* descriptorPool{};
-    GBuffer* gBuffer{};
     RenderGraphInputs* rgInputs{};
     BaseCameraController* camera{};
     BindlessDescriptor* bindlessDescriptor{};
     std::unique_ptr<Prototypes> prototypes;
     Frustum viewProjectionFrustum;
+    VulkanSampler edgeClampSampler;
     glm::mat4 view{1};
     glm::mat4 viewProjection{1};
     glm::mat4 inverseViewProjection{1};
@@ -19,8 +19,6 @@ struct Context {
     glm::ivec4 mouse;
     glm::vec3 lightDirection{};
     float lightIntensity{1};
-    bool useBruneton{};
-    float exposure{10};
     uint screenWidth;
     uint screenHeight;
     uint dmap_tex_index{~0u};
@@ -30,13 +28,6 @@ struct Context {
     uint multiScatteringTextureIndex{~0u};
     uint skyViewTextureIndex{~0u};
     uint arealPerspectiveTextureIndex{~0u};
-    uint gBufferColorIndex{~0u};
-    uint gBufferPositionIndex{~0u};
-    uint gBufferNormalIndex{~0u};
-    uint gBufferDepthIndex{~0u};
-    uint brunetonScatteringTextureIndex{~0u};
-    uint brunetonSingleScatteringTextureIndex{~0u};
-    uint brunetonIrradianceTextureIndex{~0u};
     uint radianceTextureIndex{~0u};
     uint positionTextureIndex{~0u};
     uint depthTextureIndex{~0u};

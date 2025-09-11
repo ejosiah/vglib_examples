@@ -12,13 +12,6 @@
 
 #include <memory>
 
-struct GBuffer {
-    Texture color;
-    Texture normal;
-    Texture position;
-    Texture depth;
-};
-
 struct RenderGraphInputs {
     Texture color;
     Texture position;

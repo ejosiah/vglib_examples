@@ -21,6 +21,7 @@ TerrainDemo::TerrainDemo(const Settings& settings) : VulkanBaseApp("Terrain", se
 }
 
 void TerrainDemo::initApp() {
+    createSamplers();
     initCamera();
     createDescriptorPool();
     initBindlessDescriptor();
@@ -30,7 +31,6 @@ void TerrainDemo::initApp() {
     createComputePipelines();
     initContext();
     initGBuffer();
-    initUniforms();
     updateDescriptorSets();
     createCommandPool();
     createPipelineCache();
@@ -39,6 +39,7 @@ void TerrainDemo::initApp() {
     initAtmosphere();
     initTerrain();
     initDisplacementShadowMap();
+    clearColor(0, 0, 1);
 }
 
 void TerrainDemo::initCamera() {
@@ -96,15 +97,6 @@ void TerrainDemo::initLoader() {
 }
 
 void TerrainDemo::createDescriptorSetLayouts() {
-    uniformDescriptorSetLayout =
-        device.descriptorSetLayoutBuilder()
-            .name("leb_descriptor_set_layout")
-            .binding(0)
-                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-        .createLayout();
-
     displayDescriptorSetLayout =
         device.descriptorSetLayoutBuilder()
             .name("display_descriptor_set_layout")
@@ -134,12 +126,11 @@ void TerrainDemo::createDescriptorSetLayouts() {
 }
 
 void TerrainDemo::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ displayDescriptorSetLayout, uniformDescriptorSetLayout, context.subpassInputDescriptorSetLayout });
+    auto sets = descriptorPool.allocate({ displayDescriptorSetLayout, context.subpassInputDescriptorSetLayout });
     displayDescriptorSet = sets[0];
-    uniformDescriptorSet = sets[1];
-    context.subpassInputDescriptorSet = sets[2];
+    context.subpassInputDescriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<5>();
+    auto writes = initializers::writeDescriptorSets<4>();
 
     writes[0].dstSet = displayDescriptorSet;
     writes[0].dstBinding = 0;
@@ -148,33 +139,26 @@ void TerrainDemo::updateDescriptorSets(){
     VkDescriptorImageInfo displayInfo{ renderGraphInputs.color.sampler.handle, renderGraphInputs.color.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[0].pImageInfo = &displayInfo;
 
-    writes[1].dstSet = uniformDescriptorSet;
+    writes[1].dstSet = context.subpassInputDescriptorSet;
     writes[1].dstBinding = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
     writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo uniformInfo{ uniforms.gpu, 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &uniformInfo;
+    VkDescriptorImageInfo subpassColorInfo{ VK_NULL_HANDLE, renderGraphInputs.color.imageView.handle, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR };
+    writes[1].pImageInfo = &subpassColorInfo;
 
     writes[2].dstSet = context.subpassInputDescriptorSet;
-    writes[2].dstBinding = 0;
+    writes[2].dstBinding = 1;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo subpassColorInfo{ VK_NULL_HANDLE, renderGraphInputs.color.imageView.handle, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR };
-    writes[2].pImageInfo = &subpassColorInfo;
+    VkDescriptorImageInfo subpassPosInfo{ VK_NULL_HANDLE, renderGraphInputs.position.imageView.handle, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR };
+    writes[2].pImageInfo = &subpassPosInfo;
 
     writes[3].dstSet = context.subpassInputDescriptorSet;
-    writes[3].dstBinding = 1;
+    writes[3].dstBinding = 2;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo subpassPosInfo{ VK_NULL_HANDLE, renderGraphInputs.position.imageView.handle, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR };
-    writes[3].pImageInfo = &subpassPosInfo;
-
-    writes[4].dstSet = context.subpassInputDescriptorSet;
-    writes[4].dstBinding = 2;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    writes[4].descriptorCount = 1;
     VkDescriptorImageInfo subpassDepthInfo{ VK_NULL_HANDLE, renderGraphInputs.depth.imageView.handle, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR };
-    writes[4].pImageInfo = &subpassDepthInfo;
+    writes[3].pImageInfo = &subpassDepthInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -200,19 +184,6 @@ void TerrainDemo::createRenderPipeline() {
                 .addDescriptorSetLayout(displayDescriptorSetLayout)
             .name("lighting")
         .build(render.layout);
-
-    lighting.pipeline =
-        prototypes->cloneScreenSpaceGraphicsPipeline()
-            .shaderStage()
-                .vertexShader(resource("quad.vert.spv"))
-                .fragmentShader(resource("lighting.frag.spv"))
-            .layout()
-                .addDescriptorSetLayout(uniformDescriptorSetLayout)
-                .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
-                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
-                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
-            .name("lighting")
-        .build(lighting.layout);
 
     toneMapper.pipeline =
         prototypes->cloneScreenSpaceGraphicsPipeline()
@@ -257,17 +228,9 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     terrain->preProcess(commandBuffer);
 
     runRenderGraph(commandBuffer);
-    Offscreen::render(commandBuffer, renderInfo, [&]{
-        terrain->renderToGBuffer(commandBuffer);
-    });
 
-    clearColor(0, 0, 1);
     renderToSwapChain([&]{
-        if(!options.renderGBuffer) {
-            renderToDisplay(commandBuffer);
-        }else {
-            computeLighting(commandBuffer);
-        }
+        renderToDisplay(commandBuffer);
         terrain->renderTopView(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
@@ -277,23 +240,11 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     return &commandBuffer;
 }
 
-void TerrainDemo::computeLighting(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 4> sets;
-    sets[0] = uniformDescriptorSet;
-    sets[1] = bindlessDescriptor.descriptorSet;
-    sets[2] = AppContext::atmosphere().descriptor.uboDescriptorSet;
-    sets[3] = AppContext::atmosphere().descriptor.lutDescriptorSet;
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lighting.layout.handle, 0, COUNT(sets), sets.data(), 0,nullptr);
-    AppContext::renderClipSpaceQuad(commandBuffer);
-
-}
 
 void TerrainDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
-    Offscreen::render(commandBuffer, renderInfo1, [&]{
-        terrain->renderTerrain(commandBuffer);
+    Offscreen::render(commandBuffer, renderInfo, [&]{
+        terrain->render(commandBuffer);
         atmosphere->renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
         atmosphere->renderArealPerspective(commandBuffer);
@@ -317,19 +268,12 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
     ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
 
-    static float exposureScale = 0.5;
-    if(ImGui::SliderFloat("exposure", &exposureScale, 0, 1)){
-        float power = remap(exposureScale, 0, 1, -20, 20);
-        options.exposure = 10.f * glm::pow(1.1f, power);
-    }
     if(ImGui::CollapsingHeader("ToneMapping", ImGuiTreeNodeFlags_DefaultOpen)) {
         static std::array<const char*, 5> labels{ "Clamp", "Reinhard", "Uncharted 2", "ACES", "Hejl-Burgess-Dawson" };
         ImGui::Combo("Tone mapper", &toneMapper.constants.method, labels.data(), labels.size());
         ImGui::SliderFloat("Exposure Value", &toneMapper.constants.exposureValue, -3, 3);
     }
     ImGui::Checkbox("Debug", &options.debug);
-    ImGui::Checkbox("Bruneton", &options.bruneton);
-    ImGui::Checkbox("gbuffer", &options.renderGBuffer);
     ImGui::End();   // End lighting
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
@@ -367,8 +311,8 @@ void TerrainDemo::initContext() {
     context.device = &device;
     context.descriptorPool = &descriptorPool;
     context.camera = camera.get();
-    context.gBuffer = &gBuffer;
     context.rgInputs = &renderGraphInputs;
+    context.edgeClampSampler = edgeClampSampler;
     context.bindlessDescriptor = &bindlessDescriptor;
     context.prototypes = std::make_unique<Prototypes>(device, swapChain, renderPass);
     context.lightDirection = glm::normalize(glm::vec3{1});
@@ -379,13 +323,6 @@ void TerrainDemo::initContext() {
     context.multiScatteringTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.skyViewTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.arealPerspectiveTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.gBufferColorIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.gBufferPositionIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.gBufferNormalIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.gBufferDepthIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.brunetonScatteringTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.brunetonSingleScatteringTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.brunetonIrradianceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.radianceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.positionTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.depthTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
@@ -425,19 +362,10 @@ void TerrainDemo::newFrame() {
     context.inverseViewProjection = glm::inverse(context.viewProjection);
     context.inverseView = glm::inverse(cam.view);
     context.inverseProjection = glm::inverse(cam.proj);
-    context.useBruneton = options.bruneton;
-    context.exposure = options.exposure;
     Frustum::extractFrustum(context.viewProjectionFrustum, context.viewProjection);
 
-    AppContext::updateSunDirection(lightDirection);
-    AppContext::atmosphere().info.cpu->exposure = options.exposure;
     atmosphere->newFrame();
     terrain->newFrame();
-    uniforms.cpu->sunDirection = lightDirection;
-    uniforms.cpu->inverseProjection = context.inverseProjection;
-    uniforms.cpu->inverseView = context.inverseView;
-    uniforms.cpu->cameraPosition = camera->position();
-    uniforms.cpu->exposure = options.exposure;
 }
 
 void TerrainDemo::createComputePipelines() {
@@ -462,26 +390,6 @@ void TerrainDemo::initGBuffer() {
     const auto width = swapChain.width();
     const auto height = swapChain.height();
 
-    textures::create(device, gBuffer.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
-    textures::create(device, gBuffer.normal, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
-    textures::create(device, gBuffer.position, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
-    textures::create(device, gBuffer.depth, VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {width, height, 1});
-
-    renderInfo = Offscreen::RenderInfo{
-            .colorAttachments = {
-                    {gBuffer.color.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
-                    {gBuffer.position.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
-                    {gBuffer.normal.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
-            },
-            .depthAttachment = {{gBuffer.depth.imageView, VK_FORMAT_D16_UNORM}},
-            .renderArea = {width, height}
-    };
-
-    bindlessDescriptor.update({&gBuffer.color, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.gBufferColorIndex});
-    bindlessDescriptor.update({&gBuffer.position, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.gBufferPositionIndex});
-    bindlessDescriptor.update({&gBuffer.normal, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.gBufferNormalIndex});
-    bindlessDescriptor.update({&gBuffer.depth, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.gBufferDepthIndex});
-
     textures::create(device, renderGraphInputs.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
     textures::create(device, renderGraphInputs.position, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
     textures::create(device, renderGraphInputs.depth, VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {width, height, 1});
@@ -491,21 +399,12 @@ void TerrainDemo::initGBuffer() {
     bindlessDescriptor.update({&renderGraphInputs.position, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.positionTextureIndex});
     bindlessDescriptor.update({&renderGraphInputs.depth, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.depthTextureIndex});
 
-    renderInfo1 = Offscreen::RenderInfo{
+    renderInfo = Offscreen::RenderInfo{
             .colorAttachments = {
                     {renderGraphInputs.color.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
                     {renderGraphInputs.position.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
             },
             .depthAttachment = {{renderGraphInputs.depth.imageView, VK_FORMAT_D16_UNORM}},
-            .renderArea = {width, height}
-    };
-
-    renderInfo2 = Offscreen::RenderInfo{
-            .colorAttachments = {
-                    {renderGraphInputs.color.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
-                    {renderGraphInputs.position.imageView, VK_FORMAT_R32G32B32A32_SFLOAT},
-            },
-            .depthAttachment = {{ .imageView = renderGraphInputs.depth1.imageView, .format = VK_FORMAT_D16_UNORM, }},
             .renderArea = {width, height}
     };
 
@@ -518,20 +417,6 @@ void TerrainDemo::initGBuffer() {
     });
 }
 
-void TerrainDemo::initUniforms() {
-    UniformData initialValues{};
-    initialValues.gBufferColorIndex = context.gBufferColorIndex;
-    initialValues.gBufferPositionIndex = context.gBufferPositionIndex;
-    initialValues.gBufferNormalIndex = context.gBufferNormalIndex;
-    initialValues.gBufferDepthIndex = context.gBufferDepthIndex;
-    initialValues.shadowMapIndex = context.dmap_shadow_tex_index;
-    initialValues.resolution = glm::vec2{width, height};
-    initialValues.sunSize = glm::vec2{glm::tan(0.004675), glm::cos(0.004675)};
-
-    uniforms.gpu = device.createCpuVisibleBuffer(&initialValues, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    uniforms.cpu = reinterpret_cast<UniformData*>(uniforms.gpu.map());
-    device.setName<VK_OBJECT_TYPE_BUFFER>("lighting_uniforms", uniforms.gpu.buffer);
-}
 
 void TerrainDemo::localReadBarrier(VkCommandBuffer commandBuffer) {
     Barriers::push(
@@ -548,6 +433,21 @@ void TerrainDemo::toneMap(VkCommandBuffer commandBuffer) {
     vkCmdPushConstants(commandBuffer, toneMapper.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(toneMapper.constants), &toneMapper.constants);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, toneMapper.layout.handle, 0, 1, &context.subpassInputDescriptorSet, 0,nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void TerrainDemo::createSamplers() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.maxLod = 1;
+
+    edgeClampSampler = device.createSampler(samplerInfo);
 }
 
 int main(){

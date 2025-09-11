@@ -27,12 +27,6 @@ public:
 
     void renderTopView(VkCommandBuffer commandBuffer);
 
-    void renderToGBuffer(VkCommandBuffer commandBuffer);
-
-    void renderTerrain(VkCommandBuffer commandBuffer);
-
-    void renderTerrainBruneton(VkCommandBuffer commandBuffer);
-
     void controls();
 
     void endFrame();
@@ -152,15 +146,11 @@ private:
         int gpuSubDivisions{3};
         bool topView{false};
         bool wire{false};
-        bool useBruneton{false};
     } m_options;
 
     Pipeline m_render;
     Pipeline m_renderWire;
-    Pipeline m_renderBruneton;
-    Pipeline m_renderBrunetonWire;
     Pipeline m_topView;
-    Pipeline m_gbuffer;
     std::array<VkDescriptorSet, 2> m_sets;
     SpecializationConstants specializationConstants{};
     uint should_displace = 1;

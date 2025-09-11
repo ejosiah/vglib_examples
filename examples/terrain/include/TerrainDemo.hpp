@@ -15,13 +15,13 @@ public:
 protected:
     void initApp() override;
 
+    void createSamplers();
+
     void initCamera();
 
     void initContext();
 
     void initGBuffer();
-
-    void initUniforms();
 
     void initDisplacementMapGenerator();
 
@@ -65,8 +65,6 @@ protected:
 
     void toneMap(VkCommandBuffer commandBuffer);
 
-    void computeLighting(VkCommandBuffer commandBuffer);
-
     void renderUI(VkCommandBuffer commandBuffer);
 
     static void localReadBarrier(VkCommandBuffer commandBuffer);
@@ -87,8 +85,6 @@ protected:
         VulkanPipeline pipeline;
     } render;
 
-    Pipeline lighting;
-
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
@@ -105,10 +101,7 @@ protected:
     std::unique_ptr<BaseCameraController> camera;
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
-    GBuffer gBuffer;
     Offscreen::RenderInfo renderInfo;
-    Offscreen::RenderInfo renderInfo1;
-    Offscreen::RenderInfo renderInfo2;
 
     RenderGraphInputs renderGraphInputs;
     Context context;
@@ -122,44 +115,15 @@ protected:
 
     glm::vec3 lightDirection;
 
-    struct UniformData {
-        glm::mat4 inverseProjection{};
-        glm::mat4 inverseView{};
-
-        glm::vec3 sunDirection{};
-        uint gBufferColorIndex{~0u};
-
-        glm::vec3 cameraPosition{};
-        uint gBufferPositionIndex{~0u};
-
-        glm::vec3 whitePoint{1};
-        uint gBufferNormalIndex{~0u};
-
-        glm::vec2 resolution{};
-        glm::vec2 sunSize{};
-
-        float exposure{10};
-        uint gBufferDepthIndex{~0u};
-        uint shadowMapIndex{~0u};
-    };
-
-    VulkanDescriptorSetLayout uniformDescriptorSetLayout;
-    VkDescriptorSet uniformDescriptorSet{};
 
     VulkanDescriptorSetLayout displayDescriptorSetLayout;
     VkDescriptorSet displayDescriptorSet{};
 
-    struct  {
-        VulkanBuffer gpu;
-        UniformData* cpu{};
-    } uniforms;
 
     struct {
         float lightZenith{45};
         float lightAzimuth{45};
-        float exposure{10};
-        bool bruneton{false};
-        bool renderGBuffer{false};
         bool debug{true};
     } options;
+    VulkanSampler edgeClampSampler;
 };

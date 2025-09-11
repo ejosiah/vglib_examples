@@ -39,7 +39,6 @@ layout(set = ATMOSPHERE_UNIFORM_SET, binding = ATMOSPHERE_UNIFORM_BINDING, scala
     float sunPhiAngle;
     float sunThetaAngle;
     float mu_s_min;
-    float exposure;
     float lengthUnitInMeters;
     uint transmittanceTextureIndex;
     uint multiScatteringTextureIndex;
@@ -49,12 +48,6 @@ layout(set = ATMOSPHERE_UNIFORM_SET, binding = ATMOSPHERE_UNIFORM_BINDING, scala
     uint multiScatteringImageIndex;
     uint skyViewImageIndex;
     uint arealPerspectiveImageIndex;
-    uint brunetonScatteringTextureIndex;
-    uint brunetonSingleScatteringTextureIndex;
-    uint brunetonIrradianceTextureIndex;
-    uint radianceTextureIndex;
-    uint positionTextureIndex;
-    uint depthTextureIndex;
 } atm;
 
 AtmosphereParameters ATMOSPHERE = AtmosphereParameters(

@@ -21,15 +21,9 @@ public:
 
     void preProcess(VkCommandBuffer commandBuffer);
 
-    void render(VkCommandBuffer commandBuffer);
-
     void renderSkyView(VkCommandBuffer commandBuffer);
 
-    void renderSkyViewBruneton(VkCommandBuffer commandBuffer);
-
     void renderArealPerspective(VkCommandBuffer commandBuffer);
-
-    void renderArealPerspectiveBruneton(VkCommandBuffer commandBuffer);
 
     void controls();
 
@@ -117,7 +111,6 @@ private:
         float sunPhiAngle;
         float sunThetaAngle;
         float mu_s_min;
-        float exposure{10};
         float lengthUnitInMeters;
         uint transmittanceTextureIndex{~0u};
         uint multiScatteringTextureIndex{~0u};
@@ -127,12 +120,6 @@ private:
         uint multiScatteringImageIndex{~0u};
         uint skyViewImageIndex{~0u};
         uint arealPerspectiveImageIndex{~0u};
-        uint brunetonScatteringTextureIndex{~0u};
-        uint brunetonSingleScatteringTextureIndex{~0u};
-        uint brunetonIrradianceTextureIndex{~0u};
-        uint radianceTextureIndex{~0u};
-        uint positionTextureIndex{~0u};
-        uint depthTextureIndex{~0u};
     };
 
     struct {
@@ -154,9 +141,5 @@ private:
     struct {
         Pipeline skyView;
         Pipeline arealPerspective;
-        struct {
-            Pipeline skyView;
-            Pipeline arealPerspective;
-        } bruneton;
     } m_render;
 };
