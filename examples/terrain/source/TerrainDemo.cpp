@@ -21,6 +21,7 @@ TerrainDemo::TerrainDemo(const Settings& settings) : VulkanBaseApp("Terrain", se
 }
 
 void TerrainDemo::initApp() {
+    initProfiler();
     createSamplers();
     initCamera();
     createDescriptorPool();
@@ -223,6 +224,8 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
+    profiler.resetAll(commandBuffer);
+
     displacementShadowMap->exec(commandBuffer);
     atmosphere->preProcess(commandBuffer);
     terrain->preProcess(commandBuffer);
@@ -261,21 +264,51 @@ void TerrainDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
 }
 
 void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
-    terrain->controls();
-    displacementShadowMap->controls();
-    atmosphere->controls();
-    ImGui::Begin("Lighting");
-    ImGui::SetWindowSize({0, 0});
-    ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
-    ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
 
-    if(ImGui::CollapsingHeader("ToneMapping", ImGuiTreeNodeFlags_DefaultOpen)) {
-        static std::array<const char*, 5> labels{ "Clamp", "Reinhard", "Uncharted 2", "ACES", "Hejl-Burgess-Dawson" };
-        ImGui::Combo("Tone mapper", &toneMapper.constants.method, labels.data(), labels.size());
-        ImGui::SliderFloat("Exposure Value", &toneMapper.constants.exposureValue, -3, 3);
+    static bool terrainOpen = false;
+    static bool atmosphereOpen = false;
+    static bool lightOpen = false;
+    static bool perfOpen = false;
+
+    ImGui::Begin("Controls");
+    ImGui::SetWindowSize({0, 0});
+    ImGui::Checkbox("Terrain", &terrainOpen);
+    ImGui::Checkbox("Atmosphere", &atmosphereOpen);
+    ImGui::Checkbox("Lighting", &lightOpen);
+    ImGui::Checkbox("Performance", &perfOpen);
+    ImGui::End();
+
+    terrain->controls(terrainOpen);
+    atmosphere->controls(atmosphereOpen);
+
+    if(lightOpen) {
+        ImGui::Begin("Lighting");
+        ImGui::SetWindowSize({0, 0});
+        ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
+        ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
+        displacementShadowMap->controls();
+
+        if (ImGui::CollapsingHeader("ToneMapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+            static std::array<const char *, 5> labels{"Clamp", "Reinhard", "Uncharted 2", "ACES",
+                                                      "Hejl-Burgess-Dawson"};
+            ImGui::Combo("Tone mapper", &toneMapper.constants.method, labels.data(), labels.size());
+            ImGui::SliderFloat("Exposure Value", &toneMapper.constants.exposureValue, -3, 3);
+        }
+        ImGui::Checkbox("Debug", &options.debug);
+        ImGui::End();   // End lighting
     }
-    ImGui::Checkbox("Debug", &options.debug);
-    ImGui::End();   // End lighting
+
+    if(perfOpen) {
+        ImGui::Begin("performance");
+        ImGui::SetWindowSize({0, 0});
+        auto total = 0.0f;
+        total += displacementShadowMap->printPerfStats();
+        total += terrain->printPerfStats();
+        total += atmosphere->printPerfStats();
+
+        ImGui::Text("total frame time: %f ms", total);
+        ImGui::End();
+    }
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
@@ -327,6 +360,7 @@ void TerrainDemo::initContext() {
     context.radianceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.positionTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.depthTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
+    context.profiler = &profiler;
 }
 
 void TerrainDemo::initTerrain() {
@@ -347,6 +381,7 @@ void TerrainDemo::initAtmosphere() {
 
 void TerrainDemo::endFrame() {
     terrain->endFrame();
+    profiler.endFrame();
 }
 
 void TerrainDemo::newFrame() {
@@ -449,6 +484,11 @@ void TerrainDemo::createSamplers() {
     samplerInfo.maxLod = 1;
 
     edgeClampSampler = device.createSampler(samplerInfo);
+}
+
+void TerrainDemo::initProfiler() {
+    profiler = Profiler{ &device };
+    profiler.externalReset = true;
 }
 
 int main(){

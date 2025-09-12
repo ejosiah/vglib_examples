@@ -9,6 +9,7 @@ DisplacementShadowMap::DisplacementShadowMap(Context &context, const Displacemen
 {}
 
 void DisplacementShadowMap::init() {
+    initQueries();
     createShadowMapTexture();
     createComputePipelines();
     initConstants();
@@ -22,24 +23,32 @@ void DisplacementShadowMap::exec(VkCommandBuffer commandBuffer) {
     pc.slopeBias = m_options.slopeBias;
     pc.enabled = to<int>(m_options.enabled);
 
+    static int prevState = pc.enabled;
+    if(prevState != pc.enabled) {
+        profiler().clear(queryIds[QUERY_SHADOWS_GEN_ID]);
+        prevState = pc.enabled;
+    }
+
     pc.frustum = context().viewProjectionFrustum;
 
     const auto gx = (m_displacementMap.width + 15)/16;
     const auto gy = (m_displacementMap.height + 15)/16;
     auto descriptorSet = bindlessDescriptorSet();
 
-    Barriers::pushAndFlush(commandBuffer, m_shadowMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+    profiler().profile(queryIds[QUERY_SHADOWS_GEN_ID], commandBuffer, [&]{
+        Barriers::pushAndFlush(commandBuffer, m_shadowMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_shadow_map"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_shadow_map"), 0, 1, &descriptorSet, 0, nullptr);
-    vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_shadow_map"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
-    vkCmdDispatch(commandBuffer, gx, gy, 1);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_shadow_map"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_shadow_map"), 0, 1, &descriptorSet, 0, nullptr);
+        vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_shadow_map"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
 
-    Barriers::pushAndFlush(commandBuffer, m_shadowMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        Barriers::pushAndFlush(commandBuffer, m_shadowMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                               VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    });
 }
 
 void DisplacementShadowMap::createShadowMapTexture() {
@@ -89,10 +98,32 @@ Context& DisplacementShadowMap::context()  {
 }
 
 void DisplacementShadowMap::controls() {
-    ImGui::Begin("Shadow");
-    ImGui::SetWindowSize({});
-    ImGui::SliderFloat("slope bias", &m_options.slopeBias, 0.001, 0.1);
-    ImGui::SliderFloat("softness", &m_options.softness, 0, 0.0006);
-    ImGui::Checkbox("enabled", &m_options.enabled);
-    ImGui::End();
+    if(ImGui::CollapsingHeader("Shadow", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SliderFloat("slope bias", &m_options.slopeBias, 0.001, 0.1);
+        ImGui::SliderFloat("softness", &m_options.softness, 0, 0.0006);
+        ImGui::Checkbox("enabled", &m_options.enabled);
+    }
+}
+
+float DisplacementShadowMap::printPerfStats() {
+    const auto toMillis = 1e-6f;
+    auto total = 0.0f;
+
+    if (ImGui::TreeNode("Shadow map")) {
+        // Leaf flags so they render as rows without opening/closing arrows
+        ImGuiTreeNodeFlags leaf = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+        auto name = queryIds[QUERY_SHADOWS_GEN_ID];
+        auto duration = profiler().queries[name].movingAverage.value * toMillis;
+        ImGui::TreeNodeEx(name.c_str(), leaf, "%s: %f ms", name.c_str(), duration);
+        total += duration;
+        ImGui::TreePop();
+    }
+    return total;
+}
+
+void DisplacementShadowMap::initQueries() {
+    for(auto& id : queryIds) {
+        profiler().addQuery(id);
+    }
 }

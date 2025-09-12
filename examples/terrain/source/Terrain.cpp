@@ -33,6 +33,7 @@ Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 }
 
 void Terrain::init() {
+    initQuery();
     initUniforms();
     initVertexBuffer();
     initBuffers();
@@ -76,20 +77,22 @@ void Terrain::preProcess(VkCommandBuffer commandBuffer) {
 
 
 void Terrain::render(VkCommandBuffer commandBuffer) {
-    auto pipeline = m_options.wire ? m_renderWire.pipeline.handle : m_render.pipeline.handle;
-    auto layout = m_options.wire ? m_renderWire.layout.handle : m_render.layout.handle;
+    profiler().profile(queryIds[QUERY_RENDER_ID], commandBuffer, [&]{
+        auto pipeline = m_options.wire ? m_renderWire.pipeline.handle : m_render.pipeline.handle;
+        auto layout = m_options.wire ? m_renderWire.layout.handle : m_render.layout.handle;
 
-    static std::array<VkDescriptorSet, 3> sets;
-    sets[0] = m_sets[0];
-    sets[1] = m_sets[1];
-    sets[2] = m_atmosphereDescriptor.set;
+        static std::array<VkDescriptorSet, 3> sets;
+        sets[0] = m_sets[0];
+        sets[1] = m_sets[1];
+        sets[2] = m_atmosphereDescriptor.set;
 
-    VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(sets), sets.data(), 0,nullptr);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+        VkDeviceSize offset = 0;
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(sets), sets.data(), 0,nullptr);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+    });
 }
 
 void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
@@ -435,39 +438,45 @@ void Terrain::cbtDispatch(VkCommandBuffer commandBuffer) {
 }
 
 void Terrain::lebSubdivision(VkCommandBuffer commandBuffer, int pingPong) {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_subdivide"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_subdivide"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
-    vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_subdivide"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pingPong);
-    vkCmdDispatchIndirect(commandBuffer, m_dispatchBuffer, 0);
-    Barrier::computeWriteToRead(commandBuffer);
+    profiler().profile(queryIds[QUERY_SUBDIVISION_ID], commandBuffer, [&]{
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_subdivide"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_subdivide"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+        vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_subdivide"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pingPong);
+        vkCmdDispatchIndirect(commandBuffer, m_dispatchBuffer, 0);
+        Barrier::computeWriteToRead(commandBuffer);
+    });
 }
 
 void Terrain::sumReducePrePass(VkCommandBuffer commandBuffer) {
-    auto itr = m_maxDepth;
-    auto cnt = ((1 << itr) >> 5);
-    auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
+    profiler().profile(queryIds[QUERY_SUM_REDUCE_PRE_PASS_ID], commandBuffer, [&]{
+        auto itr = m_maxDepth;
+        auto cnt = ((1 << itr) >> 5);
+        auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce_prepass"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce_prepass"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
-    vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce_prepass"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &itr);
-    vkCmdDispatch(commandBuffer, numGroup, 1, 1);
-    Barrier::computeWriteToRead(commandBuffer);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce_prepass"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce_prepass"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+        vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce_prepass"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &itr);
+        vkCmdDispatch(commandBuffer, numGroup, 1, 1);
+        Barrier::computeWriteToRead(commandBuffer);
+    });
 
 }
 
 void Terrain::sumReduceCbt(VkCommandBuffer commandBuffer) {
+    // TODO use group query
+    profiler().profile(queryIds[QUERY_SUM_REDUCE_ID], commandBuffer, [&]{
+        for(auto itr = m_maxDepth - 6; itr >= 0; --itr) {
+            auto cnt = 1 << itr;
+            auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
+            auto pass = itr;
 
-    for(auto itr = m_maxDepth - 6; itr >= 0; --itr) {
-        auto cnt = 1 << itr;
-        auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
-        auto pass = itr;
-
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce"));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
-        vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
-        vkCmdDispatch(commandBuffer, numGroup, 1, 1);
-        Barrier::computeWriteToRead(commandBuffer);
-    }
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce"));
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+            vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+            vkCmdDispatch(commandBuffer, numGroup, 1, 1);
+            Barrier::computeWriteToRead(commandBuffer);
+        }
+    });
 }
 
 void Terrain::lebDispatch(VkCommandBuffer commandBuffer) {
@@ -507,7 +516,9 @@ void Terrain::topViewOff() {
     m_options.topView = true;
 }
 
-void Terrain::controls() {
+void Terrain::controls(bool show) {
+    if(!show) return;
+
     ImGui::Begin("terrain");
     ImGui::SetWindowSize({});
 
@@ -524,4 +535,30 @@ void Terrain::controls() {
 
 TerrainInfo Terrain::getInfo() const {
     return { m_dmap.width, m_dmap.height, m_dmap.zMin, m_dmap.zMax };
+}
+
+void Terrain::initQuery() {
+    for(auto query : queryIds) {
+        profiler().addQuery(query);
+    }
+
+}
+
+float Terrain::printPerfStats() {
+    const auto toMillis = 1e-6f;
+    auto total = 0.0f;
+
+    if (ImGui::TreeNode("Terrain")) {
+        // Leaf flags so they render as rows without opening/closing arrows
+        ImGuiTreeNodeFlags leaf = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+        for(auto name : queryIds) {
+            auto duration = profiler().queries[name].movingAverage.value * toMillis;
+            ImGui::TreeNodeEx(name.c_str(), leaf, "%s: %f ms", name.c_str(), duration);
+            total += duration;
+        }
+        ImGui::TreeNodeEx("total", leaf, "total: %f ms", total);
+        ImGui::TreePop();
+    }
+    return total;
 }

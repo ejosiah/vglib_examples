@@ -5,12 +5,11 @@
 #include "VerletIntegrator.hpp"
 
 ClothDemo2::ClothDemo2(const Settings& settings) : VulkanBaseApp("Cloth", settings) {
-    fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/cloth2");
-    fileManager().addSearchPathFront("../../examples/cloth2/data");
-    fileManager().addSearchPathFront("../../examples/cloth2/spv");
-    fileManager().addSearchPathFront("../../examples/cloth2/models");
-    fileManager().addSearchPathFront("../../examples/cloth2/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("cloth2");
+    fileManager().addSearchPathFront("cloth2/spv");
+    fileManager().addSearchPathFront("cloth2/textures");
 }
 
 void ClothDemo2::initApp() {
@@ -597,7 +596,7 @@ void ClothDemo2::beforeDeviceCreation() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = settings.height = 1024;
         settings.depthTest = true;

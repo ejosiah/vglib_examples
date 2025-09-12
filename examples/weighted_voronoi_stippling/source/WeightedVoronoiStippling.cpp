@@ -6,12 +6,11 @@
 #include "primitives.h"
 
 WeightedVoronoiStippling::WeightedVoronoiStippling(const Settings& settings) : VulkanBaseApp("Weighted Voronoi Stippling", settings) {
-    fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling");
-    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/spv");
-    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/data");
-    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/models");
-    fileManager().addSearchPathFront("../../examples/weighted_voronoi_stippling/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("weighted_voronoi_stippling");
+    fileManager().addSearchPathFront("weighted_voronoi_stippling/spv");
 
     static VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
     dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
@@ -910,7 +909,7 @@ void WeightedVoronoiStippling::addBufferMemoryBarriers(VkCommandBuffer commandBu
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 2048;
         settings.height = 1536;

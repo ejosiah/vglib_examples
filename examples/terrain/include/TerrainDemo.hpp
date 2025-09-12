@@ -7,6 +7,7 @@
 #include "DisplacementShadowMap.hpp"
 #include "ComputePipelins.hpp"
 #include "AtmosphereModel.hpp"
+#include "Profiler.hpp"
 
 class TerrainDemo : public VulkanBaseApp{
 public:
@@ -16,6 +17,8 @@ protected:
     void initApp() override;
 
     void createSamplers();
+
+    void initProfiler();
 
     void initCamera();
 
@@ -126,4 +129,5 @@ protected:
         bool debug{true};
     } options;
     VulkanSampler edgeClampSampler;
+    Profiler profiler;
 };

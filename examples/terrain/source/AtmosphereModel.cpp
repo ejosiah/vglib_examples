@@ -10,16 +10,13 @@ AtmosphereModel::AtmosphereModel(Context &context)
 }
 
 void AtmosphereModel::init() {
+    initQueries();
     initUniforms();
     createLoopUpTextures();
     createDescriptorSetLayout();
     updateDescriptorSet();
     createComputePipelines();
     createRenderPipelines();
-
-    device().graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        preProcess(commandBuffer);
-    });
 }
 
 void AtmosphereModel::initUniforms() {
@@ -101,9 +98,11 @@ void AtmosphereModel::preProcess(VkCommandBuffer commandBuffer) {
 }
 
 void AtmosphereModel::renderSkyView(VkCommandBuffer commandBuffer) {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-    AppContext::renderClipSpaceQuad(commandBuffer);
+    profiler().profile(queryIds[QUERY_SKY_VIEW_RENDER_ID], commandBuffer, [&] {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.skyView.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+        AppContext::renderClipSpaceQuad(commandBuffer);
+    });
 }
 
 void AtmosphereModel::renderArealPerspective(VkCommandBuffer commandBuffer) {
@@ -112,13 +111,17 @@ void AtmosphereModel::renderArealPerspective(VkCommandBuffer commandBuffer) {
     sets[1] = m_sets[1];
     sets[2] = context().subpassInputDescriptorSet;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.arealPerspective.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.arealPerspective.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
-    AppContext::renderClipSpaceQuad(commandBuffer);
+    profiler().profile(queryIds[QUERY_AREAL_PERSPECTIVE_RENDER_ID], commandBuffer, [&] {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.arealPerspective.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.arealPerspective.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
+        AppContext::renderClipSpaceQuad(commandBuffer);
+    });
 
 }
 
-void AtmosphereModel::controls() {
+void AtmosphereModel::controls(bool show) {
+    if(!show) return;
+
     auto defaultParams = Atmosphere::Params{};
     static auto mieAbsorption = glm::max(glm::vec3(0), params.mie.extinction - params.mie.scattering);
     static auto mieScatteringLength = glm::length(defaultParams.mie.scattering) * km;
@@ -303,39 +306,49 @@ void AtmosphereModel::createRenderPipelines() {
 void AtmosphereModel::computeTransmittanceLUT(VkCommandBuffer commandBuffer) {
     const auto gx = (TRANSMITTANCE_TEXTURE_WIDTH + 7)/8;
     const auto gy = (TRANSMITTANCE_TEXTURE_HEIGHT + 3)/4;
-
-    prepareForWriting(commandBuffer, m_lut.transmittance.image);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_transmittance"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("compute_transmittance") , 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, gx, gy, 1);
-    prepareForReading(commandBuffer, m_lut.transmittance.image);
+    profiler().profile(queryIds[QUERY_TRANSMISSION_LUT_ID], commandBuffer, [&]{
+        prepareForWriting(commandBuffer, m_lut.transmittance.image);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_transmittance"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("compute_transmittance") , 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+        prepareForReading(commandBuffer, m_lut.transmittance.image);
+    });
 }
 
 void AtmosphereModel::computeMultipleScatteringLUT(VkCommandBuffer commandBuffer) {
-    prepareForWriting(commandBuffer, m_lut.multiScattering.image);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_multiscattering"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("compute_multiscattering") , 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, 32, 32, 1);
-    prepareForReading(commandBuffer, m_lut.multiScattering.image);
+    profiler().profile(queryIds[QUERY_MULTIPLE_SCATTERING_LUT_ID], commandBuffer, [&] {
+        prepareForWriting(commandBuffer, m_lut.multiScattering.image);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_multiscattering"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                m_compute.layout("compute_multiscattering"), 0, m_sets.size(), m_sets.data(), 0,
+                                VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer, 32, 32, 1);
+        prepareForReading(commandBuffer, m_lut.multiScattering.image);
+    });
 }
 
 void AtmosphereModel::computeSkyViewLUT(VkCommandBuffer commandBuffer) {
     const auto gx = (SKY_VIEW_TEXTURE_WIDTH + 7)/8;
     const auto gy = (SKY_VIEW_TEXTURE_HEIGHT + 7)/8;
 
-    prepareForWriting(commandBuffer, m_lut.skyView.image);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_skyview"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("compute_skyview") , 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, gx, gy, 1);
-    prepareForReading(commandBuffer, m_lut.skyView.image);
+    profiler().profile(queryIds[QUERY_SKY_VIEW_LUT_ID], commandBuffer, [&] {
+        prepareForWriting(commandBuffer, m_lut.skyView.image);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_skyview"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("compute_skyview"), 0,
+                                m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+        prepareForReading(commandBuffer, m_lut.skyView.image);
+    });
 }
 
 void AtmosphereModel::computeArealPerspectiveLut(VkCommandBuffer commandBuffer) {
-    prepareForWriting(commandBuffer, m_lut.arealPerspective.image);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_areal_perspective"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("compute_areal_perspective") , 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, 1, 32, 32);
-    prepareForReading(commandBuffer, m_lut.arealPerspective.image);
+    profiler().profile(queryIds[QUERY_AREAL_PERSPECTIVE_LUT_ID], commandBuffer, [&] {
+        prepareForWriting(commandBuffer, m_lut.arealPerspective.image);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("compute_areal_perspective"));
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,m_compute.layout("compute_areal_perspective"), 0, m_sets.size(), m_sets.data(), 0,VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer, 1, 32, 32);
+        prepareForReading(commandBuffer, m_lut.arealPerspective.image);
+    });
 }
 
 
@@ -408,4 +421,29 @@ std::vector<PipelineMetaData> AtmosphereModel::metadata() {
 
 AtmosphereModel::Descriptor AtmosphereModel::descriptor() const {
     return m_descriptor;
+}
+
+void AtmosphereModel::initQueries() {
+    for(auto query : queryIds) {
+        profiler().addQuery(query);
+    }
+}
+
+float AtmosphereModel::printPerfStats() {
+    const auto toMillis = 1e-6f;
+    auto total = 0.0f;
+
+    if (ImGui::TreeNode("Atmosphere")) {
+        // Leaf flags so they render as rows without opening/closing arrows
+        ImGuiTreeNodeFlags leaf = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+        for(auto name : queryIds) {
+            auto duration = profiler().queries[name].movingAverage.value * toMillis;
+            ImGui::TreeNodeEx(name.c_str(), leaf, "%s: %f ms", name.c_str(), duration);
+            total += duration;
+        }
+        ImGui::TreeNodeEx("total", leaf, "total: %f ms", total);
+        ImGui::TreePop();
+    }
+    return total;
 }

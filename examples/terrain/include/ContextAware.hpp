@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Shared.hpp"
+#include "Profiler.hpp"
 
 struct Context {
     VulkanDevice* device{};
@@ -11,6 +12,7 @@ struct Context {
     std::unique_ptr<Prototypes> prototypes;
     Frustum viewProjectionFrustum;
     VulkanSampler edgeClampSampler;
+    Profiler* profiler{};
     glm::mat4 view{1};
     glm::mat4 viewProjection{1};
     glm::mat4 inverseViewProjection{1};
@@ -77,5 +79,9 @@ protected:
 
     auto resource(auto path) const {
         return FileManager::resource(path);
+    }
+
+    auto& profiler()  {
+        return *context().profiler;
     }
 };

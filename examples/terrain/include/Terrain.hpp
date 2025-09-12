@@ -19,6 +19,8 @@ public:
 
     void init();
 
+    void initQuery();
+
     void newFrame();
 
     void preProcess(VkCommandBuffer commandBuffer);
@@ -27,7 +29,7 @@ public:
 
     void renderTopView(VkCommandBuffer commandBuffer);
 
-    void controls();
+    void controls(bool show = true);
 
     void endFrame();
 
@@ -42,6 +44,9 @@ public:
     void wireOff();
 
     TerrainInfo getInfo() const;
+
+    float printPerfStats();
+
 
 protected:
     void renderTerrainDefault(VkCommandBuffer commandBuffer);
@@ -155,4 +160,10 @@ private:
     SpecializationConstants specializationConstants{};
     uint should_displace = 1;
     AtmosphereModel::Descriptor m_atmosphereDescriptor;
+
+    static constexpr int QUERY_SUBDIVISION_ID = 0;
+    static constexpr int QUERY_SUM_REDUCE_PRE_PASS_ID = 1;
+    static constexpr int QUERY_SUM_REDUCE_ID = 2;
+    static constexpr int QUERY_RENDER_ID = 3;
+    std::vector<std::string> queryIds{ "subdivision", "sum reduce prePass", "sum reduce", "render" };
 };

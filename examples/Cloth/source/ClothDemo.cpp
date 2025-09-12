@@ -4,16 +4,16 @@
 
 
 ClothDemo::ClothDemo(const Settings &settings) : VulkanRayTraceBaseApp("Cloth", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/Cloth");
-    fileManager.addSearchPathFront("../../examples/Cloth/spv");
-    fileManager.addSearchPathFront("../../examples/Cloth/models");
-    fileManager.addSearchPathFront("../../examples/Cloth/patches");
-    fileManager.addSearchPathFront("../../examples/Cloth/textures");
-    fileManager.addSearchPathFront("../../data/shaders");
-    fileManager.addSearchPathFront("../../data/models");
-    fileManager.addSearchPathFront("../../data/textures");
-    fileManager.addSearchPathFront("../../data");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/Cloth");
+    fileManager().addSearchPathFront("../../examples/Cloth/spv");
+    fileManager().addSearchPathFront("../../examples/Cloth/models");
+    fileManager().addSearchPathFront("../../examples/Cloth/patches");
+    fileManager().addSearchPathFront("../../examples/Cloth/textures");
+    fileManager().addSearchPathFront("../../data/shaders");
+    fileManager().addSearchPathFront("../../data/models");
+    fileManager().addSearchPathFront("../../data/textures");
+    fileManager().addSearchPathFront("../../data");
 }
 
 void ClothDemo::initApp() {

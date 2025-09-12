@@ -26,12 +26,16 @@ public:
 
     void renderArealPerspective(VkCommandBuffer commandBuffer);
 
-    void controls();
+    void controls(bool show = true);
 
     Descriptor descriptor() const;
 
+    float printPerfStats();
+
 protected:
     Context& context() final;
+
+    void initQueries();
 
     void computeTransmittanceLUT(VkCommandBuffer commandBuffer);
 
@@ -144,4 +148,12 @@ private:
         Pipeline skyView;
         Pipeline arealPerspective;
     } m_render;
+
+    static constexpr int QUERY_TRANSMISSION_LUT_ID = 0;
+    static constexpr int QUERY_MULTIPLE_SCATTERING_LUT_ID = 1;
+    static constexpr int QUERY_SKY_VIEW_LUT_ID = 2;
+    static constexpr int QUERY_AREAL_PERSPECTIVE_LUT_ID = 3;
+    static constexpr int QUERY_SKY_VIEW_RENDER_ID = 4;
+    static constexpr int QUERY_AREAL_PERSPECTIVE_RENDER_ID = 5;
+    std::vector<std::string> queryIds{ "transmission lut", "scattering Lut", "sky view lut", "areal p lut", "render sky view", "render areal p" };
 };

@@ -13,7 +13,11 @@ public:
 
     void controls();
 
+    float printPerfStats();
+
 protected:
+    void initQueries();
+
     void createShadowMapTexture();
 
     void createComputePipelines();
@@ -52,5 +56,7 @@ private:
         bool enabled{true};
     } m_options{};
 
+    static constexpr int QUERY_SHADOWS_GEN_ID = 0;
+    std::vector<std::string> queryIds{ "generate shadows" };
     ComputePipelines m_compute;
 };
