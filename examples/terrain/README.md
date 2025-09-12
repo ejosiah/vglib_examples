@@ -2,7 +2,6 @@
 
 ## Todo
 - enable independent blending
-- configurable atmosphere
 - use subgroup for multiple scattering reduction 
 - clouds
 - perf stats

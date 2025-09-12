@@ -4,6 +4,7 @@
 #include "ContextAware.hpp"
 #include "ComputePipelins.hpp"
 
+#include "atmosphere/Atmosphere.hpp"
 #include <array>
 
 class AtmosphereModel : public ContextAware {
@@ -58,10 +59,8 @@ protected:
 
     std::vector<PipelineMetaData> metadata();
 
-    void useBruneton(bool flag);
-
-
 private:
+
     static constexpr uint BOTTOM = 0;
     static constexpr uint TOP = 1;
 
@@ -122,6 +121,9 @@ private:
         uint arealPerspectiveImageIndex{~0u};
     };
 
+    void set(UniformData& uniforms);
+
+
     struct {
         VulkanBuffer gpu;
         UniformData* cpu{};
@@ -134,7 +136,7 @@ private:
         Texture arealPerspective;
     } m_lut;
 
-    bool m_useBruneton{false};
+    Atmosphere::Params params{};
 
     Descriptor m_descriptor;
     std::array<VkDescriptorSet, 2> m_sets;

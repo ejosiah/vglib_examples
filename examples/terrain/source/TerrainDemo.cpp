@@ -263,6 +263,7 @@ void TerrainDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
 void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     terrain->controls();
     displacementShadowMap->controls();
+    atmosphere->controls();
     ImGui::Begin("Lighting");
     ImGui::SetWindowSize({0, 0});
     ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);

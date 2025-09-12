@@ -1,8 +1,8 @@
 #include "AtmosphereModel.hpp"
-#include "atmosphere/Atmosphere.hpp"
 #include "Barrier.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
+#include <imgui.h>
 
 AtmosphereModel::AtmosphereModel(Context &context)
 : m_context{&context} {
@@ -25,53 +25,8 @@ void AtmosphereModel::init() {
 void AtmosphereModel::initUniforms() {
 
     UniformData initialValues{};
-    
-    Atmosphere::Params params{};
-    initialValues.cameraPosition = camera().position();
-    initialValues.sunDirection = context().lightDirection;
-    initialValues.inverseProjection = context().inverseProjection;
-    initialValues.inverseView = context().inverseView;
 
-    initialValues.solarIrradiance = params.solarIrradiance;
-    initialValues.sunAngularRadius = params.sunAngularRadius;
-    initialValues.bottomRadius = params.radius.bottom / params.lengthUnitInMeters;
-    initialValues.topRadius = initialValues.bottomRadius + 100;
-
-    initialValues.rayleighScattering = params.rayleigh.scattering * params.lengthUnitInMeters;
-    initialValues.mieScattering = params.mie.scattering * params.lengthUnitInMeters;
-    initialValues.mieExtinction = params.mie.extinction * params. lengthUnitInMeters;
-    initialValues.mieAnisotropicFactor = params.mie.anisotropicFactor;
-
-    initialValues.ozoneExtinction = params.ozone.absorptionExtinction * params.lengthUnitInMeters;
-    initialValues.groundAlbedo = params.groundAlbedo;
-    initialValues.mu_s_min = params.mu_s_min;
-    initialValues.lengthUnitInMeters = params.lengthUnitInMeters;
-
-
-    initialValues.rayleighDensity[BOTTOM].width = 0;
-    initialValues.rayleighDensity[BOTTOM].exp_term = 1;
-    initialValues.rayleighDensity[BOTTOM].exp_scale = -km / params.rayleigh.height;
-    initialValues.rayleighDensity[BOTTOM].linear_term = 0;
-    initialValues.rayleighDensity[BOTTOM].constant_term = 0;
-
-    initialValues.mieDensity[BOTTOM].width = 0;
-    initialValues.mieDensity[BOTTOM].exp_term = 1;
-    initialValues.mieDensity[BOTTOM].exp_scale = -km / params.mie.height;
-    initialValues.mieDensity[BOTTOM].linear_term = 0;
-    initialValues.mieDensity[BOTTOM].constant_term = 0;
-
-    initialValues.ozone[BOTTOM].width = params.ozone.bottom.width / params.lengthUnitInMeters;
-    initialValues.ozone[BOTTOM].exp_term = 0;
-    initialValues.ozone[BOTTOM].exp_scale = 0;
-    initialValues.ozone[BOTTOM].linear_term = km / params.ozone.bottom.linearHeight;
-    initialValues.ozone[BOTTOM].constant_term =  params.ozone.bottom.constant;
-
-    initialValues.ozone[TOP].width = 0;
-    initialValues.ozone[TOP].exp_term = 0;
-    initialValues.ozone[TOP].exp_scale = 0;
-    initialValues.ozone[TOP].linear_term = -km / params.ozone.top.linearHeight;
-    initialValues.ozone[TOP].constant_term =  params.ozone.top.constant;
-
+    set(initialValues);
     initialValues.transmittanceTextureIndex = context().transmittanceTextureIndex;
     initialValues.multiScatteringTextureIndex = context().multiScatteringTextureIndex;
     initialValues.skyViewTextureIndex = context().skyViewTextureIndex;
@@ -87,11 +42,55 @@ void AtmosphereModel::initUniforms() {
     m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
 }
 
+void AtmosphereModel::set(UniformData& uniform) {
+    uniform.cameraPosition = camera().position();
+    uniform.sunDirection = context().lightDirection;
+    uniform.inverseProjection = context().inverseProjection;
+    uniform.inverseView = context().inverseView;
+
+    uniform.solarIrradiance = params.solarIrradiance;
+    uniform.sunAngularRadius = params.sunAngularRadius;
+    uniform.bottomRadius = params.radius.bottom / params.lengthUnitInMeters;
+    uniform.topRadius = uniform.bottomRadius + 100;
+
+    uniform.rayleighScattering = params.rayleigh.scattering * params.lengthUnitInMeters;
+    uniform.mieScattering = params.mie.scattering * params.lengthUnitInMeters;
+    uniform.mieExtinction = params.mie.extinction * params. lengthUnitInMeters;
+    uniform.mieAnisotropicFactor = params.mie.anisotropicFactor;
+
+    uniform.ozoneExtinction = params.ozone.absorptionExtinction * params.lengthUnitInMeters;
+    uniform.groundAlbedo = params.groundAlbedo;
+    uniform.mu_s_min = params.mu_s_min;
+    uniform.lengthUnitInMeters = params.lengthUnitInMeters;
+
+
+    uniform.rayleighDensity[BOTTOM].width = 0;
+    uniform.rayleighDensity[BOTTOM].exp_term = 1;
+    uniform.rayleighDensity[BOTTOM].exp_scale = -km / params.rayleigh.height;
+    uniform.rayleighDensity[BOTTOM].linear_term = 0;
+    uniform.rayleighDensity[BOTTOM].constant_term = 0;
+
+    uniform.mieDensity[BOTTOM].width = 0;
+    uniform.mieDensity[BOTTOM].exp_term = 1;
+    uniform.mieDensity[BOTTOM].exp_scale = -km / params.mie.height;
+    uniform.mieDensity[BOTTOM].linear_term = 0;
+    uniform.mieDensity[BOTTOM].constant_term = 0;
+
+    uniform.ozone[BOTTOM].width = params.ozone.bottom.width / params.lengthUnitInMeters;
+    uniform.ozone[BOTTOM].exp_term = 0;
+    uniform.ozone[BOTTOM].exp_scale = 0;
+    uniform.ozone[BOTTOM].linear_term = km / params.ozone.bottom.linearHeight;
+    uniform.ozone[BOTTOM].constant_term =  params.ozone.bottom.constant;
+
+    uniform.ozone[TOP].width = 0;
+    uniform.ozone[TOP].exp_term = 0;
+    uniform.ozone[TOP].exp_scale = 0;
+    uniform.ozone[TOP].linear_term = -km / params.ozone.top.linearHeight;
+    uniform.ozone[TOP].constant_term =  params.ozone.top.constant;
+}
+
 void AtmosphereModel::newFrame() {
-    m_uniforms.cpu->cameraPosition = camera().position();
-    m_uniforms.cpu->sunDirection = context().lightDirection;
-    m_uniforms.cpu->inverseProjection = context().inverseProjection;
-    m_uniforms.cpu->inverseView = context().inverseView;
+    set(*m_uniforms.cpu);
 }
 
 void AtmosphereModel::preProcess(VkCommandBuffer commandBuffer) {
@@ -120,6 +119,75 @@ void AtmosphereModel::renderArealPerspective(VkCommandBuffer commandBuffer) {
 }
 
 void AtmosphereModel::controls() {
+    auto defaultParams = Atmosphere::Params{};
+    static auto mieAbsorption = glm::max(glm::vec3(0), params.mie.extinction - params.mie.scattering);
+    static auto mieScatteringLength = glm::length(defaultParams.mie.scattering) * km;
+    static auto mieAbsorptionLength = glm::length(mieAbsorption) * km;
+    static auto rayleighScattingLength = glm::length(defaultParams.rayleigh.scattering) * km;
+    static auto ozoneAbsorptionLength = glm::length(defaultParams.ozone.absorptionExtinction) * km;
+
+    ImGui::Begin("Atmosphere");
+    ImGui::SetWindowSize({0, 0});
+    ImGui::SliderFloat("Mie phase", &params.mie.anisotropicFactor, 0, 0.999);
+    ImGui::SliderInt("Scatt Order", &params.numScatteringOrder, 2, 10);
+
+    static auto mieScattering = params.mie.scattering * km/mieScatteringLength;
+    ImGui::ColorEdit3("MieScattCoeff", glm::value_ptr(mieScattering));
+    ImGui::SliderFloat("MieScattScale", &mieScatteringLength, 0.00001f, 0.1f, "%.5f");
+
+    static auto mieAbsorptionColor = mieAbsorption * km/mieAbsorptionLength;
+    ImGui::ColorEdit3("MieAbsorbCoeff", glm::value_ptr(mieAbsorptionColor));
+    ImGui::SliderFloat("MieAbsorbScale", &mieAbsorptionLength, 0.00001f, 0.1f, "%.5f");
+
+    static auto rayleighScattering = params.rayleigh.scattering * km/rayleighScattingLength;
+    ImGui::ColorEdit3( "RayScattCoeff", glm::value_ptr(rayleighScattering));
+    ImGui::SliderFloat("RayScattScale", &rayleighScattingLength, 0.00001f, 10.0f, "%.5f");
+
+    static auto ozoneAbsorption = params.ozone.absorptionExtinction * km/ozoneAbsorptionLength;
+    ImGui::ColorEdit3( "AbsorptiCoeff", glm::value_ptr(ozoneAbsorption));
+    ImGui::SliderFloat("AbsorptiScale", &ozoneAbsorptionLength, 0.00001f, 10.0f, "%.5f");
+
+    static auto planetRadius = params.radius.bottom / params.lengthUnitInMeters;
+    static auto atmosphereHeight = (params.radius.top - params.radius.bottom) / params.lengthUnitInMeters;
+    ImGui::SliderFloat("Planet radius", &planetRadius, 100.0f, 8000.0f);
+    ImGui::SliderFloat("Atmos height", &atmosphereHeight, 10.0f, 150.0f);
+
+    static auto mieScaleHeight = params.mie.height / params.lengthUnitInMeters;
+    static auto rayleighHeight = params.rayleigh.height / params.lengthUnitInMeters;
+    ImGui::SliderFloat("MieScaleHeight", &mieScaleHeight, 0.5f, 20.0f);
+    ImGui::SliderFloat("RayleighScaleHeight", &rayleighHeight, 0.5f, 20.0f);
+
+//    ImGui::ColorEdit3("Ground albedo", glm::value_ptr(params.groundAlbedo));
+
+    if(ImGui::Button("reset")) {
+        mieAbsorption = glm::max(glm::vec3(0), defaultParams.mie.extinction - defaultParams.mie.scattering);
+        mieScatteringLength = glm::length(defaultParams.mie.scattering) * km;
+        mieAbsorptionLength = glm::length(mieAbsorption) * km;
+        rayleighScattingLength = glm::length(defaultParams.rayleigh.scattering) * km;
+        ozoneAbsorptionLength = glm::length(defaultParams.ozone.absorptionExtinction) * km;
+
+        mieScattering = defaultParams.mie.scattering * km/mieScatteringLength;
+        mieAbsorptionColor = mieAbsorption * km/mieAbsorptionLength;
+        rayleighScattering = defaultParams.rayleigh.scattering * km/rayleighScattingLength;
+        ozoneAbsorption = defaultParams.ozone.absorptionExtinction * km/ozoneAbsorptionLength;
+        planetRadius = defaultParams.radius.bottom / defaultParams.lengthUnitInMeters;
+        atmosphereHeight = (defaultParams.radius.top - defaultParams.radius.bottom) / defaultParams.lengthUnitInMeters;
+        mieScaleHeight = defaultParams.mie.height / defaultParams.lengthUnitInMeters;
+        rayleighHeight = defaultParams.rayleigh.height / defaultParams.lengthUnitInMeters;
+    }
+
+    ImGui::End();
+
+    params.mie.scattering = mieScattering * mieScatteringLength/km;
+    mieAbsorption = mieAbsorptionColor * mieAbsorptionLength/km;
+    params.mie.extinction = params.mie.scattering + mieAbsorption;
+    params.rayleigh.scattering = rayleighScattering * rayleighScattingLength/km;
+    params.ozone.absorptionExtinction = ozoneAbsorption * ozoneAbsorptionLength/km;
+    params.radius.bottom = planetRadius * km;
+    params.radius.top = (planetRadius + atmosphereHeight) * km;
+    params.mie.height = mieScaleHeight * km;
+    params.rayleigh.height = rayleighHeight * km;
+
 
 }
 
@@ -340,8 +408,4 @@ std::vector<PipelineMetaData> AtmosphereModel::metadata() {
 
 AtmosphereModel::Descriptor AtmosphereModel::descriptor() const {
     return m_descriptor;
-}
-
-void AtmosphereModel::useBruneton(bool flag) {
-    m_useBruneton = flag;
 }
