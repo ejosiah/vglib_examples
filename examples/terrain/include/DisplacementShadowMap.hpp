@@ -34,6 +34,7 @@ private:
     TerrainInfo m_terrain;
     Texture m_shadowMap;
     uint m_shadowMapImageIndex{~0u};
+    uint m_scale{2};
 
     struct {
         Frustum frustum;

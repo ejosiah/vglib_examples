@@ -257,4 +257,32 @@ VertexAttribute TessellateTriangle(in const vec2 texCoords[3], in vec2 tessCoord
     return VertexAttribute(position, uv);
 }
 
+vec3 depthToNormal(sampler2D depth_map, vec2 uv) {
+    float bump_strength = 2;
+    float heightL = texture(depth_map, uv + vec2(-1.0, 0.0) / textureSize(depth_map, 0)).r;
+    float heightR = texture(depth_map, uv + vec2(1.0, 0.0) / textureSize(depth_map, 0)).r;
+    float heightD = texture(depth_map, uv + vec2(0.0, -1.0) / textureSize(depth_map, 0)).r;
+    float heightU = texture(depth_map, uv + vec2(0.0, 1.0) / textureSize(depth_map, 0)).r;
+
+    // Calculate the gradients (dx, dy) with added bump strength factor
+    float dx = (heightR - heightL) * bump_strength;
+    float dy = (heightU - heightD) * bump_strength;
+
+    vec3 normal = normalize(vec3(-dx, -dy, 1.0));
+
+    return 0.5 + 0.5 * normal;
+}
+
+vec3 depthToNormal1(sampler2D depth_map, vec2 uv) {
+    float filterSize = 1.0f / float(textureSize(depth_map, 0).x);// sqrt(dot(dFdx(texCoord), dFdy(texCoord)));
+    float sx0 = textureLod(depth_map, uv - vec2(filterSize, 0.0), 0.0).r;
+    float sx1 = textureLod(depth_map, uv + vec2(filterSize, 0.0), 0.0).r;
+    float sy0 = textureLod(depth_map, uv - vec2(0.0, filterSize), 0.0).r;
+    float sy1 = textureLod(depth_map, uv + vec2(0.0, filterSize), 0.0).r;
+    float sx = sx1 - sx0;
+    float sy = sy1 - sy0;
+
+    return vec3(globals.dmapFactor * 0.03 / filterSize * 0.5f * vec2(-sx, -sy), 1);
+}
+
 #endif // TERRAIN_SHARED_GLSL

@@ -53,7 +53,7 @@ void TerrainDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->position({-1130, 3796, 5057});
+    camera->lookAt({5414, 952, 11846}, {-0.7, 0, -0.7}, {0, 1, 0});
 }
 
 void TerrainDemo::initBindlessDescriptor() {

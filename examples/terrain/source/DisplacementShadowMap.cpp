@@ -31,8 +31,8 @@ void DisplacementShadowMap::exec(VkCommandBuffer commandBuffer) {
 
     pc.frustum = context().viewProjectionFrustum;
 
-    const auto gx = (m_displacementMap.width + 15)/16;
-    const auto gy = (m_displacementMap.height + 15)/16;
+    const auto gx = (m_shadowMap.width + 15)/16;
+    const auto gy = (m_shadowMap.height + 15)/16;
     auto descriptorSet = bindlessDescriptorSet();
 
     profiler().profile(queryIds[QUERY_SHADOWS_GEN_ID], commandBuffer, [&]{
@@ -52,7 +52,7 @@ void DisplacementShadowMap::exec(VkCommandBuffer commandBuffer) {
 }
 
 void DisplacementShadowMap::createShadowMapTexture() {
-    textures::create(device(), m_shadowMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, { m_displacementMap.width, m_displacementMap.height, 1 });
+    textures::create(device(), m_shadowMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, { m_displacementMap.width/m_scale, m_displacementMap.height/m_scale, 1 });
     bindlessDescriptor().update({ &m_shadowMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context().dmap_shadow_tex_index });
     bindlessDescriptor().update({ &m_shadowMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_shadowMapImageIndex, VK_IMAGE_LAYOUT_GENERAL });
 }
@@ -65,13 +65,13 @@ void DisplacementShadowMap::createComputePipelines() {
 void DisplacementShadowMap::initConstants() {
     auto& pc = m_Constants;
     pc.lightDir = glm::normalize(context().lightDirection);
-    pc.xzScale = { m_terrain.width/m_displacementMap.width, m_terrain.height/m_displacementMap.height };
+    pc.xzScale = { m_terrain.width/m_shadowMap.width, m_terrain.height/m_shadowMap.height };
     pc.heightRange = {m_terrain.zMin, m_terrain.zMax };
 
     const int targetMaxSteps = 512;
     using namespace std;
-    pc.stepStride = max(1.0f, ceil(max(m_displacementMap.width, m_displacementMap.height)/float(targetMaxSteps)));
-    pc.maxSteps   = int(ceil(float(max(m_displacementMap.width, m_displacementMap.height)) / pc.stepStride));
+    pc.stepStride = max(1.0f, ceil(max(m_shadowMap.width, m_shadowMap.height)/float(targetMaxSteps)));
+    pc.maxSteps   = int(ceil(float(max(m_shadowMap.width, m_shadowMap.height)) / pc.stepStride));
     pc.slopeBias  = 0.001f;
     pc.softness   = 0.002f;
     pc.shadow_image_index = m_shadowMapImageIndex;

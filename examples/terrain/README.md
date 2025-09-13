@@ -6,3 +6,6 @@
 - clouds
 - cascade shadow maps vs height map shadows
 - look into meshlets for rendering terrain
+- noise height maps
+- erosion 
+- add night stars

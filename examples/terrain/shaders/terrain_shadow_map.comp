@@ -33,7 +33,7 @@ layout(push_constant) uniform Constants {
 float saturate(float x) { return clamp(x, 0.0, 1.0); }
 
 vec3 toWorldCoords(vec2 uv, float h) {
-    ivec2 size = textureSize(displacement_map, 0);
+    ivec2 size = imageSize(shadow_map);
     h = mix(heightRange.x, heightRange.y, h);
     vec3 p = vec3(uv.x, h, 1 - uv.y);
     p.xz -= 0.5; // [0, 1] -> [-0.5, 0.5]
@@ -110,7 +110,7 @@ bool inBounds(vec2 uv, float h) {
 
 bool  leftBounds = false;
 void main() {
-    ivec2 size = textureSize(displacement_map, 0);
+    ivec2 size = imageSize(shadow_map);
     ivec2 gid  = ivec2(gl_GlobalInvocationID.xy);
 
     if(enabled != 1) {

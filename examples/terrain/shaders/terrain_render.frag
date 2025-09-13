@@ -41,7 +41,7 @@ void main() {
     radiance = vec3(0);
 
     vec3 L = normalize(globals.lightDirection);
-    vec3 normal = -1 + 2 * texture(u_NormalSampler, f.uv).xzy;
+    vec3 normal = -1 + 2 * depthToNormal(u_NormalSampler, f.uv).xzy;
     vec3 N = normalize(normal);
     vec3 albedo = f.color;
 
