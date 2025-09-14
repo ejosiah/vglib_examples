@@ -9,3 +9,4 @@
 - noise height maps
 - erosion 
 - add night stars
+- pre recorded commands

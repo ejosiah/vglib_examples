@@ -40,6 +40,7 @@ void TerrainDemo::initApp() {
     initAtmosphere();
     initTerrain();
     initDisplacementShadowMap();
+    initClouds();
     clearColor(0, 0, 1);
 }
 
@@ -489,6 +490,11 @@ void TerrainDemo::createSamplers() {
 void TerrainDemo::initProfiler() {
     profiler = Profiler{ &device };
     profiler.externalReset = true;
+}
+
+void TerrainDemo::initClouds() {
+    clouds = std::make_unique<Clouds>(context, atmosphere->descriptor());
+    clouds->init();
 }
 
 int main(){

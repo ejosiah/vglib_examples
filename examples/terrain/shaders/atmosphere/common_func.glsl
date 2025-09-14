@@ -2,6 +2,30 @@
 //const float PI = 3.1415926535897932384626433832795;
 const float PLANET_RADIUS_OFFSET = 0.01;
 
+float saturate(float x) {
+	return clamp(x, 0, 1);
+}
+
+vec2 saturate(vec2 x) {
+	return clamp(x, vec2(0), vec2(1));
+}
+
+float ClampCosine(float mu) {
+	return clamp(mu, float(-1.0), float(1.0));
+}
+
+float ClampDistance(float d) {
+	return max(d, 0.0 * m);
+}
+
+float ClampRadius(AtmosphereParameters atmosphere, float r) {
+	return clamp(r, atmosphere.bottom_radius, atmosphere.top_radius);
+}
+
+float SafeSqrt(float a) {
+	return sqrt(max(a, 0.0 * m2));
+}
+
 /* Return sqrt clamped to 0 */
 float safeSqrt(float x)
 {
@@ -183,23 +207,22 @@ float raySphereIntersectNearest(vec3 r0, vec3 rd, vec3 s0, float sR)
  * @param worldDirecion - the direction in which the shift will be done
  * @param atmosphereBoundaries - x is bottom radius, y is top radius
  */
-bool moveToTopAtmosphere(inout vec3 worldPosition, vec3 worldDirection, vec2 atmosphereBoundaries)
-{ 
-	vec3 planetOrigin = vec3(0.0, 0.0, 0.0);
-	/* Check if the worldPosition is outside of the atmosphere */
-	if(length(worldPosition) > atmosphereBoundaries.y)
+bool MoveToTopAtmosphere(inout vec3 WorldPos, in vec3 WorldDir, in float AtmosphereTopRadius) {
+	float viewHeight = length(WorldPos);
+	if (viewHeight > AtmosphereTopRadius)
 	{
-		float distToTopAtmosphereIntersection = raySphereIntersectNearest(
-			worldPosition, worldDirection, planetOrigin, atmosphereBoundaries.y);
-
-		/* No intersection with the atmosphere */
-		if (distToTopAtmosphereIntersection == -1.0) { return false; }
+		float tTop = raySphereIntersectNearest(WorldPos, WorldDir, vec3(0.0f), AtmosphereTopRadius);
+		if (tTop >= 0.0f)
+		{
+			vec3 UpVector = WorldPos / viewHeight;
+			vec3 UpOffset = UpVector * -PLANET_RADIUS_OFFSET;
+			WorldPos = WorldPos + WorldDir * tTop + UpOffset;
+		}
 		else
 		{
-			vec3 upOffset = normalize(worldPosition) * -PLANET_RADIUS_OFFSET;
-			worldPosition += worldDirection * distToTopAtmosphereIntersection + upOffset;
+			// Ray is not intersecting the atmosphere
+			return false;
 		}
 	}
-	/* Position is in or at the top of the atmosphere */
-	return true;
+	return true;// ok to start tracing
 }

@@ -7,6 +7,8 @@ layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 
+#define skyViewImage global_images[nonuniformEXT(atm.skyViewImageIndex)]
+
 #include "common.glsl"
 
 void main() {

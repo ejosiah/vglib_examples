@@ -7,6 +7,9 @@ layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 
+#define transmittanceTexture global_textures[nonuniformEXT(atm.transmittanceTextureIndex)]
+#define multiScatteringImage global_images[nonuniformEXT(atm.multiScatteringImageIndex)]
+
 #include "common.glsl"
 
 shared vec3 MultiScatAs1SharedMem[64];

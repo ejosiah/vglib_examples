@@ -8,6 +8,7 @@
 #include "ComputePipelins.hpp"
 #include "AtmosphereModel.hpp"
 #include "Profiler.hpp"
+#include "Clouds.hpp"
 
 class TerrainDemo : public VulkanBaseApp{
 public:
@@ -33,6 +34,8 @@ protected:
     void initTerrain();
 
     void initAtmosphere();
+
+    void initClouds();
 
     void initBindlessDescriptor();
 
@@ -112,6 +115,7 @@ protected:
     std::unique_ptr<Terrain> terrain;
     std::unique_ptr<DisplacementShadowMap> displacementShadowMap;
     std::unique_ptr<AtmosphereModel> atmosphere;
+    std::unique_ptr<Clouds> clouds;
     Texture heightMap;
     Texture normalMap;
     ComputePipelines compute;

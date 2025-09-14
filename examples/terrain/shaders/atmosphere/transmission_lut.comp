@@ -8,32 +8,46 @@ layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 
-#include "common_defs.glsl"
-#include "bruneton/functions.glsl"
+#define transmittanceImage global_images[nonuniformEXT(atm.transmittanceImageIndex)]
 
-void GetRMuFromTransmittanceTextureUv(AtmosphereParameters atmosphere, vec2 uv, out float r, out float mu) {
-    ivec2 size = ivec2(TRANSMITTANCE_TEXTURE_SIZE.x, TRANSMITTANCE_TEXTURE_SIZE.y);
-    GetRMuFromTextureUv(atmosphere, uv, size, r, mu);
-}
+#include "common.glsl"
 
-vec3 ComputeTransmittanceToTopAtmosphereBoundary(AtmosphereParameters atmosphere, float r, float mu) {
-    return exp(-(
-    atmosphere.rayleigh_scattering * OPTICAL_DEPTH(atmosphere, atmosphere.rayleigh_density, r, mu) +
-    atmosphere.mie_extinction * OPTICAL_DEPTH(atmosphere, atmosphere.mie_density, r, mu) +
-    atmosphere.ozone_extinction * OPTICAL_DEPTH(atmosphere, atmosphere.ozone_density, r, mu)));
-}
+vec3 IntegrateTransmission(AtmosphereParameters Atmosphere, vec3 WorldPos, vec3 WorldDir, float SampleCount) {
+    float tMax = raySphereIntersectNearest(WorldPos, WorldDir, vec3(0), Atmosphere.top_radius);
+    if(tMax == 0) return vec3(0);
 
+    vec3 OpticalDepth = vec3(0.0);
 
-vec3 ComputeTransmittanceToTopAtmosphereBoundaryTexture(AtmosphereParameters atmosphere, vec2 frag_coord) {
-    float r;
-    float mu;
-    GetRMuFromTransmittanceTextureUv(atmosphere, frag_coord / vec2(TRANSMITTANCE_TEXTURE_SIZE), r, mu);
-    return ComputeTransmittanceToTopAtmosphereBoundary(atmosphere, r, mu);
+    const float dt = tMax / SampleCount;
+    for (int i = 0; i < SampleCount; ++i){
+        float t = float(i) * dt;
+        vec3 P = WorldPos + t * WorldDir;
+        const MediumSampleRGB medium = sampleMediumRGB(P, Atmosphere);
+        const vec3 SampleOpticalDepth = medium.extinction * dt;
+        OpticalDepth += SampleOpticalDepth;
+    }
+
+    return OpticalDepth;
 }
 
 void main() {
     ivec2 gid = ivec2(gl_GlobalInvocationID);
-    vec3 transmittance = ComputeTransmittanceToTopAtmosphereBoundaryTexture(ATMOSPHERE, vec2(gid + 0.5));
+    vec2 pixPos = vec2(gid) + 0.5f;
+    AtmosphereParameters Atmosphere = GetAtmosphereParameters();
+
+    // Compute camera position from LUT coords
+    vec2 uv = pixPos / TRANSMITTANCE_TEXTURE_SIZE_F;
+    float viewHeight;
+    float viewZenithCosAngle;
+    UvToLutTransmittanceParams(Atmosphere, viewHeight, viewZenithCosAngle, uv);
+
+    //  A few extra needed constants
+    vec3 WorldPos = vec3(0.0f, 0.0f, viewHeight);
+    vec3 WorldDir = vec3(0.0f, SafeSqrt(1.0 - viewZenithCosAngle * viewZenithCosAngle), viewZenithCosAngle);
+
+    vec3 OpticalDepth = IntegrateTransmission(Atmosphere, WorldPos, WorldDir, 40);
+    vec3 transmittance = exp(-OpticalDepth);
+
     imageStore(transmittanceImage, gid, vec4(transmittance, 0));
 }
 

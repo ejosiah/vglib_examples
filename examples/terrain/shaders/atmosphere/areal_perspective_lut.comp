@@ -11,6 +11,8 @@ layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 layout(set = 1, binding = 11) uniform writeonly image3D global_images_3d[];
 
+#define arealPerspectiveImage global_images_3d[nonuniformEXT(atm.arealPerspectiveImageIndex)]
+
 #include "common.glsl"
 
 

@@ -5,53 +5,10 @@
 
 #include "atm_uniforms.glsl"
 #include "common_defs.glsl"
-#include "bruneton/functions.glsl"
+#include "common_func.glsl"
 
-#define PLANET_RADIUS_OFFSET 0.01f
 #define SYNC_THREADS groupMemoryBarrier(); barrier();
 const float T_MAX_MAX = 9000000;
-
-float saturate(float x) {
-    return clamp(x, 0, 1);
-}
-
-vec2 saturate(vec2 x) {
-    return clamp(x, vec2(0), vec2(1));
-}
-
-// - r0: ray origin
-// - rd: normalized ray direction
-// - s0: sphere center
-// - sR: sphere radius
-// - Returns distance from r0 to first intersecion with sphere,
-//   or -1.0 if no intersection.
-float raySphereIntersectNearest(vec3 r0, vec3 rd, vec3 s0, float sR)
-{
-    float a = dot(rd, rd);
-    vec3 s0_r0 = r0 - s0;
-    float b = 2.0 * dot(rd, s0_r0);
-    float c = dot(s0_r0, s0_r0) - (sR * sR);
-    float delta = b * b - 4.0*a*c;
-    if (delta < 0.0 || a == 0.0)
-    {
-        return -1.0;
-    }
-    float sol0 = (-b - sqrt(delta)) / (2.0*a);
-    float sol1 = (-b + sqrt(delta)) / (2.0*a);
-    if (sol0 < 0.0 && sol1 < 0.0)
-    {
-        return -1.0;
-    }
-    if (sol0 < 0.0)
-    {
-        return max(0.0, sol1);
-    }
-    else if (sol1 < 0.0)
-    {
-        return max(0.0, sol0);
-    }
-    return max(0.0, min(sol0, sol1));
-}
 
 float hgPhase(float g, float cosTheta)
 {
@@ -66,13 +23,9 @@ float hgPhase(float g, float cosTheta)
     #endif
 }
 
-
-float fromUnitToSubUvs(float u, float resolution) { return (u + 0.5f / resolution) * (resolution / (resolution + 1.0f)); }
-float fromSubUvsToUnit(float u, float resolution) { return (u - 0.5f / resolution) * (resolution / (resolution - 1.0f)); }
-
 void UvToLutTransmittanceParams(AtmosphereParameters Atmosphere, out float viewHeight, out float viewZenithCosAngle, in vec2 uv)
 {
-    uv = vec2(fromSubUvsToUnit(uv.x, TRANSMITTANCE_TEXTURE_SIZE.y), fromSubUvsToUnit(uv.y, TRANSMITTANCE_TEXTURE_SIZE.y)); // No real impact so off
+//    uv = vec2(fromSubUvsToUnit(uv.x, TRANSMITTANCE_TEXTURE_SIZE.y), fromSubUvsToUnit(uv.y, TRANSMITTANCE_TEXTURE_SIZE.y)); // No real impact so off
     float x_mu = uv.x;
     float x_r = uv.y;
 
@@ -139,6 +92,18 @@ float getAlbedo(float scattering, float extinction)
 vec3 getAlbedo(vec3 scattering, vec3 extinction)
 {
     return scattering / max(vec3(0.001), extinction);
+}
+
+
+float GetLayerDensity(DensityProfileLayer layer, float altitude) {
+    float density = layer.exp_term * exp(layer.exp_scale * altitude) + layer.linear_term * altitude + layer.constant_term;
+    return clamp(density, float(0.0), float(1.0));
+}
+
+float GetProfileDensity(DensityProfile profile, float altitude) {
+    return altitude < profile.layers[0].width ?
+    GetLayerDensity(profile.layers[0], altitude) :
+    GetLayerDensity(profile.layers[1], altitude);
 }
 
 
@@ -217,31 +182,6 @@ float interspectAtmosphere(AtmosphereParameters Atmosphere, vec3 WorldPos, vec3 
     return tMin;
 }
 
-
-vec3 IntegrateTransmission(AtmosphereParameters Atmosphere, vec3 WorldPos, vec3 WorldDir, float SampleCount, ivec2 gid) {
-    float tMax = raySphereIntersectNearest(WorldPos, WorldDir, vec3(0), Atmosphere.top_radius);
-    if(tMax == 0) return vec3(0);
-
-    vec3 OpticalDepth = vec3(0.0);
-
-    if(gid.x == 0 && gid.y == 0) {
-        vec3 wp = WorldPos;
-        vec3 wd = WorldDir;
-        debugPrintfEXT("wp: [%f, %f, %f], wd: [%f, %f, %f], tMax: %f\n", wp.x, wp.y, wp.z, wd.x, wd.y, wd.z, tMax);;
-    }
-
-
-    const float dt = tMax / SampleCount;
-    for (int i = 0; i < SampleCount; ++i){
-        float t = float(i) * dt;
-        vec3 P = WorldPos + t * WorldDir;
-        const MediumSampleRGB medium = sampleMediumRGB(P, Atmosphere);
-        const vec3 SampleOpticalDepth = medium.extinction * dt;
-        OpticalDepth += SampleOpticalDepth;
-    }
-
-    return OpticalDepth;
-}
 
 SingleScatteringResult IntegrateScatteredLuminance(
 in vec2 pixPos, in vec3 WorldPos, in vec3 WorldDir, in vec3 SunDir, in AtmosphereParameters Atmosphere,
@@ -461,25 +401,6 @@ in bool MieRayPhase, in float tMaxMax)
     return result;
 }
 
-bool MoveToTopAtmosphere(inout vec3 WorldPos, in vec3 WorldDir, in float AtmosphereTopRadius) {
-    float viewHeight = length(WorldPos);
-    if (viewHeight > AtmosphereTopRadius)
-    {
-        float tTop = raySphereIntersectNearest(WorldPos, WorldDir, vec3(0.0f), AtmosphereTopRadius);
-        if (tTop >= 0.0f)
-        {
-            vec3 UpVector = WorldPos / viewHeight;
-            vec3 UpOffset = UpVector * -PLANET_RADIUS_OFFSET;
-            WorldPos = WorldPos + WorldDir * tTop + UpOffset;
-        }
-        else
-        {
-            // Ray is not intersecting the atmosphere
-            return false;
-        }
-    }
-    return true;// ok to start tracing
-}
 
 #define NONLINEARSKYVIEWLUT 1
 void UvToSkyViewLutParams(AtmosphereParameters Atmosphere, out float viewZenithCosAngle, out float lightViewCosAngle, in float viewHeight, in vec2 uv)
