@@ -15,7 +15,10 @@
 layout(set = 0, binding = 0, scalar) uniform Uniforms {
     mat4 viewProjection;
     ivec4 mouse;
+    vec3 windDirection;
+    float windSpeed;
     vec3 cameraPosition;
+    float cloudTopOffset;
     float cloudMinHeight;
     float cloudMaxHeight;
     float coverage;
@@ -23,6 +26,7 @@ layout(set = 0, binding = 0, scalar) uniform Uniforms {
     float precipitation;
     float eccentricity;
     float scale;
+    float time;
     uint lowFrequencyNoisesIndex;
     uint highFrequencyNoisesIndex;
 } u;
@@ -95,7 +99,15 @@ float densityHeightGradientForPoint(vec3 p, float height, float cloud_type){
 }
 
 float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float cloud_coverage) {
+    float windSpeed = u.windSpeed;
+    float cloudTopOffset = u.cloudTopOffset;
+
+    vec3 pp = p;
+    p += height_fraction * u.windDirection * u.cloudTopOffset;
+    p += (u.windDirection + vec3(0, 1, 0)) * u.time * windSpeed;
+
     vec3 sp = p/u.scale;
+
     vec4 noiseComp = texture(lowFreqencyNoises, sp);
     float perlinWorly = noiseComp.x;
     float wfbm = dot(vec3(.625, .25, .125), noiseComp.gba);
@@ -106,7 +118,7 @@ float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float 
     density = remap(density, 1 - cloud_coverage, 1, 0, 1);
     density *= cloud_coverage;
 
-    vec3 highNoise = texture(highFreqencyNoises, p * 0.1).rgb;
+    vec3 highNoise = texture(highFreqencyNoises, p /(u.scale * 5)).rgb;
     float highFreqencyFBM = dot(highNoise, vec3(.625, .25, .125));
     float highFreqencyNoiseModifier = mix(highFreqencyFBM, 1 - highFreqencyFBM, clamp(height_fraction * 10, 0, 1));
     density = remap(density, highFreqencyNoiseModifier * 0.2, 1.0, 0.0, 1.0);
@@ -138,26 +150,14 @@ void main() {
 
         if(depth > tMin) {
             const float minSteps = 64;
-            const float maxSteps = 256;
-//            const float numSteps = mix(maxSteps, minSteps, direction.y);
-            const float numSteps = maxSteps;
-            const float stepStride = 1;
+            const float maxSteps = 128;
+            const float numSteps = mix(maxSteps, minSteps, direction.y);
             const float offset = 0.5;
             vec3 origin = cameraPos + direction * tMin;
             const float ct = u.cloudType;
             const float cc = u.coverage;
             float limit = tMax - tMin;
             float dt = limit/numSteps;
-
-//            vec4 clipPos = u.viewProjection * vec4(origin, 1);
-//            clipPos /= clipPos.w;
-//            gl_FragDepth = clipPos.z;
-//
-//            ivec2 fc = ivec2(gl_FragCoord);
-//            if(u.mouse.z == 1 && u.mouse.x == fc.x && u.mouse.y == fc.y) {
-//                vec3 o = origin;
-//                debugPrintfEXT("o: [%f, %f, %f], t: [%f, %f], depth: %f, clipZ: %f\n", o.x, o.y, o.z, tMin, tMax, depth, clipPos.z);
-//            }
 
             bool firstHit = true;
             for(int i = 0; i < numSteps; i++) {
@@ -168,13 +168,6 @@ void main() {
                 float pa = clamp(density - (density * fragColor.a), 0, 1);
                 fragColor.rgb = pa * vec3(density) + fragColor.rgb;
                 fragColor.a += pa;
-
-                if(firstHit && density > 0) {
-                    vec4 clipPos = u.viewProjection * vec4(sp, 1);
-                    clipPos /= clipPos.w;
-                    gl_FragDepth = clipPos.z;
-
-                }
 
                 if(fragColor.a > 0.999) break;
             }

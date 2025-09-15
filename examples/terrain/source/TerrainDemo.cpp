@@ -323,7 +323,7 @@ void TerrainDemo::update(float time) {
     if(!ImGui::IsAnyItemActive()){
         camera->update(time);
     }
-
+    context.elapsedTime = time;
     setTitle(fmt::format("{}, camera - {}, direction - {}, lightDirection - {}, nodes - {}, FPS - {}", title, camera->position(), camera->viewDir, lightDirection, terrain->nodeCount(), framePerSecond));
 }
 

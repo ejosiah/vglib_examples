@@ -47,7 +47,10 @@ private:
     struct UniformData {
         glm::mat4 viewProjection{1};
         glm::ivec4 mouse{0};
+        glm::vec3 windDirection{1, 0, 0};
+        float windSpeed{0.1};
         glm::vec3 cameraPosition{0};
+        float cloudTopOffset{0.5};
         float cloudMinHeight{1.5};
         float cloudMaxHeight{4};
         float coverage{0.55};
@@ -55,6 +58,7 @@ private:
         float precipitation{0};
         float eccentricity{0.2};
         float scale{5.641};
+        float time{0};
         uint lowFrequencyTexIndex{~0u};
         uint highFrequencyTexIndex{~0u};
     };

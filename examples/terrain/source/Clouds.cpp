@@ -36,7 +36,8 @@ void Clouds::controls(bool show) {
     ImGui::SliderFloat("coverage", &m_uniforms.cpu->coverage, 0, 1);
     ImGui::SliderFloat("type", &m_uniforms.cpu->cloudType, 0, 1);
     ImGui::SliderFloat("Precipitation", &m_uniforms.cpu->precipitation, 0, 1);
-    ImGui::SliderFloat("scale", &m_uniforms.cpu->scale, 1, 100);
+    ImGui::SliderFloat("Scale", &m_uniforms.cpu->scale, 1, 100);
+    ImGui::SliderFloat("Wind speed", &m_uniforms.cpu->windSpeed, 0, 1);
     ImGui::End();
 }
 
@@ -179,5 +180,5 @@ void Clouds::createRenderPipelines() {
 }
 
 void Clouds::endFrame() {
-
+    m_uniforms.cpu->time += 0.0166666;
 }

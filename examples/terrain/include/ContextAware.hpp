@@ -21,6 +21,7 @@ struct Context {
     glm::ivec4 mouse{0};
     glm::vec3 lightDirection{};
     float lightIntensity{1};
+    float elapsedTime{0};
     uint screenWidth;
     uint screenHeight;
     uint dmap_tex_index{~0u};
