@@ -129,7 +129,7 @@ protected:
 
     struct {
         float lightZenith{15};
-        float lightAzimuth{80};
+        float lightAzimuth{223};
         bool debug{true};
     } options;
     VulkanSampler edgeClampSampler;

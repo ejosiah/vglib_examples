@@ -18,6 +18,8 @@ public:
 
     float printPerfStats();
 
+    void endFrame();
+
 protected:
     Context& context() final;
 
@@ -26,6 +28,12 @@ protected:
     void initQuery();
 
     void createCloudShape();
+
+    void createDescriptorSetLayout();
+
+    void updateDescriptorSet();
+
+    void createRenderPipelines();
 
 private:
     Context* m_context{};
@@ -37,6 +45,16 @@ private:
     } m_shape;
 
     struct UniformData {
+        glm::mat4 viewProjection{1};
+        glm::ivec4 mouse{0};
+        glm::vec3 cameraPosition{0};
+        float cloudMinHeight{1.5};
+        float cloudMaxHeight{4};
+        float coverage{0.55};
+        float cloudType{0};
+        float precipitation{0};
+        float eccentricity{0.2};
+        float scale{5.641};
         uint lowFrequencyTexIndex{~0u};
         uint highFrequencyTexIndex{~0u};
     };
@@ -46,5 +64,9 @@ private:
         UniformData* cpu{};
     } m_uniforms;
 
+    VulkanDescriptorSetLayout m_descriptorSetLayout;
+    VkDescriptorSet m_descriptorSet{};
+
     std::string m_query{"cloud render"};
+    std::array<VkDescriptorSet, 4> m_sets;
 };

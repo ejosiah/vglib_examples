@@ -47,14 +47,14 @@ void TerrainDemo::initApp() {
 void TerrainDemo::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = 60.0f;
-    cameraSettings.zFar = 64000;
+    cameraSettings.zFar = 1000 * km;
     cameraSettings.zNear = 1;
     cameraSettings.acceleration = glm::vec3(500);
     cameraSettings.velocity = glm::vec3(1000);
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->lookAt({5414, 952, 11846}, {-0.7, 0, -0.7}, {0, 1, 0});
+    camera->lookAt({3732, 43, 16265}, {-0.69, 0.02, -0.7}, {0, 1, 0});
 }
 
 void TerrainDemo::initBindlessDescriptor() {
@@ -251,6 +251,8 @@ void TerrainDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
         terrain->render(commandBuffer);
         atmosphere->renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
+        clouds->render(commandBuffer);
+        localReadBarrier(commandBuffer);
         atmosphere->renderArealPerspective(commandBuffer);
         localReadBarrier(commandBuffer);
         toneMap(commandBuffer);
@@ -270,17 +272,20 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     static bool atmosphereOpen = false;
     static bool lightOpen = false;
     static bool perfOpen = false;
+    static bool cloudsOpen = false;
 
     ImGui::Begin("Controls");
     ImGui::SetWindowSize({0, 0});
     ImGui::Checkbox("Terrain", &terrainOpen);
     ImGui::Checkbox("Atmosphere", &atmosphereOpen);
     ImGui::Checkbox("Lighting", &lightOpen);
+    ImGui::Checkbox("clouds", &cloudsOpen);
     ImGui::Checkbox("Performance", &perfOpen);
     ImGui::End();
 
     terrain->controls(terrainOpen);
     atmosphere->controls(atmosphereOpen);
+    clouds->controls(cloudsOpen);
 
     if(lightOpen) {
         ImGui::Begin("Lighting");
@@ -382,6 +387,7 @@ void TerrainDemo::initAtmosphere() {
 
 void TerrainDemo::endFrame() {
     terrain->endFrame();
+    clouds->endFrame();
     profiler.endFrame();
 }
 
@@ -403,6 +409,7 @@ void TerrainDemo::newFrame() {
 
     atmosphere->newFrame();
     terrain->newFrame();
+    clouds->newFrame();
 }
 
 void TerrainDemo::createComputePipelines() {
@@ -508,6 +515,7 @@ int main(){
         settings.enableBindlessDescriptors = true;
         settings.enabledFeatures.geometryShader = true;
         settings.enabledFeatures.tessellationShader = true;
+        settings.enabledFeatures.independentBlend = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);

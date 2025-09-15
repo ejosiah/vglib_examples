@@ -40,8 +40,6 @@ float fromUnitToSubUvs(float u, float resolution) {
 	 return (u + 0.5f / resolution) * (resolution / (resolution + 1.0));
 }
 
-
-
 /**
  * Get parameters used for skyViewLUT computation for texel with provided uv coords
  * @param uv - texel uv in the range [0,1]

@@ -18,7 +18,7 @@ struct Context {
     glm::mat4 inverseViewProjection{1};
     glm::mat4 inverseView{1};
     glm::mat4 inverseProjection{1};
-    glm::ivec4 mouse;
+    glm::ivec4 mouse{0};
     glm::vec3 lightDirection{};
     float lightIntensity{1};
     uint screenWidth;
