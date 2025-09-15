@@ -549,7 +549,6 @@ float Terrain::printPerfStats() {
     auto total = 0.0f;
 
     if (ImGui::TreeNode("Terrain")) {
-        // Leaf flags so they render as rows without opening/closing arrows
         ImGuiTreeNodeFlags leaf = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
         for(auto name : queryIds) {

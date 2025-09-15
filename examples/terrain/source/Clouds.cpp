@@ -8,7 +8,7 @@ Clouds::Clouds(Context &context, AtmosphereModel::Descriptor atmDescriptor)
     , m_atmosphereDescriptor{atmDescriptor} {}
 
 void Clouds::init() {
-//    initQuery();
+    initQuery();
     initUniforms();
     createCloudShape();
     createDescriptorSetLayout();
@@ -23,9 +23,11 @@ void Clouds::newFrame() {
 }
 
 void Clouds::render(VkCommandBuffer commandBuffer) {
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
-    AppContext::renderClipSpaceQuad(commandBuffer);
+    profiler().profile(m_query, commandBuffer, [&]{
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, m_sets.size(), m_sets.data(), 0, VK_NULL_HANDLE);
+        AppContext::renderClipSpaceQuad(commandBuffer);
+    });
 }
 
 void Clouds::controls(bool show) {
@@ -42,7 +44,19 @@ void Clouds::controls(bool show) {
 }
 
 float Clouds::printPerfStats() {
-    return 0;
+    const auto toMillis = 1e-6f;
+    auto total = 0.0f;
+
+    if (ImGui::TreeNode("Clouds")) {
+        ImGuiTreeNodeFlags leaf = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+        auto duration = profiler().queries[m_query].movingAverage.value * toMillis;
+        ImGui::TreeNodeEx(m_query.c_str(), leaf, "%s: %f ms", m_query.c_str(), duration);
+        total += duration;
+        ImGui::TreeNodeEx("total", leaf, "total: %f ms", total);
+        ImGui::TreePop();
+    }
+    return total;
 }
 
 Context &Clouds::context() {

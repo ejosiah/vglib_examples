@@ -118,6 +118,8 @@ float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float 
     density = remap(density, 1 - cloud_coverage, 1, 0, 1);
     density *= cloud_coverage;
 
+    if(density <= 0) return 0.0;
+
     vec3 highNoise = texture(highFreqencyNoises, p /(u.scale * 5)).rgb;
     float highFreqencyFBM = dot(highNoise, vec3(.625, .25, .125));
     float highFreqencyNoiseModifier = mix(highFreqencyFBM, 1 - highFreqencyFBM, clamp(height_fraction * 10, 0, 1));
@@ -173,4 +175,5 @@ void main() {
             }
         }
     }
+    fragColor.rgb *= 10;
 }

@@ -311,6 +311,7 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
         total += displacementShadowMap->printPerfStats();
         total += terrain->printPerfStats();
         total += atmosphere->printPerfStats();
+        total += clouds->printPerfStats();
 
         ImGui::Text("total frame time: %f ms", total);
         ImGui::End();
