@@ -147,15 +147,19 @@ vec4 rayTrace(vec3 origin, vec3 direction, float rayLength, float numSteps) {
 
     float density = 0;
     vec4 result = vec4(0);
+    float transmission = 1;
     for(int i = 0; i < numSteps; i++) {
         float t = (i + 0.3) * dt;
         vec3 sp = origin + direction * t;
         float h = getHeightFraction(sp);
 
         float density = sampleCloudDensity(sp, h, ct, cc, lod, u.detailedSamples == 1);
-        float pa = clamp(density - (density * result.a), 0, 1);
-        result.rgb = pa * vec3(density) + result.rgb;
-        result.a += pa;
+
+        float stepTransmission = exp(-density * dt);
+        transmission *= stepTransmission;
+
+        result.a += (1 - stepTransmission) * (1 - result.a);
+        result.rgb += transmission * vec3(density);
 
         if(result.a > 0.999) break;
     }
@@ -182,10 +186,10 @@ void main() {
     const float minSteps = 64;
     const float maxSteps = float(u.maxSteps);
 
-    // TODO up direction is not always going to be vec3(0, 1, 0) use dot(camDirection, updirection)
-    const float numSteps = mix(maxSteps, minSteps, direction.y);
+//    const float numSteps = mix(maxSteps, minSteps, direction.y);
+    const float numSteps = maxSteps;  // TODO rather than taking more steps at the horizon take more steps closer to the viewer
     vec3 origin = cameraPos + direction * tMin;
 
     vec4 result = rayTrace(origin, direction, tMax - tMin, numSteps);
-    fragColor = vec4(result.rgb * 10, result.a);
+    fragColor = vec4(result.rgb, result.a);
 }

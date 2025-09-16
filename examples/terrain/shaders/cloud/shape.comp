@@ -12,7 +12,7 @@ layout(set = 0, binding = 11) writeonly uniform image3D global_images[];
 #define highFreqencyNoises global_images[nonuniformEXT(highFrequencyNoisesIndex)]
 
 layout(push_constant) uniform Constants {
-    uint lfSize;
+    uvec3 lfSize;
     uint hfSize;
     uint lowFrequencyNoisesIndex;
     uint highFrequencyNoisesIndex;
@@ -21,7 +21,7 @@ layout(push_constant) uniform Constants {
 
 void main(){
     ivec3 gid = ivec3(gl_GlobalInvocationID);
-    vec3 uv = vec3(gid)/float(lfSize);
+    vec3 uv = vec3(gid)/vec3(lfSize);
 
     vec4 col = vec4(0.);
 

@@ -81,13 +81,13 @@ void Clouds::initQuery() {
 }
 
 void Clouds::createCloudShape() {
-    static uint lSize = 256;
-    static uint hSize = 128;
-    textures::createNoTransition(device(), m_shape.lowFrequency, VK_IMAGE_TYPE_3D, VK_FORMAT_R16G16B16A16_SFLOAT, glm::uvec3{lSize});
+    static glm::uvec3 lSize{128, 32, 128};
+    static uint hSize = 32;
+    textures::createNoTransition(device(), m_shape.lowFrequency, VK_IMAGE_TYPE_3D, VK_FORMAT_R16G16B16A16_SFLOAT, lSize);
     textures::createNoTransition(device(), m_shape.highFrequency, VK_IMAGE_TYPE_3D, VK_FORMAT_R16G16B16A16_SFLOAT, glm::uvec3{hSize});
 
     struct {
-        uint lfSize;
+        glm::uvec3 lfSize;
         uint hfSize;
         uint lowFrequencyNoisesIndex;
         uint highFrequencyNoisesIndex;
@@ -116,8 +116,8 @@ void Clouds::createCloudShape() {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("cloud_shape"), 0, 1, &bindlessDescriptor().descriptorSet, 0, 0);
         vkCmdPushConstants(commandBuffer, compute.layout("cloud_shape"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
 
-        uint gs = lSize/8;
-        vkCmdDispatch(commandBuffer, gs, gs, gs);
+        auto gs = lSize/8u;
+        vkCmdDispatch(commandBuffer, gs.x, gs.y, gs.z);
 
         Barriers::push(m_shape.lowFrequency.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                        VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -191,7 +191,7 @@ void Clouds::createRenderPipelines() {
                     .enableBlend()
                     .colorBlendOp().add()
                     .alphaBlendOp().add()
-                    .srcColorBlendFactor().srcAlpha()
+                    .srcColorBlendFactor().one()
                     .dstColorBlendFactor().oneMinusSrcAlpha()
                     .srcAlphaBlendFactor().one()
                     .dstAlphaBlendFactor().one()
