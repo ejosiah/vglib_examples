@@ -40,7 +40,8 @@ void Clouds::controls(bool show) {
     ImGui::SetWindowSize({0, 0});
     dirty |= ImGui::SliderFloat("coverage", &m_uniforms.cpu->coverage, 0, 1);
     dirty |= ImGui::SliderFloat("type", &m_uniforms.cpu->cloudType, 0, 1);
-    dirty |= ImGui::SliderFloat("Precipitation", &m_uniforms.cpu->precipitation, 0, 1);
+    dirty |= ImGui::SliderFloat("Precipitation", &m_uniforms.cpu->precipitation, 1, 20);
+    dirty |= ImGui::SliderFloat("eccentricity", &m_uniforms.cpu->eccentricity, 0, 0.999);
     dirty |= ImGui::SliderFloat("Scale", &m_uniforms.cpu->scale, 1, 100);
     dirty |= ImGui::SliderFloat("Wind speed", &m_uniforms.cpu->windSpeed, 0, 1);
     dirty |= ImGui::SliderInt("sample noise", &maxSteps, 64, 512);
@@ -81,8 +82,11 @@ void Clouds::initQuery() {
 }
 
 void Clouds::createCloudShape() {
-    static glm::uvec3 lSize{128, 32, 128};
+    static glm::uvec3 lSize{128, 128, 128};
     static uint hSize = 32;
+    m_shape.lowFrequency.levels = to<uint>(std::log2(lSize.x) + 1);
+    m_shape.highFrequency.levels = to<uint>(std::log2(hSize) + 1);
+
     textures::createNoTransition(device(), m_shape.lowFrequency, VK_IMAGE_TYPE_3D, VK_FORMAT_R16G16B16A16_SFLOAT, lSize);
     textures::createNoTransition(device(), m_shape.highFrequency, VK_IMAGE_TYPE_3D, VK_FORMAT_R16G16B16A16_SFLOAT, glm::uvec3{hSize});
 

@@ -40,23 +40,6 @@ void UvToLutTransmittanceParams(AtmosphereParameters Atmosphere, out float viewH
     viewZenithCosAngle = clamp(viewZenithCosAngle, -1.0, 1.0);
 }
 
-void LutTransmittanceParamsToUv(AtmosphereParameters Atmosphere, in float viewHeight, in float viewZenithCosAngle, out vec2 uv)
-{
-    float H = sqrt(max(0.0f, Atmosphere.top_radius * Atmosphere.top_radius - Atmosphere.bottom_radius * Atmosphere.bottom_radius));
-    float rho = sqrt(max(0.0f, viewHeight * viewHeight - Atmosphere.bottom_radius * Atmosphere.bottom_radius));
-
-    float discriminant = viewHeight * viewHeight * (viewZenithCosAngle * viewZenithCosAngle - 1.0) + Atmosphere.top_radius * Atmosphere.top_radius;
-    float d = max(0.0, (-viewHeight * viewZenithCosAngle + sqrt(discriminant)));// Distance to atmosphere boundary
-
-    float d_min = Atmosphere.top_radius - viewHeight;
-    float d_max = rho + H;
-    float x_mu = (d - d_min) / (d_max - d_min);
-    float x_r = rho / H;
-
-    uv = vec2(x_mu, x_r);
-    //uv = vec2(fromUnitToSubUvs(uv.x, TRANSMITTANCE_TEXTURE_WIDTH), fromUnitToSubUvs(uv.y, TRANSMITTANCE_TEXTURE_HEIGHT)); // No real impact so off
-}
-
 
 float RayleighPhase(float cosTheta)
 {
