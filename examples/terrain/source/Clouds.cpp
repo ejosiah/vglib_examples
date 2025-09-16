@@ -33,14 +33,27 @@ void Clouds::render(VkCommandBuffer commandBuffer) {
 void Clouds::controls(bool show) {
     if(!show) return;
 
+    static bool dirty = false;
+    bool detailedSamples = m_uniforms.cpu->detailedSamples == 1;
+    bool sampleNoise = m_uniforms.cpu->sampleNoise == 1;
     ImGui::Begin("Clouds");
     ImGui::SetWindowSize({0, 0});
-    ImGui::SliderFloat("coverage", &m_uniforms.cpu->coverage, 0, 1);
-    ImGui::SliderFloat("type", &m_uniforms.cpu->cloudType, 0, 1);
-    ImGui::SliderFloat("Precipitation", &m_uniforms.cpu->precipitation, 0, 1);
-    ImGui::SliderFloat("Scale", &m_uniforms.cpu->scale, 1, 100);
-    ImGui::SliderFloat("Wind speed", &m_uniforms.cpu->windSpeed, 0, 1);
+    dirty |= ImGui::SliderFloat("coverage", &m_uniforms.cpu->coverage, 0, 1);
+    dirty |= ImGui::SliderFloat("type", &m_uniforms.cpu->cloudType, 0, 1);
+    dirty |= ImGui::SliderFloat("Precipitation", &m_uniforms.cpu->precipitation, 0, 1);
+    dirty |= ImGui::SliderFloat("Scale", &m_uniforms.cpu->scale, 1, 100);
+    dirty |= ImGui::SliderFloat("Wind speed", &m_uniforms.cpu->windSpeed, 0, 1);
+    dirty |= ImGui::Checkbox("detailed", &detailedSamples);
+    dirty |= ImGui::Checkbox("sample noise", &sampleNoise);
     ImGui::End();
+
+    m_uniforms.cpu->detailedSamples = int(detailedSamples);
+    m_uniforms.cpu->sampleNoise = int(sampleNoise);
+
+    if(dirty) {
+        profiler().clear(m_query);
+        dirty = false;
+    }
 }
 
 float Clouds::printPerfStats() {

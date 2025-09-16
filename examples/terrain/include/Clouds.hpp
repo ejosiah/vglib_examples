@@ -59,6 +59,8 @@ private:
         float eccentricity{0.2};
         float scale{5.641};
         float time{0};
+        uint detailedSamples{1};
+        uint sampleNoise{0};
         uint lowFrequencyTexIndex{~0u};
         uint highFrequencyTexIndex{~0u};
     };

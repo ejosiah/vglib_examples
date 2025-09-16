@@ -27,6 +27,8 @@ layout(set = 0, binding = 0, scalar) uniform Uniforms {
     float eccentricity;
     float scale;
     float time;
+    uint detailedSamples;
+    uint sampleNoise;
     uint lowFrequencyNoisesIndex;
     uint highFrequencyNoisesIndex;
 } u;
@@ -98,7 +100,7 @@ float densityHeightGradientForPoint(vec3 p, float height, float cloud_type){
     return smoothstep(cloudGradient.x, cloudGradient.y, height) - smoothstep(cloudGradient.z, cloudGradient.w, height);
 }
 
-float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float cloud_coverage) {
+float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float cloud_coverage, float lod, bool detailed) {
     float windSpeed = u.windSpeed;
     float cloudTopOffset = u.cloudTopOffset;
 
@@ -108,7 +110,7 @@ float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float 
 
     vec3 sp = p/u.scale;
 
-    vec4 noiseComp = texture(lowFreqencyNoises, sp);
+    vec4 noiseComp = textureLod(lowFreqencyNoises, sp, lod);
     float perlinWorly = noiseComp.x;
     float wfbm = dot(vec3(.625, .25, .125), noiseComp.gba);
     float density = remap(perlinWorly, wfbm - 1, 1, 0, 1);
@@ -119,8 +121,9 @@ float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float 
     density *= cloud_coverage;
 
     if(density <= 0) return 0.0;
+    if(!detailed) return density;
 
-    vec3 highNoise = texture(highFreqencyNoises, p /(u.scale * 5)).rgb;
+    vec3 highNoise = textureLod(highFreqencyNoises, p * 0.5, lod).rgb;
     float highFreqencyFBM = dot(highNoise, vec3(.625, .25, .125));
     float highFreqencyNoiseModifier = mix(highFreqencyFBM, 1 - highFreqencyFBM, clamp(height_fraction * 10, 0, 1));
     density = remap(density, highFreqencyNoiseModifier * 0.2, 1.0, 0.0, 1.0);
@@ -137,43 +140,51 @@ float getHeightFraction(vec3 p) {
 }
 
 void main() {
+    fragColor = vec4(0);
+
     vec3 earth = vec3(0, atmosphere.bottom_radius, 0);
     vec3 cameraPos = localUnitsToAtmosphere(u.cameraPosition) + earth;
     vec3 direction = normalize(fs_in.viewDirection);
     vec3 color = vec3(0);
 
+
     float tMin, tMax;
+    bool hit = intersectsCloudShell(cameraPos, direction, tMin, tMax, color);
+    if(!hit) return;
+
+    float depth = getWorldDepth(fs_in.uv);
+    if(depth < tMin) return;
+
+    const float minSteps = 64;
+    const float maxSteps = 128;
+
+    // TODO up direction is not always going to be vec3(0, 1, 0) use dot(camDirection, updirection)
+    const float numSteps = mix(maxSteps, minSteps, direction.y);
+    vec3 origin = cameraPos + direction * tMin;
+    const float ct = u.cloudType;
+    const float cc = u.coverage;
+    float limit = tMax - tMin;
+    float dt = limit/numSteps;
+    float lod = 0.0;
+    bool detailedSamples = true;
+    bool cheapSamples = false;
+
     float density = 0;
-    fragColor = vec4(0);
-    bool hit = false;
-    if(intersectsCloudShell(cameraPos, direction, tMin, tMax, color)) {
-        hit = true;
-        float depth = getWorldDepth(fs_in.uv);
+    float cloudTest = 0;
+    int zeroDensitySampleCount = 0;
+    bool firstHit = true;
+    for(int i = 0; i < numSteps; i++) {
+        float t = (i + 0.3) * dt;
+        vec3 sp = origin + direction * t;
+        float h = getHeightFraction(sp);
 
-        if(depth > tMin) {
-            const float minSteps = 64;
-            const float maxSteps = 128;
-            const float numSteps = mix(maxSteps, minSteps, direction.y);
-            const float offset = 0.5;
-            vec3 origin = cameraPos + direction * tMin;
-            const float ct = u.cloudType;
-            const float cc = u.coverage;
-            float limit = tMax - tMin;
-            float dt = limit/numSteps;
+        float density = sampleCloudDensity(sp, h, ct, cc, lod, u.detailedSamples == 1);
+        float pa = clamp(density - (density * fragColor.a), 0, 1);
+        fragColor.rgb = pa * vec3(density) + fragColor.rgb;
+        fragColor.a += pa;
 
-            bool firstHit = true;
-            for(int i = 0; i < numSteps; i++) {
-                float t = (i + 0.3) * dt;
-                vec3 sp = origin + direction * t;
-                float h = getHeightFraction(sp);
-                float density = sampleCloudDensity(sp, h, ct, cc);
-                float pa = clamp(density - (density * fragColor.a), 0, 1);
-                fragColor.rgb = pa * vec3(density) + fragColor.rgb;
-                fragColor.a += pa;
-
-                if(fragColor.a > 0.999) break;
-            }
-        }
+        if(fragColor.a > 0.999) break;
     }
+
     fragColor.rgb *= 10;
 }
