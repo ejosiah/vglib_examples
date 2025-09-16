@@ -35,7 +35,7 @@ void Clouds::controls(bool show) {
 
     static bool dirty = false;
     bool detailedSamples = m_uniforms.cpu->detailedSamples == 1;
-    bool sampleNoise = m_uniforms.cpu->sampleNoise == 1;
+    int maxSteps = int(m_uniforms.cpu->maxSteps);
     ImGui::Begin("Clouds");
     ImGui::SetWindowSize({0, 0});
     dirty |= ImGui::SliderFloat("coverage", &m_uniforms.cpu->coverage, 0, 1);
@@ -43,12 +43,12 @@ void Clouds::controls(bool show) {
     dirty |= ImGui::SliderFloat("Precipitation", &m_uniforms.cpu->precipitation, 0, 1);
     dirty |= ImGui::SliderFloat("Scale", &m_uniforms.cpu->scale, 1, 100);
     dirty |= ImGui::SliderFloat("Wind speed", &m_uniforms.cpu->windSpeed, 0, 1);
+    dirty |= ImGui::SliderInt("sample noise", &maxSteps, 64, 512);
     dirty |= ImGui::Checkbox("detailed", &detailedSamples);
-    dirty |= ImGui::Checkbox("sample noise", &sampleNoise);
     ImGui::End();
 
     m_uniforms.cpu->detailedSamples = int(detailedSamples);
-    m_uniforms.cpu->sampleNoise = int(sampleNoise);
+    m_uniforms.cpu->maxSteps = uint(maxSteps);
 
     if(dirty) {
         profiler().clear(m_query);

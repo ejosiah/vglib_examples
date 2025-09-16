@@ -28,7 +28,7 @@ layout(set = 0, binding = 0, scalar) uniform Uniforms {
     float scale;
     float time;
     uint detailedSamples;
-    uint sampleNoise;
+    uint maxSteps;
     uint lowFrequencyNoisesIndex;
     uint highFrequencyNoisesIndex;
 } u;
@@ -128,7 +128,7 @@ float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float 
     float highFreqencyNoiseModifier = mix(highFreqencyFBM, 1 - highFreqencyFBM, clamp(height_fraction * 10, 0, 1));
     density = remap(density, highFreqencyNoiseModifier * 0.2, 1.0, 0.0, 1.0);
 
-    return density;
+    return clamp(density, 0, 1);
 }
 
 float getHeightFraction(vec3 p) {
@@ -137,6 +137,30 @@ float getHeightFraction(vec3 p) {
     float x = length(p);
 
     return (x - cMin)/(cMax - cMin);
+}
+
+vec4 rayTrace(vec3 origin, vec3 direction, float rayLength, float numSteps) {
+    const float ct = u.cloudType;
+    const float cc = u.coverage;
+    float dt = rayLength/numSteps;
+    float lod = 0.0;
+
+    float density = 0;
+    vec4 result = vec4(0);
+    for(int i = 0; i < numSteps; i++) {
+        float t = (i + 0.3) * dt;
+        vec3 sp = origin + direction * t;
+        float h = getHeightFraction(sp);
+
+        float density = sampleCloudDensity(sp, h, ct, cc, lod, u.detailedSamples == 1);
+        float pa = clamp(density - (density * result.a), 0, 1);
+        result.rgb = pa * vec3(density) + result.rgb;
+        result.a += pa;
+
+        if(result.a > 0.999) break;
+    }
+
+    return result;
 }
 
 void main() {
@@ -156,35 +180,12 @@ void main() {
     if(depth < tMin) return;
 
     const float minSteps = 64;
-    const float maxSteps = 128;
+    const float maxSteps = float(u.maxSteps);
 
     // TODO up direction is not always going to be vec3(0, 1, 0) use dot(camDirection, updirection)
     const float numSteps = mix(maxSteps, minSteps, direction.y);
     vec3 origin = cameraPos + direction * tMin;
-    const float ct = u.cloudType;
-    const float cc = u.coverage;
-    float limit = tMax - tMin;
-    float dt = limit/numSteps;
-    float lod = 0.0;
-    bool detailedSamples = true;
-    bool cheapSamples = false;
 
-    float density = 0;
-    float cloudTest = 0;
-    int zeroDensitySampleCount = 0;
-    bool firstHit = true;
-    for(int i = 0; i < numSteps; i++) {
-        float t = (i + 0.3) * dt;
-        vec3 sp = origin + direction * t;
-        float h = getHeightFraction(sp);
-
-        float density = sampleCloudDensity(sp, h, ct, cc, lod, u.detailedSamples == 1);
-        float pa = clamp(density - (density * fragColor.a), 0, 1);
-        fragColor.rgb = pa * vec3(density) + fragColor.rgb;
-        fragColor.a += pa;
-
-        if(fragColor.a > 0.999) break;
-    }
-
-    fragColor.rgb *= 10;
+    vec4 result = rayTrace(origin, direction, tMax - tMin, numSteps);
+    fragColor = vec4(result.rgb * 10, result.a);
 }
