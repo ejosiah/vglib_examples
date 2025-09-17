@@ -36,13 +36,16 @@ void Clouds::controls(bool show) {
     static bool dirty = false;
     bool detailedSamples = m_uniforms.cpu->detailedSamples == 1;
     int maxSteps = int(m_uniforms.cpu->maxSteps);
+    float precipitation = m_uniforms.cpu->precipitation;
     ImGui::Begin("Clouds");
     ImGui::SetWindowSize({0, 0});
     dirty |= ImGui::SliderFloat("coverage", &m_uniforms.cpu->coverage, 0, 1);
     dirty |= ImGui::SliderFloat("type", &m_uniforms.cpu->cloudType, 0, 1);
-    dirty |= ImGui::SliderFloat("Precipitation", &m_uniforms.cpu->precipitation, 1, 20);
-    dirty |= ImGui::SliderFloat("eccentricity", &m_uniforms.cpu->eccentricity, 0, 0.999);
+    dirty |= ImGui::SliderFloat("Precipitation", &precipitation, 1, 20);
+    dirty |= ImGui::SliderFloat("eccentricity", &m_uniforms.cpu->eccentricity, -0.999, 0.999);
+    dirty |= ImGui::SliderFloat("sigma s", &m_uniforms.cpu->sigmaS, 1, 200);
     dirty |= ImGui::SliderFloat("Scale", &m_uniforms.cpu->scale, 1, 100);
+    dirty |= ImGui::SliderFloat("details", &m_uniforms.cpu->hScale, 1, 1000);
     dirty |= ImGui::SliderFloat("Wind speed", &m_uniforms.cpu->windSpeed, 0, 1);
     dirty |= ImGui::SliderInt("sample noise", &maxSteps, 64, 512);
     dirty |= ImGui::Checkbox("detailed", &detailedSamples);
@@ -50,6 +53,7 @@ void Clouds::controls(bool show) {
 
     m_uniforms.cpu->detailedSamples = int(detailedSamples);
     m_uniforms.cpu->maxSteps = uint(maxSteps);
+    m_uniforms.cpu->precipitation = precipitation;
 
     if(dirty) {
         profiler().clear(m_query);
@@ -196,7 +200,7 @@ void Clouds::createRenderPipelines() {
                     .colorBlendOp().add()
                     .alphaBlendOp().add()
                     .srcColorBlendFactor().one()
-                    .dstColorBlendFactor().oneMinusSrcAlpha()
+                    .dstColorBlendFactor().srcAlpha()
                     .srcAlphaBlendFactor().one()
                     .dstAlphaBlendFactor().one()
                 .add()

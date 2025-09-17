@@ -47,10 +47,10 @@ void TerrainDemo::initApp() {
 void TerrainDemo::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = 60.0f;
-    cameraSettings.zFar = 1000 * km;
+    cameraSettings.zFar = 10000 * km;
     cameraSettings.zNear = 1;
-    cameraSettings.acceleration = glm::vec3(500);
-    cameraSettings.velocity = glm::vec3(1000);
+    cameraSettings.acceleration = glm::vec3(10 * km);
+    cameraSettings.velocity = glm::vec3(100 * km);
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);

@@ -25,7 +25,9 @@ layout(set = 0, binding = 0, scalar) uniform Uniforms {
     float cloudType;
     float precipitation;
     float eccentricity;
+    float sigmaS;
     float scale;
+    float hScale;
     float time;
     uint detailedSamples;
     uint maxSteps;
@@ -39,6 +41,7 @@ layout(set = 3, binding = 1, input_attachment_index = 1) uniform subpassInput po
 
 
 AtmosphereParameters atmosphere = GetAtmosphereParameters();
+float sigmaE = u.precipitation + u.sigmaS;
 
 bool intersectsCloudShell(vec3 origin, vec3 direction, out float tMin, out float tMax, out vec3 color) {
     Ray ray = Ray(origin, direction);
@@ -124,7 +127,7 @@ float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float 
     if(density <= 0) return 0.0;
     if(!detailed) return density;
 
-    vec3 highNoise = textureLod(highFreqencyNoises, p * 0.5, lod).rgb;
+    vec3 highNoise = textureLod(highFreqencyNoises, p/u.hScale, lod).rgb;
     float highFreqencyFBM = dot(highNoise, vec3(.625, .25, .125));
     float highFreqencyNoiseModifier = mix(highFreqencyFBM, 1 - highFreqencyFBM, clamp(height_fraction * 10, 0, 1));
     density = remap(density, highFreqencyNoiseModifier * 0.2, 1.0, 0.0, 1.0);
@@ -150,7 +153,8 @@ const vec3 noise_kernel[] = {
 };
 
 float henyeyGreenstein(float LdotV, float g){
-    float _2gcos0 = 2 * g * max(0, LdotV);
+    g = clamp(g, -0.99, 0.99);
+    float _2gcos0 = 2 * g * LdotV;
     float gg = g * g;
     float num = 1 - gg;
     float denum = 4 * PI * pow(1 + gg - _2gcos0, 1.5);
@@ -158,15 +162,15 @@ float henyeyGreenstein(float LdotV, float g){
     return num / denum;
 }
 
-float lightEnergy(float sampleDensity, float cloudDensity, float percipitation, float eccentricity, float LdotV){
-    return 2.0 * exp(-sampleDensity * percipitation) * (1 - exp(-2 * cloudDensity));
+float lightEnergy(float sampleDensity, float cloudDensity){
+    return 2.0 * exp(-sampleDensity * sigmaE) * (1 - exp(-2 * cloudDensity * sigmaE));
 }
 
 float sampleCloudDensityAlongCone(vec3 samplePos, vec3 direction){
     const float ct = u.cloudType;
     const float cc = u.coverage;
 
-    vec3 lightStep = direction * 0.1;
+    vec3 lightStep = direction * 0.001;
     float coneSpreadMultiplier = length(lightStep);
 
     float density = 0;
@@ -183,12 +187,21 @@ float sampleCloudDensityAlongCone(vec3 samplePos, vec3 direction){
     return density;
 }
 
-float sampleLightEnergy(vec3 samplePosition, vec3 lightDirection, float LdotV, float cloudDensity, float dt){
+float sampleLightEnergy(vec3 samplePosition, vec3 lightDirection, float cloudDensity, float dt){
     if(cloudDensity <= 0) return 1;
 
     float sampleDensity = sampleCloudDensityAlongCone(samplePosition, lightDirection) * dt;
-    return lightEnergy(sampleDensity, cloudDensity, u.precipitation, u.eccentricity, LdotV);
+    return lightEnergy(sampleDensity, cloudDensity);
 
+}
+
+vec3 GetTransmisstanceToSun(AtmosphereParameters atmosphere, sampler2D transmittanceTexture, vec3 position, vec3 sunDirection) {
+    float viewHeight = length(position);
+    const vec3 UpVector = position / viewHeight;
+    float viewZenithCosAngle = dot(sunDirection, UpVector);
+    vec2 uv;
+    LutTransmittanceParamsToUv(atmosphere, viewHeight, viewZenithCosAngle, uv);
+    return texture(transmittanceTexture, uv).rgb;
 }
 
 
@@ -197,10 +210,10 @@ vec4 rayTrace(vec3 origin, vec3 direction, float LdotV, float rayLength, float n
     const float cc = u.coverage;
     float dt = rayLength/numSteps;
     float lod = 0.0;
-    const float sunIntensity = 10000;
+    const float sunIntensity = 100;
 
     float density = 0;
-    vec4 result = vec4(0);
+    vec3 inScattering = vec3(0);
     float transmission = 1;
     for(int i = 0; i < numSteps; i++) {
         float t = (i + 0.3) * dt;
@@ -209,37 +222,30 @@ vec4 rayTrace(vec3 origin, vec3 direction, float LdotV, float rayLength, float n
 
         float density = sampleCloudDensity(sp, h, ct, cc, lod, u.detailedSamples == 1);
 
-        float stepTransmission = exp(-density * dt);
+        float stepTransmission = exp(-density * dt * sigmaE);
         transmission *= stepTransmission;
 
         vec3 lightRayAttenuation = vec3(1);
         if(density > 0) {
-            float attenuation = sampleLightEnergy(sp, atm.sunDirection, LdotV, density * dt, dt);
+            float attenuation = sampleLightEnergy(sp, atm.sunDirection, density * dt, dt);
             if(attenuation > 0) {
-                result.a += (1 - stepTransmission) * (1 - result.a);
-
-                float viewHeight = length(sp);
-                const vec3 UpVector = sp / viewHeight;
-                float viewZenithCosAngle = dot(atm.sunDirection, UpVector);
-                vec2 uv;
-                LutTransmittanceParamsToUv(atmosphere, viewHeight, viewZenithCosAngle, uv);
-                vec3 sunTransmission = texture(transmittanceLUT, uv).rgb;
+                vec3 sunTransmission = GetTransmisstanceToSun(atmosphere, transmittanceLUT, sp, atm.sunDirection);
                 lightRayAttenuation *= sunTransmission;
             }
-            lightRayAttenuation *= attenuation * result.a;
+            lightRayAttenuation *= attenuation;
             float phase = henyeyGreenstein(LdotV, u.eccentricity);
-            result.rgb += sunIntensity * transmission * phase * lightRayAttenuation * density;
+            inScattering += sunIntensity * transmission * phase * lightRayAttenuation * u.sigmaS * density;
         }
 
 
-        if(result.a > 0.999) break;
+        if(transmission < 1e-3) break;
     }
 
-    return result;
+    return vec4(inScattering, transmission);
 }
 
 void main() {
-    fragColor = vec4(0);
+    fragColor = vec4(0, 0, 0, 1);
 
     vec3 earth = vec3(0, atmosphere.bottom_radius, 0);
     vec3 cameraPos = localUnitsToAtmosphere(u.cameraPosition) + earth;
@@ -263,5 +269,12 @@ void main() {
 
     float LdotV = dot(direction, atm.sunDirection);
     vec4 result = rayTrace(origin, direction, LdotV, tMax - tMin, numSteps);
+
+    ivec2 fc = ivec2(gl_FragCoord);
+    if(u.mouse.z == 1 && fc.x == u.mouse.x && fc.y == u.mouse.y) {
+        vec4 r = result;
+        debugPrintfEXT("result: [%f, %f, %f, %f]\n", r.x, r.y, r.z, r.w);
+    }
+
     fragColor = vec4(result.rgb, result.a);
 }

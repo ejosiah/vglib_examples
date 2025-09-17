@@ -55,9 +55,11 @@ private:
         float cloudMaxHeight{4};
         float coverage{0.55};
         float cloudType{0};
-        float precipitation{0};
+        float precipitation{0.01};
         float eccentricity{0.2};
+        float sigmaS{1};
         float scale{5.641};
+        float hScale{1};
         float time{0};
         uint detailedSamples{1};
         uint maxSteps{128};
