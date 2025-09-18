@@ -108,7 +108,7 @@ private:
         float minLodVariance{0.1};
         float dmapFactor{1};
         uint showTiles{0};
-        uint colorTiles{0};
+        uint tileColor{0};
         uint damp_tex_index{~0u};
         uint dmap_normal_tex_index{~0u};
         uint shadow_tex_index{~0u};
@@ -162,7 +162,7 @@ private:
         bool topView{false};
         bool wire{false};
         bool showTiles{false};
-        bool colorTiles{false};
+        int tileColor{0};
     } m_options;
 
     struct {

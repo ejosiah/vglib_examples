@@ -57,14 +57,10 @@ void main() {
     vec3 L = normalize(globals.lightDirection);
     vec3 normal = -1 + 2 * texture(u_NormalSampler, f.uv).xzy;
     vec3 N = normalize(normal);
+
     vec2 gv = (f.uv * 52660)/globals.tileSize;
     vec2 tileUV = fract(gv);
-    vec3 albedo = texture(albedoMap, tileUV).rgb;
-
-    if(globals.showTiles == 1) {
-        vec2 tileId = floor(gv);
-        albedo = globals.colorTiles == 0 ? vec3(tileUV, 0) : hash32(tileId);
-    }
+    vec3 albedo = globals.showTiles != 1 ? texture(albedoMap, tileUV).rgb : getTileColor(f.uv);
 
     AtmosphereParameters Atmosphere = GetAtmosphereParameters();
     vec3 P0 = localUnitsToAtmosphere(worldPos) + vec3(0, Atmosphere.bottom_radius, 0);

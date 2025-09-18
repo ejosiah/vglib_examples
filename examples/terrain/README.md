@@ -12,3 +12,7 @@
 - geometric normals
 - cloud depth maps
 - cloud shadows
+- randomize texture rotation
+- add time of day
+
+## Notes

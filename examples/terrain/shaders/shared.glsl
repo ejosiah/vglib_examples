@@ -10,6 +10,7 @@
 #include "leb.glsl"
 #include "frustum_culling.glsl"
 #include "pbr/common.glsl"
+#include "hash.glsl"
 
 const uint PROJECTION_RECTILINEAR = 0u;
 const uint PROJECTION_ORTHOGRAPHIC = 1u;
@@ -53,7 +54,7 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
     float minLodVariance;
     float dmapFactor;
     uint showTiles;
-    uint colorTiles;
+    uint tileColor;
     uint damp_tex_index;
     uint dmap_normal_tex_index;
     uint shadow_tex_index;
@@ -344,5 +345,20 @@ vec3 depthToNormal1(sampler2D depth_map, vec2 uv) {
 
     return vec3(globals.dmapFactor * 0.03 / filterSize * 0.5f * vec2(-sx, -sy), 1);
 }
+
+vec3 getTileColor(vec2 uv) {
+    vec2 gv = (uv * 52660)/globals.tileSize;
+    vec2 tileUV = fract(gv);
+    vec2 tileId = floor(gv);
+    if(globals.tileColor == 0) {
+        return vec3(tileUV, 0);
+    }else if(globals.tileColor == 1) {
+        float t = step(1, mod(tileId.x + tileId.y, 2.0));
+        return vec3(0.2 + 0.8 * t);
+    }else {
+        return hash32(tileId);
+    }
+}
+
 
 #endif // TERRAIN_SHARED_GLSL

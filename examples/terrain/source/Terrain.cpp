@@ -60,7 +60,7 @@ void Terrain::newFrame() {
     m_uniforms.cpu->mouse = context().mouse;
     m_uniforms.cpu->tileSize = glm::vec2{m_options.tileSize};
     m_uniforms.cpu->showTiles = uint(m_options.showTiles);
-    m_uniforms.cpu->colorTiles = uint(m_options.colorTiles);
+    m_uniforms.cpu->tileColor = uint(m_options.tileColor);
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
@@ -535,8 +535,11 @@ void Terrain::controls(bool show) {
     ImGui::Checkbox("topView", &m_options.topView);
 
     ImGui::Checkbox("Show tiles", &m_options.showTiles);
-    ImGui::SameLine();
-    ImGui::Checkbox("Color tiles", &m_options.colorTiles);
+    if(m_options.showTiles) {
+        ImGui::RadioButton("uv", &m_options.tileColor, 0); ImGui::SameLine();
+        ImGui::RadioButton("checkerboard", &m_options.tileColor, 1); ImGui::SameLine();
+        ImGui::RadioButton("random", &m_options.tileColor, 2);
+    }
 
     ImGui::End();
 }

@@ -82,7 +82,6 @@ bool intersectsCloudShell(vec3 origin, vec3 direction, out float tMin, out float
         tMax = t1.y;
         color = vec3(1, 0, 0);
     }
-//    debugPrintfEXT("lowerHull: [%d, %f, %f], upperHull [%d, %f, %f], minMax: [%f, %f], \n",int(hitLowerHull), t0.x, t0.y, int(hitUpperHull), t1.x, t1.y, tMin, tMax);
     return true;
 }
 
@@ -284,13 +283,6 @@ void main() {
 
     float LdotV = dot(direction, atm.sunDirection);
     vec4 result = rayTrace(origin, direction, LdotV, tMax - tMin, numSteps);
-
-    ivec2 fc = ivec2(gl_FragCoord);
-    if(u.mouse.z == 1 && fc.x == u.mouse.x && fc.y == u.mouse.y) {
-        vec4 r = result;
-        vec2 uv = .5 + .5 * (origin.xz / vec2(52.660));
-        debugPrintfEXT("weather: [%f, %f, %f, %f]\n", origin.x, origin.z, uv.x, uv.y);
-    }
 
     fragColor = vec4(result.rgb, result.a);
 }
