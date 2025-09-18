@@ -10,6 +10,7 @@ Clouds::Clouds(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 void Clouds::init() {
     initQuery();
     initUniforms();
+    loadWeatherTexture();
     createCloudShape();
     createDescriptorSetLayout();
     updateDescriptorSet();
@@ -37,6 +38,7 @@ void Clouds::controls(bool show) {
     bool detailedSamples = m_uniforms.cpu->detailedSamples == 1;
     int maxSteps = int(m_uniforms.cpu->maxSteps);
     float precipitation = m_uniforms.cpu->precipitation;
+    bool useWeatherTexture = m_uniforms.cpu->useWeatherTexture == 1;
     ImGui::Begin("Clouds");
     ImGui::SetWindowSize({0, 0});
     dirty |= ImGui::SliderFloat("coverage", &m_uniforms.cpu->coverage, 0, 1);
@@ -49,11 +51,13 @@ void Clouds::controls(bool show) {
     dirty |= ImGui::SliderFloat("Wind speed", &m_uniforms.cpu->windSpeed, 0, 1);
     dirty |= ImGui::SliderInt("sample noise", &maxSteps, 64, 512);
     dirty |= ImGui::Checkbox("detailed", &detailedSamples);
+    dirty |= ImGui::Checkbox("weather texture", &useWeatherTexture);
     ImGui::End();
 
     m_uniforms.cpu->detailedSamples = int(detailedSamples);
     m_uniforms.cpu->maxSteps = uint(maxSteps);
     m_uniforms.cpu->precipitation = precipitation;
+    m_uniforms.cpu->useWeatherTexture = uint(useWeatherTexture);
 
     if(dirty) {
         profiler().clear(m_query);
@@ -143,6 +147,7 @@ void Clouds::initUniforms() {
     UniformData initialValues{};
     initialValues.lowFrequencyTexIndex = bindlessDescriptor().reserveTextureSlots(1);
     initialValues.highFrequencyTexIndex = bindlessDescriptor().reserveTextureSlots(1);
+    initialValues.weatherTextureIndex = bindlessDescriptor().reserveTextureSlots(1);
 
     m_uniforms.gpu = device().createCpuVisibleBuffer(&initialValues, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
@@ -216,4 +221,10 @@ void Clouds::createRenderPipelines() {
 
 void Clouds::endFrame() {
     m_uniforms.cpu->time += 0.0166666;
+}
+
+void Clouds::loadWeatherTexture() {
+    textures::fromFile(device(), weather, resource("weather_512.png"), true, VK_FORMAT_R8G8B8A8_UNORM, 1, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER);
+    bindlessDescriptor().update({ .texture = &weather , .index = m_uniforms.cpu->weatherTextureIndex });
+
 }

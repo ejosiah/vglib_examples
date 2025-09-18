@@ -25,6 +25,8 @@ protected:
 
     void initUniforms();
 
+    void loadWeatherTexture();
+
     void initQuery();
 
     void createCloudShape();
@@ -44,6 +46,8 @@ private:
         Texture highFrequency;
     } m_shape;
 
+    Texture weather;
+
     struct UniformData {
         glm::mat4 viewProjection{1};
         glm::ivec4 mouse{0};
@@ -62,9 +66,11 @@ private:
         float hScale{1};
         float time{0};
         uint detailedSamples{1};
+        uint useWeatherTexture{0};
         uint maxSteps{128};
         uint lowFrequencyTexIndex{~0u};
         uint highFrequencyTexIndex{~0u};
+        uint weatherTextureIndex{~0u};
     };
 
     struct {

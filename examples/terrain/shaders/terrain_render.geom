@@ -7,21 +7,23 @@ layout(triangle_strip, max_vertices = 3) out;
 
 layout(location = 0) in struct {
     vec3 worldPos;
+    vec3 viewDirection;
     vec3 color;
     vec2 uv;
 } gs_in[];
 
-layout(location = 3) flat in int iIsVisible[];
+layout(location = 4) flat in int iIsVisible[];
 
 layout(location = 0) out struct {
     vec3 worldPos;
+    vec3 viewDirection;
     vec3 color;
     vec2 uv;
 } gs_out;
 
-layout(location = 3) flat out int isVisible;
+layout(location = 4) flat out int isVisible;
 
-layout(location = 4) noperspective out vec3 o_Distance;
+layout(location = 5) noperspective out vec3 o_Distance;
 
 void main() {
     vec2 p0 = globals.resolution * gl_in[0].gl_Position.xy / gl_in[0].gl_Position.w;
@@ -32,6 +34,7 @@ void main() {
 
     for (int i = 0; i < 3; ++i) {
         gs_out.worldPos = gs_in[i].worldPos;
+        gs_out.viewDirection = gs_in[i].viewDirection;
         gs_out.color = gs_in[i].color;
         gs_out.uv = gs_in[i].uv;
 

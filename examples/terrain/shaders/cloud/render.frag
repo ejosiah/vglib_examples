@@ -11,6 +11,7 @@
 
 #define lowFreqencyNoises global_textures_3d[nonuniformEXT(u.lowFrequencyNoisesIndex)]
 #define highFreqencyNoises global_textures_3d[nonuniformEXT(u.highFrequencyNoisesIndex)]
+#define weatherTexture global_textures[nonuniformEXT(u.weatherTextureIndex)]
 
 layout(set = 0, binding = 0, scalar) uniform Uniforms {
     mat4 viewProjection;
@@ -30,18 +31,26 @@ layout(set = 0, binding = 0, scalar) uniform Uniforms {
     float hScale;
     float time;
     uint detailedSamples;
+    uint useWeatherTexture;
     uint maxSteps;
     uint lowFrequencyNoisesIndex;
     uint highFrequencyNoisesIndex;
+    uint weatherTextureIndex;
 } u;
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 3, binding = 1, input_attachment_index = 1) uniform subpassInput positionInput;
 
+struct Weather {
+    float cloudCoverage;
+    float cloudType;
+    float precipitation;
+};
 
 AtmosphereParameters atmosphere = GetAtmosphereParameters();
-float sigmaE = u.precipitation + u.sigmaS;
+float sigmaE;
+Weather weather;
 
 bool intersectsCloudShell(vec3 origin, vec3 direction, out float tMin, out float tMax, out vec3 color) {
     Ray ray = Ray(origin, direction);
@@ -104,7 +113,7 @@ float densityHeightGradientForPoint(vec3 p, float height, float cloud_type){
     return smoothstep(cloudGradient.x, cloudGradient.y, height) - smoothstep(cloudGradient.z, cloudGradient.w, height);
 }
 
-float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float cloud_coverage, float lod, bool detailed) {
+float sampleCloudDensity(vec3 p, float height_fraction, float lod, bool detailed) {
     float windSpeed = u.windSpeed;
     float cloudTopOffset = u.cloudTopOffset;
 
@@ -118,11 +127,11 @@ float sampleCloudDensity(vec3 p, float height_fraction, float cloud_type, float 
     float perlinWorly = noiseComp.x;
     float wfbm = dot(vec3(.625, .25, .125), noiseComp.gba);
     float density = remap(perlinWorly, wfbm - 1, 1, 0, 1);
-    float densityHeightField = densityHeightGradientForPoint(p, height_fraction, cloud_type);
+    float densityHeightField = densityHeightGradientForPoint(p, height_fraction, weather.cloudType);
     density *= densityHeightField;
 
-    density = remap(density, 1 - cloud_coverage, 1, 0, 1);
-    density *= cloud_coverage;
+    density = remap(density, 1 - weather.cloudCoverage, 1, 0, 1);
+    density *= weather.cloudCoverage;
 
     if(density <= 0) return 0.0;
     if(!detailed) return density;
@@ -167,9 +176,6 @@ float lightEnergy(float sampleDensity, float cloudDensity){
 }
 
 float sampleCloudDensityAlongCone(vec3 samplePos, vec3 direction){
-    const float ct = u.cloudType;
-    const float cc = u.coverage;
-
     vec3 lightStep = direction * 0.001;
     float coneSpreadMultiplier = length(lightStep);
 
@@ -181,7 +187,7 @@ float sampleCloudDensityAlongCone(vec3 samplePos, vec3 direction){
         float h = getHeightFraction(p);
         // TODO generate lod
         // lod = float(i);
-        density += sampleCloudDensity(p, h, ct, cc, lod, false);
+        density += sampleCloudDensity(p, h, lod, false);
     }
 
     return density;
@@ -206,8 +212,6 @@ vec3 GetTransmisstanceToSun(AtmosphereParameters atmosphere, sampler2D transmitt
 
 
 vec4 rayTrace(vec3 origin, vec3 direction, float LdotV, float rayLength, float numSteps) {
-    const float ct = u.cloudType;
-    const float cc = u.coverage;
     float dt = rayLength/numSteps;
     float lod = 0.0;
     const float sunIntensity = 100;
@@ -220,7 +224,7 @@ vec4 rayTrace(vec3 origin, vec3 direction, float LdotV, float rayLength, float n
         vec3 sp = origin + direction * t;
         float h = getHeightFraction(sp);
 
-        float density = sampleCloudDensity(sp, h, ct, cc, lod, u.detailedSamples == 1);
+        float density = sampleCloudDensity(sp, h, lod, u.detailedSamples == 1);
 
         float stepTransmission = exp(-density * dt * sigmaE);
         transmission *= stepTransmission;
@@ -246,12 +250,12 @@ vec4 rayTrace(vec3 origin, vec3 direction, float LdotV, float rayLength, float n
 
 void main() {
     fragColor = vec4(0, 0, 0, 1);
-
     vec3 earth = vec3(0, atmosphere.bottom_radius, 0);
     vec3 cameraPos = localUnitsToAtmosphere(u.cameraPosition) + earth;
     vec3 direction = normalize(fs_in.viewDirection);
     vec3 color = vec3(0);
 
+    weather = Weather(u.coverage, u.cloudType, u.precipitation);
 
     float tMin, tMax;
     bool hit = intersectsCloudShell(cameraPos, direction, tMin, tMax, color);
@@ -267,13 +271,25 @@ void main() {
     const float numSteps = maxSteps;  // TODO rather than taking more steps at the horizon take more steps closer to the viewer
     vec3 origin = cameraPos + direction * tMin;
 
+    if(u.useWeatherTexture == 1) {
+        vec2 uv = .5 + .5 * (origin.xz / vec2(52.660));
+        vec3 w = texture(weatherTexture, uv).rgb;
+        weather.cloudCoverage = w.r;
+        weather.cloudType = w.g;
+    }
+
+    if(weather.cloudCoverage == 0) return;
+
+    sigmaE = weather.precipitation + u.sigmaS;
+
     float LdotV = dot(direction, atm.sunDirection);
     vec4 result = rayTrace(origin, direction, LdotV, tMax - tMin, numSteps);
 
     ivec2 fc = ivec2(gl_FragCoord);
     if(u.mouse.z == 1 && fc.x == u.mouse.x && fc.y == u.mouse.y) {
         vec4 r = result;
-        debugPrintfEXT("result: [%f, %f, %f, %f]\n", r.x, r.y, r.z, r.w);
+        vec2 uv = .5 + .5 * (origin.xz / vec2(52.660));
+        debugPrintfEXT("weather: [%f, %f, %f, %f]\n", origin.x, origin.z, uv.x, uv.y);
     }
 
     fragColor = vec4(result.rgb, result.a);

@@ -35,6 +35,7 @@ Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 void Terrain::init() {
     initQuery();
     initUniforms();
+    loadTerrainTextures();
     initVertexBuffer();
     initBuffers();
     createDescriptorSetLayout();
@@ -57,6 +58,9 @@ void Terrain::newFrame() {
     m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
     m_uniforms.cpu->lightDirection = context().lightDirection;
     m_uniforms.cpu->mouse = context().mouse;
+    m_uniforms.cpu->tileSize = glm::vec2{m_options.tileSize};
+    m_uniforms.cpu->showTiles = uint(m_options.showTiles);
+    m_uniforms.cpu->colorTiles = uint(m_options.colorTiles);
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
@@ -525,10 +529,14 @@ void Terrain::controls(bool show) {
     ImGui::SliderFloat("Pixels/Edge", &m_options.primitivePixelLengthTarget, 1, 32);
     ImGui::SliderFloat("Dmap scale", &m_options.dmapScale, 0, 1);
     ImGui::SliderFloat("Lod Std", &m_options.minLodStdev, 0, 1);
-
+    ImGui::SliderFloat("tile size", &m_options.tileSize, 1, 1000);
     ImGui::Checkbox("Wire", &m_options.wire);
     ImGui::SameLine();
     ImGui::Checkbox("topView", &m_options.topView);
+
+    ImGui::Checkbox("Show tiles", &m_options.showTiles);
+    ImGui::SameLine();
+    ImGui::Checkbox("Color tiles", &m_options.colorTiles);
 
     ImGui::End();
 }
@@ -560,4 +568,22 @@ float Terrain::printPerfStats() {
         ImGui::TreePop();
     }
     return total;
+}
+
+void Terrain::loadTerrainTextures() {
+    const auto levels = 11u;
+    textures::fromFile(device(), textures.albedoMap, resource("GroundDirtRocky015/GroundDirtRocky015_COL_1K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels);
+    textures::fromFile(device(), textures.aoMap, resource("GroundDirtRocky015/GroundDirtRocky015_AO_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels);
+    textures::fromFile(device(), textures.roughnessMap, resource("GroundDirtRocky015/GroundDirtRocky015_GLOSS_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels);
+    textures::fromFile(device(), textures.ggxLUT, resource("lut/lut_ggx.png"), false);
+
+
+    textures::generateLOD(device(), textures.albedoMap, levels);
+    textures::generateLOD(device(), textures.aoMap, levels);
+    textures::generateLOD(device(), textures.roughnessMap, levels);
+
+    m_uniforms.cpu->albedoMapIndex = bindlessDescriptor().update(textures.albedoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->aoMapIndex = bindlessDescriptor().update(textures.aoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->roughnessMapIndex = bindlessDescriptor().update(textures.roughnessMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->ggxLUTIndex = bindlessDescriptor().update(textures.ggxLUT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 }

@@ -1,12 +1,14 @@
 # Terrain Demo
 
 ## Todo
-- enable independent blending
 - use subgroup for multiple scattering reduction 
-- clouds
 - cascade shadow maps vs height map shadows
 - look into meshlets for rendering terrain
-- noise height maps
+- noise height maps (perlin / worley)
 - erosion 
 - add night stars
 - pre recorded commands
+- layered clouds
+- geometric normals
+- cloud depth maps
+- cloud shadows

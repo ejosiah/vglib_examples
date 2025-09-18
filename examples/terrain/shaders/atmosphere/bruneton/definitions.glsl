@@ -7,7 +7,9 @@ const float rad = 1.0;
 const float sr = 1.0;
 const float watt = 1.0;
 const float lm = 1.0;
-const float PI = 3.14159265358979323846;
+#ifndef PI
+#define PI 3.1415926535897932384626
+#endif
 const float km = 1000.0 * m;
 const float m2 = m * m;
 const float m3 = m * m * m;

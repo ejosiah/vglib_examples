@@ -9,6 +9,7 @@
 
 #include "leb.glsl"
 #include "frustum_culling.glsl"
+#include "pbr/common.glsl"
 
 const uint PROJECTION_RECTILINEAR = 0u;
 const uint PROJECTION_ORTHOGRAPHIC = 1u;
@@ -46,13 +47,20 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
     vec3 whitePoint;
     vec2 resolution;
     vec2 sunSize;
+    vec2 tileSize;
     float exposure;
     float lodFactor;
     float minLodVariance;
     float dmapFactor;
+    uint showTiles;
+    uint colorTiles;
     uint damp_tex_index;
     uint dmap_normal_tex_index;
     uint shadow_tex_index;
+    uint albedoMapIndex;
+    uint aoMapIndex;
+    uint roughnessMapIndex;
+    uint ggxLUTIndex;
 } globals;
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
@@ -62,6 +70,58 @@ layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 #define u_DmapSampler global_textures[nonuniformEXT(globals.damp_tex_index)]
 #define u_NormalSampler global_textures[nonuniformEXT(globals.dmap_normal_tex_index)]
 #define u_DmapShadowSampler global_textures[nonuniformEXT(globals.shadow_tex_index)]
+#define albedoMap global_textures[nonuniformEXT(globals.albedoMapIndex)]
+#define aoMap global_textures[nonuniformEXT(globals.aoMapIndex)]
+#define roughnessMap global_textures[nonuniformEXT(globals.roughnessMapIndex)]
+
+struct Material {
+    vec3 albedo;
+    float metalness;
+    float roughness;
+    float ao;
+};
+
+vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, vec3 sunTransmittance, vec3 ambientIrradiance)
+{
+    vec3  albedo    = material.albedo;
+    float metalness = material.metalness;
+    float roughness = material.roughness;
+    float ao        = material.ao;
+
+    float shadowVis = clamp(visiblity, 0.0, 1.0);
+    vec3  sunT      = clamp(sunTransmittance, 0.0, 1.0);
+
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.0);
+    vec3  H     = normalize(V + L);
+
+    // Sun color/intensity at top of atmosphere (your scale)
+    vec3 sunIrradiance = vec3(10.0);
+
+    // Direct sun radiance after shadowing + atmospheric transmission
+    vec3 radiance = sunIrradiance * shadowVis * sunT;
+
+    // Cook–Torrance terms
+    float NDF = distributionGGX(N, H, roughness);
+    float G   = geometrySmith(N, V, L, roughness);
+    vec3  F0  = mix(vec3(0.04), albedo, metalness);
+    vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    vec3  numerator = NDF * G * F;
+    vec3  specular  = numerator / (4.0 * NdotV * NdotL + 1e-4);
+
+    vec3  kS = F;
+    vec3  kD = (vec3(1.0) - kS) * (1.0 - metalness);
+
+    // Direct lighting (sun); AO is NOT applied to direct by default
+    vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
+
+    // Global ambient / skylight (diffuse only), AO applied here
+    vec3 ambient = (kD * albedo / PI) * ambientIrradiance * ao;
+
+    return Lo + ambient;
+}
+
 
 /*******************************************************************************
  * FrustumCullingTest -- Checks if the triangle lies inside the view frutsum

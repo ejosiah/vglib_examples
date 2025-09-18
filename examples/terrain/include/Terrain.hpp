@@ -83,6 +83,8 @@ protected:
 
     std::vector<PipelineMetaData> metadata();
 
+    void loadTerrainTextures();
+
 private:
     static constexpr int64_t CBT_MAX_DEPTH = 25;
     static constexpr int64_t CBT_INIT_MAX_DEPTH = 1;
@@ -100,13 +102,20 @@ private:
         glm::vec3 whitePoint;
         glm::vec2 resolution;
         glm::vec2 sunSize;
+        glm::vec2 tileSize{2.5};
         float exposure;
         float lodFactor{0};
         float minLodVariance{0.1};
         float dmapFactor{1};
+        uint showTiles{0};
+        uint colorTiles{0};
         uint damp_tex_index{~0u};
         uint dmap_normal_tex_index{~0u};
         uint shadow_tex_index{~0u};
+        uint albedoMapIndex{~0u};
+        uint aoMapIndex{~0u};
+        uint roughnessMapIndex{~0u};
+        uint ggxLUTIndex{~0u};
     } defaultValues{};
 
     Context* m_context{};
@@ -148,10 +157,20 @@ private:
         float primitivePixelLengthTarget{7};
         float minLodStdev{0};
         float dmapScale{1};
+        float tileSize{2.5};
         int gpuSubDivisions{3};
         bool topView{false};
         bool wire{false};
+        bool showTiles{false};
+        bool colorTiles{false};
     } m_options;
+
+    struct {
+        Texture albedoMap;
+        Texture aoMap;
+        Texture roughnessMap;
+        Texture ggxLUT;
+    } textures;
 
     Pipeline m_render;
     Pipeline m_renderWire;

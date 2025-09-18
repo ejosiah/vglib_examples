@@ -1,6 +1,10 @@
+#ifndef PBR_COMMON_GLSL
+#define PBR_COMMON_GLSL
+
 #ifndef PI
 #define PI 3.1415926535897932384626
 #endif
+
 float RadicalInverse_VdC(uint bits){
     bits = (bits << 16u) | (bits >> 16u);
     bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
@@ -37,25 +41,47 @@ vec3 importanceSampleGGX(vec2 Xi, vec3 N, float roughness)
     return normalize(sampleVec);
 }
 
+//float geometrySchlickGGX(float NdotV, float roughness)
+//{
+//    float a = roughness;
+//    float k = (a * a) / 2.0;
+//
+//    float nom   = NdotV;
+//    float denom = NdotV * (1.0 - k) + k;
+//
+//    return nom / denom;
+//}
+//// ----------------------------------------------------------------------------
+//float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+//{
+//    float NdotV = max(dot(N, V), 0.0);
+//    float NdotL = max(dot(N, L), 0.0);
+//    float ggx2 = geometrySchlickGGX(NdotV, roughness);
+//    float ggx1 = geometrySchlickGGX(NdotL, roughness);
+//
+//    return ggx1 * ggx2;
+//}
+
 float geometrySchlickGGX(float NdotV, float roughness)
 {
-    float a = roughness;
-    float k = (a * a) / 2.0;
+    // Direct-light version (Schlick-GGX)
+    float r = roughness + 1.0;
+    float k = (r * r) * 0.125;       // (roughness + 1)^2 / 8
 
-    float nom   = NdotV;
     float denom = NdotV * (1.0 - k) + k;
-
-    return nom / denom;
+    return NdotV / max(denom, 1e-4);
 }
+
 // ----------------------------------------------------------------------------
 float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 {
     float NdotV = max(dot(N, V), 0.0);
     float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = geometrySchlickGGX(NdotV, roughness);
-    float ggx1 = geometrySchlickGGX(NdotL, roughness);
 
-    return ggx1 * ggx2;
+    float ggxV = geometrySchlickGGX(NdotV, roughness);
+    float ggxL = geometrySchlickGGX(NdotL, roughness);
+
+    return ggxV * ggxL;
 }
 
 vec3 hammersleyHemi(uint i, const uint N) {
@@ -94,3 +120,5 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
 {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
+
+#endif // PBR_COMMON_GLSL
