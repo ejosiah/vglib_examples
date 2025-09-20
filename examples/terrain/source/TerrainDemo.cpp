@@ -54,7 +54,8 @@ void TerrainDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->lookAt({3732, 43, 16265}, {-0.69, 0.02, -0.7}, {0, 1, 0});
+//    camera->lookAt({3732, 33.5, 16265}, {-0.69, 0.02, -0.7}, {0, 1, 0});
+     camera->lookAt({-1014, 120, 12620}, {0.299, -0.16, -0.939}, {0, 1, 0});
 }
 
 void TerrainDemo::initBindlessDescriptor() {
@@ -326,6 +327,11 @@ void TerrainDemo::update(float time) {
     }
     context.elapsedTime = time;
     setTitle(fmt::format("{}, camera - {}, direction - {}, lightDirection - {}, nodes - {}, FPS - {}", title, camera->position(), camera->viewDir, lightDirection, terrain->nodeCount(), framePerSecond));
+
+//    static auto g = glm::vec3{0, -9.8 * m, 0};
+//    static auto v = glm::vec3{0};;
+//    v += g * time;
+//    camera->position(camera->position() + v * time);
 }
 
 void TerrainDemo::checkAppInputs() {

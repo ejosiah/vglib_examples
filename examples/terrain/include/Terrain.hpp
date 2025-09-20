@@ -107,15 +107,23 @@ private:
         float lodFactor{0};
         float minLodVariance{0.1};
         float dmapFactor{1};
+        float blendMin{0};
+        float blendMax{1};
         uint showTiles{0};
         uint tileColor{0};
+        uint wireframeOn{0};
+        uint useTriplanerMapping{0};
         uint damp_tex_index{~0u};
         uint dmap_normal_tex_index{~0u};
         uint shadow_tex_index{~0u};
-        uint albedoMapIndex{~0u};
-        uint aoMapIndex{~0u};
-        uint roughnessMapIndex{~0u};
-        uint ggxLUTIndex{~0u};
+        uint dirtyAlbedoMapIndex{~0u};
+        uint dirtyAoMapIndex{~0u};
+        uint dirtyRoughnessMapIndex{~0u};
+        uint dirtyNormalMapIndex{~0u};
+        uint grassAlbedoMapIndex{~0u};
+        uint grassAoMapIndex{~0u};
+        uint grassRoughnessMapIndex{~0u};
+        uint grassNormalMapIndex{~0u};
     } defaultValues{};
 
     Context* m_context{};
@@ -158,9 +166,12 @@ private:
         float minLodStdev{0};
         float dmapScale{1};
         float tileSize{2.5};
+        float blendMin{0};
+        float blendMax{1};
         int gpuSubDivisions{3};
         bool topView{false};
         bool wire{false};
+        bool triplanerMapping{false};
         bool showTiles{false};
         int tileColor{0};
     } m_options;
@@ -169,8 +180,15 @@ private:
         Texture albedoMap;
         Texture aoMap;
         Texture roughnessMap;
-        Texture ggxLUT;
-    } textures;
+        Texture normalMap;
+    } dirt;
+
+    struct {
+        Texture albedoMap;
+        Texture aoMap;
+        Texture roughnessMap;
+        Texture normalMap;
+    } grass;
 
     Pipeline m_render;
     Pipeline m_renderWire;

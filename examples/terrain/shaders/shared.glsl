@@ -53,16 +53,36 @@ layout(set = 0, binding = 5, scalar) uniform Constants {
     float lodFactor;
     float minLodVariance;
     float dmapFactor;
+    float blendMin;
+    float blendMax;
     uint showTiles;
     uint tileColor;
+    uint wireframeOn;
+    uint useTriplanerMapping;
     uint damp_tex_index;
     uint dmap_normal_tex_index;
     uint shadow_tex_index;
-    uint albedoMapIndex;
-    uint aoMapIndex;
-    uint roughnessMapIndex;
-    uint ggxLUTIndex;
+    uint dirtAlbedoMapIndex;
+    uint dirtAoMapIndex;
+    uint dirtRoughnessMapIndex;
+    uint dirtNormalMapIndex;
+    uint grassAlbedoMapIndex;
+    uint grassAoMapIndex;
+    uint grassRoughnessMapIndex;
+    uint grassNormalMapIndex;
 } globals;
+
+bool wireframeEnabled() {
+    return globals.wireframeOn == 1;
+}
+
+bool showTiles() {
+    return globals.showTiles == 1;
+}
+
+bool useTriplanerMapping() {
+    return globals.useTriplanerMapping == 1;
+}
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
@@ -71,15 +91,24 @@ layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 #define u_DmapSampler global_textures[nonuniformEXT(globals.damp_tex_index)]
 #define u_NormalSampler global_textures[nonuniformEXT(globals.dmap_normal_tex_index)]
 #define u_DmapShadowSampler global_textures[nonuniformEXT(globals.shadow_tex_index)]
-#define albedoMap global_textures[nonuniformEXT(globals.albedoMapIndex)]
-#define aoMap global_textures[nonuniformEXT(globals.aoMapIndex)]
-#define roughnessMap global_textures[nonuniformEXT(globals.roughnessMapIndex)]
+
+#define dirtAlbedoMap global_textures[nonuniformEXT(globals.dirtAlbedoMapIndex)]
+#define dirtAoMap global_textures[nonuniformEXT(globals.dirtAoMapIndex)]
+#define dirtRoughnessMap global_textures[nonuniformEXT(globals.dirtRoughnessMapIndex)]
+#define dirtNormalMap global_textures[nonuniformEXT(globals.dirtNormalMapIndex)]
+
+#define grassAlbedoMap global_textures[nonuniformEXT(globals.grassAlbedoMapIndex)]
+#define grassAoMap global_textures[nonuniformEXT(globals.grassAoMapIndex)]
+#define grassRoughnessMap global_textures[nonuniformEXT(globals.grassRoughnessMapIndex)]
+#define grassNormalMap global_textures[nonuniformEXT(globals.grassNormalMapIndex)]
 
 struct Material {
     vec3 albedo;
+    vec3 normal;
     float metalness;
     float roughness;
     float ao;
+    float blend;
 };
 
 vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, vec3 sunTransmittance, vec3 ambientIrradiance)
@@ -113,14 +142,16 @@ vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, v
 
     vec3  kS = F;
     vec3  kD = (vec3(1.0) - kS) * (1.0 - metalness);
+    vec3 diffuse = kD * albedo / PI;
 
     // Direct lighting (sun); AO is NOT applied to direct by default
-    vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
+    vec3 Lo = (diffuse + specular) * radiance * NdotL;
 
     // Global ambient / skylight (diffuse only), AO applied here
-    vec3 ambient = (kD * albedo / PI) * ambientIrradiance * ao;
+    vec3 ambient = diffuse * ambientIrradiance * ao;
 
     return Lo + ambient;
+//    return diffuse * radiance * NdotL + ambient;
 }
 
 
@@ -346,19 +377,6 @@ vec3 depthToNormal1(sampler2D depth_map, vec2 uv) {
     return vec3(globals.dmapFactor * 0.03 / filterSize * 0.5f * vec2(-sx, -sy), 1);
 }
 
-vec3 getTileColor(vec2 uv) {
-    vec2 gv = (uv * 52660)/globals.tileSize;
-    vec2 tileUV = fract(gv);
-    vec2 tileId = floor(gv);
-    if(globals.tileColor == 0) {
-        return vec3(tileUV, 0);
-    }else if(globals.tileColor == 1) {
-        float t = step(1, mod(tileId.x + tileId.y, 2.0));
-        return vec3(0.2 + 0.8 * t);
-    }else {
-        return hash32(tileId);
-    }
-}
 
 
 #endif // TERRAIN_SHARED_GLSL

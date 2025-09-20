@@ -187,10 +187,13 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
     VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     VkAccessFlagBits srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     VkImageLayout srcLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    const auto levels = to<uint>(std::log2(std::max(info.width, info.height))) + 1u;
     if(normalMap.width != info.width || normalMap.height != info.height) {
         srcStageMask = VK_PIPELINE_STAGE_NONE;
         srcLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         srcAccessMask = VK_ACCESS_NONE;
+        m_displacementMap.normals.levels = levels;
         textures::createNoTransition(device(), m_displacementMap.normals, VK_IMAGE_TYPE_2D,
                                      VK_FORMAT_R16G16B16A16_SFLOAT, {info.width, info.height, 1});
     }
@@ -206,9 +209,11 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
 
     struct {
         float bump_strength{};
+        float sigma{};
+        int sampleRadius{};
         uint dmap_tex_id{};
         uint normal_image_id{};
-    } constants { 10.f, info.values_tex_id, normalMapImageId } ;
+    } constants { 20.f, 1.5f, 4,  info.values_tex_id, normalMapImageId } ;
 
     auto descriptorSet = bindlessDescriptorSet();
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("generate_normals"));
@@ -218,6 +223,8 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
 
     Barriers::pushAndFlush(commandBuffer, normalMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                            VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    textures::generateLOD(commandBuffer, m_displacementMap.normals.image, info.width, info.height, levels);
 }
 
 

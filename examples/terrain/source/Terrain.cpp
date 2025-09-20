@@ -61,6 +61,10 @@ void Terrain::newFrame() {
     m_uniforms.cpu->tileSize = glm::vec2{m_options.tileSize};
     m_uniforms.cpu->showTiles = uint(m_options.showTiles);
     m_uniforms.cpu->tileColor = uint(m_options.tileColor);
+    m_uniforms.cpu->wireframeOn = uint(m_options.wire);
+    m_uniforms.cpu->useTriplanerMapping = uint(m_options.triplanerMapping);
+    m_uniforms.cpu->blendMin = m_options.blendMin;
+    m_uniforms.cpu->blendMax = m_options.blendMax;
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
@@ -82,8 +86,8 @@ void Terrain::preProcess(VkCommandBuffer commandBuffer) {
 
 void Terrain::render(VkCommandBuffer commandBuffer) {
     profiler().profile(queryIds[QUERY_RENDER_ID], commandBuffer, [&]{
-        auto pipeline = m_options.wire ? m_renderWire.pipeline.handle : m_render.pipeline.handle;
-        auto layout = m_options.wire ? m_renderWire.layout.handle : m_render.layout.handle;
+        auto pipeline = m_render.pipeline.handle;
+        auto layout = m_render.layout.handle;
 
         static std::array<VkDescriptorSet, 3> sets;
         sets[0] = m_sets[0];
@@ -217,6 +221,7 @@ void Terrain::createRenderPipelines() {
                     .addSpecialization(should_displace, 2)
                     .addSpecialization(0u, 3)
                     .addSpecialization(0u, 4)
+                .geometryShader(FileManager::resource("terrain_render.geom.spv"))
                 .fragmentShader(FileManager::resource("terrain_render.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
@@ -529,7 +534,11 @@ void Terrain::controls(bool show) {
     ImGui::SliderFloat("Pixels/Edge", &m_options.primitivePixelLengthTarget, 1, 32);
     ImGui::SliderFloat("Dmap scale", &m_options.dmapScale, 0, 1);
     ImGui::SliderFloat("Lod Std", &m_options.minLodStdev, 0, 1);
+    ImGui::SliderFloat("Mat blend min", &m_options.blendMin, 0, 1);
+    ImGui::SliderFloat("Mat blend max", &m_options.blendMax, 0, 1);
     ImGui::SliderFloat("tile size", &m_options.tileSize, 1, 1000);
+    ImGui::Checkbox("tri planer mapping", &m_options.triplanerMapping);
+    ImGui::SameLine();
     ImGui::Checkbox("Wire", &m_options.wire);
     ImGui::SameLine();
     ImGui::Checkbox("topView", &m_options.topView);
@@ -575,18 +584,34 @@ float Terrain::printPerfStats() {
 
 void Terrain::loadTerrainTextures() {
     const auto levels = 11u;
-    textures::fromFile(device(), textures.albedoMap, resource("GroundDirtRocky015/GroundDirtRocky015_COL_1K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels);
-    textures::fromFile(device(), textures.aoMap, resource("GroundDirtRocky015/GroundDirtRocky015_AO_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels);
-    textures::fromFile(device(), textures.roughnessMap, resource("GroundDirtRocky015/GroundDirtRocky015_GLOSS_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels);
-    textures::fromFile(device(), textures.ggxLUT, resource("lut/lut_ggx.png"), false);
+    textures::fromFile(device(), dirt.albedoMap, resource("GroundDirtRocky015/GroundDirtRocky015_COL_1K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.aoMap, resource("GroundDirtRocky015/GroundDirtRocky015_AO_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.roughnessMap, resource("GroundDirtRocky015/GroundDirtRocky015_GLOSS_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.normalMap, resource("GroundDirtRocky015/GroundDirtRocky015_NRM_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+    textures::fromFile(device(), grass.albedoMap, resource("GrassShort001/GrassShort001_COL_VAR1_1K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.aoMap, resource("GrassShort001/GrassShort001_AO_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.roughnessMap, resource("GrassShort001/GrassShort001_GLOSS_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.normalMap, resource("GrassShort001/GrassShort001_NRM_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
 
-    textures::generateLOD(device(), textures.albedoMap, levels);
-    textures::generateLOD(device(), textures.aoMap, levels);
-    textures::generateLOD(device(), textures.roughnessMap, levels);
+    textures::generateLOD(device(), dirt.albedoMap, levels);
+    textures::generateLOD(device(), dirt.aoMap, levels);
+    textures::generateLOD(device(), dirt.roughnessMap, levels);
+    textures::generateLOD(device(), dirt.normalMap, levels);
 
-    m_uniforms.cpu->albedoMapIndex = bindlessDescriptor().update(textures.albedoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    m_uniforms.cpu->aoMapIndex = bindlessDescriptor().update(textures.aoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    m_uniforms.cpu->roughnessMapIndex = bindlessDescriptor().update(textures.roughnessMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    m_uniforms.cpu->ggxLUTIndex = bindlessDescriptor().update(textures.ggxLUT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    textures::generateLOD(device(), grass.albedoMap, levels);
+    textures::generateLOD(device(), grass.aoMap, levels);
+    textures::generateLOD(device(), grass.roughnessMap, levels);
+    textures::generateLOD(device(), grass.normalMap, levels);
+
+    m_uniforms.cpu->dirtyAlbedoMapIndex = bindlessDescriptor().update(dirt.albedoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->dirtyAoMapIndex = bindlessDescriptor().update(dirt.aoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->dirtyRoughnessMapIndex = bindlessDescriptor().update(dirt.roughnessMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->dirtyNormalMapIndex = bindlessDescriptor().update(dirt.normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+    m_uniforms.cpu->grassAlbedoMapIndex = bindlessDescriptor().update(grass.albedoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->grassAoMapIndex = bindlessDescriptor().update(grass.aoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->grassRoughnessMapIndex = bindlessDescriptor().update(grass.roughnessMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    m_uniforms.cpu->grassNormalMapIndex = bindlessDescriptor().update(grass.normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 }

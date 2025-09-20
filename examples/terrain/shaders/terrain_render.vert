@@ -16,6 +16,7 @@ layout(location = 0) out struct {
 } v;
 
 layout(location = 4) flat out int isVisible;
+layout(location = 5) noperspective out vec3 distance;
 
 void main() {
     const int cbtID = 0;
@@ -41,5 +42,6 @@ void main() {
     v.color = vec3(252, 197, 150) / 255.0f;
     v.uv = attrib.texCoord;
 
+    distance = vec3(1100);
     gl_Position = globals.modelViewProjectionMatrix * attrib.position;
 }

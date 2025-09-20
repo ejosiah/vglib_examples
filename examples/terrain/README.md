@@ -14,5 +14,5 @@
 - cloud shadows
 - randomize texture rotation
 - add time of day
-
+- look into virtual textures
 ## Notes
