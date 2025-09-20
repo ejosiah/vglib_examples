@@ -11,6 +11,8 @@
 
 layout(constant_id = 0) const int mode = MODE_TRIANGLE;
 
+layout(location = 0) flat out int heapIndex;
+
 void main() {
     cbt_Node node = cbt_DecodeNode(0, gl_InstanceIndex);
     vec3 xPos = vec3(0, 0, 1);
@@ -23,6 +25,7 @@ void main() {
         posMatrix = leb_DecodeNodeAttributeArray       (node, mat2x3(xPos, yPos));
     }
 
+    heapIndex = gl_InstanceIndex;
     vec2 pos = 2 * vec2(posMatrix[0][gl_VertexIndex], posMatrix[1][gl_VertexIndex]) - 1;
     pos.y *= -1;
     gl_Position = vec4(pos, 0.0, 1.0);

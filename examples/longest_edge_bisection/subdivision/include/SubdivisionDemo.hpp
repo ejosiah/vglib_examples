@@ -31,6 +31,8 @@ protected:
 
     void beforeDeviceCreation() override;
 
+    void loadAtlas();
+
     void createDescriptorPool();
 
     void createDescriptorSetLayouts();
@@ -56,6 +58,8 @@ protected:
     void renderTarget(VkCommandBuffer commandBuffer);
 
     void renderTriangle(VkCommandBuffer commandBuffer);
+
+    void renderLabel(VkCommandBuffer commandBuffer);
 
     void transferCBT(VkCommandBuffer commandBuffer);
 
@@ -105,6 +109,11 @@ protected:
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } triangle;
+
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } label;
     } render;
 
     struct {
@@ -157,6 +166,11 @@ protected:
     float maxDepth{CBT_MAX_DEPTH};
     int initMaxDepth{CBT_INIT_MAX_DEPTH};
     VulkanBuffer dummyBuffer;
+
+    VulkanDescriptorSetLayout atlasDescriptorSetLayout;
+    VkDescriptorSet atlasDescriptorSet;
+
+    Texture atlas;
 
     struct {
         VulkanBuffer gpu;

@@ -20,6 +20,7 @@ void SubdivisionDemo::initApp() {
     initCBT();
     initCamera();
     createBuffers();
+    loadAtlas();
     createDescriptorPool();
     createDescriptorSetLayouts();
     updateDescriptorSets();
@@ -87,12 +88,23 @@ void SubdivisionDemo::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
+
+    atlasDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("atlas")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+        .createLayout();
 }
 
 void SubdivisionDemo::updateDescriptorSets(){
-    leb.descriptorSet = descriptorPool.allocate({ leb.descriptorSetLayout }).front();
-    
-    auto writes = initializers::writeDescriptorSets<4>();
+    auto sets = descriptorPool.allocate({ leb.descriptorSetLayout, atlasDescriptorSetLayout });
+    leb.descriptorSet = sets[0];
+    atlasDescriptorSet = sets[1];
+
+    auto writes = initializers::writeDescriptorSets<5>();
     
     writes[0].dstSet = leb.descriptorSet;
     writes[0].dstBinding = 0;
@@ -121,6 +133,13 @@ void SubdivisionDemo::updateDescriptorSets(){
     writes[3].descriptorCount = 1;
     VkDescriptorBufferInfo cbtInfo{ cbtInfoBuffer, 0, VK_WHOLE_SIZE };
     writes[3].pBufferInfo = &cbtInfo;
+
+    writes[4].dstSet = atlasDescriptorSet;
+    writes[4].dstBinding = 0;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[4].descriptorCount = 1;
+    VkDescriptorImageInfo atlasInfo{ atlas.sampler.handle, atlas.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    writes[4].pImageInfo = &atlasInfo;
     
     device.updateDescriptorSets(writes);
 }
@@ -173,6 +192,28 @@ void SubdivisionDemo::createRenderPipeline() {
                 .addDescriptorSetLayout(leb.descriptorSetLayout)
             .name("triangle_render")
         .build(render.triangle.layout);
+
+    render.label.pipeline =
+        prototypes->cloneScreenSpaceGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(resource("triangle.vert.spv"))
+                    .addSpecialization(static_cast<int>(mode), 0)
+                .geometryShader(resource("label.geom.spv"))
+                    .addSpecialization(width, 0)
+                    .addSpecialization(height, 1)
+                .fragmentShader(resource("label.frag.spv"))
+            .vertexInputState().clear()
+            .inputAssemblyState()
+                .triangles()
+            .depthStencilState()
+                .compareOpAlways()
+            .rasterizationState()
+                .cullNone()
+            .layout().clear()
+                .addDescriptorSetLayout(leb.descriptorSetLayout)
+                .addDescriptorSetLayout(atlasDescriptorSetLayout)
+                .name("label_render")
+        .build(render.label.layout);
     //    @formatter:on
 }
 
@@ -342,6 +383,7 @@ VkCommandBuffer *SubdivisionDemo::buildCommandBuffers(uint32_t imageIndex, uint3
     {
         renderTarget(commandBuffer);
         renderTriangle(commandBuffer);
+        renderLabel(commandBuffer);
         renderUI(commandBuffer);
     }
     vkCmdEndRenderPass(commandBuffer);
@@ -422,6 +464,17 @@ void SubdivisionDemo::renderTriangle(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.triangle.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.triangle.layout.handle, 0, 1, &leb.descriptorSet, 0, nullptr);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, dummyBuffer , &offset);
+    vkCmdDrawIndirect(commandBuffer, drawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+}
+
+void SubdivisionDemo::renderLabel(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = leb.descriptorSet;
+    sets[1] = atlasDescriptorSet;
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.label.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.label.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, dummyBuffer , &offset);
     vkCmdDrawIndirect(commandBuffer, drawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
 }
@@ -697,6 +750,10 @@ void SubdivisionDemo::sumReduceCbt(VkCommandBuffer commandBuffer) {
         vkCmdDispatch(commandBuffer, numGroup, 1, 1);
         computeToComputeBarrier(commandBuffer);
     }
+}
+
+void SubdivisionDemo::loadAtlas() {
+    textures::fromFile(device, atlas, resource("number_atlas_0_1023_32x32_binary_alpha.png"));
 }
 
 int main(){

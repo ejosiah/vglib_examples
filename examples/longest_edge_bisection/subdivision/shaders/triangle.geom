@@ -1,12 +1,15 @@
 #version 460
 
+layout(constant_id = 0) const int screenResolutionX = 512;
+layout(constant_id = 1) const int screenResolutionY = 512;
+
 layout (triangles) in;
 layout (triangle_strip, max_vertices = 3) out;
+
+layout(location = 0) flat in int heapIndex[];
 layout (location = 0) noperspective out vec3 o_Distance;
 
 
-layout(constant_id = 0) const int screenResolutionX = 512;
-layout(constant_id = 1) const int screenResolutionY = 512;
 
 vec2 u_ScreenResolution = vec2(screenResolutionX, screenResolutionY);
 
