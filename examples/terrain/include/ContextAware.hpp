@@ -2,6 +2,7 @@
 
 #include "Shared.hpp"
 #include "Profiler.hpp"
+#include "InputManager.h"
 
 struct Context {
     VulkanDevice* device{};
@@ -9,6 +10,7 @@ struct Context {
     RenderGraphInputs* rgInputs{};
     BaseCameraController* camera{};
     BindlessDescriptor* bindlessDescriptor{};
+    Mouse* mouseInput{};
     std::unique_ptr<Prototypes> prototypes;
     Frustum viewProjectionFrustum;
     VulkanSampler edgeClampSampler;
@@ -80,6 +82,10 @@ protected:
 
     auto resource(auto path) const {
         return FileManager::resource(path);
+    }
+
+    Mouse& mouseInput()  {
+        return *context().mouseInput;
     }
 
     auto& profiler()  {

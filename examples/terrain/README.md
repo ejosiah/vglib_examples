@@ -15,4 +15,6 @@
 - randomize texture rotation
 - add time of day
 - look into virtual textures
+- extract subdivision grid from terrain
+- add ocean
 ## Notes

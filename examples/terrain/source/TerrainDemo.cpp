@@ -355,6 +355,7 @@ void TerrainDemo::onPause() {
 void TerrainDemo::initContext() {
     context.screenWidth = swapChain.width();
     context.screenHeight = swapChain.height();
+    context.mouseInput = &mouse;
     context.device = &device;
     context.descriptorPool = &descriptorPool;
     context.camera = camera.get();

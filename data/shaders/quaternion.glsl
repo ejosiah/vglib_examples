@@ -30,6 +30,26 @@ vec4 invertRotation(vec4 q)
     return vec4(-q.x, -q.y, -q.z, q.w);
 }
 
+// Returns a quaternion from axis-angle.
+// axis: rotation axis (need not be unit length)
+// angleRad: rotation angle in radians
+// Result: vec4(q.x, q.y, q.z, q.w)  where xyz is imaginary and w is real.
+vec4 quatFromAxisAngle(vec3 axis, float angleRad)
+{
+    float len = length(axis);
+    if (len < 1e-8) {
+        // Degenerate axis: return identity (no rotation)
+        return vec4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    vec3 n = axis / len;        // normalize axis
+    float halfAngle = 0.5 * angleRad;
+    float s = sin(halfAngle);
+    float c = cos(halfAngle);
+    return vec4(n * s, c);
+}
+
+
 // Optimized point rotation using quaternion
 // Source: https://gamedev.stackexchange.com/questions/28395/rotating-vector3-by-a-quaternion
 vec3 rotatePoint(vec4 q, vec3 v) {

@@ -113,6 +113,23 @@ void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
     vkCmdDrawIndirect(commandBuffer, m_topViewDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
 }
 
+void Terrain::inspect(VkCommandBuffer commandBuffer) {
+    if(!m_options.inspect) return;
+
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = m_sets[0];
+    sets[1] = m_sets[1];
+    sets[2] = m_atmosphereDescriptor.set;
+
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_inspect.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_inspect.layout.handle, 0, COUNT(sets), sets.data(), 0,nullptr);
+    vkCmdPushConstants(commandBuffer, m_inspect.layout.handle, VK_SHADER_STAGE_GEOMETRY_BIT, 0, sizeof(m_inspectConstants), &m_inspectConstants);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+}
+
 void Terrain::initUniforms() {
     defaultValues.damp_tex_index = context().dmap_tex_index;
     defaultValues.dmap_normal_tex_index = context().dmap_normal_tex_index;
@@ -246,6 +263,32 @@ void Terrain::createRenderPipelines() {
                 .fragmentShader(FileManager::resource("terrain_render_wire.frag.spv"))
             .name("terrain_render_wire")
         .build(m_renderWire.layout);
+
+    m_inspect.pipeline =
+        renderBuilder
+            .shaderStage()
+                .vertexShader(FileManager::resource("inspect.vert.spv"))
+                    .addSpecialization(0u, 0)
+                    .addSpecialization(256u, 1)
+                    .addSpecialization(should_displace, 2)
+                    .addSpecialization(0u, 3)
+                    .addSpecialization(0u, 4)
+                .geometryShader(FileManager::resource("inspect.geom.spv"))
+                .fragmentShader(FileManager::resource("inspect.frag.spv"))
+            .rasterizationState()
+                .lineWidth(5.0)
+            .depthStencilState()
+                .compareOpAlways()
+                .disableDepthWrite()
+            .colorBlendState()
+                .attachments(1)
+            .dynamicRenderPass()
+                .disable()
+            .layout()
+                .addPushConstantRange(VK_SHADER_STAGE_GEOMETRY_BIT, 0, sizeof(m_inspectConstants))
+            .name("terrain_inspect")
+        .build(m_inspect.layout);
+
 
     m_topView.pipeline =
         graphicsPipelineBuilder()
@@ -550,6 +593,14 @@ void Terrain::controls(bool show) {
         ImGui::RadioButton("random", &m_options.tileColor, 2);
     }
 
+    ImGui::Checkbox("inspect area", &m_options.inspect);
+
+//    if(m_options.inspect) {
+//        if(m_inspectConstants.state == 0) {
+//            ImGui::Text("right click on surface to inspect\nthen drag to extend area");
+//        }
+//    }
+
     ImGui::End();
 }
 
@@ -614,4 +665,18 @@ void Terrain::loadTerrainTextures() {
     m_uniforms.cpu->grassAoMapIndex = bindlessDescriptor().update(grass.aoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     m_uniforms.cpu->grassRoughnessMapIndex = bindlessDescriptor().update(grass.roughnessMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     m_uniforms.cpu->grassNormalMapIndex = bindlessDescriptor().update(grass.normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+}
+
+void Terrain::checkAppInput() {
+    static bool initialPress = true;
+
+    if(m_options.inspect && mouseInput().right.held && initialPress) {
+        m_inspectConstants.state = 1;
+        m_inspectConstants.start = mouseInput().position;
+    }
+
+    if(m_options.inspect && mouseInput().right.released) {
+        m_inspectConstants.end = mouseInput().position;
+        m_inspectConstants.state = 0;
+    }
 }

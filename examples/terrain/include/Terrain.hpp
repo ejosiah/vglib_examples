@@ -29,11 +29,15 @@ public:
 
     void renderTopView(VkCommandBuffer commandBuffer);
 
+    void inspect(VkCommandBuffer commandBuffer);
+
     void controls(bool show = true);
 
     void endFrame();
 
     uint nodeCount() const;
+
+    void checkAppInput();
 
     void topViewOn();
 
@@ -173,6 +177,7 @@ private:
         bool wire{false};
         bool triplanerMapping{false};
         bool showTiles{false};
+        bool inspect{false};
         int tileColor{0};
     } m_options;
 
@@ -193,10 +198,17 @@ private:
     Pipeline m_render;
     Pipeline m_renderWire;
     Pipeline m_topView;
+    Pipeline m_inspect;
     std::array<VkDescriptorSet, 2> m_sets;
     SpecializationConstants specializationConstants{};
     uint should_displace = 1;
     AtmosphereModel::Descriptor m_atmosphereDescriptor;
+
+    struct {
+        glm::vec2 start{1};
+        glm::vec2 end{1};
+        int state{0};
+    } m_inspectConstants;
 
     static constexpr int QUERY_SUBDIVISION_ID = 0;
     static constexpr int QUERY_SUM_REDUCE_PRE_PASS_ID = 1;
