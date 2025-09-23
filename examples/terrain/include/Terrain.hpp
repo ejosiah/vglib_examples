@@ -173,7 +173,6 @@ private:
     } grass;
 
     Pipeline m_render;
-    Pipeline m_renderWire;
     Pipeline m_topView;
     Pipeline m_inspect;
     SpecializationConstants specializationConstants{};

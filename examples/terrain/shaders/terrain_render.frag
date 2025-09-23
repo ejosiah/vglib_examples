@@ -2,7 +2,7 @@
 
 #include "shared.glsl"
 
-#define ATMOSPHERE_UNIFORM_SET 2
+#define ATMOSPHERE_UNIFORM_SET 3
 #include "atmosphere/atm_uniforms.glsl"
 #include "triplaner_mapping.glsl"
 

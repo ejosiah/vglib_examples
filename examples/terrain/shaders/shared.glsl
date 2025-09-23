@@ -35,7 +35,7 @@ layout(constant_id = TRIANGLE_CULL_CONST_ID) const uint cull_triangle = 0;
 const bool should_displace = flag_displace == 1;
 const bool should_cull_triangle = cull_triangle == 1;
 
-layout(set = 0, binding = 5, scalar) buffer Constants {
+layout(set = 2, binding = 0, scalar) buffer Constants {
     mat4 modelMatrix;
     mat4 modelViewMatrix;
     mat4 viewMatrix;

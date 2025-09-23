@@ -9,13 +9,10 @@
 
 Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 : SubdivisionGrid(*context.device, *context.descriptorPool, *context.bindlessDescriptor,
-                  "terrain", glm::vec2(context.screenWidth, context.screenHeight), context.profiler)
+                  "terrain", glm::vec2(context.screenWidth, context.screenHeight), 1, context.profiler)
 , m_context{&context}
 , m_atmosphereDescriptor(atmDescriptor)
 {
-    m_sets[1] = context.bindlessDescriptor->descriptorSet;
-//    m_sets[2] = atmDescriptor.set;
-
     static uint WorkGroupSize = 256;
     static uint cbtID = 0;
     static uint projection_method = 0;
@@ -79,17 +76,15 @@ void Terrain::preProcess(VkCommandBuffer commandBuffer) {
 
 void Terrain::render(VkCommandBuffer commandBuffer) {
     profiler().profile(queryIds[QUERY_RENDER_ID], commandBuffer, [&]{
-        auto pipeline = m_render.pipeline.handle;
-        auto layout = m_render.layout.handle;
-
-        static std::array<VkDescriptorSet, 3> sets;
+        static std::array<VkDescriptorSet, 4> sets;
         sets[0] = m_sets[0];
         sets[1] = m_sets[1];
-        sets[2] = m_atmosphereDescriptor.set;
+        sets[2] = m_sets[2];
+        sets[3] = m_atmosphereDescriptor.set;
 
         VkDeviceSize offset = 0;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, COUNT(sets), sets.data(), 0,nullptr);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, COUNT(sets), sets.data(), 0,nullptr);
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
         vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
@@ -109,10 +104,11 @@ void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
 void Terrain::inspect(VkCommandBuffer commandBuffer) {
     if(!m_options.inspect) return;
 
-    static std::array<VkDescriptorSet, 3> sets;
+    static std::array<VkDescriptorSet, 4> sets;
     sets[0] = m_sets[0];
     sets[1] = m_sets[1];
-    sets[2] = m_atmosphereDescriptor.set;
+    sets[2] = m_sets[2];
+    sets[3] = m_atmosphereDescriptor.set;
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_inspect.pipeline.handle);
@@ -243,19 +239,12 @@ void Terrain::createRenderPipelines() {
             .colorBlendState()
                 .attachments(2)
             .layout().clear()
-                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(m_subdGridDescriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())
+                .addDescriptorSetLayout(m_descriptorSetLayout)
                 .addDescriptorSetLayout(m_atmosphereDescriptor.setLayout)
             .name("terrain_render")
         .build(m_render.layout);
-
-    m_renderWire.pipeline =
-        renderBuilder
-            .shaderStage()
-                .geometryShader(FileManager::resource("terrain_render.geom.spv"))
-                .fragmentShader(FileManager::resource("terrain_render_wire.frag.spv"))
-            .name("terrain_render_wire")
-        .build(m_renderWire.layout);
 
     m_inspect.pipeline =
         renderBuilder
@@ -316,7 +305,7 @@ void Terrain::createRenderPipelines() {
                 .minDepthBounds(0)
                 .maxDepthBounds(1)
             .layout().clear()
-                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(m_subdGridDescriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout())
             .name("terrain_top_view")
         .build(m_topView.layout);
@@ -341,7 +330,7 @@ void Terrain::endFrame() {
 }
 
 void Terrain::createDescriptorSetLayout() {
-    m_descriptorSetLayout =
+    m_subdGridDescriptorSetLayout =
         device().descriptorSetLayoutBuilder()
             .name("leb_descriptor_set_layout")
             .binding(0)
@@ -369,42 +358,53 @@ void Terrain::createDescriptorSetLayout() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
+
+    m_descriptorSetLayout =
+        device().descriptorSetLayoutBuilder()
+            .name("terrain_subdivision_descriptor_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
 }
 
 void Terrain::updateDescriptorSets() {
-    m_descriptorSet = descriptorPool().allocate({ m_descriptorSetLayout }).front();
+    auto sets = descriptorPool().allocate({ m_subdGridDescriptorSetLayout, m_descriptorSetLayout });
+    m_subdGridDescriptorSet = sets[0];
+    m_descriptorSet = sets[1];
 
     auto writes = initializers::writeDescriptorSets<6>();
 
-    writes[0].dstSet = m_descriptorSet;
+    writes[0].dstSet = m_subdGridDescriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo lebInfo{ m_concurrentBinaryTree, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &lebInfo;
 
-    writes[1].dstSet = m_descriptorSet;
+    writes[1].dstSet = m_subdGridDescriptorSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
     VkDescriptorBufferInfo drawInfo{ m_drawBuffer, 0, VK_WHOLE_SIZE };
     writes[1].pBufferInfo = &drawInfo;
 
-    writes[2].dstSet = m_descriptorSet;
+    writes[2].dstSet = m_subdGridDescriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[2].descriptorCount = 1;
     VkDescriptorBufferInfo drawTopViewInfo{ m_topViewDrawBuffer, 0, VK_WHOLE_SIZE };
     writes[2].pBufferInfo = &drawTopViewInfo;
 
-    writes[3].dstSet = m_descriptorSet;
+    writes[3].dstSet = m_subdGridDescriptorSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[3].descriptorCount = 1;
     VkDescriptorBufferInfo dispatchInfo{ m_dispatchBuffer, 0, VK_WHOLE_SIZE };
     writes[3].pBufferInfo = &dispatchInfo;
 
-    writes[4].dstSet = m_descriptorSet;
+    writes[4].dstSet = m_subdGridDescriptorSet;
     writes[4].dstBinding = 4;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 1;
@@ -412,7 +412,7 @@ void Terrain::updateDescriptorSets() {
     writes[4].pBufferInfo = &cbtInfo;
 
     writes[5].dstSet = m_descriptorSet;
-    writes[5].dstBinding = 5;
+    writes[5].dstBinding = 0;
     writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[5].descriptorCount = 1;
     VkDescriptorBufferInfo uniformInfo{ m_uniforms.gpu, 0, VK_WHOLE_SIZE };
@@ -420,7 +420,8 @@ void Terrain::updateDescriptorSets() {
 
     device().updateDescriptorSets(writes);
     
-    m_sets[0] = m_descriptorSet;
+    m_sets[0] = m_subdGridDescriptorSet;
+    m_sets[2] = m_descriptorSet;
 }
 
 void Terrain::createComputePipelines() {
@@ -429,7 +430,8 @@ void Terrain::createComputePipelines() {
 }
 
 std::vector<PipelineMetaData> Terrain::metadata() {
-    std::vector<VulkanDescriptorSetLayout*> layouts{ &m_descriptorSetLayout, &bindlessDescriptorSetLayout() };
+    std::vector<VulkanDescriptorSetLayout*> layouts{ &m_subdGridDescriptorSetLayout, &bindlessDescriptorSetLayout() };
+    std::vector<VulkanDescriptorSetLayout*> layouts1{ &m_subdGridDescriptorSetLayout, &bindlessDescriptorSetLayout(), &m_descriptorSetLayout };
     return {
         {
             .name = "terrain_leb_dispatcher",
@@ -462,7 +464,7 @@ std::vector<PipelineMetaData> Terrain::metadata() {
         {
             .name = "terrain_subdivide",
             .shadePath = FileManager::resource("terrain_subdivide.comp.spv"),
-            .layouts = layouts,
+            .layouts = layouts1,
             .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
             .specializationConstants = specializationConstants
         },
@@ -605,7 +607,7 @@ void Terrain::checkAppInput() {
 
 PipelineMetaData Terrain::subdivisionMetadata() {
     auto layouts = m_layouts;
-    layouts.push_back(&m_descriptorSetLayout);
+    layouts.push_back(&m_subdGridDescriptorSetLayout);
     return {
             .name = "terrain_subdivide",
             .shadePath = FileManager::resource("terrain_subdivide.comp.spv"),

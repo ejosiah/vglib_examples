@@ -9,7 +9,7 @@
 
 SubdivisionGrid::SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, 
                                  BindlessDescriptor& bindlessDescriptor, const std::string& name,
-                                 glm::vec2 resolution, Profiler* profiler, int maxDepth)
+                                 glm::vec2 resolution, uint descriptorCount, Profiler* profiler, int maxDepth)
 : m_device{&device}
 , m_descriptorPool{&descriptorPool}
 , m_bindlessDescriptor{&bindlessDescriptor}
@@ -18,7 +18,7 @@ SubdivisionGrid::SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& des
 , m_profiler{profiler}
 , m_maxDepth{maxDepth}
 {
-    m_sets.resize(2);
+    m_sets.resize(2 + descriptorCount);
     m_sets[1] = bindlessDescriptor.descriptorSet;
     pipelines.cbtInfo = std::format("{}_cbt_info", name);
     pipelines.cbtDispatch = std::format("{}_cbt_dispatcher", name);
@@ -65,7 +65,7 @@ void SubdivisionGrid::subdivide0(VkCommandBuffer commandBuffer, int pingPong) {
 
 void SubdivisionGrid::cbtDispatch(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_dispatcher"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_dispatcher"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_dispatcher"), 0, 2, m_sets.data(), 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
     Barriers::pushAndFlush(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
 }
@@ -77,7 +77,7 @@ void SubdivisionGrid::sumReducePrePass(VkCommandBuffer commandBuffer) {
         auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce_prepass"));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce_prepass"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce_prepass"), 0, 2, m_sets.data(), 0,nullptr);
         vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce_prepass"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &itr);
         vkCmdDispatch(commandBuffer, numGroup, 1, 1);
         Barrier::computeWriteToRead(commandBuffer);
@@ -92,7 +92,7 @@ void SubdivisionGrid::sumReduceCbt(VkCommandBuffer commandBuffer) {
             auto pass = itr;
 
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_sum_reduce"));
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_sum_reduce"), 0, 2, m_sets.data(), 0,nullptr);
             vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_cbt_sum_reduce"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
             vkCmdDispatch(commandBuffer, numGroup, 1, 1);
             Barrier::computeWriteToRead(commandBuffer);
@@ -102,7 +102,7 @@ void SubdivisionGrid::sumReduceCbt(VkCommandBuffer commandBuffer) {
 
 void SubdivisionGrid::sysDispatch(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_leb_dispatcher"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_leb_dispatcher"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_leb_dispatcher"), 0, 2, m_sets.data(), 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
 
     static auto dstStageMask = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
@@ -112,7 +112,7 @@ void SubdivisionGrid::sysDispatch(VkCommandBuffer commandBuffer) {
 
 void SubdivisionGrid::getCbtInfo(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_cbt_info"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_info"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_cbt_info"), 0, 2, m_sets.data(), 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
     Barrier::computeWriteToFragmentRead(commandBuffer);
 }
