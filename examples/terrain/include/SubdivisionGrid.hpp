@@ -34,6 +34,8 @@ protected:
 
     virtual void updateDescriptorSets();
 
+    void initQuery();
+
     void subdivide0(VkCommandBuffer commandBuffer, int pingPong);
 
     void cbtDispatch(VkCommandBuffer commandBuffer);

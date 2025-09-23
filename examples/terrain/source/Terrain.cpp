@@ -32,14 +32,9 @@ Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 }
 
 void Terrain::init() {
-    initQuery();
     initUniforms();
     loadTerrainTextures();
-    initVertexBuffer();
-    initBuffers();
-    createDescriptorSetLayout();
-    updateDescriptorSets();
-    createPipelines();
+    SubdivisionGrid::init();
     createRenderPipelines();
 }
 
@@ -305,13 +300,6 @@ void Terrain::controls(bool show) {
 
 TerrainInfo Terrain::getInfo() const {
     return { m_dmap.width, m_dmap.height, m_dmap.zMin, m_dmap.zMax };
-}
-
-void Terrain::initQuery() {
-    for(auto query : queryIds) {
-        profiler().addQuery(query);
-    }
-
 }
 
 float Terrain::printPerfStats() {

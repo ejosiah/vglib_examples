@@ -29,6 +29,7 @@ SubdivisionGrid::SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& des
 }
 
 void SubdivisionGrid::init() {
+    initQuery();
     initVertexBuffer();
     initBuffers();
     createDescriptorSetLayout();
@@ -354,4 +355,12 @@ void SubdivisionGrid::createPipelines() {
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout)
             .name("top_view")
         .build(m_topView.layout);
+}
+
+void SubdivisionGrid::initQuery() {
+    if(m_profiler) {
+        for(auto query : queryIds) {
+            m_profiler->addQuery(query);
+        }
+    }
 }

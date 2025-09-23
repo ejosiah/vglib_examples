@@ -15,8 +15,6 @@ public:
 
     void init() override;
 
-    void initQuery();
-
     void newFrame();
 
 protected:
