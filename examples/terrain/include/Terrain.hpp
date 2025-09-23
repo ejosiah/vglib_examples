@@ -1,5 +1,6 @@
 #pragma once
 
+#include "SubdivisionGrid.hpp"
 #include "ContextAware.hpp"
 #include "ComputePipelins.hpp"
 #include "AtmosphereModel.hpp"
@@ -53,8 +54,6 @@ public:
 
 
 protected:
-    void renderTerrainDefault(VkCommandBuffer commandBuffer);
-
     void initBuffers();
 
     void initUniforms();
@@ -92,7 +91,6 @@ protected:
 private:
     static constexpr int64_t CBT_MAX_DEPTH = 25;
     static constexpr int64_t CBT_INIT_MAX_DEPTH = 1;
-
     struct UniformData {
         glm::mat4 modelMatrix{1};
         glm::mat4 modelViewMatrix{1};
@@ -113,6 +111,7 @@ private:
         float dmapFactor{1};
         float blendMin{0};
         float blendMax{1};
+        uint minArea{*reinterpret_cast<const uint*>(&MAX_FLOAT)};
         uint showTiles{0};
         uint tileColor{0};
         uint wireframeOn{0};
@@ -164,6 +163,10 @@ private:
         VulkanBuffer gpu;
         CbtData* cpu{};
     } m_cbtInfo;
+
+    struct {
+        VulkanBuffer normals;
+    } m_normalInfo;
 
     struct {
         float primitivePixelLengthTarget{7};

@@ -12,8 +12,8 @@ layout(location = 0) in struct {
     vec2 uv;
 } gs_in[];
 
-layout(location = 5) flat in int iIsVisible[];
-layout(location = 6) noperspective in vec3 idistance[]; // unused
+layout(location = 4) flat in int iIsVisible[];
+layout(location = 5) noperspective in vec3 idistance[]; // unused
 
 layout(location = 0) out struct {
     vec3 worldPos;
@@ -30,6 +30,10 @@ layout(location = 6) noperspective out vec3 o_Distance;
 void main() {
     float area;
     vec2 v[3];
+
+    float wArea = length(cross(gs_in[1].worldPos - gs_in[0].worldPos, gs_in[2].worldPos - gs_in[0].worldPos)) * 0.5;
+    uint uArea = floatBitsToUint(wArea);
+    globals.minArea = min(uArea, globals.minArea);
 
     if(wireframeEnabled()){
         vec2 p0 = globals.resolution * gl_in[0].gl_Position.xy / gl_in[0].gl_Position.w;

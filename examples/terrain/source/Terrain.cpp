@@ -151,7 +151,7 @@ void Terrain::initUniforms() {
     defaultValues.modelMatrix = model;
     defaultValues.resolution = { m_context->screenWidth, m_context->screenHeight };
 
-    m_uniforms.gpu = device().createCpuVisibleBuffer(&defaultValues, sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    m_uniforms.gpu = device().createCpuVisibleBuffer(&defaultValues, sizeof(UniformData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
     device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_uniforms", m_uniforms.gpu.buffer);
 }
@@ -372,7 +372,7 @@ void Terrain::createDescriptorSetLayout() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(5)
-                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
@@ -420,7 +420,7 @@ void Terrain::updateDescriptorSets() {
 
     writes[5].dstSet = m_descriptorSet;
     writes[5].dstBinding = 5;
-    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[5].descriptorCount = 1;
     VkDescriptorBufferInfo uniformInfo{ m_uniforms.gpu, 0, VK_WHOLE_SIZE };
     writes[5].pBufferInfo = &uniformInfo;
@@ -579,7 +579,7 @@ void Terrain::controls(bool show) {
     ImGui::SliderFloat("Lod Std", &m_options.minLodStdev, 0, 1);
     ImGui::SliderFloat("Mat blend min", &m_options.blendMin, 0, 1);
     ImGui::SliderFloat("Mat blend max", &m_options.blendMax, 0, 1);
-    ImGui::SliderFloat("tile size", &m_options.tileSize, 1, 1000);
+    ImGui::SliderFloat("tile size", &m_options.tileSize, 0.1, 1000);
     ImGui::Checkbox("tri planer mapping", &m_options.triplanerMapping);
     ImGui::SameLine();
     ImGui::Checkbox("Wire", &m_options.wire);
@@ -592,14 +592,9 @@ void Terrain::controls(bool show) {
         ImGui::RadioButton("checkerboard", &m_options.tileColor, 1); ImGui::SameLine();
         ImGui::RadioButton("random", &m_options.tileColor, 2);
     }
+    ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
+    ImGui::Text("minimum triangle area %f",  *as<float>(&m_uniforms.cpu->minArea));
 
-    ImGui::Checkbox("inspect area", &m_options.inspect);
-
-//    if(m_options.inspect) {
-//        if(m_inspectConstants.state == 0) {
-//            ImGui::Text("right click on surface to inspect\nthen drag to extend area");
-//        }
-//    }
 
     ImGui::End();
 }
@@ -635,15 +630,15 @@ float Terrain::printPerfStats() {
 
 void Terrain::loadTerrainTextures() {
     const auto levels = 11u;
-    textures::fromFile(device(), dirt.albedoMap, resource("GroundDirtRocky015/GroundDirtRocky015_COL_1K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), dirt.aoMap, resource("GroundDirtRocky015/GroundDirtRocky015_AO_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), dirt.roughnessMap, resource("GroundDirtRocky015/GroundDirtRocky015_GLOSS_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), dirt.normalMap, resource("GroundDirtRocky015/GroundDirtRocky015_NRM_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.albedoMap, resource("GroundDirtRocky015/GroundDirtRocky015_COL_4K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.aoMap, resource("GroundDirtRocky015/GroundDirtRocky015_AO_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.roughnessMap, resource("GroundDirtRocky015/GroundDirtRocky015_GLOSS_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.normalMap, resource("GroundDirtRocky015/GroundDirtRocky015_NRM_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
-    textures::fromFile(device(), grass.albedoMap, resource("GrassShort001/GrassShort001_COL_VAR1_1K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), grass.aoMap, resource("GrassShort001/GrassShort001_AO_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), grass.roughnessMap, resource("GrassShort001/GrassShort001_GLOSS_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), grass.normalMap, resource("GrassShort001/GrassShort001_NRM_1K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.albedoMap, resource("GrassShort001/GrassShort001_COL_VAR1_4K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.aoMap, resource("GrassShort001/GrassShort001_AO_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.roughnessMap, resource("GrassShort001/GrassShort001_GLOSS_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.normalMap, resource("GrassShort001/GrassShort001_NRM_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
 
     textures::generateLOD(device(), dirt.albedoMap, levels);
