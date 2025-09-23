@@ -9,7 +9,7 @@
 
 SubdivisionGrid::SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, 
                                  BindlessDescriptor& bindlessDescriptor, const std::string& name,
-                                 glm::vec2 resolution, Profiler* profiler, int64 maxDepth)
+                                 glm::vec2 resolution, Profiler* profiler, int maxDepth)
 : m_device{&device}
 , m_descriptorPool{&descriptorPool}
 , m_bindlessDescriptor{&bindlessDescriptor}
@@ -18,25 +18,14 @@ SubdivisionGrid::SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& des
 , m_profiler{profiler}
 , m_maxDepth{maxDepth}
 {
-    uint should_displace = 1;
+    m_sets.resize(2);
     m_sets[1] = bindlessDescriptor.descriptorSet;
-
-    static uint WorkGroupSize = 256;
-    static uint cbtID = 0;
-    static uint projection_method = 0;
-    static uint should_cull_triangle = 0;
-    static std::array<uint, 5> entries{ cbtID, WorkGroupSize, should_displace, projection_method, should_cull_triangle};
-    specializationConstants = {
-            .entries = {
-                    {0, sizeof(uint) * 0, sizeof(uint)},
-                    {1, sizeof(uint) * 1, sizeof(uint)},
-                    {2, sizeof(uint) * 2, sizeof(uint)},
-                    {3, sizeof(uint) * 3, sizeof(uint)},
-                    {4, sizeof(uint) * 4, sizeof(uint)},
-            },
-            .data = entries.data(),
-            .dataSize = BYTE_SIZE(entries)
-    };
+    pipelines.cbtInfo = std::format("{}_cbt_info", name);
+    pipelines.cbtDispatch = std::format("{}_cbt_dispatcher", name);
+    pipelines.subdivide = std::format("{}_subdivide", name);
+    pipelines.sumReducePrepass = std::format("{}_cbt_sum_reduce_prepass", name);
+    pipelines.sumReduce = std::format("{}_cbt_sum_reduce", name);
+    pipelines.subdivDispatch = std::format("{}_leb_dispatcher", name);
 }
 
 void SubdivisionGrid::init() {
@@ -55,7 +44,7 @@ void SubdivisionGrid::update(VkCommandBuffer commandBuffer) {
     subdivide0(commandBuffer, pingPong);
     sumReducePrePass(commandBuffer);
     sumReduceCbt(commandBuffer);
-    lebDispatch(commandBuffer);
+    sysDispatch(commandBuffer);
 
     pingPong = 1 - pingPong;
 }
@@ -96,7 +85,7 @@ void SubdivisionGrid::sumReducePrePass(VkCommandBuffer commandBuffer) {
 }
 
 void SubdivisionGrid::sumReduceCbt(VkCommandBuffer commandBuffer) {
-    withProfiler(queryIds[QUERY_SUM_REDUCE_PRE_PASS_ID], commandBuffer, [&]{
+    withProfiler(queryIds[QUERY_SUM_REDUCE_ID], commandBuffer, [&]{
         for(auto itr = m_maxDepth - 6; itr >= 0; --itr) {
             auto cnt = 1 << itr;
             auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
@@ -111,7 +100,7 @@ void SubdivisionGrid::sumReduceCbt(VkCommandBuffer commandBuffer) {
     });
 }
 
-void SubdivisionGrid::lebDispatch(VkCommandBuffer commandBuffer) {
+void SubdivisionGrid::sysDispatch(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("terrain_leb_dispatcher"));
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("terrain_leb_dispatcher"), 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
@@ -129,50 +118,59 @@ void SubdivisionGrid::getCbtInfo(VkCommandBuffer commandBuffer) {
 }
 
 std::vector<PipelineMetaData> SubdivisionGrid::metadata() {
-    VulkanDescriptorSetLayout* bindlessDescriptorSetLayout =
-            const_cast<VulkanDescriptorSetLayout*>(m_bindlessDescriptor->descriptorSetLayout);
-
-    std::vector<VulkanDescriptorSetLayout*> layouts{ &m_descriptorSetLayout, bindlessDescriptorSetLayout };
+    static uint WorkGroupSize = 256; 
+    static uint cbtID = 0;
+    static std::array<uint, 2> entries{ cbtID, WorkGroupSize };
+    static SpecializationConstants specializationConstants{};
+    specializationConstants = {
+            .entries = {
+                    {0, sizeof(uint) * 0, sizeof(uint)},
+                    {1, sizeof(uint) * 1, sizeof(uint)},
+            },
+            .data = entries.data(),
+            .dataSize = BYTE_SIZE(entries)
+    };
+    
     return {
             {
                     .name = fmt::format("{}_leb_dispatcher", m_name),
                     .shadePath = FileManager::resource("leb_dispatcher.comp.spv"),
-                    .layouts = layouts,
+                    .layouts = m_layouts,
                     .ranges = {},
                     .specializationConstants = specializationConstants
             },
             {
                     .name = fmt::format("{}_cbt_dispatcher", m_name),
                     .shadePath = FileManager::resource("cbt_dispatcher.comp.spv"),
-                    .layouts = layouts,
+                    .layouts = m_layouts,
                     .ranges = {},
                     .specializationConstants = specializationConstants
             },
             {
                     .name = fmt::format("{}_cbt_sum_reduce_prepass", m_name),
                     .shadePath = FileManager::resource("cbt_sum_reduce_prepass.comp.spv"),
-                    .layouts = layouts,
+                    .layouts = m_layouts,
                     .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
                     .specializationConstants = specializationConstants
             },
             {
                     .name = fmt::format("{}_cbt_sum_reduce", m_name),
                     .shadePath = FileManager::resource("cbt_sum_reduce.comp.spv"),
-                    .layouts = layouts,
+                    .layouts = m_layouts,
                     .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
                     .specializationConstants = specializationConstants
             },
             {
                     .name = fmt::format("{}_cbt_info", m_name),
                     .shadePath = FileManager::resource("cbt_info.comp.spv"),
-                    .layouts = layouts,
+                    .layouts = m_layouts,
                     .specializationConstants = specializationConstants
             },
             subdivisionMetadata()
     };}
 
 void SubdivisionGrid::createDescriptorSetLayout() {
-    m_descriptorSetLayout =
+    m_subdGridDescriptorSetLayout =
         m_device->descriptorSetLayoutBuilder()
             .name("leb_descriptor_set_layout")
             .binding(0)
@@ -196,42 +194,48 @@ void SubdivisionGrid::createDescriptorSetLayout() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
+
+    VulkanDescriptorSetLayout* bindlessDescriptorSetLayout =
+            const_cast<VulkanDescriptorSetLayout*>(m_bindlessDescriptor->descriptorSetLayout);
+
+    m_layouts.push_back(&m_subdGridDescriptorSetLayout);
+    m_layouts.push_back(bindlessDescriptorSetLayout);
 }
 
 void SubdivisionGrid::updateDescriptorSets() {
-    m_descriptorSet = m_descriptorPool->allocate({ m_descriptorSetLayout }).front();
+    m_subdGridDescriptorSet = m_descriptorPool->allocate({ m_subdGridDescriptorSetLayout }).front();
 
     auto writes = initializers::writeDescriptorSets<5>();
 
-    writes[0].dstSet = m_descriptorSet;
+    writes[0].dstSet = m_subdGridDescriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo lebInfo{ m_concurrentBinaryTree, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &lebInfo;
 
-    writes[1].dstSet = m_descriptorSet;
+    writes[1].dstSet = m_subdGridDescriptorSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
     VkDescriptorBufferInfo drawInfo{ m_drawBuffer, 0, VK_WHOLE_SIZE };
     writes[1].pBufferInfo = &drawInfo;
 
-    writes[2].dstSet = m_descriptorSet;
+    writes[2].dstSet = m_subdGridDescriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[2].descriptorCount = 1;
     VkDescriptorBufferInfo drawTopViewInfo{ m_topViewDrawBuffer, 0, VK_WHOLE_SIZE };
     writes[2].pBufferInfo = &drawTopViewInfo;
 
-    writes[3].dstSet = m_descriptorSet;
+    writes[3].dstSet = m_subdGridDescriptorSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[3].descriptorCount = 1;
     VkDescriptorBufferInfo dispatchInfo{ m_dispatchBuffer, 0, VK_WHOLE_SIZE };
     writes[3].pBufferInfo = &dispatchInfo;
 
-    writes[4].dstSet = m_descriptorSet;
+    writes[4].dstSet = m_subdGridDescriptorSet;
     writes[4].dstBinding = 4;
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 1;
@@ -239,7 +243,7 @@ void SubdivisionGrid::updateDescriptorSets() {
     writes[4].pBufferInfo = &cbtInfo;
     
     m_device->updateDescriptorSets(writes);
-    m_sets[0] = m_descriptorSet;
+    m_sets[0] = m_subdGridDescriptorSet;
 }
 
 void SubdivisionGrid::initBuffers() {
@@ -317,10 +321,10 @@ void SubdivisionGrid::createPipelines() {
         m_device->graphicsPipelineBuilder()
             .shaderStage()
                 .vertexShader(FileManager::resource("empty.vert.spv"))
-                .tessellationControlShader(FileManager::resource("top_view.tesc.spv"))
-                .tessellationEvaluationShader(FileManager::resource("top_view.tese.spv"))
-                .geometryShader(FileManager::resource("top_view.geom.spv"))
-                .fragmentShader(FileManager::resource("top_view.frag.spv"))
+                .tessellationControlShader(FileManager::resource("terrain_top_view.tesc.spv"))
+                .tessellationEvaluationShader(FileManager::resource("terrain_top_view.tese.spv"))
+                .geometryShader(FileManager::resource("terrain_top_view.geom.spv"))
+                .fragmentShader(FileManager::resource("terrain_top_view.frag.spv"))
             .vertexInputState().clear()
             .inputAssemblyState()
                 .patches()
@@ -346,7 +350,7 @@ void SubdivisionGrid::createPipelines() {
                 .minDepthBounds(0)
                 .maxDepthBounds(1)
             .layout().clear()
-                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(m_subdGridDescriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout)
             .name("top_view")
         .build(m_topView.layout);

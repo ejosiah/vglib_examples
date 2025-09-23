@@ -15,7 +15,7 @@ public:
     };
 
     SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, BindlessDescriptor& bindlessDescriptor,
-                    const std::string& name, glm::vec2 resolution, Profiler* profiler = {}, int64 maxDepth = CBT_MAX_DEPTH);
+                    const std::string& name, glm::vec2 resolution, Profiler* profiler = {}, int maxDepth = CBT_MAX_DEPTH);
 
     virtual ~SubdivisionGrid() = default;
 
@@ -38,7 +38,7 @@ protected:
 
     void sumReduceCbt(VkCommandBuffer commandBuffer);
 
-    void lebDispatch(VkCommandBuffer commandBuffer);
+    void sysDispatch(VkCommandBuffer commandBuffer);
 
     void getCbtInfo(VkCommandBuffer commandBuffer);
 
@@ -62,8 +62,8 @@ protected:
         }
     }
 
-    static constexpr int64_t CBT_MAX_DEPTH = 25;
-    static constexpr int64_t CBT_INIT_MAX_DEPTH = 1;
+    static constexpr int CBT_MAX_DEPTH = 25;
+    static constexpr int CBT_INIT_MAX_DEPTH = 1;
 
 
     VulkanDevice* m_device{};
@@ -72,7 +72,7 @@ protected:
     std::string m_name;
     glm::vec2 m_resolution;
     Profiler* m_profiler{};
-    int64 m_maxDepth{CBT_MAX_DEPTH};
+    int m_maxDepth{CBT_MAX_DEPTH};
     ComputePipelines m_compute;
     VulkanBuffer m_vertices;
     VulkanBuffer m_indexes;
@@ -81,21 +81,31 @@ protected:
     VulkanBuffer m_topViewDrawBuffer;
     VulkanBuffer m_dispatchBuffer;
     VulkanBuffer m_concurrentBinaryTree;
-    VulkanDescriptorSetLayout m_descriptorSetLayout;
-    VkDescriptorSet m_descriptorSet{};
+    VulkanDescriptorSetLayout m_subdGridDescriptorSetLayout;
+    VkDescriptorSet m_subdGridDescriptorSet{};
     Pipeline m_topView;
-    std::array<VkDescriptorSet, 2> m_sets;
-    SpecializationConstants specializationConstants{};
+    std::vector<VkDescriptorSet> m_sets;
 
     int m_gpuSubDivisions{3};
+    std::vector<VulkanDescriptorSetLayout*> m_layouts;
 
     struct {
         VulkanBuffer gpu;
         CbtData* cpu{};
     } m_cbtInfo;
 
+    struct {
+        std::string cbtInfo;
+        std::string cbtDispatch;
+        std::string subdivide;
+        std::string sumReducePrepass;
+        std::string sumReduce;
+        std::string subdivDispatch;
+    } pipelines;
+
     static constexpr int QUERY_SUBDIVISION_ID = 0;
     static constexpr int QUERY_SUM_REDUCE_PRE_PASS_ID = 1;
     static constexpr int QUERY_SUM_REDUCE_ID = 2;
-    std::vector<std::string> queryIds{ "subdivision", "sum reduce prePass", "sum reduce" };
+    static constexpr int QUERY_RENDER_ID = 3;
+    std::vector<std::string> queryIds{ "subdivision", "sum reduce prePass", "sum reduce", "render" };
 };

@@ -9,20 +9,22 @@
 #include <array>
 #include <vector>
 
-class Terrain : public ContextAware {
+class Terrain : public SubdivisionGrid, public ContextAware {
 public:
-    struct CbtData {
-        uint maxDepth{0};
-        uint nodeCount{0};
-    };
-
     explicit Terrain(Context& context, AtmosphereModel::Descriptor atmDescriptor);
 
-    void init();
+    void init() override;
 
     void initQuery();
 
     void newFrame();
+
+protected:
+    PipelineMetaData subdivisionMetadata() override;
+
+    void subdivide(VkCommandBuffer commandBuffer, int pingPong) override;
+
+public:
 
     void preProcess(VkCommandBuffer commandBuffer);
 
@@ -68,18 +70,6 @@ protected:
 
     void createComputePipelines();
 
-    void cbtDispatch(VkCommandBuffer commandBuffer);
-
-    void lebSubdivision(VkCommandBuffer commandBuffer, int pingPong);
-
-    void sumReducePrePass(VkCommandBuffer commandBuffer);
-
-    void sumReduceCbt(VkCommandBuffer commandBuffer);
-
-    void lebDispatch(VkCommandBuffer commandBuffer);
-
-    void getCbtInfo(VkCommandBuffer commandBuffer);
-
     Context& context() final;
 
     float computeLodFactor();
@@ -89,8 +79,6 @@ protected:
     void loadTerrainTextures();
 
 private:
-    static constexpr int64_t CBT_MAX_DEPTH = 25;
-    static constexpr int64_t CBT_INIT_MAX_DEPTH = 1;
     struct UniformData {
         glm::mat4 modelMatrix{1};
         glm::mat4 modelViewMatrix{1};
@@ -130,14 +118,6 @@ private:
     } defaultValues{};
 
     Context* m_context{};
-    ComputePipelines m_compute;
-    VulkanBuffer m_vertices;
-    VulkanBuffer m_indexes;
-    VulkanBuffer m_emptyBuffer;
-    VulkanBuffer m_drawBuffer;
-    VulkanBuffer m_topViewDrawBuffer;
-    VulkanBuffer m_dispatchBuffer;
-    VulkanBuffer m_concurrentBinaryTree;
     VulkanDescriptorSetLayout m_descriptorSetLayout;
     VkDescriptorSet m_descriptorSet{};
 
@@ -147,7 +127,6 @@ private:
     } m_uniforms;
 
 
-    int m_maxDepth{CBT_MAX_DEPTH};
     float m_size{52660};
 
     struct {
@@ -158,11 +137,6 @@ private:
         float zMax{1587.0f};
         float scale{1};
     } m_dmap;
-
-    struct {
-        VulkanBuffer gpu;
-        CbtData* cpu{};
-    } m_cbtInfo;
 
     struct {
         VulkanBuffer normals;
@@ -202,7 +176,6 @@ private:
     Pipeline m_renderWire;
     Pipeline m_topView;
     Pipeline m_inspect;
-    std::array<VkDescriptorSet, 2> m_sets;
     SpecializationConstants specializationConstants{};
     uint should_displace = 1;
     AtmosphereModel::Descriptor m_atmosphereDescriptor;
@@ -212,10 +185,4 @@ private:
         glm::vec2 end{1};
         int state{0};
     } m_inspectConstants;
-
-    static constexpr int QUERY_SUBDIVISION_ID = 0;
-    static constexpr int QUERY_SUM_REDUCE_PRE_PASS_ID = 1;
-    static constexpr int QUERY_SUM_REDUCE_ID = 2;
-    static constexpr int QUERY_RENDER_ID = 3;
-    std::vector<std::string> queryIds{ "subdivision", "sum reduce prePass", "sum reduce", "render" };
 };

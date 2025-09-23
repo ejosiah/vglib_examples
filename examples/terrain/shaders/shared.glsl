@@ -145,6 +145,8 @@ vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, v
     vec3  kD = (vec3(1.0) - kS) * (1.0 - metalness);
     vec3 diffuse = kD * albedo / PI;
 
+    specular = vec3(0);
+
     // Direct lighting (sun); AO is NOT applied to direct by default
     vec3 Lo = (diffuse + specular) * radiance * NdotL;
 
