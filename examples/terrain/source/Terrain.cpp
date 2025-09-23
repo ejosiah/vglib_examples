@@ -39,8 +39,8 @@ void Terrain::init() {
     initBuffers();
     createDescriptorSetLayout();
     updateDescriptorSets();
+    createPipelines();
     createRenderPipelines();
-    createComputePipelines();
 }
 
 void Terrain::newFrame() {
@@ -93,12 +93,7 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
 
 void Terrain::renderTopView(VkCommandBuffer commandBuffer) {
     if(!m_options.topView) return;
-
-    VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.layout.handle, 0, COUNT(m_sets), m_sets.data(), 0,nullptr);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_emptyBuffer.buffer, &offset);
-    vkCmdDrawIndirect(commandBuffer, m_topViewDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+    topView(commandBuffer);
 }
 
 void Terrain::inspect(VkCommandBuffer commandBuffer) {
@@ -145,77 +140,9 @@ void Terrain::initUniforms() {
     device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_uniforms", m_uniforms.gpu.buffer);
 }
 
-void Terrain::initBuffers() {
-    VkDrawIndexedIndirectCommand drawIndexedCmd{(3u << (2 * m_options.gpuSubDivisions)), 1, 0, 0, 0};
-    VkDrawIndirectCommand drawCmd{1, 1, 0, 0};
-    VkDispatchIndirectCommand dispatchCmd{1, 1, 1};
-
-    auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    m_emptyBuffer = device().createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int) * 3, "empty_buffer");
-    m_drawBuffer = device().createDeviceLocalBuffer(&drawIndexedCmd, sizeof(VkDrawIndexedIndirectCommand), usage);
-    m_topViewDrawBuffer = device().createDeviceLocalBuffer(&drawIndexedCmd, sizeof(VkDrawIndirectCommand), usage);
-    m_dispatchBuffer = device().createDeviceLocalBuffer(&dispatchCmd, sizeof(VkDispatchIndirectCommand), usage);
-
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_draw_indirect", m_drawBuffer.buffer);
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_top_view_draw_indirect", m_topViewDrawBuffer.buffer);
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_dispatch_indirect", m_dispatchBuffer.buffer);
-
-    auto cbt = cbt::Tree{ static_cast<int64_t>(m_maxDepth), 1};
-    auto heap = cbt.getHeap();
-    m_concurrentBinaryTree = device().createDeviceLocalBuffer(heap.data(), heap.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_cbt_heap", m_concurrentBinaryTree.buffer);
-
-    CbtData cbtData{};
-    m_cbtInfo.gpu = device().createCpuVisibleBuffer(&cbtData, sizeof(CbtData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    m_cbtInfo.cpu = reinterpret_cast<CbtData*>(m_cbtInfo.gpu.map());
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_cbt_info", m_cbtInfo.gpu.buffer);
-}
-
-void Terrain::initVertexBuffer() {
-    const auto gpuSubd = static_cast<uint64_t>(m_options.gpuSubDivisions);
-    std::vector<uint16_t> cIndexes;
-    std::vector<glm::vec2> cVertices;
-    std::map<uint32_t, uint16_t> hashMap;
-    int lebDepth = 2 * gpuSubd;
-    int triangleCount = 1 << lebDepth;
-    int edgeTessellationFactor = 1 << gpuSubd;
-
-    // compute index and vertex buffer
-    for (int i = 0; i < triangleCount; ++i) {
-        cbt_Node node = {(uint64_t)(triangleCount + i), 2 * gpuSubd};
-        float attribArray[][3] = { {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f} };
-
-
-        leb_DecodeNodeAttributeArray(node, 2, attribArray);
-
-        for (int j = 0; j < 3; ++j) {
-            uint32_t vertexID = attribArray[0][j] * (edgeTessellationFactor + 1)
-                                + attribArray[1][j] * (edgeTessellationFactor + 1) * (edgeTessellationFactor + 1);
-            auto it = hashMap.find(vertexID);
-
-            if (it != hashMap.end()) {
-                cIndexes.push_back(it->second);
-            } else {
-                uint16_t newIndex = to<uint16_t>(cVertices.size());
-
-                cIndexes.push_back(newIndex);
-                hashMap.insert(std::pair<uint32_t, uint16_t>(vertexID, newIndex));
-                cVertices.push_back(glm::vec2(attribArray[0][j], attribArray[1][j]));
-            }
-        }
-    }
-
-    m_vertices = device().createDeviceLocalBuffer(cVertices.data(), BYTE_SIZE(cVertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    m_indexes = device().createDeviceLocalBuffer(cIndexes.data(), BYTE_SIZE(cIndexes), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_vertex_buffer", m_vertices.buffer);
-    device().setName<VK_OBJECT_TYPE_BUFFER>("terrain_index_buffer", m_indexes.buffer);
-}
-
 void Terrain::createRenderPipelines() {
     const auto w = m_context->screenWidth;
     const auto h = m_context->screenHeight;
-
 
     auto renderBuilder = graphicsPipelineBuilder();
     m_render.pipeline =
@@ -270,45 +197,6 @@ void Terrain::createRenderPipelines() {
                 .addPushConstantRange(VK_SHADER_STAGE_GEOMETRY_BIT, 0, sizeof(m_inspectConstants))
             .name("terrain_inspect")
         .build(m_inspect.layout);
-
-
-    m_topView.pipeline =
-        graphicsPipelineBuilder()
-            .shaderStage()
-                .vertexShader(FileManager::resource("empty.vert.spv"))
-                .tessellationControlShader(FileManager::resource("terrain_top_view.tesc.spv"))
-                .tessellationEvaluationShader(FileManager::resource("terrain_top_view.tese.spv"))
-                .geometryShader(FileManager::resource("terrain_top_view.geom.spv"))
-                .fragmentShader(FileManager::resource("terrain_top_view.frag.spv"))
-            .vertexInputState().clear()
-            .inputAssemblyState()
-                .patches()
-            .tessellationState()
-                .patchControlPoints(1)
-                .domainOrigin(VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
-            .viewportState().clear()
-                .viewport()
-                    .origin(10, h - 522)
-                    .dimension(512, 512)
-                    .minDepth(0)
-                    .maxDepth(1)
-                .scissor()
-                    .offset(10, h - 522)
-                    .extent(512, 512)
-                .add()
-            .rasterizationState()
-                .cullNone()
-            .depthStencilState()
-                .disableDepthWrite()
-                .enableDepthTest()
-                .compareOpAlways()
-                .minDepthBounds(0)
-                .maxDepthBounds(1)
-            .layout().clear()
-                .addDescriptorSetLayout(m_subdGridDescriptorSetLayout)
-                .addDescriptorSetLayout(bindlessDescriptorSetLayout())
-            .name("terrain_top_view")
-        .build(m_topView.layout);
 }
 
 Context &Terrain::context() {
@@ -330,35 +218,7 @@ void Terrain::endFrame() {
 }
 
 void Terrain::createDescriptorSetLayout() {
-    m_subdGridDescriptorSetLayout =
-        device().descriptorSetLayoutBuilder()
-            .name("leb_descriptor_set_layout")
-            .binding(0)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(1)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(2)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(3)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(4)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(5)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_ALL)
-        .createLayout();
-
+    SubdivisionGrid::createDescriptorSetLayout();
     m_descriptorSetLayout =
         device().descriptorSetLayoutBuilder()
             .name("terrain_subdivision_descriptor_set_layout")
@@ -370,111 +230,26 @@ void Terrain::createDescriptorSetLayout() {
 }
 
 void Terrain::updateDescriptorSets() {
-    auto sets = descriptorPool().allocate({ m_subdGridDescriptorSetLayout, m_descriptorSetLayout });
-    m_subdGridDescriptorSet = sets[0];
-    m_descriptorSet = sets[1];
+    SubdivisionGrid::updateDescriptorSets();
+    auto sets = descriptorPool().allocate({ m_descriptorSetLayout });
+    m_descriptorSet = sets[0];
 
-    auto writes = initializers::writeDescriptorSets<6>();
+    auto writes = initializers::writeDescriptorSets<1>();
 
-    writes[0].dstSet = m_subdGridDescriptorSet;
+    writes[0].dstSet = m_descriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
-    VkDescriptorBufferInfo lebInfo{ m_concurrentBinaryTree, 0, VK_WHOLE_SIZE };
-    writes[0].pBufferInfo = &lebInfo;
-
-    writes[1].dstSet = m_subdGridDescriptorSet;
-    writes[1].dstBinding = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo drawInfo{ m_drawBuffer, 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &drawInfo;
-
-    writes[2].dstSet = m_subdGridDescriptorSet;
-    writes[2].dstBinding = 2;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[2].descriptorCount = 1;
-    VkDescriptorBufferInfo drawTopViewInfo{ m_topViewDrawBuffer, 0, VK_WHOLE_SIZE };
-    writes[2].pBufferInfo = &drawTopViewInfo;
-
-    writes[3].dstSet = m_subdGridDescriptorSet;
-    writes[3].dstBinding = 3;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[3].descriptorCount = 1;
-    VkDescriptorBufferInfo dispatchInfo{ m_dispatchBuffer, 0, VK_WHOLE_SIZE };
-    writes[3].pBufferInfo = &dispatchInfo;
-
-    writes[4].dstSet = m_subdGridDescriptorSet;
-    writes[4].dstBinding = 4;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[4].descriptorCount = 1;
-    VkDescriptorBufferInfo cbtInfo{ m_cbtInfo.gpu, 0, VK_WHOLE_SIZE };
-    writes[4].pBufferInfo = &cbtInfo;
-
-    writes[5].dstSet = m_descriptorSet;
-    writes[5].dstBinding = 0;
-    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[5].descriptorCount = 1;
     VkDescriptorBufferInfo uniformInfo{ m_uniforms.gpu, 0, VK_WHOLE_SIZE };
-    writes[5].pBufferInfo = &uniformInfo;
+    writes[0].pBufferInfo = &uniformInfo;
 
     device().updateDescriptorSets(writes);
-    
-    m_sets[0] = m_subdGridDescriptorSet;
     m_sets[2] = m_descriptorSet;
 }
 
 void Terrain::createComputePipelines() {
     m_compute = ComputePipelines{ m_context->device, metadata() };
     m_compute.createPipelines();
-}
-
-std::vector<PipelineMetaData> Terrain::metadata() {
-    std::vector<VulkanDescriptorSetLayout*> layouts{ &m_subdGridDescriptorSetLayout, &bindlessDescriptorSetLayout() };
-    std::vector<VulkanDescriptorSetLayout*> layouts1{ &m_subdGridDescriptorSetLayout, &bindlessDescriptorSetLayout(), &m_descriptorSetLayout };
-    return {
-        {
-            .name = "terrain_leb_dispatcher",
-            .shadePath = FileManager::resource("leb_dispatcher.comp.spv"),
-            .layouts = layouts,
-            .ranges = {},
-            .specializationConstants = specializationConstants
-        },
-        {
-            .name = "terrain_cbt_dispatcher",
-            .shadePath = FileManager::resource("cbt_dispatcher.comp.spv"),
-            .layouts = layouts,
-            .ranges = {},
-            .specializationConstants = specializationConstants
-        },
-        {
-            .name = "terrain_cbt_sum_reduce_prepass",
-            .shadePath = FileManager::resource("cbt_sum_reduce_prepass.comp.spv"),
-            .layouts = layouts,
-            .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
-            .specializationConstants = specializationConstants
-        },
-        {
-            .name = "terrain_cbt_sum_reduce",
-            .shadePath = FileManager::resource("cbt_sum_reduce.comp.spv"),
-            .layouts = layouts,
-            .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
-            .specializationConstants = specializationConstants
-        },
-        {
-            .name = "terrain_subdivide",
-            .shadePath = FileManager::resource("terrain_subdivide.comp.spv"),
-            .layouts = layouts1,
-            .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
-            .specializationConstants = specializationConstants
-        },
-        {
-            .name = "terrain_cbt_info",
-            .shadePath = FileManager::resource("cbt_info.comp.spv"),
-            .layouts = layouts,
-            .specializationConstants = specializationConstants
-        },
-    };
 }
 
 uint Terrain::nodeCount() const {
@@ -607,7 +382,7 @@ void Terrain::checkAppInput() {
 
 PipelineMetaData Terrain::subdivisionMetadata() {
     auto layouts = m_layouts;
-    layouts.push_back(&m_subdGridDescriptorSetLayout);
+    layouts.push_back(&m_descriptorSetLayout);
     return {
             .name = "terrain_subdivide",
             .shadePath = FileManager::resource("terrain_subdivide.comp.spv"),

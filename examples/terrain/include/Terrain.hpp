@@ -20,9 +20,9 @@ public:
     void newFrame();
 
 protected:
-    PipelineMetaData subdivisionMetadata() override;
+    PipelineMetaData subdivisionMetadata() final;
 
-    void subdivide(VkCommandBuffer commandBuffer, int pingPong) override;
+    void subdivide(VkCommandBuffer commandBuffer, int pingPong) final;
 
 public:
 
@@ -54,17 +54,12 @@ public:
 
     float printPerfStats();
 
-
 protected:
-    void initBuffers();
-
     void initUniforms();
 
-    void initVertexBuffer();
+    void createDescriptorSetLayout() final;
 
-    void createDescriptorSetLayout();
-
-    void updateDescriptorSets();
+    void updateDescriptorSets() final;
 
     void createRenderPipelines();
 
@@ -73,8 +68,6 @@ protected:
     Context& context() final;
 
     float computeLodFactor();
-
-    std::vector<PipelineMetaData> metadata();
 
     void loadTerrainTextures();
 
@@ -173,7 +166,6 @@ private:
     } grass;
 
     Pipeline m_render;
-    Pipeline m_topView;
     Pipeline m_inspect;
     SpecializationConstants specializationConstants{};
     uint should_displace = 1;

@@ -30,6 +30,10 @@ protected:
 
     virtual void subdivide(VkCommandBuffer commandBuffer, int pingPong) = 0;
 
+    virtual void createDescriptorSetLayout();
+
+    virtual void updateDescriptorSets();
+
     void subdivide0(VkCommandBuffer commandBuffer, int pingPong);
 
     void cbtDispatch(VkCommandBuffer commandBuffer);
@@ -43,10 +47,6 @@ protected:
     void getCbtInfo(VkCommandBuffer commandBuffer);
 
     std::vector<PipelineMetaData> metadata();
-
-    void createDescriptorSetLayout();
-
-    void updateDescriptorSets();
 
     void initBuffers();
 
