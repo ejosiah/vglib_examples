@@ -1,8 +1,7 @@
 #version 460
 
 #define CBT_HEAP_BUFFER_BINDING 0
-#include "cbt.glsl"
-#include "shared.glsl"
+#include "leb_common.glsl"
 
 layout (vertices = 1) out;
 
@@ -16,9 +15,6 @@ void main() {
     cbt_Node node = cbt_DecodeNode(cbtID, threadID);
     vec4 v[3] = DecodeTriangleVertices(node);
 
-    // perform frustum culling
-    bool isVisible = FrustumCullingTest(v);
-
     // set tess levels
     gl_TessLevelInner[0] =
     gl_TessLevelInner[1] =
@@ -28,5 +24,4 @@ void main() {
 
     // set output data
     tc_out[gl_InvocationID].vertices = v;
-    tc_out[gl_InvocationID].vertices[0].w = isVisible ? 1.0 : 0.0;
 }

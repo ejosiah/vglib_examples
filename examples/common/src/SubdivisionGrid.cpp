@@ -9,12 +9,12 @@
 
 SubdivisionGrid::SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, 
                                  BindlessDescriptor& bindlessDescriptor, const std::string& name,
-                                 glm::vec2 resolution, uint descriptorCount, Profiler* profiler, int maxDepth)
+                                 glm::vec4 resolution, uint descriptorCount, Profiler* profiler, int maxDepth)
 : m_device{&device}
 , m_descriptorPool{&descriptorPool}
 , m_bindlessDescriptor{&bindlessDescriptor}
 , m_name{name}
-, m_resolution{resolution}
+, m_topViewResolution{resolution}
 , m_profiler{profiler}
 , m_maxDepth{maxDepth}
 {
@@ -315,17 +315,18 @@ void SubdivisionGrid::createPipelines() {
     m_compute = ComputePipelines{ m_device, metadata() };
     m_compute.createPipelines();
 
-    const auto h = m_resolution.y;
+    const auto origin = m_topViewResolution.xy();
+    const auto extent = m_topViewResolution.zw();
 
     auto bindlessDescriptorSetLayout = const_cast<VulkanDescriptorSetLayout&>(*m_bindlessDescriptor->descriptorSetLayout);
     m_topView.pipeline =
         m_device->graphicsPipelineBuilder()
             .shaderStage()
                 .vertexShader(FileManager::resource("empty.vert.spv"))
-                .tessellationControlShader(FileManager::resource("terrain_top_view.tesc.spv"))
-                .tessellationEvaluationShader(FileManager::resource("terrain_top_view.tese.spv"))
-                .geometryShader(FileManager::resource("terrain_top_view.geom.spv"))
-                .fragmentShader(FileManager::resource("terrain_top_view.frag.spv"))
+                .tessellationControlShader(FileManager::resource("sub_div_top_view.tesc.spv"))
+                .tessellationEvaluationShader(FileManager::resource("sub_div_top_view.tese.spv"))
+                .geometryShader(FileManager::resource("sub_div_top_view.geom.spv"))
+                .fragmentShader(FileManager::resource("sub_div_top_view.frag.spv"))
             .vertexInputState().clear()
             .inputAssemblyState()
                 .patches()
@@ -334,13 +335,13 @@ void SubdivisionGrid::createPipelines() {
                 .domainOrigin(VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
             .viewportState().clear()
                 .viewport()
-                    .origin(10, h - 522)
-                    .dimension(512, 512)
+                    .origin(origin.x, origin.y)
+                    .dimension(extent.x, extent.y)
                     .minDepth(0)
                     .maxDepth(1)
                 .scissor()
-                    .offset(10, h - 522)
-                    .extent(512, 512)
+                    .offset(origin.x, origin.y)
+                    .extent(extent.x, extent.y)
                 .add()
             .rasterizationState()
                 .cullNone()

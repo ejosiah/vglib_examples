@@ -7,7 +7,7 @@
 
 Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 : SubdivisionGrid(*context.device, *context.descriptorPool, *context.bindlessDescriptor,
-                  "terrain", glm::vec2(context.screenWidth, context.screenHeight), 1, context.profiler)
+                  "terrain", {10, context.screenHeight - 512, 512, 512}, 1, context.profiler)
 , m_context{&context}
 , m_atmosphereDescriptor(atmDescriptor)
 {
