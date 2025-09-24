@@ -98,6 +98,7 @@ private:
         uint damp_tex_index{~0u};
         uint dmap_normal_tex_index{~0u};
         uint shadow_tex_index{~0u};
+        uint noiseTextureIndex{~0u};
         uint dirtyAlbedoMapIndex{~0u};
         uint dirtyAoMapIndex{~0u};
         uint dirtyRoughnessMapIndex{~0u};
@@ -162,6 +163,8 @@ private:
         Texture roughnessMap;
         Texture normalMap;
     } grass;
+
+    Texture m_noise;
 
     Pipeline m_render;
     Pipeline m_inspect;

@@ -125,7 +125,7 @@ vec3 getTileColor(vec2 uv) {
 }
 
 
-Material getMaterial(vec2 uv, vec2 tileUV) {
+Material getMaterial(vec2 uv, vec2 tileId, vec2 tileUV) {
     Material dirt, grass;
 
     dirt.metalness = 0.0;
@@ -165,9 +165,10 @@ void main() {
     vec3 V = normalize(f.viewDirection);
 
     vec2 gv = (f.uv * 52660)/globals.tileSize;
+    vec2 tileId = floor(gv);
     vec2 tileUV = fract(gv);
 
-    Material material = getMaterial(f.uv, tileUV);
+    Material material = getMaterial(f.uv, tileId, tileUV);
     material.albedo = globals.showTiles != 1 ? material.albedo : getTileColor(f.uv);
     vec3 dN = material.normal;
     N = normalize(vec3(N.xy + dN.xy, N.z*dN.z));

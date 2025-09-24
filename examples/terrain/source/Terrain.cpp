@@ -1,8 +1,6 @@
 #include "Terrain.hpp"
 #include "Barrier.hpp"
 
-#include <cbt/cbt.hpp>
-#include <leb/leb.hpp>
 #include <glm/glm.hpp>
 #include <imgui.h>
 #include "AppContext.hpp"
@@ -331,6 +329,7 @@ void Terrain::loadTerrainTextures() {
     textures::fromFile(device(), grass.aoMap, resource("GrassShort001/GrassShort001_AO_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
     textures::fromFile(device(), grass.roughnessMap, resource("GrassShort001/GrassShort001_GLOSS_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
     textures::fromFile(device(), grass.normalMap, resource("GrassShort001/GrassShort001_NRM_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), m_noise, resource("BlueNoiseTextures/1024_1024/LDR_RGBA_0.png"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
 
     textures::generateLOD(device(), dirt.albedoMap, levels);
@@ -342,6 +341,8 @@ void Terrain::loadTerrainTextures() {
     textures::generateLOD(device(), grass.aoMap, levels);
     textures::generateLOD(device(), grass.roughnessMap, levels);
     textures::generateLOD(device(), grass.normalMap, levels);
+
+    m_uniforms.cpu->noiseTextureIndex = bindlessDescriptor().update(m_noise, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     m_uniforms.cpu->dirtyAlbedoMapIndex = bindlessDescriptor().update(dirt.albedoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     m_uniforms.cpu->dirtyAoMapIndex = bindlessDescriptor().update(dirt.aoMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);

@@ -63,6 +63,7 @@ layout(set = 2, binding = 0, scalar) buffer Constants {
     uint damp_tex_index;
     uint dmap_normal_tex_index;
     uint shadow_tex_index;
+    uint noiseTextureIndex;
     uint dirtAlbedoMapIndex;
     uint dirtAoMapIndex;
     uint dirtRoughnessMapIndex;
@@ -102,6 +103,7 @@ layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 #define grassAoMap global_textures[nonuniformEXT(globals.grassAoMapIndex)]
 #define grassRoughnessMap global_textures[nonuniformEXT(globals.grassRoughnessMapIndex)]
 #define grassNormalMap global_textures[nonuniformEXT(globals.grassNormalMapIndex)]
+#define noiseTexture global_textures[nonuniformEXT(globals.noiseTextureIndex)]
 
 struct Material {
     vec3 albedo;
