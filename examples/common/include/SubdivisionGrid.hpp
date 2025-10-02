@@ -15,7 +15,7 @@ public:
     };
 
     SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, BindlessDescriptor& bindlessDescriptor,
-                    const std::string& name, glm::vec4 resolution, uint descriptorCount = 0, Profiler* profiler = {}, int maxDepth = CBT_MAX_DEPTH);
+                    const std::string& name, glm::vec2 resolution, uint descriptorCount = 0, Profiler* profiler = {}, int maxDepth = CBT_MAX_DEPTH);
 
     virtual ~SubdivisionGrid() = default;
 
@@ -78,6 +78,7 @@ protected:
     VulkanDescriptorPool* m_descriptorPool{};
     BindlessDescriptor* m_bindlessDescriptor{};
     std::string m_name;
+    glm::vec2 m_screenResolution;
     glm::vec4 m_topViewResolution;
     Profiler* m_profiler{};
     int m_maxDepth{CBT_MAX_DEPTH};

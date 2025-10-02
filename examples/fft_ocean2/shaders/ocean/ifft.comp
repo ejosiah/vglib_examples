@@ -5,9 +5,8 @@
 
 #include "complex.glsl"
 
-#define MAX_DISP_MAP_SIZE 1024
-#define DISP_MAP_SIZE int(gl_WorkGroupSize.x)
-#define LOG2_DISP_MAP_SIZE int(log2(gl_WorkGroupSize.x))
+#define DISP_MAP_SIZE int(sharedSize)
+#define LOG2_DISP_MAP_SIZE int(log2(DISP_MAP_SIZE))
 #define TILE_ID gl_GlobalInvocationID.z
 
 #define PI		3.1415926535897932
@@ -15,10 +14,12 @@
 
 layout (local_size_x_id = 0) in;
 
+layout(constant_id = 0) const uint sharedSize = 1024;
+
 layout (set = 0, binding = 0, rg16f) uniform readonly image2D readbuff[];
 layout (set = 0, binding = 1) uniform writeonly image2D writebuff[];
 
-shared vec2 pingpong[2][MAX_DISP_MAP_SIZE];
+shared vec2 pingpong[2][DISP_MAP_SIZE];
 
 void main() {
     const float N = float(DISP_MAP_SIZE);

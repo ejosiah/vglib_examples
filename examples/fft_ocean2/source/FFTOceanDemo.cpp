@@ -36,16 +36,15 @@ void FFTOceanDemo::initApp() {
 }
 
 void FFTOceanDemo::initCamera() {
-    OrbitingCameraSettings cameraSettings;
-//    FirstPersonSpectatorCameraSettings cameraSettings;
-    cameraSettings.orbitMinZoom = 0.1;
-    cameraSettings.orbitMaxZoom = 512.0f;
-    cameraSettings.offsetDistance = 1.0f;
-    cameraSettings.modelHeight = 0.5;
+    FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = 60.0f;
+    cameraSettings.zFar = 10000 * km;
+    cameraSettings.zNear = 1;
+    cameraSettings.acceleration = glm::vec3(1 * km);
+    cameraSettings.velocity = glm::vec3(10 * km);
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
-    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 }
 
 void FFTOceanDemo::initProfiler() {
@@ -55,7 +54,7 @@ void FFTOceanDemo::initProfiler() {
 }
 
 void FFTOceanDemo::initFFTOcean() {
-    ocean = std::make_unique<FFTOcean2>(device, descriptorPool, bindlessDescriptor, profiler, glm::vec2{width, height});
+    ocean = std::make_unique<FFTOcean2>(device, descriptorPool, bindlessDescriptor, *prototypes, *camera, width, height);
     ocean->init();
 }
 
@@ -240,13 +239,15 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 
     ocean->preProcess(commandBuffer);
 
-    runRenderGraph(commandBuffer);
+//    runRenderGraph(commandBuffer);
 
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        renderToDisplay(commandBuffer);
-        ocean->preview(commandBuffer);
+//        renderToDisplay(commandBuffer);
+//        ocean->preview(commandBuffer);
+//        ocean->topView(commandBuffer);
+        ocean->render(commandBuffer);
     }, commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -257,7 +258,9 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 void FFTOceanDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
-        renderSkyView(commandBuffer);
+//        renderSkyView(commandBuffer);
+//        localReadBarrier(commandBuffer);
+        ocean->render(commandBuffer);
         localReadBarrier(commandBuffer);
         toneMap(commandBuffer);
     });
@@ -291,8 +294,7 @@ void FFTOceanDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
 
 void FFTOceanDemo::update(float time) {
     camera->update(time);
-
-    setTitle(fmt::format("{}, FPS - {}", title, framePerSecond));
+    setTitle(fmt::format("{}, camera - {}, FPS - {}", title, camera->position(), framePerSecond));
 
 }
 

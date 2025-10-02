@@ -24,7 +24,7 @@ void main() {
 
     VertexAttribute attrib = TessellateTriangle(triangleTexCoords, iPos);
 
-    vColor = vec4(1);
+    vColor = vec4(attrib.texCoord, 0, 1);
 //    vColor.rgb = hash31(nodeID + 1);
     vUv = attrib.texCoord;
     vec2 pos = attrib.position.xy;

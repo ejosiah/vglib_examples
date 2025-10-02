@@ -7,7 +7,7 @@
 
 Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 : SubdivisionGrid(*context.device, *context.descriptorPool, *context.bindlessDescriptor,
-                  "terrain", {10, context.screenHeight - 512, 512, 512}, 1, context.profiler)
+                  "terrain", {context.screenWidth, context.screenHeight}, 1, context.profiler)
 , m_context{&context}
 , m_atmosphereDescriptor(atmDescriptor)
 {
@@ -93,7 +93,7 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
             vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
-            });
+        });
     });
 }
 

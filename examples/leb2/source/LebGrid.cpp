@@ -4,8 +4,11 @@
 #include "GraphicsPipelineBuilder.hpp"
 
 LebGrid::LebGrid(VulkanDevice &device, VulkanDescriptorPool &descriptorPool, BindlessDescriptor &bindlessDescriptor, Prototypes& prototypes, uint width, uint height)
-: SubdivisionGrid(device, descriptorPool, bindlessDescriptor, "leb_eval", glm::vec4{0, 0, width, height})
-, m_prototypes{&prototypes} {}
+: SubdivisionGrid(device, descriptorPool, bindlessDescriptor, "leb_eval", glm::vec2{width, height})
+, m_prototypes{&prototypes}
+{
+    m_topViewResolution = glm::vec4{0, 0, width, height};
+}
 
 PipelineMetaData LebGrid::subdivisionMetadata() {
     return {
@@ -42,7 +45,7 @@ void LebGrid::createPipelines() {
                 .triangles()
             .rasterizationState()
                 .cullNone()
-                .polygonModeLine()
+                .polygonModeFill()
             .layout().clear()
                 .addDescriptorSetLayout(*m_layouts[0])
                 .addDescriptorSetLayout(*m_layouts[1])

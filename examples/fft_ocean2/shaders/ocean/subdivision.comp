@@ -1,7 +1,40 @@
 #version 460
 
+#define BINDLESS_DESCRIPTOR_SET 1
+#define OCEAN_UNIFORM_SET 2
+#include "subdivision.glsl"
+
+#define UPDATE_FLAG_SPLIT 0
+#define UPDATE_FLAG_MERGE 1
+
+const int cbtID = 0;
 layout(local_size_x = 256) in;
 
-void main() {
+layout(push_constant) uniform Cosntants {
+    int updateFlag;
+};
 
+void main() {
+    uint threadID = gl_GlobalInvocationID.x;
+
+    if(threadID < cbt_NodeCount(cbtID)) {
+        cbt_Node node = cbt_DecodeNode(cbtID, threadID);
+        vec4 triangleVertices[3] = DecodeTriangleVertices(node);
+
+        vec2 targetLod = LevelOfDetail(triangleVertices);
+
+        if(updateFlag == UPDATE_FLAG_SPLIT) {
+            if (targetLod.x > 1.0) {
+                leb_SplitNode_Square(cbtID, node);
+            }
+        } else if(updateFlag == UPDATE_FLAG_MERGE) {
+            leb_DiamondParent diamond = leb_DecodeDiamondParent_Square(node);
+            bool shouldMergeBase = LevelOfDetail(DecodeTriangleVertices(diamond.base)).x < 1.0;
+            bool shouldMergeTop = LevelOfDetail(DecodeTriangleVertices(diamond.top)).x < 1.0;
+
+            if (shouldMergeBase && shouldMergeTop) {
+                leb_MergeNode_Square(cbtID, node, diamond);
+            }
+        }
+    }
 }

@@ -6,15 +6,17 @@
 #include <leb/leb.hpp>
 #include <glm/glm.hpp>
 #include <format>
+#include "AppContext.hpp"
 
 SubdivisionGrid::SubdivisionGrid(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, 
                                  BindlessDescriptor& bindlessDescriptor, const std::string& name,
-                                 glm::vec4 resolution, uint descriptorCount, Profiler* profiler, int maxDepth)
+                                 glm::vec2 resolution, uint descriptorCount, Profiler* profiler, int maxDepth)
 : m_device{&device}
 , m_descriptorPool{&descriptorPool}
 , m_bindlessDescriptor{&bindlessDescriptor}
 , m_name{name}
-, m_topViewResolution{resolution}
+, m_screenResolution{resolution}
+, m_topViewResolution{10, resolution.y - 512, 512, 512 }
 , m_profiler{profiler}
 , m_maxDepth{maxDepth}
 {
@@ -390,9 +392,14 @@ void SubdivisionGrid::createPipelines() {
                 .compareOpAlways()
                 .minDepthBounds(0)
                 .maxDepthBounds(1)
+            .colorBlendState()
+                .attachment()
+                .add()
             .layout().clear()
                 .addDescriptorSetLayout(m_subdGridDescriptorSetLayout)
                 .addDescriptorSetLayout(bindlessDescriptorSetLayout)
+            .renderPass(AppContext::renderPass())
+            .subpass(0)
             .name("top_view")
         .build(m_topView.layout);
 }
