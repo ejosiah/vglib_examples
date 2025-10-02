@@ -4,6 +4,7 @@
 #include "ImGuiPlugin.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
+#include "Barrier.hpp"
 
 #include <random>
 
@@ -24,6 +25,7 @@ FFTOcean::FFTOcean(const Settings& settings)
 }
 
 void FFTOcean::initApp() {
+    initProfiler();
     debugAction = &mapToMouse(static_cast<int>(MouseEvent::Button::RIGHT), "next texture", Action::detectInitialPressOnly());
     std::vector<DebugInfo> allocation(swapChain.width() * swapChain.height());
     debugBuffer = device.createCpuVisibleBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -615,6 +617,8 @@ VkCommandBuffer *FFTOcean::buildCommandBuffers(uint32_t imageIndex, uint32_t &nu
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
+    profiler.resetAll(commandBuffer);
+
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 0, 1};
     clearValues[1].depthStencil = {1.0, 0u};
@@ -651,11 +655,13 @@ void FFTOcean::renderAtmosphere(VkCommandBuffer commandBuffer) {
     sets[1] = atmosphere.uboDescriptorSet;
     sets[2] = bindlessDescriptor.descriptorSet;
 
-    VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.atmosphere.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.atmosphere.layout.handle, 0, COUNT(sets), sets.data(), 0, 0);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
-    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+    profiler.profile(queryIds[QUERY_RENDER_ATMOSPHERE_ID], commandBuffer, [&]{
+        VkDeviceSize offset = 0;
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.atmosphere.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.atmosphere.layout.handle, 0, COUNT(sets), sets.data(), 0, 0);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
+        vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+    });
 }
 
 void FFTOcean::renderOcean(VkCommandBuffer commandBuffer) {
@@ -666,10 +672,12 @@ void FFTOcean::renderOcean(VkCommandBuffer commandBuffer) {
     sets[1] = atmosphere.uboDescriptorSet;
     sets[2] = bindlessDescriptor.descriptorSet;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.layout.handle, 0, sets.size(), sets.data(), 0, 0);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch, &offset);
-    vkCmdDraw(commandBuffer, 4, numPatches * numTiles, 0, 0);
+    profiler.profile(queryIds[QUERY_RENDER_OCEAN_ID], commandBuffer, [&]{
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.ocean.layout.handle, 0, sets.size(), sets.data(), 0, 0);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, patch, &offset);
+        vkCmdDraw(commandBuffer, 4, numPatches * numTiles, 0, 0);
+    });
 }
 
 void FFTOcean::update(float time) {
@@ -705,27 +713,35 @@ void FFTOcean::createHeightField(VkCommandBuffer commandBuffer) {
     static decltype(constants) prevConstants{};
 
     if(generateHComp) {
-        spdlog::info("generating spectral components");
+//        spdlog::info("generating spectral components");
         createDistribution(commandBuffer);
-        addBarrier(commandBuffer, {&distribution.image});
+        Barrier::computeWriteToRead(commandBuffer);
 
         createSpectralComponents(commandBuffer);
-        addBarrier(commandBuffer, {&tilde_h0k.image, &tilde_h0_minus_k.image});
-        generateHComp = false;
+        Barrier::computeWriteToRead(commandBuffer);
+        generateHComp = true;
     }
 
-    createSpectralHeightField(commandBuffer);
-    addBarrier(commandBuffer, { &hkt.signal.real.image, &hkt.signal.imaginary.image });
+    profiler.profile(queryIds[QUERY_SPECTRAL_HEIGHT_FIELD_ID], commandBuffer, [&]{
+        createSpectralHeightField(commandBuffer);
+        Barrier::computeWriteToRead(commandBuffer);
+    });
 
-    fft.inverse(commandBuffer, hkt.signal, heightFieldSpectral.signal);
-    addBarrier(commandBuffer, { &heightFieldSpectral.signal.real.image, &heightFieldSpectral.signal.imaginary.image});
+    profiler.profile(queryIds[QUERY_FFT_INVERSES_ID], commandBuffer, [&]{
+        fft.inverse(commandBuffer, hkt.signal, heightFieldSpectral.signal);
+        Barrier::computeWriteToRead(commandBuffer);
+    });
 
-    extractHeightFieldMagnitude(commandBuffer);
-    addBarrier(commandBuffer,  { &heightField.texture.image });
+    profiler.profile(queryIds[QUERY_EXTRACT_MAGNITUDE_ID], commandBuffer, [&]{
+        extractHeightFieldMagnitude(commandBuffer);
+        Barrier::computeWriteToRead(commandBuffer);
+    });
 
-//    generateGradientMap(commandBuffer);
-    normalMapping.execute(commandBuffer, heightField.textureDescriptorSet, gradientMap.descriptorSet, {1024, 1024});
-    addBarrier(commandBuffer,  { &gradientMap.texture.image });
+    profiler.profile(queryIds[QUERY_GENERATE_NORMALS_ID], commandBuffer, [&]{
+//        generateGradientMap(commandBuffer);
+        normalMapping.execute(commandBuffer, heightField.textureDescriptorSet, gradientMap.descriptorSet, {hSize, hSize});
+        Barrier::computeWriteToRead(commandBuffer);
+    });
 }
 
 void FFTOcean::createDistribution(VkCommandBuffer commandBuffer) {
@@ -778,21 +794,6 @@ void FFTOcean::generateGradientMap(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.gradient.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.gradient.layout.handle, 0, sets.size(), sets.data(), 0, 0);
     vkCmdDispatch(commandBuffer, hSize/32, hSize/32, 1);
-}
-
-void FFTOcean::addBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanImage *>& images) {
-    std::vector<VkImageMemoryBarrier> barriers;
-
-    for(const auto image : images) {
-        VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barrier.subresourceRange = DEFAULT_SUB_RANGE;
-        barrier.image = image->image;
-        barriers.push_back(barrier);
-    }
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  0, 0, 0, 0, 0, COUNT(barriers), barriers.data());
-
 }
 
 void FFTOcean::copyToCanvas(VkCommandBuffer commandBuffer, const VulkanImage &source) {
@@ -945,6 +946,8 @@ void FFTOcean::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::ColorEdit3("Wireframe Color", &scene.cpu->wireframe_color.x);
     ImGui::End();
 
+    stats(commandBuffer);
+
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 
     scene.cpu->wireframe_enabled = static_cast<bool>(wireFrameEnabled);
@@ -954,6 +957,29 @@ void FFTOcean::renderUI(VkCommandBuffer commandBuffer) {
         generateHComp = true;
     }
 
+}
+
+void FFTOcean::stats(VkCommandBuffer commandBuffer) {
+    ImGui::Begin("Stats");
+    ImGui::SetWindowSize({0, 0});
+
+    const auto toMillis = 1e-6f;
+    auto total = 0.0f;
+
+    if(ImGui::TreeNode("Perf stats")) {
+        ImGuiTreeNodeFlags leaf = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+        for(auto name : queryIds) {
+            auto duration = profiler.queries[name].movingAverage.value * toMillis;
+            ImGui::TreeNodeEx(name.c_str(), leaf, "%s: %f ms", name.c_str(), duration);
+            total += duration;
+        }
+        ImGui::TreeNodeEx("total", leaf, "total: %f ms", total);
+        ImGui::TreePop();
+    }
+
+
+    ImGui::End();
 }
 
 void FFTOcean::endFrame() {
@@ -991,13 +1017,24 @@ void FFTOcean::endFrame() {
 //        once = false;
 //    }
     memset(debugInfo.data(), 0, debugBuffer.size);
-
+    profiler.endFrame();
 }
 
 void FFTOcean::initAtmosphere() {
     atmosphere = AtmosphereDescriptor{ &device, &descriptorPool, &bindlessDescriptor };
     atmosphere.init();
     atmosphere.load(resource("default.atmosphere"));
+}
+
+void FFTOcean::initProfiler() {
+    profiler = Profiler{&device};
+    profiler.externalReset = true;
+    profiler.addQuery(queryIds[QUERY_SPECTRAL_HEIGHT_FIELD_ID]);
+    profiler.addQuery(queryIds[QUERY_FFT_INVERSES_ID]);
+    profiler.addQuery(queryIds[QUERY_EXTRACT_MAGNITUDE_ID]);
+    profiler.addQuery(queryIds[QUERY_GENERATE_NORMALS_ID]);
+    profiler.addQuery(queryIds[QUERY_RENDER_OCEAN_ID]);
+    profiler.addQuery(queryIds[QUERY_RENDER_ATMOSPHERE_ID]);
 }
 
 

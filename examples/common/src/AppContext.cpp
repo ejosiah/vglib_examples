@@ -252,4 +252,12 @@ AppContext::Atmosphere& AppContext::atmosphere() {
     return instance._atmosphere;
 }
 
+VulkanDescriptorSetLayout AppContext::uniformDescriptorSet() {
+    return instance._uniformDescriptorSetLayout;
+}
+
+VulkanRenderPass &AppContext::renderPass() {
+    return *instance._renderPass;
+}
+
 AppContext AppContext::instance;

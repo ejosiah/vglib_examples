@@ -4,12 +4,14 @@
 #include "ImGuiPlugin.hpp"
 
 Sph2D::Sph2D(const Settings& settings) : VulkanBaseApp("Smoothed particle hydrodynamics", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/sph2d");
-    fileManager.addSearchPathFront("../../examples/sph2d/data");
-    fileManager.addSearchPathFront("../../examples/sph2d/spv");
-    fileManager.addSearchPathFront("../../examples/sph2d/models");
-    fileManager.addSearchPathFront("../../examples/sph2d/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("sph2d");
+    fileManager().addSearchPathFront("sph2d/data");
+    fileManager().addSearchPathFront("sph2d/spv");
+    fileManager().addSearchPathFront("sph2d/models");
+    fileManager().addSearchPathFront("sph2d/textures");
 }
 
 void Sph2D::initApp() {
@@ -537,7 +539,7 @@ void Sph2D::renderParticles(VkCommandBuffer commandBuffer) {
 
 void Sph2D::update(float time) {
     if(options.start) {
-        fixedUpdate.update(time);
+        fixedUpdate.advance(time);
     }
 }
 
@@ -686,8 +688,7 @@ void Sph2D::computePartialSum(VkCommandBuffer commandBuffer) {
 
 
 void Sph2D::reorder(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = globalSet;
+    static std::array<VkDescriptorSet, 2> sets;    sets[0] = globalSet;
     sets[1] = particles.descriptorSet;
     const auto gx = (globals.cpu->numParticles + workGroupSize)/workGroupSize;
 
@@ -744,7 +745,7 @@ void Sph2D::endFrame() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1024;
         settings.height = 1024;

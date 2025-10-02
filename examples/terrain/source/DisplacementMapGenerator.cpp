@@ -150,7 +150,7 @@ std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
                 .name = "generate_normals",
                 .shadePath = FileManager::resource("generate_normal_map.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
-                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NormalGenConstants)} }
             },
             {
                 .name = "fault_formation",
@@ -201,19 +201,15 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
     static auto normalMapImageId = bindlessDescriptor().update(normalMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
 
 
-    Barriers::pushAndFlush(commandBuffer, normalMap.image, DEFAULT_SUB_RANGE, srcStageMask, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+    auto subresource = DEFAULT_SUB_RANGE;
+    subresource.levelCount = levels;
+    Barriers::pushAndFlush(commandBuffer, normalMap.image, subresource, srcStageMask, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                            srcAccessMask, VK_ACCESS_SHADER_WRITE_BIT, srcLayout, VK_IMAGE_LAYOUT_GENERAL);
 
     const auto gx = (info.width + 15)/16;
     const auto gy = (info.height + 15)/16;
 
-    struct {
-        float bump_strength{};
-        float sigma{};
-        int sampleRadius{};
-        uint dmap_tex_id{};
-        uint normal_image_id{};
-    } constants { 20.f, 1.5f, 4,  info.values_tex_id, normalMapImageId } ;
+    NormalGenConstants constants { 20.f, 1.5f, 4,  info.values_tex_id, normalMapImageId } ;
 
     auto descriptorSet = bindlessDescriptorSet();
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("generate_normals"));
@@ -221,7 +217,7 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
     vkCmdPushConstants(commandBuffer, m_compute.layout("generate_normals"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
     vkCmdDispatch(commandBuffer, gx, gy, 1);
 
-    Barriers::pushAndFlush(commandBuffer, normalMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    Barriers::pushAndFlush(commandBuffer, normalMap.image, subresource, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                            VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     textures::generateLOD(commandBuffer, m_displacementMap.normals.image, info.width, info.height, levels);

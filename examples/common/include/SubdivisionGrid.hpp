@@ -25,8 +25,12 @@ public:
 
     void topView(VkCommandBuffer commandBuffer);
 
+    CbtData cbtInfo() const;
+
 protected:
     virtual PipelineMetaData subdivisionMetadata() = 0;
+
+    virtual std::vector<PipelineMetaData> additionalMetadata();
 
     virtual void subdivide(VkCommandBuffer commandBuffer, int pingPong) = 0;
 
@@ -34,7 +38,11 @@ protected:
 
     virtual void updateDescriptorSets();
 
+    virtual void createPipelines();
+
     void initQuery();
+
+    virtual std::vector<std::string> queries();
 
     void subdivide0(VkCommandBuffer commandBuffer, int pingPong);
 
@@ -53,8 +61,6 @@ protected:
     void initBuffers();
 
     void initVertexBuffer();
-
-    void createPipelines();
 
     void withProfiler(auto queryId, auto commandBuffer, auto body) {
         if(m_profiler) {
@@ -85,6 +91,9 @@ protected:
     VulkanBuffer m_concurrentBinaryTree;
     VulkanDescriptorSetLayout m_subdGridDescriptorSetLayout;
     VkDescriptorSet m_subdGridDescriptorSet{};
+    VulkanDescriptorSetLayout m_triangleDescriptorSetLayout;
+    VkDescriptorSet m_triangleDescriptorSet{};
+
     Pipeline m_topView;
     std::vector<VkDescriptorSet> m_sets;
 
@@ -109,5 +118,5 @@ protected:
     static constexpr int QUERY_SUM_REDUCE_PRE_PASS_ID = 1;
     static constexpr int QUERY_SUM_REDUCE_ID = 2;
     static constexpr int QUERY_RENDER_ID = 3;
-    std::vector<std::string> queryIds{ "subdivision", "sum reduce prePass", "sum reduce", "render" };
+    std::vector<std::string> m_queryIds{ "subdivision", "sum reduce prePass", "sum reduce", "render" };
 };

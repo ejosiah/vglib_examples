@@ -113,7 +113,7 @@ void main(){
     float denominator = 4.0 * max(dot(N, E), 0.0) * max(dot(N, L), 0.0) + preventDivideByZero;
     vec3 specular = numerator / denominator;
 
-    uint NSamples = 10;
+    uint NSamples = 1;
     vec3 indirect = vec3(0);
     for(uint i = 0; i < NSamples; ++i) {
         vec2 Xi = hammersley(i, NSamples);
@@ -127,10 +127,10 @@ void main(){
 
     vec3 color = indirect + ocean_radiance + reflection;
 
-    int i = atomicAdd(debugInfo[0].counters.x, 1);
-    debugInfo[i].N.xyz = N;
-    debugInfo[i].V.xyz = E;
-    debugInfo[i].R.xyz = R;
+//    int i = atomicAdd(debugInfo[0].counters.x, 1);
+//    debugInfo[i].N.xyz = N;
+//    debugInfo[i].V.xyz = E;
+//    debugInfo[i].R.xyz = R;
 
 //    color = hash31(float(patchId + 1));
     fragColor.rgb = pow(vec3(1.0) - exp(-color / scene.whitePoint * scene.exposure), vec3(1.0 / 2.2));

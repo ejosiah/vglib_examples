@@ -421,13 +421,13 @@ void TerrainDemo::newFrame() {
 }
 
 void TerrainDemo::createComputePipelines() {
-    compute = ComputePipelines(&device, {{
-         .name = "generate_normals",
-         .shadePath = resource("generate_normal_map.comp.spv"),
-         .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
-         .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
-     }});
-    compute.createPipelines();
+//    compute = ComputePipelines(&device, {{
+//         .name = "generate_normals",
+//         .shadePath = resource("generate_normal_map.comp.spv"),
+//         .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
+//         .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
+//     }});
+//    compute.createPipelines();
 }
 
 void TerrainDemo::initDisplacementShadowMap() {
@@ -524,6 +524,8 @@ int main(){
         settings.enabledFeatures.geometryShader = true;
         settings.enabledFeatures.tessellationShader = true;
         settings.enabledFeatures.independentBlend = true;
+        settings.enabledFeatures.pipelineStatisticsQuery = true;
+        settings.enabledFeatures.occlusionQueryPrecise = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);

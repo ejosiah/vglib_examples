@@ -50,6 +50,10 @@ void SubdivisionGrid::update(VkCommandBuffer commandBuffer) {
     pingPong = 1 - pingPong;
 }
 
+SubdivisionGrid::CbtData SubdivisionGrid::cbtInfo() const {
+    return *m_cbtInfo.cpu;
+}
+
 void SubdivisionGrid::topView(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_topView.pipeline.handle);
@@ -59,7 +63,7 @@ void SubdivisionGrid::topView(VkCommandBuffer commandBuffer) {
 }
 
 void SubdivisionGrid::subdivide0(VkCommandBuffer commandBuffer, int pingPong) {
-    withProfiler(queryIds[QUERY_SUBDIVISION_ID], commandBuffer, [&]{
+    withProfiler(m_queryIds[QUERY_SUBDIVISION_ID], commandBuffer, [&]{
         subdivide(commandBuffer, pingPong);
     });
 }
@@ -72,7 +76,7 @@ void SubdivisionGrid::cbtDispatch(VkCommandBuffer commandBuffer) {
 }
 
 void SubdivisionGrid::sumReducePrePass(VkCommandBuffer commandBuffer) {
-    withProfiler(queryIds[QUERY_SUM_REDUCE_PRE_PASS_ID], commandBuffer, [&]{
+    withProfiler(m_queryIds[QUERY_SUM_REDUCE_PRE_PASS_ID], commandBuffer, [&]{
         auto itr = m_maxDepth;
         auto cnt = ((1 << itr) >> 5);
         auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
@@ -86,7 +90,7 @@ void SubdivisionGrid::sumReducePrePass(VkCommandBuffer commandBuffer) {
 }
 
 void SubdivisionGrid::sumReduceCbt(VkCommandBuffer commandBuffer) {
-    withProfiler(queryIds[QUERY_SUM_REDUCE_ID], commandBuffer, [&]{
+    withProfiler(m_queryIds[QUERY_SUM_REDUCE_ID], commandBuffer, [&]{
         for(auto itr = m_maxDepth - 6; itr >= 0; --itr) {
             auto cnt = 1 << itr;
             auto numGroup = (cnt >= 256) ? (cnt >> 8) : 1;
@@ -131,8 +135,8 @@ std::vector<PipelineMetaData> SubdivisionGrid::metadata() {
             .data = entries.data(),
             .dataSize = BYTE_SIZE(entries)
     };
-    
-    return {
+
+    std::vector<PipelineMetaData> metadata =  {
             {
                     .name = pipelines.subdivDispatch,
                     .shadePath = FileManager::resource("leb_dispatcher.comp.spv"),
@@ -168,7 +172,13 @@ std::vector<PipelineMetaData> SubdivisionGrid::metadata() {
                     .specializationConstants = specializationConstants
             },
             subdivisionMetadata()
-    };}
+    };
+
+    auto additional = additionalMetadata();
+    metadata.insert(metadata.begin(), additional.begin(), additional.end());
+
+    return metadata;
+}
 
 void SubdivisionGrid::createDescriptorSetLayout() {
     m_subdGridDescriptorSetLayout =
@@ -196,6 +206,19 @@ void SubdivisionGrid::createDescriptorSetLayout() {
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 
+    m_triangleDescriptorSetLayout =
+        m_device->descriptorSetLayoutBuilder()
+            .name(std::format("{}_subdivision_triangle_descriptor_set_layout", m_name))
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
+
     VulkanDescriptorSetLayout* bindlessDescriptorSetLayout =
             const_cast<VulkanDescriptorSetLayout*>(m_bindlessDescriptor->descriptorSetLayout);
 
@@ -204,9 +227,11 @@ void SubdivisionGrid::createDescriptorSetLayout() {
 }
 
 void SubdivisionGrid::updateDescriptorSets() {
-    m_subdGridDescriptorSet = m_descriptorPool->allocate({ m_subdGridDescriptorSetLayout }).front();
+    auto sets = m_descriptorPool->allocate({ m_subdGridDescriptorSetLayout, m_triangleDescriptorSetLayout });
+    m_subdGridDescriptorSet = sets[0];
+    m_triangleDescriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<5>();
+    auto writes = initializers::writeDescriptorSets<7>();
 
     writes[0].dstSet = m_subdGridDescriptorSet;
     writes[0].dstBinding = 0;
@@ -242,6 +267,20 @@ void SubdivisionGrid::updateDescriptorSets() {
     writes[4].descriptorCount = 1;
     VkDescriptorBufferInfo cbtInfo{ m_cbtInfo.gpu, 0, VK_WHOLE_SIZE };
     writes[4].pBufferInfo = &cbtInfo;
+
+    writes[5].dstSet = m_triangleDescriptorSet;
+    writes[5].dstBinding = 0;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[5].descriptorCount = 1;
+    VkDescriptorBufferInfo vertexInfo{ m_vertices, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &vertexInfo;
+
+    writes[6].dstSet = m_triangleDescriptorSet;
+    writes[6].dstBinding = 1;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[6].descriptorCount = 1;
+    VkDescriptorBufferInfo indexesInfo{ m_indexes, 0, VK_WHOLE_SIZE };
+    writes[6].pBufferInfo = &indexesInfo;
     
     m_device->updateDescriptorSets(writes);
     m_sets[0] = m_subdGridDescriptorSet;
@@ -274,9 +313,9 @@ void SubdivisionGrid::initBuffers() {
 
 void SubdivisionGrid::initVertexBuffer() {
     const auto gpuSubd = static_cast<uint64_t>(m_gpuSubDivisions);
-    std::vector<uint16_t> cIndexes;
+    std::vector<uint> cIndexes;
     std::vector<glm::vec2> cVertices;
-    std::map<uint32_t, uint16_t> hashMap;
+    std::map<uint, uint> hashMap;
     int lebDepth = 2 * gpuSubd;
     int triangleCount = 1 << lebDepth;
     int edgeTessellationFactor = 1 << gpuSubd;
@@ -288,24 +327,24 @@ void SubdivisionGrid::initVertexBuffer() {
         leb_DecodeNodeAttributeArray(node, 2, attribArray);
 
         for (int j = 0; j < 3; ++j) {
-            uint32_t vertexID = attribArray[0][j] * (edgeTessellationFactor + 1)
+            uint vertexID = attribArray[0][j] * (edgeTessellationFactor + 1)
                                 + attribArray[1][j] * (edgeTessellationFactor + 1) * (edgeTessellationFactor + 1);
             auto it = hashMap.find(vertexID);
 
             if (it != hashMap.end()) {
                 cIndexes.push_back(it->second);
             } else {
-                uint16_t newIndex = to<uint16_t>(cVertices.size());
+                uint newIndex = to<uint>(cVertices.size());
 
                 cIndexes.push_back(newIndex);
-                hashMap.insert(std::pair<uint32_t, uint16_t>(vertexID, newIndex));
+                hashMap.insert(std::pair<uint, uint>(vertexID, newIndex));
                 cVertices.push_back(glm::vec2(attribArray[0][j], attribArray[1][j]));
             }
         }
     }
 
-    m_vertices = m_device->createDeviceLocalBuffer(cVertices.data(), BYTE_SIZE(cVertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    m_indexes = m_device->createDeviceLocalBuffer(cIndexes.data(), BYTE_SIZE(cIndexes), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    m_vertices = m_device->createDeviceLocalBuffer(cVertices.data(), BYTE_SIZE(cVertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    m_indexes = m_device->createDeviceLocalBuffer(cIndexes.data(), BYTE_SIZE(cIndexes), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     m_device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_vertex_buffer", m_name), m_vertices.buffer);
     m_device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_index_buffer", m_name), m_indexes.buffer);
@@ -359,9 +398,19 @@ void SubdivisionGrid::createPipelines() {
 }
 
 void SubdivisionGrid::initQuery() {
+    auto additionalQueries = queries();
+    m_queryIds.insert(m_queryIds.end(), additionalQueries.begin(), additionalQueries.end());
     if(m_profiler) {
-        for(auto query : queryIds) {
+        for(auto query : m_queryIds) {
             m_profiler->addQuery(query);
         }
     }
+}
+
+std::vector<std::string> SubdivisionGrid::queries() {
+    return {};
+}
+
+std::vector<PipelineMetaData> SubdivisionGrid::additionalMetadata() {
+    return {};
 }

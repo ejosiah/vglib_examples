@@ -5,6 +5,7 @@
 #include "ComputePipelins.hpp"
 #include "AtmosphereModel.hpp"
 #include "Offscreen.hpp"
+#include "PrefixSum.hpp"
 #include <glm/glm.hpp>
 #include <array>
 #include <vector>
@@ -31,6 +32,14 @@ public:
     void renderTopView(VkCommandBuffer commandBuffer);
 
     void inspect(VkCommandBuffer commandBuffer);
+
+    void generateNormals(VkCommandBuffer commandBuffer);
+
+    void computeHistogram(VkCommandBuffer commandBuffer);
+
+    void computePartialSum(VkCommandBuffer commandBuffer);
+
+    void reorder(VkCommandBuffer commandBuffer);
 
     void controls(bool show = true);
 
@@ -68,6 +77,10 @@ protected:
     float computeLodFactor();
 
     void loadTerrainTextures();
+
+    void initQueryStats();
+
+    void initNormalData();
 
 private:
     struct UniformData {
@@ -119,12 +132,13 @@ private:
     } m_uniforms;
 
 
-    float m_size{52660};
+    static constexpr float gridSize{52660};
+    static constexpr float halfGridSize{gridSize * 0.5f};
 
     struct {
         std::string path;
-        float width{52660};
-        float height{52660};
+        float width{gridSize};
+        float height{gridSize};
         float zMin{-14};
         float zMax{1587.0f};
         float scale{1};
@@ -171,6 +185,29 @@ private:
     SpecializationConstants specializationConstants{};
     uint should_displace = 1;
     AtmosphereModel::Descriptor m_atmosphereDescriptor;
+
+    PipelineStatsQueryPool m_queryPool;
+    uint m_triangleCount{};
+
+    struct {
+        Pipeline histogram;
+        Pipeline genNormals;
+
+        VulkanBuffer counts;
+        VulkanBuffer normals;
+        VulkanBuffer counters;
+
+        VulkanDescriptorSetLayout descriptorSetLayout;
+        VkDescriptorSet descriptorSet{};
+
+        struct {
+            glm::vec3 boundsMin{-halfGridSize, -14, -halfGridSize};
+            float threshold{0.3};
+            uint tableSize{1 << 20};
+        } constants;
+    } m_normals;
+
+    PrefixSum m_prefixSum;
 
     struct {
         glm::vec2 start{1};

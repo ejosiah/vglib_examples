@@ -1,0 +1,57 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#include "complex.glsl"
+
+#define MAX_DISP_MAP_SIZE 1024
+#define DISP_MAP_SIZE int(gl_WorkGroupSize.x)
+#define LOG2_DISP_MAP_SIZE int(log2(gl_WorkGroupSize.x))
+#define TILE_ID gl_GlobalInvocationID.z
+
+#define PI		3.1415926535897932
+#define TWO_PI	6.2831853071795864
+
+layout (local_size_x_id = 0) in;
+
+layout (set = 0, binding = 0, rg16f) uniform readonly image2D readbuff[];
+layout (set = 0, binding = 1) uniform writeonly image2D writebuff[];
+
+shared vec2 pingpong[2][MAX_DISP_MAP_SIZE];
+
+void main() {
+    const float N = float(DISP_MAP_SIZE);
+
+    int z = int(gl_WorkGroupID.x);
+    int x = int(gl_LocalInvocationID.x);
+
+    // STEP 1: load row/column and reorder
+    int nj = (bitfieldReverse(x) >> (32 - LOG2_DISP_MAP_SIZE)) & (DISP_MAP_SIZE - 1);
+    pingpong[0][nj] = imageLoad(readbuff[nonuniformEXT(TILE_ID)], ivec2(z, x)).rg;
+
+    barrier();
+
+    int src = 0;
+    for (int s = 1; s <= LOG2_DISP_MAP_SIZE; ++s) {
+        int m = 1 << s;				// butterfly group height
+        int mh = m >> 1;			// butterfly group half height
+
+        int k = (x * (DISP_MAP_SIZE / m)) & (DISP_MAP_SIZE - 1);
+        int i = (x & ~(m - 1));		// butterfly group starting offset
+        int j = (x & (mh - 1));		// butterfly index in group
+
+        // twiddle factor W_N^k
+        Complex W_N_k = exp(Complex(0, -(TWO_PI * float(k)) / N));
+        Complex input1 = complexFrom(pingpong[src][i + j + mh]);
+        Complex input2 = complexFrom(pingpong[src][i + j]);
+
+        src = 1 - src;
+        pingpong[src][x] =  toVec2(add(input2, mul(W_N_k, input1)));
+
+        barrier();
+    }
+
+    vec2 result = pingpong[src][x];
+    imageStore(writebuff[nonuniformEXT(TILE_ID)], ivec2(x, z), vec4(result, 0.0, 1.0));
+}

@@ -123,6 +123,10 @@ public:
 
     static void updateSunDirection(glm::vec3 direction);
 
+    static VulkanDescriptorSetLayout uniformDescriptorSet();
+
+    static VulkanRenderPass& renderPass();
+
 private:
     void createDescriptorSets();
 
@@ -137,6 +141,7 @@ private:
     void createPipelines();
 
     void initFloor();
+
 
 private:
     AppContext() = default;

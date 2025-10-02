@@ -63,6 +63,14 @@ private:
         int blurIterations{18};
     } ff_options;
 
+    struct NormalGenConstants {
+        float bump_strength{};
+        float sigma{};
+        int sampleRadius{};
+        uint dmap_tex_id{};
+        uint normal_image_id{};
+    };
+
     Context* m_context;
     std::string m_path;
     DisplacementMap m_displacementMap;

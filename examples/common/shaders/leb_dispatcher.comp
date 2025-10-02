@@ -30,6 +30,10 @@ layout(set = 0, binding = 2, scalar) buffer SsboDrawIndirect {
     DrawIndirectCommand drawCmd;
 };
 
+layout(set = 0, binding = 3, scalar) buffer SsboDispatchIndirect {
+    uvec3 dispatchCmd;
+};
+
 layout(constant_id = 0) const int cbtID = 0;
 
 layout(local_size_x = 1) in;
@@ -38,4 +42,5 @@ void main() {
     uint instanceCount = cbt_NodeCount(cbtID);
     drawIndexedCmd.instanceCount = instanceCount;
     drawCmd.vertexCount = instanceCount;
+    dispatchCmd.x = instanceCount;
 }

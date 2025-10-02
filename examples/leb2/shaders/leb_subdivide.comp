@@ -1,0 +1,31 @@
+#version 460
+
+#define CBT_HEAP_BUFFER_BINDING 0
+#include "leb_common.glsl"
+
+#define UPDATE_FLAG_SPLIT 0
+#define UPDATE_FLAG_MERGE 1
+
+const int cbtID = 0;
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform Cosntants {
+    int updateFlag;
+};
+
+void main() {
+    uint threadID = gl_GlobalInvocationID.x;
+
+    if(threadID < cbt_NodeCount(cbtID)) {
+        cbt_Node node = cbt_DecodeNode(cbtID, threadID);
+        vec4 triangleVertices[3] = DecodeTriangleVertices(node);
+
+        if(updateFlag == UPDATE_FLAG_SPLIT) {
+            leb_SplitNode_Square(cbtID, node);
+        }
+        else if(updateFlag == UPDATE_FLAG_MERGE) {
+            leb_DiamondParent diamond = leb_DecodeDiamondParent_Square(node);
+            leb_MergeNode_Square(cbtID, node, diamond);
+        }
+    }
+}

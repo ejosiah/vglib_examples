@@ -6,6 +6,7 @@
 #include "Offscreen.hpp"
 #include "Scene.hpp"
 #include "NormalMapping.hpp"
+#include "Profiler.hpp"
 
 class FFTOcean : public VulkanBaseApp{
 public:
@@ -13,6 +14,8 @@ public:
 
 protected:
     void initApp() override;
+
+    void initProfiler();
 
     void recordAudio();
 
@@ -68,8 +71,6 @@ protected:
 
     void generateGradientMap(VkCommandBuffer commandBuffer);
 
-    void addBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanImage*>& images);
-
     void copyToCanvas(VkCommandBuffer commandBuffer, const VulkanImage& source);
 
     void onSwapChainDispose() override;
@@ -87,6 +88,8 @@ protected:
     void renderWindControl(VkCommandBuffer commandBuffer);
 
     void renderUI(VkCommandBuffer commandBuffer);
+
+    void stats(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -232,7 +235,18 @@ protected:
     std::span<DebugInfo> debugInfo{};
     NormalMapping normalMapping;
 
+    Profiler profiler;
+
     Offscreen offscreen;
     float sunZenith{7.5};
     float sunAzimuth{128};
+
+    static constexpr int QUERY_SPECTRAL_HEIGHT_FIELD_ID = 0;
+    static constexpr int QUERY_FFT_INVERSES_ID = 1;
+    static constexpr int QUERY_EXTRACT_MAGNITUDE_ID = 2;
+    static constexpr int QUERY_GENERATE_NORMALS_ID = 3;
+    static constexpr int QUERY_RENDER_OCEAN_ID = 4;
+    static constexpr int QUERY_RENDER_ATMOSPHERE_ID = 5;
+    std::vector<std::string> queryIds{ "spectral_height_field", "fft_inverses", "extract_magnitude", "generate_normals", "render_ocean", "render_atmosphere" };
+
 };

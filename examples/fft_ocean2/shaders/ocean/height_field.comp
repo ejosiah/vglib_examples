@@ -1,0 +1,39 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#include "complex.glsl"
+
+#define TILE_ID gl_GlobalInvocationID.z
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 3, rg16f) readonly uniform image2D spectral_height_field[];
+layout(set = 0, binding = 5, rg16f) readonly uniform image2D spectral_height_x_field[];
+layout(set = 0, binding = 6, rg16f) readonly uniform image2D spectral_height_z_field[];
+layout(set = 0, binding = 7, rg16f) readonly uniform image2D spectral_height_slope_x_field[];
+layout(set = 0, binding = 8, rg16f) readonly uniform image2D spectral_height_slope_z_field[];
+
+layout(set = 0, binding = 4) writeonly uniform image2D height_field[];
+layout(set = 0, binding = 9) writeonly uniform image2D normal_map[];
+
+void main() {
+
+    const float lambda = 1.3f;
+
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+
+    // required due to interval change
+    float sign_correction = ((((gid.x + gid.y) & 1) == 1) ? -1.0 : 1.0);
+
+    float h = sign_correction * imageLoad(spectral_height_field[nonuniformEXT(TILE_ID)], gid).x;
+    float x = sign_correction * imageLoad(spectral_height_x_field[nonuniformEXT(TILE_ID)], gid).x;
+    float z = sign_correction * imageLoad(spectral_height_z_field[nonuniformEXT(TILE_ID)], gid).x;
+
+    float dx = sign_correction * imageLoad(spectral_height_slope_x_field[nonuniformEXT(TILE_ID)], gid).x;
+    float dy = sign_correction * imageLoad(spectral_height_slope_z_field[nonuniformEXT(TILE_ID)], gid).x;
+
+    imageStore(height_field[nonuniformEXT(TILE_ID)], gid, vec4(x, h, z, 0));
+    imageStore(normal_map[nonuniformEXT(TILE_ID)], gid, vec4(dx, dy, 0, 0));
+}

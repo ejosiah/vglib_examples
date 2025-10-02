@@ -1,0 +1,83 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#include "complex.glsl"
+
+#define PI 3.14159265358
+#define TWO_PI (2. * PI)
+#define EPSILON 1e-6
+#define SQRT2 1.4142135623730950488016887242097
+#define INV_SQRT2 0.70710678118654752440084436210485
+#define N (gl_NumWorkGroups.x * gl_WorkGroupSize.x)
+#define TILE_ID gl_GlobalInvocationID.z
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 1, rg16f) readonly uniform image2D base_amp_h0[];
+layout(set = 0, binding = 2, rg16f) readonly uniform image2D base_amp_h0_k[];
+
+layout(set = 0, binding = 3) writeonly uniform image2D spectral_height_field[];
+layout(set = 0, binding = 5) writeonly uniform image2D spectral_height_x_field[];
+layout(set = 0, binding = 6) writeonly uniform image2D spectral_height_z_field[];
+layout(set = 0, binding = 7) writeonly uniform image2D spectral_height_slope_x_field[];
+layout(set = 0, binding = 8) writeonly uniform image2D spectral_height_slope_z_field[];
+
+
+layout(push_constant) uniform PushConstants {
+    vec4 windOrientation;
+    vec4 windSpeed;
+    vec4 amplitude;
+    vec4 horizontalLength;
+    vec4 windPower;
+    float time;
+} pc;
+
+const float gravity = 9.8; // m/s
+
+float windSpeed = pc.windSpeed[TILE_ID];
+float amplitude = pc.amplitude[TILE_ID];
+float horizontalLength = pc.horizontalLength[TILE_ID];
+float windPower = pc.windPower[TILE_ID];
+
+void main(){
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    const float L = horizontalLength;
+
+    vec2 x = vec2(gid) - float(N) * 0.5;
+    vec2 K = vec2(TWO_PI * x.x/L, TWO_PI * x.y/L);
+
+    float k = max(length(K), EPSILON);
+
+    Complex h0 = complexFrom(imageLoad(base_amp_h0[nonuniformEXT(TILE_ID)], gid).xy);
+    Complex h0_k = conjugate(complexFrom(imageLoad(base_amp_h0_k[nonuniformEXT(TILE_ID)], gid).xy));
+
+    const float t = pc.time;
+    const float wkt = sqrt(gravity * k) * t;
+    Complex iwkt = Complex(0, wkt);
+    Complex _iwkt = Complex(0, -wkt);
+    Complex h_dy = add(mul(h0, exp(iwkt)), mul(h0_k, exp(_iwkt)));
+
+
+    float kx = dot(K/k, x);
+    Complex expKX = exp(Complex(0, kx));
+
+    Complex dx = Complex(0.0, -K.x/k);
+    Complex h_dx = mul(dx, h_dy);
+
+    Complex dz = Complex(0.0, -K.y/k);
+    Complex h_dz = mul(dz, h_dy);
+
+    dx = Complex(0.0, K.x);
+    dz = Complex(0.0, K.y);
+
+    dx = mul(dx, h_dy);
+    dz = mul(dz, h_dy);
+
+    imageStore(spectral_height_field[nonuniformEXT(TILE_ID)], gid, vec4(h_dy.real, h_dy.imaginary, 0, 1));
+    imageStore(spectral_height_x_field[nonuniformEXT(TILE_ID)], gid, vec4(h_dx.real, h_dx.imaginary, 0, 1));
+    imageStore(spectral_height_z_field[nonuniformEXT(TILE_ID)], gid, vec4(h_dz.real, h_dz.imaginary, 0, 1));
+    imageStore(spectral_height_slope_x_field[nonuniformEXT(TILE_ID)], gid, vec4(dx.real, dx.imaginary, 0, 1));
+    imageStore(spectral_height_slope_z_field[nonuniformEXT(TILE_ID)], gid, vec4(dz.real, dz.imaginary, 0, 1));
+}

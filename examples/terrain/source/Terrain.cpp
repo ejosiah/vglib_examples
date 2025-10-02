@@ -14,7 +14,7 @@ Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
     static uint WorkGroupSize = 256;
     static uint cbtID = 0;
     static uint projection_method = 0;
-    static uint should_cull_triangle = 0;
+    static uint should_cull_triangle = 1;
     static std::array<uint, 5> entries{ cbtID, WorkGroupSize, should_displace, projection_method, should_cull_triangle};
     specializationConstants = {
         .entries = {
@@ -30,10 +30,19 @@ Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
 }
 
 void Terrain::init() {
+    initQueryStats();
     initUniforms();
+    initNormalData();
     loadTerrainTextures();
     SubdivisionGrid::init();
     createRenderPipelines();
+    m_compute.add({
+      .name = "histogram",
+      .shadePath = resource("normal_histogram.comp.spv"),
+      .layouts = {m_layouts[0], m_layouts[1], &m_descriptorSetLayout, &m_triangleDescriptorSetLayout, &m_normals.descriptorSetLayout},
+      .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_normals.constants)} },
+      .specializationConstants = specializationConstants});
+    m_compute.createPipelines();
 }
 
 void Terrain::newFrame() {
@@ -63,12 +72,14 @@ void Terrain::newFrame() {
 }
 
 void Terrain::preProcess(VkCommandBuffer commandBuffer) {
+    m_queryPool.reset(commandBuffer, "triangle_count");
     update(commandBuffer);
+    generateNormals(commandBuffer);
 }
 
 
 void Terrain::render(VkCommandBuffer commandBuffer) {
-    profiler().profile(queryIds[QUERY_RENDER_ID], commandBuffer, [&]{
+    profiler().profile(m_queryIds[QUERY_RENDER_ID], commandBuffer, [&]{
         static std::array<VkDescriptorSet, 4> sets;
         sets[0] = m_sets[0];
         sets[1] = m_sets[1];
@@ -76,11 +87,13 @@ void Terrain::render(VkCommandBuffer commandBuffer) {
         sets[3] = m_atmosphereDescriptor.set;
 
         VkDeviceSize offset = 0;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, COUNT(sets), sets.data(), 0,nullptr);
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
-        vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+        m_queryPool.query(commandBuffer, "triangle_count", [&]{
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.layout.handle, 0, COUNT(sets), sets.data(), 0,nullptr);
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertices.buffer, &offset);
+            vkCmdBindIndexBuffer(commandBuffer, m_indexes, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexedIndirect(commandBuffer, m_drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+            });
     });
 }
 
@@ -146,7 +159,7 @@ void Terrain::createRenderPipelines() {
                     .addSpecialization(256u, 1)
                     .addSpecialization(should_displace, 2)
                     .addSpecialization(0u, 3)
-                    .addSpecialization(0u, 4)
+                    .addSpecialization(1u, 4)
                 .geometryShader(FileManager::resource("terrain_render.geom.spv"))
                 .fragmentShader(FileManager::resource("terrain_render.frag.spv"))
             .vertexInputState().clear()
@@ -165,31 +178,6 @@ void Terrain::createRenderPipelines() {
                 .addDescriptorSetLayout(m_atmosphereDescriptor.setLayout)
             .name("terrain_render")
         .build(m_render.layout);
-
-    m_inspect.pipeline =
-        renderBuilder
-            .shaderStage()
-                .vertexShader(FileManager::resource("inspect.vert.spv"))
-                    .addSpecialization(0u, 0)
-                    .addSpecialization(256u, 1)
-                    .addSpecialization(should_displace, 2)
-                    .addSpecialization(0u, 3)
-                    .addSpecialization(0u, 4)
-                .geometryShader(FileManager::resource("inspect.geom.spv"))
-                .fragmentShader(FileManager::resource("inspect.frag.spv"))
-            .rasterizationState()
-                .lineWidth(5.0)
-            .depthStencilState()
-                .compareOpAlways()
-                .disableDepthWrite()
-            .colorBlendState()
-                .attachments(1)
-            .dynamicRenderPass()
-                .disable()
-            .layout()
-                .addPushConstantRange(VK_SHADER_STAGE_GEOMETRY_BIT, 0, sizeof(m_inspectConstants))
-            .name("terrain_inspect")
-        .build(m_inspect.layout);
 }
 
 Context &Terrain::context() {
@@ -207,7 +195,7 @@ float Terrain::computeLodFactor() {
 }
 
 void Terrain::endFrame() {
-
+    m_triangleCount = m_queryPool.queryResult<uint>(VK_QUERY_RESULT_WAIT_BIT);
 }
 
 void Terrain::createDescriptorSetLayout() {
@@ -220,14 +208,33 @@ void Terrain::createDescriptorSetLayout() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
+
+
+    m_normals.descriptorSetLayout =
+        device().descriptorSetLayoutBuilder()
+            .name("normal_gen_descriptor_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
 }
 
 void Terrain::updateDescriptorSets() {
     SubdivisionGrid::updateDescriptorSets();
-    auto sets = descriptorPool().allocate({ m_descriptorSetLayout });
+    auto sets = descriptorPool().allocate({ m_descriptorSetLayout, m_normals.descriptorSetLayout });
     m_descriptorSet = sets[0];
+    m_normals.descriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<1>();
+    auto writes = initializers::writeDescriptorSets<4>();
 
     writes[0].dstSet = m_descriptorSet;
     writes[0].dstBinding = 0;
@@ -235,6 +242,28 @@ void Terrain::updateDescriptorSets() {
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo uniformInfo{ m_uniforms.gpu, 0, VK_WHOLE_SIZE };
     writes[0].pBufferInfo = &uniformInfo;
+
+    writes[1].dstSet = m_normals.descriptorSet;
+    writes[1].dstBinding = 0;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo countsInfo{ m_normals.counts, 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &countsInfo;
+
+    writes[2].dstSet = m_normals.descriptorSet;
+    writes[2].dstBinding = 1;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].descriptorCount = 1;
+    VkDescriptorBufferInfo normalsInfo{ m_normals.normals, 0, VK_WHOLE_SIZE };
+    writes[2].pBufferInfo = &normalsInfo;
+
+    writes[3].dstSet = m_normals.descriptorSet;
+    writes[3].dstBinding = 2;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[3].descriptorCount = 1;
+    VkDescriptorBufferInfo countersInfo{ m_normals.counters, 0, VK_WHOLE_SIZE };
+    writes[3].pBufferInfo = &countersInfo;
+
 
     device().updateDescriptorSets(writes);
     m_sets[2] = m_descriptorSet;
@@ -290,8 +319,8 @@ void Terrain::controls(bool show) {
         ImGui::RadioButton("random", &m_options.tileColor, 2);
     }
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
-    ImGui::Text("minimum triangle area %f",  *as<float>(&m_uniforms.cpu->minArea));
-
+    ImGui::Text("Minimum triangle area %f",  *as<float>(&m_uniforms.cpu->minArea));
+    ImGui::Text("Triangle count: %d", m_triangleCount);
 
     ImGui::End();
 }
@@ -307,7 +336,7 @@ float Terrain::printPerfStats() {
     if (ImGui::TreeNode("Terrain")) {
         ImGuiTreeNodeFlags leaf = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
-        for(auto name : queryIds) {
+        for(auto name : m_queryIds) {
             auto duration = profiler().queries[name].movingAverage.value * toMillis;
             ImGui::TreeNodeEx(name.c_str(), leaf, "%s: %f ms", name.c_str(), duration);
             total += duration;
@@ -388,4 +417,49 @@ void Terrain::subdivide(VkCommandBuffer commandBuffer, int pingPong) {
     vkCmdPushConstants(commandBuffer, m_compute.layout("terrain_subdivide"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pingPong);
     vkCmdDispatchIndirect(commandBuffer, m_dispatchBuffer, 0);
     Barrier::computeWriteToRead(commandBuffer);
+}
+
+void Terrain::initNormalData() {
+    const auto tableSize = m_normals.constants.tableSize;
+    m_normals.counts = device().createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, tableSize * sizeof(uint), "terrain_normal_counts");
+    m_normals.normals = device().createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, tableSize * sizeof(glm::vec4), "terrain_normals");
+    m_normals.counters = device().createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(uint), "terrain_normals_counters");
+
+    m_prefixSum = PrefixSum{ &device() };
+    m_prefixSum.init();
+}
+
+void Terrain::initQueryStats() {
+    m_queryPool = PipelineStatsQueryPool{device(), 1u, VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT};
+    m_queryPool.addQuery("triangle_count");
+}
+
+void Terrain::generateNormals(VkCommandBuffer commandBuffer) {
+    computeHistogram(commandBuffer);
+//    computePartialSum(commandBuffer);
+    reorder(commandBuffer);
+}
+
+void Terrain::computeHistogram(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 5> sets;
+    sets[0] = m_sets[0];
+    sets[1] = m_sets[1];
+    sets[2] = m_sets[2];
+    sets[3] = m_triangleDescriptorSet;
+    sets[4] = m_normals.descriptorSet;
+
+    vkCmdFillBuffer(commandBuffer, m_normals.counters.buffer, 0, m_normals.counters.size, 0u);
+    Barrier::transferWriteToComputeRead(commandBuffer);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("histogram"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("histogram"), 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("histogram"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_normals.constants), &m_normals.constants);
+    vkCmdDispatchIndirect(commandBuffer, m_dispatchBuffer, 0);
+}
+
+void Terrain::computePartialSum(VkCommandBuffer commandBuffer) {
+    m_prefixSum.inclusive(commandBuffer, m_normals.counts, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+}
+
+void Terrain::reorder(VkCommandBuffer commandBuffer) {
+
 }

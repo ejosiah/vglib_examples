@@ -1,0 +1,29 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(set = 1, binding = 2) buffer VertexBufferOut {
+    vec3 normals[];
+};
+
+layout(set = 2, binding = 0) buffer Counts {
+    uint counts[];
+};
+
+layout(push_constant) uniform Constants {
+    vec3 boundsMin;
+    uint tableSize;
+    float threshold;
+} pc;
+
+shared vec4 triangleVertices[3];
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    vec4 normal = vertices[index];
+    uint hash = uint(normal.w);
+    index = atomicAdd(counts[hash], - 1) - 1;
+    normals[index] = normal;
+}

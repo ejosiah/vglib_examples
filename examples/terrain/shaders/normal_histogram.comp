@@ -1,0 +1,121 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(set = 3, binding = 0) buffer VertexBuffer {
+    vec2 vertices[];
+};
+
+layout(set = 3, binding = 1) buffer IndexBuffer {
+    uint indexes[];
+};
+
+layout(set = 4, binding = 0) buffer Counts {
+    uint counts[];
+};
+
+layout(set = 4, binding = 1) buffer VertexBufferOut {
+    vec4 normals[];
+};
+
+layout(set = 4, binding = 2) buffer Counters {
+    uint vertexCount;
+};
+
+layout(push_constant) uniform Constants {
+    vec3 boundsMin;
+    float threshold;
+    uint tableSize;
+} pc;
+
+uvec3 cellCoord(vec3 wp) {
+    float inv = 1.0 / pc.threshold;
+    vec3  f   = (wp - pc.boundsMin) * inv + vec3(1e-6);
+    ivec3 c   = ivec3(floor(f));
+    return uvec3(c);
+}
+
+//uint spatialHash(uvec3 c) {
+//    // Big relatively prime multipliers, XOR mix
+//    const uvec3 k = uvec3(73856093u, 19349663u, 83492791u);
+//    uint h = (c.x * k.x) ^ (c.y * k.y) ^ (c.z * k.z);
+//    // If tableSize is a power of two, replace this with: h &= (pc.tableSize - 1u);
+//    return (h % pc.tableSize);
+//}
+
+uint spatialHash(uvec3 c) {
+    const uvec3 k = uvec3(541, 79, 31);
+    uint h = c.x * k.x + c.y * k.y + c.z * k.z;
+    return (h % pc.tableSize);
+}
+
+
+shared vec2 triangleTexCoords[3];
+shared bool skip;
+
+void main() {
+
+    if(gl_LocalInvocationIndex == 0) {
+        const int cbtID = 0;
+        uint nodeID = gl_WorkGroupID.x;
+        cbt_Node node = cbt_DecodeNode(cbtID, nodeID);
+
+        vec4 triangleVertices[3] = DecodeTriangleVertices(node);
+
+        triangleTexCoords = vec2[3](
+            triangleVertices[0].xy,
+            triangleVertices[1].xy,
+            triangleVertices[2].xy
+        );
+
+        skip = !FrustumCullingTest(triangleVertices);
+    }
+
+    barrier();
+    if(skip) return;
+
+    if(gl_LocalInvocationIndex == 0){
+        debugPrintfEXT("%d made it here\n", int(gl_WorkGroupID));
+    }
+
+    uint i0 = gl_LocalInvocationIndex * 3 + 0;
+    uint i1 = gl_LocalInvocationIndex * 3 + 1;
+    uint i2 = gl_LocalInvocationIndex * 3 + 2;
+
+    vec2 p0 = vertices[indexes[i0]];
+    vec2 p1 = vertices[indexes[i1]];
+    vec2 p2 = vertices[indexes[i2]];
+
+
+    VertexAttribute a0 = TessellateTriangle(triangleTexCoords, p0);
+    VertexAttribute a1 = TessellateTriangle(triangleTexCoords, p1);
+    VertexAttribute a2 = TessellateTriangle(triangleTexCoords, p2);
+
+    vec3 wp0 = (globals.modelMatrix * a0.position).xyz;
+    vec3 wp1 = (globals.modelMatrix * a1.position).xyz;
+    vec3 wp2 = (globals.modelMatrix * a2.position).xyz;
+
+    vec3 fn = cross(wp1 - wp0, wp2 - wp0);
+    float len2 = dot(fn, fn);
+    if (len2 < 1e-24) return;
+
+    uint h0 = spatialHash(cellCoord(wp0));
+    uint h1 = spatialHash(cellCoord(wp1));
+    uint h2 = spatialHash(cellCoord(wp2));
+
+    atomicAdd(counts[h0], 1u);
+    atomicAdd(counts[h1], 1u);
+    atomicAdd(counts[h2], 1u);
+
+    uint base = atomicAdd(vertexCount, 3u);
+
+//    normals[base + 0u] = vec4(fn, uintBitsToFloat(h0));
+//    normals[base + 1u] = vec4(fn, uintBitsToFloat(h1));
+//    normals[base + 2u] = vec4(fn, uintBitsToFloat(h2));
+
+    normals[base + 0u] = vec4(fn, h0);
+    normals[base + 1u] = vec4(fn, h1);
+    normals[base + 2u] = vec4(fn, h2);
+}
