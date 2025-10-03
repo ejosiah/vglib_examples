@@ -14,6 +14,6 @@ layout(location = 1) out vec4 extras;
 
 void main() {
     vec2 uv = getUV(fs_in.uv, 0);
-    fragColor = vec4(uv, 0, 1);
+    fragColor = vec4(1);
     extras.x = gl_FragCoord.z;
 }

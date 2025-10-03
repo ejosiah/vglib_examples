@@ -19,14 +19,18 @@ void main() {
     vec4 triangleVertices[3] = DecodeTriangleVertices(node);
 
     vec2 triangleTexCoords[3] = vec2[3](
-    triangleVertices[0].xy,
-    triangleVertices[1].xy,
-    triangleVertices[2].xy
+        triangleVertices[0].xy,
+        triangleVertices[1].xy,
+        triangleVertices[2].xy
     );
 
     VertexAttribute attrib = TessellateTriangle(triangleTexCoords, iPos);
 
+    vec4 worldPos = u.modelMatrix * attrib.position;
+    worldPos.xyz += sampleDisplacement(attrib.texCoord);
+
     vs_out.uv = attrib.texCoord;
     vs_out.color = vec4(1);
-    gl_Position = u.modelViewProjectionMatrix * attrib.position;
+
+    gl_Position = u.viewProjectionMatrix * worldPos;
 }

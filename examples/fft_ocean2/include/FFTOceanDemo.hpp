@@ -50,6 +50,8 @@ protected:
 
     void renderArealPerspective(VkCommandBuffer commandBuffer);
 
+    void renderUI(VkCommandBuffer commandBuffer);
+
     void toneMap(VkCommandBuffer commandBuffer);
 
     void renderToDisplay(VkCommandBuffer commandBuffer);

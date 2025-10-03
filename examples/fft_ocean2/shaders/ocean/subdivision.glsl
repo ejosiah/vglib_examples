@@ -24,8 +24,8 @@ const uint PROJECTION_FISHEYE = 2u;
 #define TRIANGLE_CULL_CONST_ID 4
 #endif // TRIANGLE_CULL_CONST_ID
 
-#define u_DmapSampler global_textures[nonuniformEXT(u.heightMapIndex)]
-#define u_NormalSampler global_textures[nonuniformEXT(u.normalMapIndex)]
+#define u_DmapSampler global_textures_array[nonuniformEXT(u.heightMapIndex)]
+#define u_NormalSampler global_textures_array[nonuniformEXT(u.normalMapIndex)]
 
 
 const uint flag_displace = 0;
@@ -37,6 +37,13 @@ const bool should_cull_triangle = cull_triangle == 1;
 
 vec2 getUV(vec2 p, int tile) {
     return fract((p * u.dimensions)/u.horizontalLength[tile]);
+}
+
+vec3 sampleDisplacement(vec2 uv) {
+    vec3 loc = vec3(getUV(uv, 0), u.tile);
+    vec3 disp = texture(u_DmapSampler, loc).xyz;
+
+    return vec3(0, disp.y, 0);
 }
 
 /*******************************************************************************
@@ -67,9 +74,9 @@ vec4[3] DecodeTriangleVertices(in const cbt_Node node)
     vec4 p3 = vec4(pos[0][2], pos[1][2], 0.0, 1.0);
 
     if(should_displace) {
-        p1.z = u.dmapFactor * texture(u_DmapSampler, p1.xy).r;
-        p2.z = u.dmapFactor * texture(u_DmapSampler, p2.xy).r;
-        p3.z = u.dmapFactor * texture(u_DmapSampler, p3.xy).r;
+        p1.z = u.dmapFactor * texture(u_DmapSampler, vec3(p1.xy, u.tile)).r;
+        p2.z = u.dmapFactor * texture(u_DmapSampler, vec3(p2.xy, u.tile)).r;
+        p3.z = u.dmapFactor * texture(u_DmapSampler, vec3(p3.xy, u.tile)).r;
     }
 
     return vec4[3](p1, p2, p3);
@@ -171,7 +178,7 @@ bool DisplacementVarianceTest(in const vec4[3] patchVertices) {
     vec2 P = (P0 + P1 + P2) / 3.0;
     vec2 dx = (P0 - P1);
     vec2 dy = (P2 - P1);
-    vec2 dmap = textureGrad(u_DmapSampler, P, dx, dy).rg;
+    vec2 dmap = textureGrad(u_DmapSampler, vec3(P, u.tile), dx, dy).rg;
     float dmapVariance = clamp(dmap.y - dmap.x * dmap.x, 0.0, 1.0);
 
     return (dmapVariance >= u.minLodVariance);
@@ -224,13 +231,12 @@ VertexAttribute TessellateTriangle(in const vec2 texCoords[3], in vec2 tessCoord
     vec2 texCoord = BarycentricInterpolation(texCoords, tessCoord);
     vec4 position = vec4(texCoord, 0, 1);
 
-    //    vec2 uv = vec2(texCoord.x, 1 - texCoord.y);
-    vec2 uv = vec2(texCoord.x, texCoord.y);
+    vec3 uv = vec3(texCoord.x, texCoord.y, u.tile);
     if(should_displace) {
         position.z = u.dmapFactor * textureLod(u_DmapSampler, uv, 0.0).r;
     }
 
-    return VertexAttribute(position, uv);
+    return VertexAttribute(position, uv.xy);
 }
 
 #endif  // OCEAN_SUBDIVISION_GLSL

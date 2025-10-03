@@ -245,9 +245,10 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 
     renderToSwapChain([&]{
 //        renderToDisplay(commandBuffer);
-//        ocean->preview(commandBuffer);
 //        ocean->topView(commandBuffer);
         ocean->render(commandBuffer);
+        ocean->preview(commandBuffer);
+        renderUI(commandBuffer);
     }, commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -290,6 +291,27 @@ void FFTOceanDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, 1, &displayDescriptorSet, 0,nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void FFTOceanDemo::renderUI(VkCommandBuffer commandBuffer) {
+    static bool oceanOpen = false;
+    static bool atmosphereOpen = false;
+    static bool lightOpen = false;
+    static bool perfOpen = false;
+    static bool cloudsOpen = false;
+
+    ImGui::Begin("Controls");
+    ImGui::SetWindowSize({0, 0});
+    ImGui::Checkbox("Ocean", &oceanOpen);
+    ImGui::Checkbox("Atmosphere", &atmosphereOpen);
+    ImGui::Checkbox("Lighting", &lightOpen);
+    ImGui::Checkbox("clouds", &cloudsOpen);
+    ImGui::Checkbox("Performance", &perfOpen);
+    ImGui::End();
+
+    ocean->controls(oceanOpen);
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
 void FFTOceanDemo::update(float time) {
