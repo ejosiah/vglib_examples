@@ -154,5 +154,5 @@ private:
     uint m_previewIndex{~0u};
     uint m_normalIndex{~0u};
     float m_time{0};
-    float m_timePeriod{1.f/30.f};
+    float m_timePeriod{1.f/120.f};
 };

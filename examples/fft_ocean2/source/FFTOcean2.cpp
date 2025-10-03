@@ -191,12 +191,11 @@ void FFTOcean2::newFrame() {
     auto projection = m_camera->camera.proj;
 
     glm::mat4 model = m_uniforms.cpu->modelMatrix;
-    auto mvp = projection * view * model;
     m_uniforms.cpu->modelViewMatrix = view * model;
     m_uniforms.cpu->viewMatrix = view;
     m_uniforms.cpu->cameraMatrix = glm::inverse(view);
     m_uniforms.cpu->viewProjectionMatrix = projection * view;
-    m_uniforms.cpu->modelViewProjectionMatrix = mvp;
+    m_uniforms.cpu->modelViewProjectionMatrix = projection * view * model;
     m_uniforms.cpu->lodFactor = computeLodFactor();
     m_uniforms.cpu->dmapFactor = m_options.dmapScale;
     m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
@@ -205,7 +204,7 @@ void FFTOcean2::newFrame() {
     m_uniforms.cpu->choppiness = m_options.choppiness;
 
     static Frustum frustum;
-    Frustum::extractFrustum(frustum, mvp);
+    Frustum::extractFrustum(frustum, projection * view);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
 }
 

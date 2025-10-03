@@ -75,14 +75,16 @@ vec3 sampleNormal(vec2 p) {
 }
 
 
-/*******************************************************************************
- * FrustumCullingTest -- Checks if the triangle lies inside the view frutsum
- *
- * This function depends on FrustumCulling.glsl
- *
- */
-bool FrustumCullingTest(in const vec4[3] patchVertices)
-{
+bool FrustumCullingTest(in vec4[3] patchVertices) {
+
+    patchVertices[0] = u.modelMatrix * patchVertices[0];
+    patchVertices[1] = u.modelMatrix * patchVertices[1];
+    patchVertices[2] = u.modelMatrix * patchVertices[2];
+
+    patchVertices[0].xyz += sampleDisplacement(patchVertices[0].xy);
+    patchVertices[1].xyz += sampleDisplacement(patchVertices[1].xy);
+    patchVertices[2].xyz += sampleDisplacement(patchVertices[2].xy);
+
     vec3 bmin = min(min(patchVertices[0].xyz, patchVertices[1].xyz), patchVertices[2].xyz);
     vec3 bmax = max(max(patchVertices[0].xyz, patchVertices[1].xyz), patchVertices[2].xyz);
 
@@ -227,8 +229,6 @@ vec2 LevelOfDetail(in const vec4[3] patchVertices)
     if (!FrustumCullingTest(patchVertices)) {
         return should_cull_triangle ? vec2(0.0f, 0.0f) : vec2(0.0f, 1.0f);
     }
-
-    if(should_displace && !DisplacementVarianceTest(patchVertices)) return vec2(0.0f, 1.0f);
 
     // compute triangle LOD
     return vec2(TriangleLevelOfDetail(patchVertices), 1.0f);
