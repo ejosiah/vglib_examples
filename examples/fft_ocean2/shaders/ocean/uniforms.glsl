@@ -20,7 +20,8 @@ layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     float lodFactor;
     float minLodVariance;
     float dmapFactor;
-    uint tile;
+    float choppiness;
+    uint tileCount;
     uint heightMapIndex;
     uint normalMapIndex;
 } u;

@@ -56,7 +56,7 @@ float P(vec2 K){
         ph *= 0.07f;
     }
 
-    return ph * exp(-k2 * l * l);
+    return ph / (horizontalLength * horizontalLength);
 }
 
 vec2 h0(vec2 k, float er, float ei){

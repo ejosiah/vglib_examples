@@ -35,16 +35,45 @@ const uint cull_triangle = 1;
 const bool should_displace = flag_displace == 1;
 const bool should_cull_triangle = cull_triangle == 1;
 
-vec2 getUV(vec2 p, int tile) {
-    return fract((p * u.dimensions)/u.horizontalLength[tile]);
+vec2 getUV(vec2 p) {
+    return fract(p/u.horizontalLength[u.tileCount]);
 }
 
-vec3 sampleDisplacement(vec2 uv) {
-    vec3 loc = vec3(getUV(uv, 0), u.tile);
-    vec3 disp = texture(u_DmapSampler, loc).xyz;
+vec3 sampleDisplacement(vec2 p) {
+    float H = 0;
+    float Dx = 0;
+    float Dz = 0;
 
-    return vec3(0, disp.y, 0);
+    const uint tileCount = u.tileCount;
+    for(uint i = 0; i < tileCount; ++i){
+        vec2 uv = fract(p/u.horizontalLength[i]);
+        vec3 loc = vec3(uv, i);
+        vec3 disp = texture(u_DmapSampler, loc).xyz;
+
+        H += disp.y;
+        Dx += disp.x * u.choppiness;
+        Dz += disp.z * u.choppiness;
+    }
+
+    return vec3(Dx, H, Dz);
 }
+
+vec3 sampleNormal(vec2 p) {
+    float Sx = 0, Sz = 0;
+
+    const uint tileCount = 4;
+    for(uint i = 0; i < tileCount; ++i){
+        vec2 uv = fract(p/u.horizontalLength[i]);
+        vec3 loc = vec3(uv, i);
+        vec2 slope = texture(u_NormalSampler, loc).xy;
+
+        Sx += slope.x;
+        Sz += slope.y;
+    }
+
+    return normalize(vec3(-Sx, 1, -Sz));
+}
+
 
 /*******************************************************************************
  * FrustumCullingTest -- Checks if the triangle lies inside the view frutsum
@@ -74,9 +103,9 @@ vec4[3] DecodeTriangleVertices(in const cbt_Node node)
     vec4 p3 = vec4(pos[0][2], pos[1][2], 0.0, 1.0);
 
     if(should_displace) {
-        p1.z = u.dmapFactor * texture(u_DmapSampler, vec3(p1.xy, u.tile)).r;
-        p2.z = u.dmapFactor * texture(u_DmapSampler, vec3(p2.xy, u.tile)).r;
-        p3.z = u.dmapFactor * texture(u_DmapSampler, vec3(p3.xy, u.tile)).r;
+        p1.z = u.dmapFactor * texture(u_DmapSampler, vec3(p1.xy, u.tileCount)).r;
+        p2.z = u.dmapFactor * texture(u_DmapSampler, vec3(p2.xy, u.tileCount)).r;
+        p3.z = u.dmapFactor * texture(u_DmapSampler, vec3(p3.xy, u.tileCount)).r;
     }
 
     return vec4[3](p1, p2, p3);
@@ -178,7 +207,7 @@ bool DisplacementVarianceTest(in const vec4[3] patchVertices) {
     vec2 P = (P0 + P1 + P2) / 3.0;
     vec2 dx = (P0 - P1);
     vec2 dy = (P2 - P1);
-    vec2 dmap = textureGrad(u_DmapSampler, vec3(P, u.tile), dx, dy).rg;
+    vec2 dmap = textureGrad(u_DmapSampler, vec3(P, u.tileCount), dx, dy).rg;
     float dmapVariance = clamp(dmap.y - dmap.x * dmap.x, 0.0, 1.0);
 
     return (dmapVariance >= u.minLodVariance);
@@ -231,7 +260,7 @@ VertexAttribute TessellateTriangle(in const vec2 texCoords[3], in vec2 tessCoord
     vec2 texCoord = BarycentricInterpolation(texCoords, tessCoord);
     vec4 position = vec4(texCoord, 0, 1);
 
-    vec3 uv = vec3(texCoord.x, texCoord.y, u.tile);
+    vec3 uv = vec3(texCoord.x, texCoord.y, u.tileCount);
     if(should_displace) {
         position.z = u.dmapFactor * textureLod(u_DmapSampler, uv, 0.0).r;
     }

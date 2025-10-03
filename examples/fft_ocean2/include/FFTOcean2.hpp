@@ -6,7 +6,7 @@
 
 class FFTOcean2 :public SubdivisionGrid {
 public:
-    FFTOcean2(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, BindlessDescriptor& bindlessDescriptor,
+     FFTOcean2(VulkanDevice& device, VulkanDescriptorPool& descriptorPool, BindlessDescriptor& bindlessDescriptor,
               Prototypes& prototypes, BaseCameraController& camera, uint width, uint height);
 
     void init() final;
@@ -18,6 +18,8 @@ public:
     void render(VkCommandBuffer commandBuffer);
 
     void preview(VkCommandBuffer commandBuffer);
+
+    void renderTopView(VkCommandBuffer commandBuffer);
 
     void endFrame();
 
@@ -90,10 +92,10 @@ private:
 
 
     struct {
-        glm::vec4 windOrientation{glm::quarter_pi<float>(), glm::atan(-0.6, -0.4), 0.55, 1.77};
-        glm::vec4 windSpeed{6.5, 40, 10, 25};
-        glm::vec4 amplitude{0.001, 4, 2, 2.5};
-        glm::vec4 horizontalLength{20, 200, 1000, 400};
+        glm::vec4 windOrientation{-0.79, 1.57, 0.79, 0.0};
+        glm::vec4 windSpeed{27.78, 19.44, 27.78, 8.33};
+        glm::vec4 amplitude{0.2};
+        glm::vec4 horizontalLength{3348.6, 177.653, 94.25, 5.00};
         glm::vec4 windPower{1};
         float time{0};
     } m_controls;
@@ -111,7 +113,8 @@ private:
         float lodFactor{0};
         float minLodVariance{0};
         float dmapFactor{1};
-        uint tile{0};
+        float choppiness{0};
+        uint tile{4};
         uint heightMapIndex{~0u};
         uint normalMapIndex{~0u};
     } defaultValues{};
@@ -130,8 +133,9 @@ private:
         float primitivePixelLengthTarget{7};
         float minLodStdev{0};
         float dmapScale{1};
+        float choppiness{0};
         int gpuSubDivisions{3};
-        int tile{0};
+        int tile{4};
         bool topView{false};
         bool wire{false};
         bool showTiles{false};

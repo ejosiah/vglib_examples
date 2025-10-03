@@ -6,6 +6,7 @@
 
 layout(location = 0) in struct {
     vec4 color;
+    vec3 worldPos;
     vec2 uv;
 } fs_in;
 
@@ -13,7 +14,7 @@ layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 extras;
 
 void main() {
-    vec2 uv = getUV(fs_in.uv, 0);
+    vec3 N = sampleNormal(fs_in.worldPos.xz);
     fragColor = vec4(1);
     extras.x = gl_FragCoord.z;
 }

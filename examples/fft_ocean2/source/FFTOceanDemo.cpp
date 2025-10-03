@@ -248,6 +248,7 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 //        ocean->topView(commandBuffer);
         ocean->render(commandBuffer);
         ocean->preview(commandBuffer);
+        ocean->renderTopView(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
@@ -294,20 +295,7 @@ void FFTOceanDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
 }
 
 void FFTOceanDemo::renderUI(VkCommandBuffer commandBuffer) {
-    static bool oceanOpen = false;
-    static bool atmosphereOpen = false;
-    static bool lightOpen = false;
-    static bool perfOpen = false;
-    static bool cloudsOpen = false;
-
-    ImGui::Begin("Controls");
-    ImGui::SetWindowSize({0, 0});
-    ImGui::Checkbox("Ocean", &oceanOpen);
-    ImGui::Checkbox("Atmosphere", &atmosphereOpen);
-    ImGui::Checkbox("Lighting", &lightOpen);
-    ImGui::Checkbox("clouds", &cloudsOpen);
-    ImGui::Checkbox("Performance", &perfOpen);
-    ImGui::End();
+    static bool oceanOpen = true;
 
     ocean->controls(oceanOpen);
 
@@ -315,7 +303,9 @@ void FFTOceanDemo::renderUI(VkCommandBuffer commandBuffer) {
 }
 
 void FFTOceanDemo::update(float time) {
-    camera->update(time);
+    if(!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
     setTitle(fmt::format("{}, camera - {}, FPS - {}", title, camera->position(), framePerSecond));
 
 }

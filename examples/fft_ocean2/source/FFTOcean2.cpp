@@ -8,7 +8,7 @@
 
 FFTOcean2::FFTOcean2(VulkanDevice &device, VulkanDescriptorPool &descriptorPool, BindlessDescriptor &bindlessDescriptor,
                      Prototypes& prototypes, BaseCameraController& camera, uint width, uint height)
-        : SubdivisionGrid(device, descriptorPool, bindlessDescriptor, "ocean", glm::vec2{width, height})
+        : SubdivisionGrid(device, descriptorPool, bindlessDescriptor, "ocean", glm::vec2{width, height}, 0, nullptr)
         , m_prototypes{&prototypes}
         , m_camera{&camera}
 {}
@@ -202,6 +202,7 @@ void FFTOcean2::newFrame() {
     m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
     m_uniforms.cpu->horizontalLength = m_controls.horizontalLength;
     m_uniforms.cpu->tile = to<uint>(m_options.tile);
+    m_uniforms.cpu->choppiness = m_options.choppiness;
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
@@ -616,8 +617,8 @@ void FFTOcean2::createSimTextures() {
 
 
     m_heightMapIndex = m_bindlessDescriptor->reserveTextureSlots(2);
-    m_previewIndex = m_heightMapIndex;
     m_normalIndex = m_heightMapIndex + 1;
+    m_previewIndex = m_heightMapIndex;
     m_bindlessDescriptor->update({ &m_textures.heightField, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_heightMapIndex, VK_IMAGE_LAYOUT_GENERAL });
     m_bindlessDescriptor->update({ &m_textures.heightField, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_previewIndex, VK_IMAGE_LAYOUT_GENERAL });
     m_bindlessDescriptor->update({ &m_textures.normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_normalIndex, VK_IMAGE_LAYOUT_GENERAL });
@@ -670,7 +671,8 @@ void FFTOcean2::controls(bool show) {
     ImGui::SliderFloat("Pixels/Edge", &m_options.primitivePixelLengthTarget, 1, 32);
     ImGui::SliderFloat("Dmap scale", &m_options.dmapScale, 0, 1);
     ImGui::SliderFloat("Lod Std", &m_options.minLodStdev, 0, 1);
-    ImGui::SliderInt("tile", &m_options.tile, 0, tileCount - 1);
+    ImGui::SliderFloat("Choppiness", &m_options.choppiness, 0, 5);
+    ImGui::SliderInt("tiles", &m_options.tile, 1, tileCount);
 
     ImGui::Checkbox("Wire", &m_options.wire);
     ImGui::SameLine();
@@ -682,5 +684,10 @@ void FFTOcean2::controls(bool show) {
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
 
     ImGui::End();
+}
+
+void FFTOcean2::renderTopView(VkCommandBuffer commandBuffer) {
+    if(!m_options.topView) return;
+    topView(commandBuffer);
 }
 

@@ -8,6 +8,7 @@ layout(location = 0) in vec2 iPos;
 
 layout(location = 0) out struct {
     vec4 color;
+    vec3 worldPos;
     vec2 uv;
 } vs_out;
 
@@ -27,8 +28,9 @@ void main() {
     VertexAttribute attrib = TessellateTriangle(triangleTexCoords, iPos);
 
     vec4 worldPos = u.modelMatrix * attrib.position;
-    worldPos.xyz += sampleDisplacement(attrib.texCoord);
+    worldPos.xyz += sampleDisplacement(worldPos.xz);
 
+    vs_out.worldPos = worldPos.xyz;
     vs_out.uv = attrib.texCoord;
     vs_out.color = vec4(1);
 
