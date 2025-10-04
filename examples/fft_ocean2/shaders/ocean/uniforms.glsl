@@ -2,10 +2,14 @@
 #define OCEAN_UNIFORMS_GLSL
 
 #extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #ifndef OCEAN_UNIFORM_SET
 #   error User must specify the set location for ocean uniforms
 #endif
+
+#define WIRE_FRAME_ON 1u
+#define TILES_ON 2u
 
 layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     mat4 modelMatrix;
@@ -16,12 +20,13 @@ layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     mat4 modelViewProjectionMatrix;
     vec4 frustumPlanes[6];
     vec4 horizontalLength;
-    vec2 dimensions;
+    vec2 screenResolution;
     float lodFactor;
     float minLodVariance;
     float dmapFactor;
     float choppiness;
     uint tileCount;
+    uint flags;
     uint heightMapIndex;
     uint normalMapIndex;
 } u;
@@ -32,5 +37,35 @@ layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
 #endif
 layout(set = BINDLESS_DESCRIPTOR_SET, binding = 10) uniform sampler2D global_textures[];
 layout(set = BINDLESS_DESCRIPTOR_SET, binding = 10) uniform sampler2DArray global_textures_array[];
+
+#define u_DmapSampler global_textures_array[nonuniformEXT(u.heightMapIndex)]
+#define u_NormalSampler global_textures_array[nonuniformEXT(u.normalMapIndex)]
+
+bool wireframeEnabled() {
+    return (u.flags & WIRE_FRAME_ON) == WIRE_FRAME_ON;
+}
+
+bool showTiles() {
+    return (u.flags & TILES_ON) == TILES_ON;
+}
+
+vec3 sampleDisplacement(vec2 p) {
+    float H = 0;
+    float Dx = 0;
+    float Dz = 0;
+
+    const uint tileCount = u.tileCount;
+    for(uint i = 0; i < tileCount; ++i){
+        vec2 uv = fract(p/u.horizontalLength[i]);
+        vec3 loc = vec3(uv, i);
+        vec3 disp = texture(u_DmapSampler, loc).xyz;
+
+        H += disp.y;
+        Dx += disp.x * u.choppiness;
+        Dz += disp.z * u.choppiness;
+    }
+
+    return vec3(Dx, H, Dz) * u.dmapFactor;
+}
 
 #endif // OCEAN_UNIFORMS_GLSL

@@ -139,6 +139,7 @@ void FFTOcean2::createPipelines() {
         m_prototypes->cloneGraphicsPipeline()
             .shaderStage()
                 .vertexShader(FileManager::resource("ocean_render.vert.spv"))
+                .geometryShader(FileManager::resource("ocean_render.geom.spv"))
                 .fragmentShader(FileManager::resource("ocean_render.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
@@ -147,7 +148,7 @@ void FFTOcean2::createPipelines() {
                 .triangles()
             .rasterizationState()
                 .cullNone()
-                .polygonModeLine()
+                .polygonModeFill()
             .layout().clear()
                 .addDescriptorSetLayout(*m_layouts[0])
                 .addDescriptorSetLayout(*m_layouts[1])
@@ -202,6 +203,11 @@ void FFTOcean2::newFrame() {
     m_uniforms.cpu->horizontalLength = m_controls.horizontalLength;
     m_uniforms.cpu->tile = to<uint>(m_options.tile);
     m_uniforms.cpu->choppiness = m_options.choppiness;
+    m_uniforms.cpu->dimensions = m_screenResolution;
+
+    m_uniforms.cpu->flags = 0;
+    m_uniforms.cpu->flags |= (uint(m_options.wire) << 0);
+    m_uniforms.cpu->flags |= (uint(m_options.showTiles) << 1);
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, projection * view);

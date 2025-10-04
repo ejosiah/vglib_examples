@@ -24,56 +24,12 @@ const uint PROJECTION_FISHEYE = 2u;
 #define TRIANGLE_CULL_CONST_ID 4
 #endif // TRIANGLE_CULL_CONST_ID
 
-#define u_DmapSampler global_textures_array[nonuniformEXT(u.heightMapIndex)]
-#define u_NormalSampler global_textures_array[nonuniformEXT(u.normalMapIndex)]
-
-
 const uint flag_displace = 0;
 const uint projection_method = PROJECTION_RECTILINEAR;
 const uint cull_triangle = 1;
 
 const bool should_displace = flag_displace == 1;
 const bool should_cull_triangle = cull_triangle == 1;
-
-vec2 getUV(vec2 p) {
-    return fract(p/u.horizontalLength[u.tileCount]);
-}
-
-vec3 sampleDisplacement(vec2 p) {
-    float H = 0;
-    float Dx = 0;
-    float Dz = 0;
-
-    const uint tileCount = u.tileCount;
-    for(uint i = 0; i < tileCount; ++i){
-        vec2 uv = fract(p/u.horizontalLength[i]);
-        vec3 loc = vec3(uv, i);
-        vec3 disp = texture(u_DmapSampler, loc).xyz;
-
-        H += disp.y;
-        Dx += disp.x * u.choppiness;
-        Dz += disp.z * u.choppiness;
-    }
-
-    return vec3(Dx, H, Dz);
-}
-
-vec3 sampleNormal(vec2 p) {
-    float Sx = 0, Sz = 0;
-
-    const uint tileCount = 4;
-    for(uint i = 0; i < tileCount; ++i){
-        vec2 uv = fract(p/u.horizontalLength[i]);
-        vec3 loc = vec3(uv, i);
-        vec2 slope = texture(u_NormalSampler, loc).xy;
-
-        Sx += slope.x;
-        Sz += slope.y;
-    }
-
-    return normalize(vec3(-Sx, 1, -Sz));
-}
-
 
 bool FrustumCullingTest(in vec4[3] patchVertices) {
 
@@ -91,11 +47,6 @@ bool FrustumCullingTest(in vec4[3] patchVertices) {
     return FrustumCullingTest(u.frustumPlanes, bmin, bmax);
 }
 
-
-/*******************************************************************************
- * DecodeTriangleVertices -- Decodes the triangle vertices in local space
- *
- */
 vec4[3] DecodeTriangleVertices(in const cbt_Node node)
 {
     vec3 xPos = vec3(0, 0, 1), yPos = vec3(1, 0, 0);
@@ -113,16 +64,6 @@ vec4[3] DecodeTriangleVertices(in const cbt_Node node)
     return vec4[3](p1, p2, p3);
 }
 
-/*******************************************************************************
- * TriangleLevelOfDetail -- Computes the LoD assocaited to a triangle
- *
- * This function is used to garantee a user-specific pixel edge length in
- * screen space. The reference edge length is that of the longest edge of the
- * input triangle.In practice, we compute the LoD as:
- *      LoD = 2 * log2(EdgePixelLength / TargetPixelLength)
- * where the factor 2 is because the number of segments doubles every 2
- * subdivision level.
- */
 float TriangleLevelOfDetail_Perspective(in const vec4[3] patchVertices)
 {
 
@@ -148,19 +89,6 @@ float TriangleLevelOfDetail_Perspective(in const vec4[3] patchVertices)
     #endif
 }
 
-/*
-    In Orthographic Mode, we have
-        EdgePixelLength = EdgeViewSpaceLength / ImagePlaneViewSize * ImagePlanePixelResolution
-    and so using some identities we get:
-        LoD = 2 * (log2(EdgeViewSpaceLength)
-            + log2(ImagePlanePixelResolution / ImagePlaneViewSize)
-            - log2(TargetPixelLength))
-
-            = log2(EdgeViewSpaceLength^2)
-            + 2 * log2(ImagePlanePixelResolution / (ImagePlaneViewSize * TargetPixelLength))
-    so we precompute:
-    u.lodFactor = 2 * log2(ImagePlanePixelResolution / (ImagePlaneViewSize * TargetPixelLength))
-*/
 float TriangleLevelOfDetail_Orthographic(in const vec4[3] patchVertices)
 {
     vec3 v0 = (u.modelViewMatrix * patchVertices[0]).xyz;
@@ -194,37 +122,7 @@ float TriangleLevelOfDetail(in const vec4[3] patchVertices) {
     }
 }
 
-/*******************************************************************************
- * DisplacementVarianceTest -- Checks if the height variance criteria is met
- *
- * Terrains tend to have locally flat regions, which don't need large amounts
- * of polygons to be represented faithfully. This function checks the
- * local flatness of the terrain.
- *
- */
-bool DisplacementVarianceTest(in const vec4[3] patchVertices) {
-    vec2 P0 = patchVertices[0].xy;
-    vec2 P1 = patchVertices[1].xy;
-    vec2 P2 = patchVertices[2].xy;
-    vec2 P = (P0 + P1 + P2) / 3.0;
-    vec2 dx = (P0 - P1);
-    vec2 dy = (P2 - P1);
-    vec2 dmap = textureGrad(u_DmapSampler, vec3(P, u.tileCount), dx, dy).rg;
-    float dmapVariance = clamp(dmap.y - dmap.x * dmap.x, 0.0, 1.0);
-
-    return (dmapVariance >= u.minLodVariance);
-
-}
-
-/*******************************************************************************
- * LevelOfDetail -- Computes the level of detail of associated to a triangle
- *
- * The first component is the actual LoD value. The second value is 0 if the
- * triangle is culled, and one otherwise.
- *
- */
-vec2 LevelOfDetail(in const vec4[3] patchVertices)
-{
+vec2 LevelOfDetail(in const vec4[3] patchVertices) {
     // culling test
     if (!FrustumCullingTest(patchVertices)) {
         return should_cull_triangle ? vec2(0.0f, 0.0f) : vec2(0.0f, 1.0f);

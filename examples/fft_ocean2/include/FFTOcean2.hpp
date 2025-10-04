@@ -108,13 +108,14 @@ private:
         glm::mat4 viewProjectionMatrix{1};
         glm::mat4 modelViewProjectionMatrix{1};
         std::array<glm::vec4, 6> frustumPlanes;
-        glm::vec4 horizontalLength{1000, 200, 20, 400};
+        glm::vec4 horizontalLength{};
         glm::vec2 dimensions{52660};
         float lodFactor{0};
         float minLodVariance{0};
         float dmapFactor{1};
         float choppiness{0};
         uint tile{4};
+        uint flags{0};
         uint heightMapIndex{~0u};
         uint normalMapIndex{~0u};
     } defaultValues{};
@@ -137,7 +138,7 @@ private:
         int gpuSubDivisions{3};
         int tile{4};
         bool topView{false};
-        bool wire{false};
+        bool wire{true};
         bool showTiles{false};
     } m_options;
 

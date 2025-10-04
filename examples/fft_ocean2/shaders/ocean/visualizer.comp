@@ -1,0 +1,30 @@
+#version 460
+
+#define VIEW_PATCHES 0
+#define VIEW_NORMALS 1
+#define VIEW_JACOBIAN_NORMALS 2
+#define VIEW_JACOBIAN 3
+#define VIEW_SURFACE_PROFILE 4
+
+#define COMBINDED_PATCHES 1
+
+#define SURFACE_PROFILE_BASIC 1
+#define SURFACE_PROFILE_CHOPPY 2
+#define SURFACE_PROFILE_JACOBIAN 4
+
+#define BINDLESS_DESCRIPTOR_SET 1
+#define OCEAN_UNIFORM_SET 2
+#include "shading.glsl"
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 10) writeonly uniform image2D image;
+
+layout(push_constant) uniform PushConstants {
+    int view;
+    int flag;
+} pc;
+
+void main() {
+
+}
