@@ -45,6 +45,7 @@ void FFTOceanDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera->position({0, 16, 88});
 }
 
 void FFTOceanDemo::initProfiler() {
@@ -247,7 +248,7 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 //        renderToDisplay(commandBuffer);
 //        ocean->topView(commandBuffer);
         ocean->render(commandBuffer);
-        ocean->preview(commandBuffer);
+//        ocean->preview(commandBuffer);
         ocean->renderTopView(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
@@ -298,7 +299,7 @@ void FFTOceanDemo::renderUI(VkCommandBuffer commandBuffer) {
     static bool oceanOpen = true;
 
     ocean->controls(oceanOpen);
-
+    ocean->visualizer(plugin<ImGuiPlugin>(IM_GUI_PLUGIN));
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 

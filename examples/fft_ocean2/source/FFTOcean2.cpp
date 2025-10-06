@@ -92,7 +92,6 @@ void FFTOcean2::inverseFFT(VkCommandBuffer commandBuffer, VkDescriptorSet descri
     vkCmdDispatch(commandBuffer, tileSize, 1, tileCount);
 }
 
-
 void FFTOcean2::subdivide(VkCommandBuffer commandBuffer, int pingPong) {
     static std::array<VkDescriptorSet, 3> sets;
     sets[0] = m_sets[0];
@@ -103,6 +102,39 @@ void FFTOcean2::subdivide(VkCommandBuffer commandBuffer, int pingPong) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("ocean_subdivide"), 0, COUNT(sets), sets.data(), 0,nullptr);
     vkCmdPushConstants(commandBuffer, m_compute.layout("ocean_subdivide"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pingPong);
     vkCmdDispatchIndirect(commandBuffer, m_dispatchBuffer, 0);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void FFTOcean2::visualize(VkCommandBuffer commandBuffer){
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = m_descriptorSet;
+    sets[1] = m_sets[1];
+    sets[2] = m_uniformsDescriptorSet;
+
+    const auto gc = glm::uvec2{tileSize/32u};
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("visualizer"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("visualizer"), 0, COUNT(sets), sets.data(), 0,nullptr);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("visualizer"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_visualizer.constants), &m_visualizer.constants);
+    vkCmdDispatch(commandBuffer, gc.x, gc.y, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void FFTOcean2::computeMinMaxHeight(VkCommandBuffer commandBuffer){
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = m_descriptorSet;
+    sets[1] = m_sets[1];
+    sets[2] = m_uniformsDescriptorSet;
+
+    int pass = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("min_max"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("min_max"), 0, COUNT(sets), sets.data(), 0,nullptr);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("min_max"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+    vkCmdDispatch(commandBuffer, 1024, 1, tileCount);
+    Barrier::computeWriteToRead(commandBuffer);
+
+    pass = 1;
+    vkCmdPushConstants(commandBuffer, m_compute.layout("min_max"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int), &pass);
+    vkCmdDispatch(commandBuffer, 1, 1, tileCount);
     Barrier::computeWriteToRead(commandBuffer);
 }
 
@@ -184,6 +216,8 @@ void FFTOcean2::preProcess(VkCommandBuffer commandBuffer) {
     generateSpectralHeightField(commandBuffer);
     inverseFFT(commandBuffer);
     generateTemporalHeightField(commandBuffer);
+    computeMinMaxHeight(commandBuffer);
+    visualize(commandBuffer);
     update(commandBuffer);
 }
 
@@ -215,7 +249,7 @@ void FFTOcean2::newFrame() {
 }
 
 void FFTOcean2::endFrame() {
-    m_time += m_timePeriod;
+    m_time += m_timePeriod * timeScale;
     m_controls.time = m_time;
 }
 
@@ -227,9 +261,13 @@ void FFTOcean2::initUniforms() {
     model = glm::rotate(model, -glm::half_pi<float>(), {1, 0, 0});
     model = glm::translate(model, {-0.5f, -0.5f, 0.0f});
 
+
     defaultValues.modelMatrix = model;
     defaultValues.heightMapIndex = m_heightMapIndex;
     defaultValues.normalMapIndex = m_normalIndex;
+    for(auto& minMax : defaultValues.heightMinMax) {
+        minMax = glm::vec2{ MAX_FLOAT, MIN_FLOAT };
+    }
 
     m_uniforms.gpu = m_device->createCpuVisibleBuffer(&defaultValues, sizeof(UniformData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     m_uniforms.cpu = reinterpret_cast<UniformData*>(m_uniforms.gpu.map());
@@ -279,6 +317,14 @@ void FFTOcean2::createDescriptorSetLayout() {
                 .descriptorCount(tileCount)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
             .binding(9)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(tileCount)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .binding(10)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(tileCount)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .binding(11)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(tileCount)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
@@ -334,7 +380,7 @@ void FFTOcean2::updateDescriptorSets() {
     
     m_uniformsDescriptorSet = sets[11];
 
-    auto writes = initializers::writeDescriptorSets<31>();
+    auto writes = initializers::writeDescriptorSets<33>();
 
     writes[0].dstSet = m_descriptorSet;
     writes[0].dstBinding = 0;
@@ -543,6 +589,20 @@ void FFTOcean2::updateDescriptorSets() {
     VkDescriptorBufferInfo uniformsInfo{ m_uniforms.gpu, 0, VK_WHOLE_SIZE };
     writes[30].pBufferInfo = &uniformsInfo;
 
+    writes[31].dstSet = m_descriptorSet;
+    writes[31].dstBinding = 10;
+    writes[31].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[31].descriptorCount = 1;
+    VkDescriptorImageInfo visualizeInfo{ nullptr, m_visualizer.texture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
+    writes[31].pImageInfo = &visualizeInfo;
+
+    writes[32].dstSet = m_descriptorSet;
+    writes[32].dstBinding = 11;
+    writes[32].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[32].descriptorCount = 1;
+    VkDescriptorImageInfo minMaxInfo{ nullptr, m_textures.minMax.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
+    writes[32].pImageInfo = &minMaxInfo;
+
     m_device->updateDescriptorSets(writes);
 }
 
@@ -568,6 +628,8 @@ void FFTOcean2::createSimTextures() {
     m_textures.fftSlopeX.layers = tileCount;
     m_textures.fftSlopeZ.layers = tileCount;
     m_textures.normalMap.layers = tileCount;
+    m_textures.minMax.layers = tileCount;
+    m_textures.minMax.levels = to<uint>(std::log2(tileSize)) + 1;
 
     textures::createNoTransition(*m_device, m_textures.noise, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
     textures::createNoTransition(*m_device, m_textures.staging[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
@@ -582,6 +644,8 @@ void FFTOcean2::createSimTextures() {
     textures::createNoTransition(*m_device, m_textures.fftSlopeZ, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
     textures::createNoTransition(*m_device, m_textures.normalMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
     textures::createNoTransition(*m_device, m_textures.heightField, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.minMax, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_visualizer.texture, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
 
 
     auto subResource = DEFAULT_SUB_RANGE;
@@ -600,6 +664,7 @@ void FFTOcean2::createSimTextures() {
         Barriers::push(m_textures.fftSlopeX.image, subResource, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
         Barriers::push(m_textures.fftSlopeZ.image, subResource, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
         Barriers::push(m_textures.normalMap.image, subResource, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        Barriers::push(m_visualizer.texture.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
         Barriers::flush(commandBuffer);
     });
 
@@ -630,7 +695,7 @@ void FFTOcean2::createSimTextures() {
 }
 
 std::vector<PipelineMetaData> FFTOcean2::additionalMetadata() {
-
+    auto bindlessDescriptorSetLayout = const_cast<VulkanDescriptorSetLayout*>(m_bindlessDescriptor->descriptorSetLayout);
     return {
             {
                     .name = "generate_gaussian_distribution",
@@ -664,6 +729,23 @@ std::vector<PipelineMetaData> FFTOcean2::additionalMetadata() {
                             .dataSize = sizeof(uint)
                     }
             },
+            {
+                    .name = "visualizer",
+                    .shadePath = FileManager::resource("ocean_visualizer.comp.spv"),
+                    .layouts = { &m_descriptorSetLayout, bindlessDescriptorSetLayout, &m_uniformsDescriptorSetLayout  },
+                    .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_visualizer.constants)} }
+            },
+            {
+                    .name = "min_max",
+                    .shadePath = FileManager::resource("ocean_min_max.comp.spv"),
+                    .layouts = { &m_descriptorSetLayout, bindlessDescriptorSetLayout, &m_uniformsDescriptorSetLayout  },
+                    .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)} },
+                    .specializationConstants = {
+                            .entries = { {0, 0, sizeof(uint)} },
+                            .data = const_cast<uint*>(&tileSize),
+                            .dataSize = sizeof(uint)
+                    }
+            }
     };
 }
 
@@ -683,9 +765,8 @@ void FFTOcean2::controls(bool show) {
     ImGui::SameLine();
     ImGui::Checkbox("topView", &m_options.topView);
     ImGui::Checkbox("Show tiles", &m_options.showTiles);
-    if(m_options.showTiles) {
-        // TODO
-    }
+    ImGui::Checkbox("Show visualizer", &m_options.visualizer);
+
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
 
     ImGui::End();
@@ -694,5 +775,32 @@ void FFTOcean2::controls(bool show) {
 void FFTOcean2::renderTopView(VkCommandBuffer commandBuffer) {
     if(!m_options.topView) return;
     topView(commandBuffer);
+}
+
+void FFTOcean2::visualizer(ImGuiPlugin& plugin) {
+    if(!m_options.visualizer) return;
+    static ImTextureID texId = plugin.addTexture(m_visualizer.texture, VK_IMAGE_LAYOUT_GENERAL);
+    static std::array<const char*, 7> viewLabels{"Patches", "Normals", "Jacobian normals", "Jacobian", "Jacobian eigan values", "Jacobian eigan vectors", "Surface profile"};
+
+    static int view = 0;
+    static float scale = 0.1;
+    static bool combined = false;
+
+    ImGui::Begin("visualizer");
+    ImGui::SetWindowSize({0, 0});
+
+    ImGui::Image(texId, {300, 300});
+    ImGui::Combo("View", &view, viewLabels.data(), COUNT(viewLabels));
+
+    if(view == 6) {
+        ImGui::SliderFloat("Scale", &scale, 0.01, 1);
+    }
+
+    ImGui::End();
+
+    m_visualizer.constants.view = view;
+    m_visualizer.constants.scale = scale;
+    m_visualizer.constants.flag = int(combined);
+
 }
 

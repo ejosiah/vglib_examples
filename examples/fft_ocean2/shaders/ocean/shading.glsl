@@ -71,7 +71,7 @@ Jacobian2D computeJacobian(vec2 p) {
     return Jsum;
 }
 
-vec3 normalFromJacobian(int layer, vec2 p, Jacobian2D J)
+vec3 normalFromJacobian(vec2 p, int layer, Jacobian2D J)
 {
     float L = u.horizontalLength[layer];
     vec2 uv = fract(p / L);

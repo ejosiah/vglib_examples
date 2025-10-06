@@ -1,0 +1,72 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_debug_printf : enable
+
+
+#define PATCH_ID gl_GlobalInvocationID.z
+
+#define BINDLESS_DESCRIPTOR_SET 1
+#define OCEAN_UNIFORM_SET 2
+#include "uniforms.glsl"
+
+layout(local_size_x_id = 0) in;
+
+layout(set = 0, binding = 11, rgba16f) uniform image2D minMax[];
+layout(set = 0, binding = 1, rg16f)  uniform image2D staging[];
+
+layout(push_constant) uniform PushConstant {
+    int pass;
+};
+
+shared float minLocal[32];
+shared float maxLocal[32];
+
+void set(ivec2 gid, out float minValue, out float maxValue) {
+    if(pass == 0) {
+        minValue =
+        maxValue = imageLoad(minMax[nonuniformEXT(PATCH_ID)], gid).y;
+    }else {
+        vec2 value = imageLoad(staging[nonuniformEXT(PATCH_ID)], gid).xy;
+        minValue = value.x;
+        maxValue = value.y;
+    }
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_LocalInvocationID.x, gl_WorkGroupID.x);
+
+    float minValue, maxValue;
+    set(gid, minValue, maxValue);
+
+    minValue = subgroupMin(minValue);
+    maxValue = subgroupMax(maxValue);
+
+    if (subgroupElect()) {
+        minLocal[gl_SubgroupID] = minValue;
+        maxLocal[gl_SubgroupID] = maxValue;
+    }
+
+    barrier();
+
+    if (subgroupAll(gl_SubgroupID < 1)) {
+        minValue = minLocal[gl_SubgroupID];
+        minValue = subgroupMin(minValue);
+
+        maxValue = maxLocal[gl_SubgroupID];
+        maxValue = subgroupMax(maxValue);
+
+        if (subgroupElect()) {
+            if(pass == 0){
+                gid = ivec2(gl_WorkGroupID.x, 0);
+                imageStore(staging[nonuniformEXT(PATCH_ID)], gid, vec4(minValue, maxValue, 0, 0));
+            }else {
+                u.heightMinMax[PATCH_ID].x = min(minValue, u.heightMinMax[PATCH_ID].x);
+                u.heightMinMax[PATCH_ID].y = max(maxValue, u.heightMinMax[PATCH_ID].y);
+            }
+        }
+    }
+
+}
+

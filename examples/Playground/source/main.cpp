@@ -8,41 +8,30 @@
 #include <glm/glm.hpp>
 #include <fmt/core.h>
 #include <numeric>
-
-float GetTextureCoordFromUnitRange(float x, int texture_size) {
-    return 0.5 / float(texture_size) + x * (1.0 - 1.0 / float(texture_size));
-}
-
-float GetUnitRangeFromTextureCoord(float u, int texture_size) {
-    return (u - 0.5 / float(texture_size)) / (1.0 - 1.0 / float(texture_size));
-}
-
-float fromUnitToSubUvs(float u, float resolution) { return (u + 0.5f / resolution) * (resolution / (resolution + 1.0f)); }
-float fromSubUvsToUnit(float u, float resolution) { return (u - 0.5f / resolution) * (resolution / (resolution - 1.0f)); }
-
-static constexpr float TRANSMITTANCE_TEXTURE_WIDTH = 256;
-static constexpr float TRANSMITTANCE_TEXTURE_HEIGHT = 64;
-
-#define AP_SLICE_COUNT 32
-
-#define AP_KM_PER_SLICE 4.0f
-
-float AerialPerspectiveDepthToSlice(float depth){
-    return depth * (1.0f / AP_KM_PER_SLICE);
-}
-float AerialPerspectiveSliceToDepth(float slice){
-    return slice * AP_KM_PER_SLICE;
-}
+#include "vulkan_context.hpp"
 
 int main() {
-    const auto N = 32;
-    for(auto i = 0; i < N; ++i) {
-        float slice = (static_cast<float>(i) + 0.5)/ AP_SLICE_COUNT;
-        slice *= slice;
-        slice *= AP_SLICE_COUNT;
-        auto tMax = AerialPerspectiveSliceToDepth(slice);
-        fmt::print("i: {}, slice: {} tMax: {}\n", i, slice, tMax);
-    }
+    ContextCreateInfo info{};
+    info.applicationInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    info.applicationInfo.pApplicationName = "subgroup_check";
+    info.applicationInfo.apiVersion = VK_API_VERSION_1_3;
+    info.applicationInfo.pEngineName = "";
+    VulkanContext ctx{info};
+    ctx.init();
+
+    VkPhysicalDeviceSubgroupProperties subgroupProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES };
+    VkPhysicalDeviceProperties2 properties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &subgroupProperties
+    };
+
+    ctx.device.getPhysicalDeviceProperties(properties);
+
+    fmt::print("subgroupSize: {}\n", subgroupProperties.subgroupSize);
+    fmt::print("supportedStages: {}\n", subgroupProperties.supportedStages);
+    fmt::print("supportedOperations: {}\n", subgroupProperties.supportedOperations);
+    fmt::print("supportedOperations: {}\n", subgroupProperties.supportedOperations);
+    fmt::print("quadOperationsInAllStages: {}\n", subgroupProperties.quadOperationsInAllStages);
 }
 
 //int main() {

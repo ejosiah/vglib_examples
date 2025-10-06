@@ -3,6 +3,7 @@
 #include "SubdivisionGrid.hpp"
 #include "camera_base.h"
 #include "Prototypes.hpp"
+#include "ImGuiPlugin.hpp"
 
 class FFTOcean2 :public SubdivisionGrid {
 public:
@@ -18,6 +19,8 @@ public:
     void render(VkCommandBuffer commandBuffer);
 
     void preview(VkCommandBuffer commandBuffer);
+
+    void visualizer(ImGuiPlugin& plugin);
 
     void renderTopView(VkCommandBuffer commandBuffer);
 
@@ -44,6 +47,10 @@ protected:
 
     void subdivide(VkCommandBuffer commandBuffer, int pingPong) final;
 
+    void visualize(VkCommandBuffer commandBuffer);
+
+    void computeMinMaxHeight(VkCommandBuffer commandBuffer);
+
     std::vector<PipelineMetaData> additionalMetadata() override;
 
     void createSimTextures();
@@ -59,7 +66,9 @@ protected:
     float computeLodFactor();
 
 private:
+    static const uint maxTileSize = 1024;
     static const uint tileSize = 1024;
+    constexpr static const float timeScale = to<float>(tileSize)/to<float>(maxTileSize);
     static constexpr uint tileCount = 4;
 
     Prototypes* m_prototypes;
@@ -77,6 +86,7 @@ private:
         Texture fftSlopeZ;
         Texture heightField;
         Texture normalMap;
+        Texture minMax;
     } m_textures;
 
     struct {
@@ -88,6 +98,7 @@ private:
         std::array<VulkanImageView, tileCount>  fftSlopeZ;
         std::array<VulkanImageView, tileCount>  heightField;
         std::array<VulkanImageView, tileCount>  normalMap;
+        std::array<VulkanImageView, tileCount>  minMax;
     } m_views;
 
 
@@ -109,7 +120,8 @@ private:
         glm::mat4 modelViewProjectionMatrix{1};
         std::array<glm::vec4, 6> frustumPlanes;
         glm::vec4 horizontalLength{};
-        glm::vec2 dimensions{52660};
+        std::array<glm::vec2, tileCount> heightMinMax{};
+        glm::vec2 dimensions{};
         float lodFactor{0};
         float minLodVariance{0};
         float dmapFactor{1};
@@ -134,12 +146,13 @@ private:
         float primitivePixelLengthTarget{7};
         float minLodStdev{0};
         float dmapScale{1};
-        float choppiness{0};
+        float choppiness{1};
         int gpuSubDivisions{3};
         int tile{4};
         bool topView{false};
         bool wire{true};
         bool showTiles{false};
+        bool visualizer{true};
     } m_options;
 
     VulkanDescriptorSetLayout m_descriptorSetLayout;
@@ -150,6 +163,15 @@ private:
 
     VulkanDescriptorSetLayout m_uniformsDescriptorSetLayout;
     VkDescriptorSet m_uniformsDescriptorSet{};
+
+    struct {
+        struct {
+            int view{0};
+            int flag{0};
+            float scale{0.1};
+        } constants;
+        Texture texture;
+    } m_visualizer;
 
     uint m_heightMapIndex{~0u};
     uint m_previewIndex{~0u};

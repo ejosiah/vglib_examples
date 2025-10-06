@@ -17,6 +17,7 @@ layout(set = 0, binding = 8, rg16f) readonly uniform image2D spectral_height_slo
 
 layout(set = 0, binding = 4) writeonly uniform image2D height_field[];
 layout(set = 0, binding = 9) writeonly uniform image2D normal_map[];
+layout(set = 0, binding = 11) writeonly uniform image2D minMax[];
 
 void main() {
 
@@ -36,4 +37,5 @@ void main() {
 
     imageStore(height_field[nonuniformEXT(TILE_ID)], gid, vec4(x, h, z, 0));
     imageStore(normal_map[nonuniformEXT(TILE_ID)], gid, vec4(dx, dy, 0, 0));
+    imageStore(minMax[nonuniformEXT(TILE_ID)], gid, vec4(x, h, z, 0));
 }

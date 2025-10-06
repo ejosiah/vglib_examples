@@ -20,6 +20,7 @@ layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     mat4 modelViewProjectionMatrix;
     vec4 frustumPlanes[6];
     vec4 horizontalLength;
+    vec2 heightMinMax[4];
     vec2 screenResolution;
     float lodFactor;
     float minLodVariance;
