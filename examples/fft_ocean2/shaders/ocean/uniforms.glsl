@@ -22,9 +22,11 @@ layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     vec4 horizontalLength;
     vec4 camera;
     vec4 lightDirection;
+    vec4 earthCenter;
     ivec4 mouse;
     vec2 heightMinMax[4];
     vec2 screenResolution;
+    vec2 sunSize;
     float lodFactor;
     float minLodVariance;
     float dmapFactor;

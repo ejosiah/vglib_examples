@@ -6,6 +6,11 @@
 #define OCEAN_UNIFORM_SET 2
 #include "shading.glsl"
 
+#define RADIANCE_API_ENABLED
+#define ATMOSPHERE_PARAMS_SET 3
+#define ATMOSPHERE_LUT_SET 4
+#include "atmosphere/bruneton_api.glsl"
+
 layout(location = 0) in struct {
     vec3 worldPos;
     vec3 viewDirection;
@@ -35,6 +40,7 @@ const vec3 sunColor	= vec3(1.0, 1.0, 0.47);
 const float far = 25000; // 1km
 
 void main() {
+    const float PI = 3.1415926535;
     vec3 Nw = vec3(0, 1, 0);
     vec3 N = sampleNormal(fs_in.worldPos.xz);
     vec3 L = normalize(u.lightDirection.xyz);
@@ -45,15 +51,25 @@ void main() {
     N = mix(Nw, N, depth);
     vec3 R = reflect(-V, N);
 
-    vec3 env = vec3(1);
     vec3 turbulence;
 
     vec3 spec = specular(L, V, N);
 //    vec3 spec = vec3(pow(clamp(dot(L, R), 0.0, 1.0), 400.0));
-    vec3 diffuse = oceanColor[0]/3.1415926535;
-    vec3 F = fresnel(R, N);
-    vec3 radiance = (1 - F) * diffuse + spec * sunColor;
+//    vec3 diffuse = oceanColor[0]/3.1415926535;
+//    vec3 radiance = (1 - F) * diffuse + spec * sunColor;
 
+    vec3 P = fs_in.worldPos.xyz - u.earthCenter.xyz;
+    vec3 skyIrradiance;
+    vec3 sunIrradiance = GetSunAndSkyIrradiance(P, N, L, skyIrradiance);
+
+    vec3 transmittance;
+    vec3 env = GetSkyRadiance(P, R, 0, L, transmittance);
+    if (dot(R, L) > u.sunSize.y) {
+        env += transmittance * GetSolarRadiance();
+    }
+    vec3 F = fresnel(R, N);
+
+    vec3 radiance = (mix(oceanColor[0]/PI, env, F) + spec) * (skyIrradiance + sunIrradiance) ;
     vec3 color = mixWireFrame(radiance, distance);
 
     fragColor = vec4(color, 1);

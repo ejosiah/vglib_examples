@@ -125,9 +125,11 @@ private:
         glm::vec4 horizontalLength{};
         glm::vec4 camera;
         glm::vec4 lightDirection{1};
+        glm::vec4 earthCenter{};
         glm::ivec4 mouse;
         std::array<glm::vec2, maxTileCount> heightMinMax{};
         glm::vec2 dimensions{};
+        glm::vec2 sunSize{};
         float lodFactor{0};
         float minLodVariance{0};
         float dmapFactor{1};

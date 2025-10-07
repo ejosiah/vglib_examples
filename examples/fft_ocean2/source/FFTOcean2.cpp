@@ -191,15 +191,19 @@ void FFTOcean2::createPipelines() {
                 .addDescriptorSetLayout(*m_layouts[0])
                 .addDescriptorSetLayout(*m_layouts[1])
                 .addDescriptorSetLayout(m_uniformsDescriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
                 .name("ocean_render")
         .build(m_render.layout);
 }
 
 void FFTOcean2::render(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 3> sets;
+    static std::array<VkDescriptorSet, 5> sets;
     sets[0] = m_sets[0];
     sets[1] = m_sets[1];
     sets[2] = m_uniformsDescriptorSet;
+    sets[3] = AppContext::atmosphere().descriptor.uboDescriptorSet;
+    sets[4] = AppContext::atmosphere().descriptor.lutDescriptorSet;
 
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_render.pipeline.handle);
@@ -285,6 +289,11 @@ void FFTOcean2::initUniforms() {
     defaultValues.modelMatrix = model;
     defaultValues.heightMapIndex = m_heightMapIndex;
     defaultValues.normalMapIndex = m_normalIndex;
+
+    const auto& atmosphere = *AppContext::atmosphere().info.cpu;
+    defaultValues.sunSize = atmosphere.sunSize;
+    defaultValues.earthCenter = atmosphere.earthCenter;
+
     for(auto& minMax : defaultValues.heightMinMax) {
         minMax = glm::vec2{ MAX_FLOAT, MIN_FLOAT };
     }
