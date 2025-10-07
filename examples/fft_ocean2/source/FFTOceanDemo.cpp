@@ -25,7 +25,7 @@ void FFTOceanDemo::initApp() {
     initBindlessDescriptor();
     initRenderGraphInputs();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
-    auto radius = AppContext::SunAngularRadius * 2;
+    auto radius = AppContext::SunAngularRadius * 5;
     AppContext::atmosphere().info.cpu->sunSize = {glm::tan(radius), glm::cos(radius)};
     initLoader();
     initProfiler();

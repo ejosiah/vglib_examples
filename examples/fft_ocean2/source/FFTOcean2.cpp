@@ -255,6 +255,10 @@ void FFTOcean2::newFrame() {
     m_uniforms.cpu->near = m_camera->near();
     m_uniforms.cpu->far = m_camera->far();
     m_uniforms.cpu->normalFallOff = m_options.normalFallOff;
+    m_uniforms.cpu->scatterColor = m_options.scatterColor;
+
+    auto& h = m_uniforms.cpu->heightMinMax;
+    m_uniforms.cpu->scatterConstants.x = 1.0f/(h[0].y + h[1].y + h[2].y + h[3].y);
 
     glm::mat4 rot = glm::rotate(glm::mat4{1}, glm::radians(m_options.lightAzimuth), {0, 1, 0});
     rot = glm::rotate(rot, glm::radians(m_options.lightZenith), {0, 0, 1});
@@ -799,15 +803,16 @@ void FFTOcean2::controls(bool show) {
     ImGui::Checkbox("Show visualizer", &m_options.visualizer);
 
     if(ImGui::CollapsingHeader("lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::SliderFloat("rho", &m_options.rho, 0, 1);
-        ImGui::SliderFloat("sigma", &m_options.sigma, 0, 90);
-        ImGui::SliderFloat("Zenith Angle", &m_options.lightZenith, 0, 180);
+        ImGui::SliderFloat("Zenith Angle", &m_options.lightZenith, -30, 180);
         ImGui::SliderFloat("Azimuth Angle", &m_options.lightAzimuth, 0, 360);
-        ImGui::SliderFloat("Normal Att.", &m_options.normalFallOff, 1, 10000);
+        ImGui::SliderFloat("Normal Att.", &m_options.normalFallOff, 1, 100);
+        ImGui::ColorEdit3("scatter Col.", &m_options.scatterColor.x);
     }
+
 
     const auto& cp = m_camera->position();
     const auto& cd = m_camera->viewDir;
+    ImGui::Text("Wave Info\n\tmax height: %f", m_uniforms.cpu->heightMinMax[0].y);
     ImGui::Text("Camera:\n\tposition: (%f,%f, %f),\n\tdirection: (%f, %f, %f)", cp.x, cp.y, cp.z, cd.x, cd.y, cd.z);
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
 

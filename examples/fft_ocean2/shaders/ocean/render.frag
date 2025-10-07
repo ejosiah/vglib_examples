@@ -21,39 +21,30 @@ layout(location = 3) noperspective in vec3 distance;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 extras;
 
-vec3 colors[3] = vec3[3](
-    vec3(0.0056f, 0.0194f, 0.0331f),	// deep blue
-    vec3(0.1812f, 0.4678f, 0.5520f),	// carribbean
-    vec3(0.0000f, 0.2307f, 0.3613f)	// light blue
-);
 
-vec3 getNormal() {
-//    vec3 N = sampleNormal(fs_in.worldPos.xz);
-
-    vec3 N = sampleJacobianNormal(fs_in.worldPos.xz).xyz;
-    return normalize(N);
+vec4 getGradient() {
+    return vec4(sampleNormal(fs_in.worldPos.xz), 1);
 }
 
-
-vec3 oceanColor = colors[0];
 
 const float far = 25000; // 1km
 
 void main() {
-    const float PI = 3.1415926535;
+    vec4 grad = getGradient();
     vec3 Nw = vec3(0, 1, 0);
-    vec3 N = sampleNormal(fs_in.worldPos.xz);
+//    vec3 N = sampleNormal(fs_in.worldPos.xz);
+    vec3 N = normalize(grad.xyz);
     vec3 L = normalize(u.lightDirection.xyz);
     vec3 V = normalize(fs_in.viewDirection);
+    vec3 H = normalize(V + L);
 
     float depth = linearizeDepth(gl_FragCoord.z, 1, far);
-//    debugPrintfEXT("depth: %f\n", depth);
     N = N = mix(N, Nw, 0.8 * min(1.0, sqrt(depth/u.normalFallOff) * 1.1));
     vec3 R = normalize(reflect(-V, N));
     R.y = abs(R.y);
 
     vec3 turbulence;
-    vec3 radiance = shadeBasic(fs_in.worldPos.xyz, N, V, R, L, oceanColor);
+    vec3 radiance = shadeBasic(fs_in.worldPos.xyz, N, V, R, H, L);
     vec3 color = mixWireFrame(radiance, distance);
 
     if(showNormals()) {

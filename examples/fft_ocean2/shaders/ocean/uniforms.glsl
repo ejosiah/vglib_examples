@@ -24,6 +24,8 @@ layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     vec4 camera;
     vec4 lightDirection;
     vec4 earthCenter;
+    vec4 scatterColor;
+    vec4 scatterConstants;
     ivec4 mouse;
     vec2 heightMinMax[4];
     vec2 screenResolution;

@@ -109,7 +109,7 @@ private:
         glm::vec4 windOrientation{-0.79, 1.57, 0.79, 0.0};
         glm::vec4 windSpeed{10, 8, 6.5, 2};
         glm::vec4 amplitude{0.2};
-        glm::vec4 horizontalLength{26330, 500.653, 200, 100};
+        glm::vec4 horizontalLength{1000, 500.653, 200, 100};
         glm::vec4 windPower{1};
         float time{0};
     } m_controls;
@@ -126,6 +126,8 @@ private:
         glm::vec4 camera;
         glm::vec4 lightDirection{1};
         glm::vec4 earthCenter{};
+        glm::vec4 scatterColor{};
+        glm::vec4 scatterConstants{1};
         glm::ivec4 mouse;
         std::array<glm::vec2, maxTileCount> heightMinMax{};
         glm::vec2 dimensions{};
@@ -156,6 +158,7 @@ private:
     } m_dimensions;
 
     struct {
+        glm::vec4 scatterColor{0.0000f, 0.2307f, 0.3613f, 1};
         float primitivePixelLengthTarget{7};
         float minLodStdev{0};
         float dmapScale{1};
