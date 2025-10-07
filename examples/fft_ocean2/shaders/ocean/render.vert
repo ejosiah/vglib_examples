@@ -7,8 +7,8 @@
 layout(location = 0) in vec2 iPos;
 
 layout(location = 0) out struct {
-    vec4 color;
     vec3 worldPos;
+    vec3 viewDirection;
     vec2 uv;
 } vs_out;
 
@@ -31,8 +31,8 @@ void main() {
     worldPos.xyz += sampleDisplacement(worldPos.xz);
 
     vs_out.worldPos = worldPos.xyz;
+    vs_out.viewDirection = u.camera.xyz - worldPos.xyz;
     vs_out.uv = attrib.texCoord;
-    vs_out.color = vec4(1);
 
     gl_Position = u.viewProjectionMatrix * worldPos;
 }

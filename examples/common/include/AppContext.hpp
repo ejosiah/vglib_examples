@@ -123,6 +123,8 @@ public:
 
     static void updateSunDirection(glm::vec3 direction);
 
+    static glm::vec4 sunDirection();
+
     static VulkanDescriptorSetLayout uniformDescriptorSet();
 
     static VulkanRenderPass& renderPass();

@@ -3,6 +3,10 @@
 
 #include "uniforms.glsl"
 
+float linearizeDepth(float z, float near, float far) {
+    return (near * far) / (far - z * (far - near));
+}
+
 struct Jacobian2D { float Dxx, Dxz, Dzx, Dzz; };
 
 vec2 sampleNormal(vec2 p, int layer) {
@@ -14,7 +18,7 @@ vec2 sampleNormal(vec2 p, int layer) {
 vec3 sampleNormal(vec2 p) {
     float Sx = 0, Sz = 0;
 
-    const uint tileCount = 4;
+    const uint tileCount = u.tileCount;
     for(uint i = 0; i < tileCount; ++i){
         vec2 uv = fract(p/u.horizontalLength[i]);
         vec3 loc = vec3(uv, i);
@@ -56,10 +60,32 @@ Jacobian2D computeJacobian(vec2 wp, int layer)
     return J;
 }
 
+vec3 sampleJacobianNormal(vec2 p) {
+    Jacobian2D J = Jacobian2D(0.0, 0.0, 0.0, 0.0);
+    float hx = 0, hz = 0;
+
+    int count = int(u.tileCount);
+    for (int layer = 0; layer < count; ++layer) {
+        vec2 slope = textureLod(u_NormalSampler, vec3(p, float(layer)), 0.0).xy; // (∂h/∂x, ∂h/∂z)
+        hx += slope.x;
+        hz += slope.y;
+
+        Jacobian2D Ji = computeJacobian(p, layer);
+        J.Dxx += Ji.Dxx;
+        J.Dxz += Ji.Dxz;
+        J.Dzx += Ji.Dzx;
+        J.Dzz += Ji.Dzz;
+    }
+    vec3 Tx = vec3(1.0 + J.Dxx, hx,        J.Dzx);
+    vec3 Tz = vec3(       J.Dxz, hz, 1.0 + J.Dzz);
+
+    return cross(Tz, Tx);
+}
+
 Jacobian2D computeJacobian(vec2 p) {
     Jacobian2D  Jsum = Jacobian2D(0.0, 0.0, 0.0, 0.0);
 
-    int count = int(u.tileCount); // e.g., 4
+    int count = int(u.tileCount);
     for (int layer = 0; layer < count; ++layer) {
 
         Jacobian2D Ji = computeJacobian(p, layer);
@@ -82,7 +108,7 @@ vec3 normalFromJacobian(vec2 p, int layer, Jacobian2D J)
     vec3 Tx = vec3(1.0 + J.Dxx, hx,        J.Dzx);
     vec3 Tz = vec3(       J.Dxz, hz, 1.0 + J.Dzz);
 
-    return normalize(cross(Tz, Tx));  // choose cross order to match your winding
+    return normalize(cross(Tz, Tx));
 }
 
 
@@ -146,5 +172,58 @@ vec3 mixWireFrame(vec3 srcColor, vec3 distance) {
 //
 //    return mix(srcColor, bestColor, bestMask);
 //}
+
+
+vec3 orennayar( vec3 L, vec3 V, vec3 N, float rho, float sigma ) {
+    const float PI = 3.14159265358979323846;
+    const float ONE_OVER_4PI = 1.0/(4.0 * PI);
+
+    float VdotN = dot(V,N);
+    float LdotN = dot(L,N);
+    float theta_r = acos (VdotN);
+    float sigma2 = pow(sigma*PI/180,2);
+
+    float cos_phi_diff = dot( normalize(V-N*(VdotN)), normalize(L - N*(LdotN)) );
+    float theta_i = acos (LdotN);
+    float alpha = max (theta_i, theta_r);
+    float beta = min (theta_i, theta_r);
+    if (alpha > PI/2) return vec3(0);
+
+    float C1 = 1 - 0.5 * sigma2 / (sigma2 + 0.33);
+    float C2 = 0.45 * sigma2 / (sigma2 + 0.09);
+    if (cos_phi_diff >= 0) C2 *= sin(alpha);
+    else C2 *= (sin(alpha) - pow(2*beta/PI,3));
+    float C3 = 0.125 * sigma2 / (sigma2+0.09) * pow ((4*alpha*beta)/(PI*PI),2);
+    float L1 = rho/PI * (C1 + cos_phi_diff * C2 * tan(beta) + (1 - abs(cos_phi_diff)) * C3 * tan((alpha+beta)/2));
+    float L2 = 0.17 * rho*rho / PI * sigma2/(sigma2+0.13) * (1 - cos_phi_diff*(4*beta*beta)/(PI*PI));
+    return vec3(L1 + L2);
+}
+
+vec3 fresnel(vec3 R, vec3 N) {
+    vec3 F0 = vec3(0.020018673);
+    return F0 + (1.0 - F0) * pow(1.0 - dot(N, R), 5.0);
+}
+
+vec3 specular(vec3 L, vec3 V, vec3 N) {
+    const float PI = 3.14159265358979323846;
+    const float ONE_OVER_4PI = 1.0/(4.0 * PI);
+
+    const float rho = 0.3;
+    const float ax = 0.25;
+    const float ay = 0.1;
+
+    vec3 H = L + V;
+    vec3 X = cross(L, N);
+    vec3 Y = cross(X, N);
+
+    float HdotX = dot(H, X) / ax;
+    float HdotY = dot(H, Y) / ay;
+    float HdotN = dot(H, N);
+
+    float mult = (ONE_OVER_4PI * rho / (ax * ay * sqrt(max(1e-5, dot(L, N) * dot(V, N)))));
+    float spec = mult * exp(-((HdotX * HdotX) + (HdotY * HdotY)) / (HdotN * HdotN));
+
+    return vec3(spec);
+}
 
 #endif // OCEAN_SHADING_GLSL

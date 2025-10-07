@@ -5,6 +5,8 @@
 #define ATMOSPHERE_LUT_SET 2
 #include "atmosphere/bruneton_api.glsl"
 
+layout(early_fragment_tests) in;
+
 layout(set = 0, binding = 0) uniform Info {
     mat4 inverse_model;
     mat4 inverse_view;
@@ -33,6 +35,7 @@ void main() {
     if (dot(V, L) > sunSize.y) {
         radiance = radiance + transmittance * GetSolarRadiance();
     }
-    extras.x = gl_FragCoord.x;
+
+    extras.x = gl_FragCoord.z;
     fragColor = vec4(radiance, 1);
 }

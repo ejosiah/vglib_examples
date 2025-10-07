@@ -243,6 +243,10 @@ void AppContext::updateSunDirection(glm::vec3 direction) {
     instance._atmosphere.info.cpu->sunDirection = glm::vec4(direction, 1);
 }
 
+glm::vec4 AppContext::sunDirection() {
+    return instance._atmosphere.info.cpu->sunDirection;
+}
+
 void AppContext::addExtensions(void*& extensions) {
     auto dsFeatures = findExtension<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT, extensions);
     dsFeatures->extendedDynamicState3PolygonMode = VK_TRUE;

@@ -181,6 +181,12 @@ void FFTOcean2::createPipelines() {
             .rasterizationState()
                 .cullNone()
                 .polygonModeFill()
+            .dynamicRenderPass()
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .depthAttachment(VK_FORMAT_D16_UNORM)
+            .colorBlendState()
+                .attachments(2)
             .layout().clear()
                 .addDescriptorSetLayout(*m_layouts[0])
                 .addDescriptorSetLayout(*m_layouts[1])
@@ -238,6 +244,20 @@ void FFTOcean2::newFrame() {
     m_uniforms.cpu->tile = to<uint>(m_options.tile);
     m_uniforms.cpu->choppiness = m_options.choppiness;
     m_uniforms.cpu->dimensions = m_screenResolution;
+    m_uniforms.cpu->lightDirection = AppContext::sunDirection();
+    m_uniforms.cpu->camera = glm::vec4(m_camera->position(), 0);
+    m_uniforms.cpu->rho = m_options.rho;
+    m_uniforms.cpu->sigma = m_options.sigma;
+    m_uniforms.cpu->near = m_camera->near();
+    m_uniforms.cpu->far = m_camera->far();
+    m_uniforms.cpu->normalFallOff = m_options.normalFallOff;
+
+    glm::mat4 rot = glm::rotate(glm::mat4{1}, glm::radians(m_options.lightAzimuth), {0, 1, 0});
+    rot = glm::rotate(rot, glm::radians(m_options.lightZenith), {0, 0, 1});
+    auto lightDirection = rot * glm::vec4{1, 0, 0, 1};
+
+    AppContext::updateSunDirection(lightDirection.xyz());
+    m_uniforms.cpu->lightDirection = lightDirection;
 
     m_uniforms.cpu->flags = 0;
     m_uniforms.cpu->flags |= (uint(m_options.wire) << 0);
@@ -767,6 +787,14 @@ void FFTOcean2::controls(bool show) {
     ImGui::Checkbox("Show tiles", &m_options.showTiles);
     ImGui::Checkbox("Show visualizer", &m_options.visualizer);
 
+    if(ImGui::CollapsingHeader("lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SliderFloat("rho", &m_options.rho, 0, 1);
+        ImGui::SliderFloat("sigma", &m_options.sigma, 0, 90);
+        ImGui::SliderFloat("Zenith Angle", &m_options.lightZenith, -90, 180);
+        ImGui::SliderFloat("Azimuth Angle", &m_options.lightAzimuth, 0, 360);
+        ImGui::SliderFloat("normal depth fall off", &m_options.normalFallOff, 0, 10 * km, "%.3f", ImGuiSliderFlags_Logarithmic);
+    }
+
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
 
     ImGui::End();
@@ -802,5 +830,9 @@ void FFTOcean2::visualizer(ImGuiPlugin& plugin) {
     m_visualizer.constants.scale = scale;
     m_visualizer.constants.flag = int(combined);
 
+}
+
+void FFTOcean2::updateMouse(glm::ivec2 mouse, int state) {
+    m_uniforms.cpu->mouse = glm::vec4(mouse, state, 0);
 }
 

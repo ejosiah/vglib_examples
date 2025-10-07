@@ -8,14 +8,14 @@ layout(triangles) in;
 layout(triangle_strip, max_vertices = 3) out;
 
 layout(location = 0) in struct {
-    vec4 color;
     vec3 worldPos;
+    vec3 viewDirection;
     vec2 uv;
 } gs_in[];
 
 layout(location = 0) out struct {
-    vec4 color;
     vec3 worldPos;
+    vec3 viewDirection;
     vec2 uv;
 } gs_out;
 
@@ -35,7 +35,7 @@ void main() {
 
     for (int i = 0; i < 3; ++i) {
         gs_out.worldPos = gs_in[i].worldPos;
-        gs_out.color = gs_in[i].color;
+        gs_out.viewDirection = gs_in[i].viewDirection;
         gs_out.uv = gs_in[i].uv;
 
         oDistance = vec3(1100);

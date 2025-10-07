@@ -28,6 +28,8 @@ public:
 
     void controls(bool show = true);
 
+    void updateMouse(glm::ivec2 mouse, int state = 0);
+
 protected:
     PipelineMetaData subdivisionMetadata() final;
 
@@ -69,6 +71,7 @@ private:
     static const uint maxTileSize = 1024;
     static const uint tileSize = 1024;
     constexpr static const float timeScale = to<float>(tileSize)/to<float>(maxTileSize);
+    static constexpr uint maxTileCount = 4;
     static constexpr uint tileCount = 4;
 
     Prototypes* m_prototypes;
@@ -104,9 +107,9 @@ private:
 
     struct {
         glm::vec4 windOrientation{-0.79, 1.57, 0.79, 0.0};
-        glm::vec4 windSpeed{27.78, 19.44, 27.78, 8.33};
+        glm::vec4 windSpeed{10, 8, 10, 2};
         glm::vec4 amplitude{0.2};
-        glm::vec4 horizontalLength{3348.6, 177.653, 94.25, 5.00};
+        glm::vec4 horizontalLength{3348.6, 500.653, 200, 100};
         glm::vec4 windPower{1};
         float time{0};
     } m_controls;
@@ -120,13 +123,21 @@ private:
         glm::mat4 modelViewProjectionMatrix{1};
         std::array<glm::vec4, 6> frustumPlanes;
         glm::vec4 horizontalLength{};
-        std::array<glm::vec2, tileCount> heightMinMax{};
+        glm::vec4 camera;
+        glm::vec4 lightDirection{1};
+        glm::ivec4 mouse;
+        std::array<glm::vec2, maxTileCount> heightMinMax{};
         glm::vec2 dimensions{};
         float lodFactor{0};
         float minLodVariance{0};
         float dmapFactor{1};
         float choppiness{0};
-        uint tile{4};
+        float rho{0.9};
+        float sigma{30};
+        float near{0.1};
+        float far{1000};
+        float normalFallOff{1};
+        uint tile{0};
         uint flags{0};
         uint heightMapIndex{~0u};
         uint normalMapIndex{~0u};
@@ -150,9 +161,14 @@ private:
         int gpuSubDivisions{3};
         int tile{4};
         bool topView{false};
-        bool wire{true};
+        bool wire{false};
         bool showTiles{false};
-        bool visualizer{true};
+        bool visualizer{false};
+        float rho{0.9};
+        float sigma{30};
+        float lightZenith{15};
+        float lightAzimuth{0};
+        float normalFallOff{1};
     } m_options;
 
     VulkanDescriptorSetLayout m_descriptorSetLayout;

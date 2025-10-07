@@ -240,15 +240,11 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 
     ocean->preProcess(commandBuffer);
 
-//    runRenderGraph(commandBuffer);
+    runRenderGraph(commandBuffer);
 
     clearColor(0, 0, 1);
-
     renderToSwapChain([&]{
-//        renderToDisplay(commandBuffer);
-//        ocean->topView(commandBuffer);
-        ocean->render(commandBuffer);
-//        ocean->preview(commandBuffer);
+        renderToDisplay(commandBuffer);
         ocean->renderTopView(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
@@ -261,8 +257,7 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 void FFTOceanDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
-//        renderSkyView(commandBuffer);
-//        localReadBarrier(commandBuffer);
+        renderSkyView(commandBuffer);
         ocean->render(commandBuffer);
         localReadBarrier(commandBuffer);
         toneMap(commandBuffer);
@@ -313,6 +308,12 @@ void FFTOceanDemo::update(float time) {
 
 void FFTOceanDemo::checkAppInputs() {
     camera->processInput();
+
+    if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        ocean->updateMouse(glm::ivec2{mouse.position}, 1);
+    }else {
+        ocean->updateMouse(glm::ivec2{0});
+    }
 }
 
 void FFTOceanDemo::cleanup() {

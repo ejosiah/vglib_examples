@@ -55,7 +55,7 @@ vec4[3] DecodeTriangleVertices(in const cbt_Node node)
     vec4 p2 = vec4(pos[0][1], pos[1][1], 0.0, 1.0);
     vec4 p3 = vec4(pos[0][2], pos[1][2], 0.0, 1.0);
 
-    if(should_displace) {
+    if(should_displace) { // FIXME this is wrong
         p1.z = u.dmapFactor * texture(u_DmapSampler, vec3(p1.xy, u.tileCount)).r;
         p2.z = u.dmapFactor * texture(u_DmapSampler, vec3(p2.xy, u.tileCount)).r;
         p3.z = u.dmapFactor * texture(u_DmapSampler, vec3(p3.xy, u.tileCount)).r;
