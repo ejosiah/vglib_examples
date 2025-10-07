@@ -45,7 +45,7 @@ void FFTOceanDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->position({0, 16, 88});
+    camera->lookAt({0, 16, 88}, {0.99, 0.12, -0.11}, {0, 1, 0});
 }
 
 void FFTOceanDemo::initProfiler() {

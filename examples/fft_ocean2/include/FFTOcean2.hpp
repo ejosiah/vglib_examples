@@ -162,15 +162,16 @@ private:
         float choppiness{1};
         int gpuSubDivisions{3};
         int tile{4};
-        bool topView{false};
-        bool wire{false};
-        bool showTiles{false};
-        bool visualizer{false};
         float rho{0.9};
         float sigma{30};
         float lightZenith{15};
         float lightAzimuth{0};
         float normalFallOff{1};
+        bool topView{false};
+        bool wire{false};
+        bool showTiles{false};
+        bool visualizer{false};
+        bool showNormals{false};
     } m_options;
 
     VulkanDescriptorSetLayout m_descriptorSetLayout;

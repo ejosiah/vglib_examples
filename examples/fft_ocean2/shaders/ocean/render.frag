@@ -2,14 +2,13 @@
 
 #extension GL_EXT_debug_printf : enable
 
+#define RADIANCE_API_ENABLED
 #define BINDLESS_DESCRIPTOR_SET 1
 #define OCEAN_UNIFORM_SET 2
-#include "shading.glsl"
-
-#define RADIANCE_API_ENABLED
 #define ATMOSPHERE_PARAMS_SET 3
 #define ATMOSPHERE_LUT_SET 4
-#include "atmosphere/bruneton_api.glsl"
+#include "shading.glsl"
+
 
 layout(location = 0) in struct {
     vec3 worldPos;
@@ -22,7 +21,7 @@ layout(location = 3) noperspective in vec3 distance;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 extras;
 
-vec3 oceanColor[3] = vec3[3](
+vec3 colors[3] = vec3[3](
     vec3(0.0056f, 0.0194f, 0.0331f),	// deep blue
     vec3(0.1812f, 0.4678f, 0.5520f),	// carribbean
     vec3(0.0000f, 0.2307f, 0.3613f)	// light blue
@@ -36,6 +35,7 @@ vec3 getNormal() {
 }
 
 const vec3 sunColor	= vec3(1.0, 1.0, 0.47);
+vec3 oceanColor = colors[0];
 
 const float far = 25000; // 1km
 
@@ -46,31 +46,18 @@ void main() {
     vec3 L = normalize(u.lightDirection.xyz);
     vec3 V = normalize(fs_in.viewDirection);
 
-    float depth = 1 - linearizeDepth(gl_FragCoord.z, 1, far)/far;
-    depth = pow(depth, u.normalFallOff);
-    N = mix(Nw, N, depth);
-    vec3 R = reflect(-V, N);
+    float depth = linearizeDepth(gl_FragCoord.z, 1, far);
+    N = N = mix(N, Nw, 0.8 * min(1.0, sqrt(depth * 0.01) * 1.1));
+    vec3 R = normalize(reflect(-V, N));
+    R.y = abs(R.y);
 
     vec3 turbulence;
-
-    vec3 spec = specular(L, V, N);
-//    vec3 spec = vec3(pow(clamp(dot(L, R), 0.0, 1.0), 400.0));
-//    vec3 diffuse = oceanColor[0]/3.1415926535;
-//    vec3 radiance = (1 - F) * diffuse + spec * sunColor;
-
-    vec3 P = fs_in.worldPos.xyz - u.earthCenter.xyz;
-    vec3 skyIrradiance;
-    vec3 sunIrradiance = GetSunAndSkyIrradiance(P, N, L, skyIrradiance);
-
-    vec3 transmittance;
-    vec3 env = GetSkyRadiance(P, R, 0, L, transmittance);
-    if (dot(R, L) > u.sunSize.y) {
-        env += transmittance * GetSolarRadiance();
-    }
-    vec3 F = fresnel(R, N);
-
-    vec3 radiance = (mix(oceanColor[0]/PI, env, F) + spec) * (skyIrradiance + sunIrradiance) ;
+    vec3 radiance = shadeBasic(fs_in.worldPos.xyz, N, V, R, L, oceanColor);
     vec3 color = mixWireFrame(radiance, distance);
+
+    if(showNormals()) {
+        color = N;
+    }
 
     fragColor = vec4(color, 1);
     extras.x = gl_FragCoord.z;

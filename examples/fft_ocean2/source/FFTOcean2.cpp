@@ -266,6 +266,7 @@ void FFTOcean2::newFrame() {
     m_uniforms.cpu->flags = 0;
     m_uniforms.cpu->flags |= (uint(m_options.wire) << 0);
     m_uniforms.cpu->flags |= (uint(m_options.showTiles) << 1);
+    m_uniforms.cpu->flags |= (uint(m_options.showNormals) << 2);
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, projection * view);
@@ -794,6 +795,7 @@ void FFTOcean2::controls(bool show) {
     ImGui::SameLine();
     ImGui::Checkbox("topView", &m_options.topView);
     ImGui::Checkbox("Show tiles", &m_options.showTiles);
+    ImGui::Checkbox("Show normals", &m_options.showNormals);
     ImGui::Checkbox("Show visualizer", &m_options.visualizer);
 
     if(ImGui::CollapsingHeader("lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -801,9 +803,11 @@ void FFTOcean2::controls(bool show) {
         ImGui::SliderFloat("sigma", &m_options.sigma, 0, 90);
         ImGui::SliderFloat("Zenith Angle", &m_options.lightZenith, -90, 180);
         ImGui::SliderFloat("Azimuth Angle", &m_options.lightAzimuth, 0, 360);
-        ImGui::SliderFloat("normal depth fall off", &m_options.normalFallOff, 0, 10 * km, "%.3f", ImGuiSliderFlags_Logarithmic);
     }
 
+    const auto& cp = m_camera->position();
+    const auto& cd = m_camera->viewDir;
+    ImGui::Text("Camera:\n\tposition: (%f,%f, %f),\n\tdirection: (%f, %f, %f)", cp.x, cp.y, cp.z, cd.x, cd.y, cd.z);
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
 
     ImGui::End();

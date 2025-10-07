@@ -10,6 +10,7 @@
 
 #define WIRE_FRAME_ON 1u
 #define TILES_ON 2u
+#define DEBUG_NORMALS 4u
 
 layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     mat4 modelMatrix;
@@ -60,6 +61,9 @@ bool showTiles() {
     return (u.flags & TILES_ON) == TILES_ON;
 }
 
+bool showNormals() {
+    return (u.flags & DEBUG_NORMALS) == DEBUG_NORMALS;
+}
 vec3 sampleDisplacement(vec2 p) {
     float H = 0;
     float Dx = 0;
