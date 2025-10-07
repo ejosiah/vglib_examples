@@ -803,6 +803,7 @@ void FFTOcean2::controls(bool show) {
         ImGui::SliderFloat("sigma", &m_options.sigma, 0, 90);
         ImGui::SliderFloat("Zenith Angle", &m_options.lightZenith, 0, 180);
         ImGui::SliderFloat("Azimuth Angle", &m_options.lightAzimuth, 0, 360);
+        ImGui::SliderFloat("Normal Att.", &m_options.normalFallOff, 1, 10000);
     }
 
     const auto& cp = m_camera->position();

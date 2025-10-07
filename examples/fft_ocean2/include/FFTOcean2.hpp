@@ -107,9 +107,9 @@ private:
 
     struct {
         glm::vec4 windOrientation{-0.79, 1.57, 0.79, 0.0};
-        glm::vec4 windSpeed{6.5, 8, 10, 2};
+        glm::vec4 windSpeed{10, 8, 6.5, 2};
         glm::vec4 amplitude{0.2};
-        glm::vec4 horizontalLength{20, 500.653, 200, 100};
+        glm::vec4 horizontalLength{26330, 500.653, 200, 100};
         glm::vec4 windPower{1};
         float time{0};
     } m_controls;
@@ -166,7 +166,7 @@ private:
         float sigma{30};
         float lightZenith{15};
         float lightAzimuth{90};
-        float normalFallOff{1};
+        float normalFallOff{100};
         bool topView{false};
         bool wire{false};
         bool showTiles{false};
