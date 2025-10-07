@@ -289,65 +289,49 @@ float Beckmann(float ndoth, float roughness) {
     return exp(exp_arg) / (PI * roughness * roughness * ndoth * ndoth * ndoth * ndoth);
 }
 
+vec3 scatteredLight(vec3 P, vec3 N, vec3 V, vec3 R, vec3 L, vec3 scatterColor) {
+    const vec3 Lsun	= vec3(1.0, 1.0, 0.47);
+    float _Roughness = 1;
+
+    float H = max(0, sampleDisplacement(P.xz).y) * 0.1;
+    float k1 = 1;
+    float k2 = 1;
+    float k3 = 1;
+    float k4 = 1;
+    vec3 Css = scatterColor;
+    vec3 Cf = vec3(1);
+    float Pf = 0;
+
+    float a = _Roughness;
+    float lamdaL = SmithMaskingBeckmann(normalize(V + L), L, a);
+
+    vec3 Li = k1 * H * max(0, pow(dot(L, -V), 4)) * pow(0.5 - 0.5 * dot(L, N), 3) + k2 * pow(max(0, dot(V, N)), 2)
+    * Css * Lsun * 1/(1 + lamdaL);
+
+    Li += k3 * max(0, dot(L, N)) * Css * Lsun + k4 * Pf * Cf * Lsun;
+
+    return Li;
+}
+
 
 vec3 shadeBasic(vec3 P, vec3 N, vec3 V, vec3 R, vec3 L, vec3 scatterColor) {
     const float PI = 3.14159265358979323846;
     vec3 spec = specular(L, V, N);
-    P -= u.earthCenter.xyz;
+    vec3 Pa = P - u.earthCenter.xyz;
     vec3 skyIrradiance;
-    vec3 sunIrradiance = GetSunAndSkyIrradiance(P, N, L, skyIrradiance);
+    vec3 sunIrradiance = GetSunAndSkyIrradiance(Pa, N, L, skyIrradiance);
 
-    vec3 env = getAtmosphere(P, R, L);
+    vec3 env = getAtmosphere(Pa, R, L);
     vec3 F = fresnel(R, N);
 
-    vec3 diffuse = scatterColor * orennayar( L, V, N, u.rho, u.sigma );
-    diffuse = mix(diffuse/PI, env, F);
+    vec3 scatter = scatteredLight(P, N, V, R, L, scatterColor);
+    scatter = mix(scatter, env, F);
 
-    return (diffuse + spec) * (skyIrradiance + sunIrradiance);
+    return scatter + spec * (skyIrradiance + sunIrradiance);
 }
 
-vec3 subsufaceScattering(vec3 P, vec3 N, vec3 V, vec3 R, vec3 L, vec3 scatterColor) {
-    P -= u.earthCenter.xyz;
-    vec3 RF = normalize(refract(-V, N, 0.66));
-    float fresnel = (0.04 + (1.0-0.04)*(pow(1.0 - max(0.0, dot(N, -V)), 5.0)));
-    vec3 reflection = getAtmosphere(P, R, L);
-
-    vec3 C = fresnel * (reflection) * 2.0;
-    float superscat = pow(max(0.0, dot(RF, L)), 16.0) ;
-    C += vec3(0.5,0.9,0.8) * superscat * GetSolarRadiance() * 81.0* (1.0 - 1.0 / (1.0 + 5.0 * max(0.0, dot(L, vec3(0, 1, 0)))));
-    vec3 waterSSScolor =  scatterColor *  0.171;
-    C += waterSSScolor;
-
-    return C;
-}
-
-vec3 shade(vec3 P, vec3 N, vec3 Nw, vec3 V, vec3 R, vec3 L, vec3 scatterColor) {
-    const float _Roughness = 0.9;
-    float a = _Roughness;
-    vec3 H = normalize(V + L);
-
-    float ndoth = max(0.0001f, dot(N, H));
-
-    float viewMask = SmithMaskingBeckmann(H, V, a);
-    float lightMask = SmithMaskingBeckmann(H, L, a);
-
-    float G = 1/(1 + viewMask + lightMask);
-
-    float eta = 1.33f;
-    float F0 = ((eta - 1) * (eta - 1)) / ((eta + 1) * (eta + 1));
-    float thetaV = acos(V.y);
-
-    float numerator = pow(1 - dot(N, V), 5 * exp(-2.69 * a));
-    float F = F0 + (1 - F0) * numerator / (1.0f + 22.7f * pow(a, 1.5f));
-    F = clamp(F, 0, 1);
-
-    vec3 sunLight = GetSolarRadiance();
-
-    vec3 specular = sunLight * F * G * Beckmann(ndoth, a);
-    specular /= 4.0f * max(0.001f, max(0, dot(Nw, L)));
-    specular *= max(0, dot(N, L));
-
-    return specular;
+vec3 shade(vec3 P, vec3 N, vec3 V, vec3 R, vec3 L, vec3 scatterColor) {
+    return vec3(1);
 }
 
 #endif // OCEAN_SHADING_GLSL

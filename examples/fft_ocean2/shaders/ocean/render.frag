@@ -34,7 +34,7 @@ vec3 getNormal() {
     return normalize(N);
 }
 
-const vec3 sunColor	= vec3(1.0, 1.0, 0.47);
+
 vec3 oceanColor = colors[0];
 
 const float far = 25000; // 1km
