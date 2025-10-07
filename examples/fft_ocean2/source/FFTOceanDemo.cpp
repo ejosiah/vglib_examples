@@ -25,6 +25,8 @@ void FFTOceanDemo::initApp() {
     initBindlessDescriptor();
     initRenderGraphInputs();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    auto radius = AppContext::SunAngularRadius * 2;
+    AppContext::atmosphere().info.cpu->sunSize = {glm::tan(radius), glm::cos(radius)};
     initLoader();
     initProfiler();
     initFFTOcean();
@@ -45,7 +47,7 @@ void FFTOceanDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->lookAt({0, 16, 88}, {0.99, 0.12, -0.11}, {0, 1, 0});
+    camera->position({0, 16, 88});
 }
 
 void FFTOceanDemo::initProfiler() {
@@ -257,8 +259,8 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
 void FFTOceanDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
-        renderSkyView(commandBuffer);
         ocean->render(commandBuffer);
+        renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
         toneMap(commandBuffer);
     });
@@ -376,8 +378,8 @@ int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 1440;
-        settings.height = 1280;
+        settings.width = 1280;
+        settings.height = 720;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;

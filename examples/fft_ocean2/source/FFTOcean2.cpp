@@ -801,7 +801,7 @@ void FFTOcean2::controls(bool show) {
     if(ImGui::CollapsingHeader("lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::SliderFloat("rho", &m_options.rho, 0, 1);
         ImGui::SliderFloat("sigma", &m_options.sigma, 0, 90);
-        ImGui::SliderFloat("Zenith Angle", &m_options.lightZenith, -90, 180);
+        ImGui::SliderFloat("Zenith Angle", &m_options.lightZenith, 0, 180);
         ImGui::SliderFloat("Azimuth Angle", &m_options.lightAzimuth, 0, 360);
     }
 

@@ -8,7 +8,7 @@ float linearizeDepth(float z, float near, float far) {
     return (near * far) / (far - z * (far - near));
 }
 
-struct Jacobian2D { float Dxx, Dxz, Dzx, Dzz; };
+struct Jacobian2D { float Dxx, Dxz, Dzx, Dzz, len; };
 
 vec2 sampleNormal(vec2 p, int layer) {
     vec2 uv = fract(p/u.horizontalLength[layer]);
@@ -61,8 +61,8 @@ Jacobian2D computeJacobian(vec2 wp, int layer)
     return J;
 }
 
-vec3 sampleJacobianNormal(vec2 p) {
-    Jacobian2D J = Jacobian2D(0.0, 0.0, 0.0, 0.0);
+vec4 sampleJacobianNormal(vec2 p) {
+    Jacobian2D J = Jacobian2D(0.0, 0.0, 0.0, 0.0, 0.0);
     float hx = 0, hz = 0;
 
     int count = int(u.tileCount);
@@ -77,14 +77,24 @@ vec3 sampleJacobianNormal(vec2 p) {
         J.Dzx += Ji.Dzx;
         J.Dzz += Ji.Dzz;
     }
+
+    float lambda = u.choppiness;
+
+    float Jxx = 1 + J.Dxx * lambda;
+    float Jzz = 1 + J.Dzz * lambda;
+    float Jzx = J.Dzx * lambda;
+    float Jxz = J.Dxz * lambda;
+
+    float Jlen = Jxx * Jzz - Jxz * Jzx;
+
     vec3 Tx = vec3(1.0 + J.Dxx, hx,        J.Dzx);
     vec3 Tz = vec3(       J.Dxz, hz, 1.0 + J.Dzz);
 
-    return cross(Tz, Tx);
+    return vec4(cross(Tz, Tx), Jlen);
 }
 
 Jacobian2D computeJacobian(vec2 p) {
-    Jacobian2D  Jsum = Jacobian2D(0.0, 0.0, 0.0, 0.0);
+    Jacobian2D  Jsum = Jacobian2D(0.0, 0.0, 0.0, 0.0, 0.0);
 
     int count = int(u.tileCount);
     for (int layer = 0; layer < count; ++layer) {

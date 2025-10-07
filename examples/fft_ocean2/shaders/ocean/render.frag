@@ -28,9 +28,9 @@ vec3 colors[3] = vec3[3](
 );
 
 vec3 getNormal() {
-    vec3 N = sampleNormal(fs_in.worldPos.xz);
+//    vec3 N = sampleNormal(fs_in.worldPos.xz);
 
-//    N = sampleJacobianNormal(fs_in.worldPos.xz);
+    vec3 N = sampleJacobianNormal(fs_in.worldPos.xz).xyz;
     return normalize(N);
 }
 

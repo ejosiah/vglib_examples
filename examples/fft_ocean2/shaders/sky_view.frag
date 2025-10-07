@@ -27,6 +27,7 @@ layout(location = 1) out vec4 extras;
 
 void main() {
     vec3 V = normalize(viewDirection);
+    V.y = max(0, V.y);
     vec3 L = normalize(sunDirection.xyz);
 
     vec3 cameraPos = (camera - earthCenter).xyz;
