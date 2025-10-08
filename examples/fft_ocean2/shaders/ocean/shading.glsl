@@ -3,6 +3,7 @@
 
 #include "atmosphere/bruneton_api.glsl"
 #include "uniforms.glsl"
+#include "pbr/common.glsl"
 
 float rcp(float x) { return 1.0/x; }
 
@@ -192,6 +193,32 @@ float Beckmann(float ndoth, float roughness) {
     return exp(exp_arg) / (PI * roughness * roughness * ndoth * ndoth * ndoth * ndoth);
 }
 
+vec3 specluar2(vec3 N, vec3 V, vec3 H, vec3 L, float roughness) {
+    float NdotV = dot(N, V);
+    float NdotL = dot(N, L);
+    float NdotH = dot(N, H);
+
+    float NDF = distributionGGX(N, H, roughness);
+    float G   = geometrySmith(N, V, L, roughness);
+    float  F   = SchlickFresnel(N, V);
+
+    float  numerator = NDF * G * F;
+    float  spec  = numerator / (4.0 * NdotV * NdotL + 1e-4);
+
+//    float a = roughness;
+//    float F = SchlickFresnel(N, V);
+//    F = clamp(F, 0, 1);
+//    float viewMask = SmithMaskingBeckmann(H, V, a);
+//    float lightMask = SmithMaskingBeckmann(H, L, a);
+//    float G = rcp(1 + viewMask + lightMask);
+//    float NdotH = max(0.0001f, dot(N, H));
+//    float spec = F * G * Beckmann(NdotH, a);
+//    spec /= 4.0f * max(0.001f, max(0, dot(vec3(0, 1, 0), L)));
+//    spec *= max(0, dot(N, L)); return vec3(spec);
+
+    return vec3(spec);
+}
+
 vec3 scatteredLight(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L) {
     const vec3 Lsun	= vec3(1.0, 1.0, 0.47);
     float _Roughness = 1;
@@ -228,7 +255,8 @@ vec3 shadeBasic(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L) {
     vec3 scatter = scatteredLight(P, N, V, R, H, L);
     scatter = mix(scatter, env, F);
 
-    vec3 spec = specular(L, V, N);
+//    vec3 spec = specular(L, V, N);
+    vec3 spec = specluar2(N, V, H, L, 0.3);
     return scatter + spec * (skyIrradiance + sunIrradiance);
 }
 

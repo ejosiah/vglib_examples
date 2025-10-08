@@ -14,7 +14,6 @@ layout(set = 2, binding = 1, input_attachment_index = 1) uniform subpassInput po
 #define AP_SLICE_COUNT AREAL_PERSPECTIVE_TEXTURE_SIZE_F.z
 
 layout(location = 0) in vec2 uv;
-
 layout(location = 0) out vec4 scatterTransmission;
 
 void main() {

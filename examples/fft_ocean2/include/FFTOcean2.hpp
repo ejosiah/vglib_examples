@@ -30,6 +30,8 @@ public:
 
     void updateMouse(glm::ivec2 mouse, int state = 0);
 
+    void refresh(Prototypes& prototypes);
+
 protected:
     PipelineMetaData subdivisionMetadata() final;
 
@@ -169,7 +171,7 @@ private:
         float sigma{30};
         float lightZenith{15};
         float lightAzimuth{90};
-        float normalFallOff{100};
+        float normalFallOff{10};
         bool topView{false};
         bool wire{false};
         bool showTiles{false};

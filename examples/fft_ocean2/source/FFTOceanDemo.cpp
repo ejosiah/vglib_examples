@@ -218,6 +218,37 @@ void FFTOceanDemo::createRenderPipeline() {
             .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(render.toneMapper.constants))
         .name("tone_mapper")
     .build(render.toneMapper.layout);
+
+    render.arealPerspective.pipeline =
+        prototypes->cloneScreenSpaceGraphicsPipeline()
+        .shaderStage()
+            .vertexShader(resource("quad.vert.spv"))
+            .fragmentShader(resource("areal_perspective.frag.spv"))
+        .dynamicRenderPass()
+            .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+            .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+            .depthAttachment(VK_FORMAT_D16_UNORM)
+        .depthStencilState()
+            .disableDepthTest()
+            .disableDepthWrite()
+        .colorBlendState()
+            .attachment().clear()
+                .enableBlend()
+                .colorBlendOp().add()
+                .alphaBlendOp().add()
+                .srcColorBlendFactor().one()
+                .dstColorBlendFactor().srcAlpha()
+                .srcAlphaBlendFactor().one()
+                .dstAlphaBlendFactor().one()
+            .add()
+            .attachment().add()
+        .layout()
+            .addDescriptorSetLayout(AppContext::uniformDescriptorSet())
+            .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
+            .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
+            .addDescriptorSetLayout(subpassInputDescriptorSetLayout)
+        .name("areal_perspective")
+    .build(render.arealPerspective.layout);
     //    @formatter:on
 }
 
@@ -227,8 +258,10 @@ void FFTOceanDemo::onSwapChainDispose() {
 }
 
 void FFTOceanDemo::onSwapChainRecreation() {
+    camera->perspective(swapChain.aspectRatio());
     updateDescriptorSets();
     createRenderPipeline();
+    ocean->refresh(*prototypes);
 }
 
 VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -260,8 +293,13 @@ void FFTOceanDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
         ocean->render(commandBuffer);
+
         renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
+
+        renderArealPerspective(commandBuffer);
+        localReadBarrier(commandBuffer);
+
         toneMap(commandBuffer);
     });
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -283,6 +321,18 @@ void FFTOceanDemo::renderSkyView(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skyView.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skyView.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     camera->push(commandBuffer, render.skyView.layout);
+    AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void FFTOceanDemo::renderArealPerspective(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 4> sets;
+    sets[0] = AppContext::atmosphere().info.descriptorSet;
+    sets[1] = AppContext::atmosphere().descriptor.uboDescriptorSet;
+    sets[2] = AppContext::atmosphere().descriptor.lutDescriptorSet;
+    sets[3] = subpassInputDescriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.arealPerspective.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.arealPerspective.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
@@ -364,6 +414,11 @@ void FFTOceanDemo::localReadBarrier(VkCommandBuffer commandBuffer) {
 }
 
 void FFTOceanDemo::newFrame() {
+    auto& info = *AppContext::atmosphere().info.cpu;
+    info.inverse_model = glm::inverse(camera->cam().model);
+    info.inverse_view = glm::inverse(camera->cam().view);
+    info.inverse_projection = glm::inverse(camera->cam().proj);
+    info.camera = glm::vec4{ camera->position(), 1 };
     camera->newFrame();
     ocean->newFrame();
 }
@@ -372,7 +427,6 @@ void FFTOceanDemo::endFrame() {
     ocean->endFrame();
     profiler.endFrame();
 }
-
 
 int main(){
     try{

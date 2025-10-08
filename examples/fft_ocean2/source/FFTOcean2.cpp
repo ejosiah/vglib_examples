@@ -855,3 +855,8 @@ void FFTOcean2::updateMouse(glm::ivec2 mouse, int state) {
     m_uniforms.cpu->mouse = glm::vec4(mouse, state, 0);
 }
 
+void FFTOcean2::refresh(Prototypes& prototypes) {
+    m_prototypes = &prototypes;
+    createPipelines();
+}
+
