@@ -41,6 +41,8 @@ public:
 protected:
     PipelineMetaData subdivisionMetadata() final;
 
+    void computeSpectrum();
+
     void generateGaussianNoise();
 
     void generateGaussianNoise(VkCommandBuffer commandBuffer);
@@ -62,6 +64,8 @@ protected:
     void computeMinMaxHeight(VkCommandBuffer commandBuffer);
 
     void downloadHeightMap(VkCommandBuffer commandBuffer);
+
+    void downloadSpectrumMap(VkCommandBuffer commandBuffer);
 
     std::vector<PipelineMetaData> additionalMetadata() override;
 
@@ -118,7 +122,7 @@ private:
     struct {
         glm::vec4 windOrientation{-0.79, 1.57, 0.79, 0.0};
         glm::vec4 windSpeed{5.0};
-        glm::vec4 amplitude{1};
+        glm::vec4 amplitude{0.2};
         glm::vec4 horizontalLength{5488, 392, 28, 2.0};
         glm::vec4 windPower{1};
         float time{0};
@@ -168,7 +172,7 @@ private:
     } m_dimensions;
 
     struct {
-        glm::vec4 scatterColor{0.0000f, 0.2307f, 0.3613f, 1};
+        glm::vec4 scatterColor{0.0056f, 0.0194f, 0.0331f, 1};
         float primitivePixelLengthTarget{7};
         float minLodStdev{0};
         float dmapScale{1};
@@ -197,6 +201,8 @@ private:
     VkDescriptorSet m_uniformsDescriptorSet{};
     VulkanBuffer m_heightMapBuffer;
     std::array<std::span<glm::vec4>, tileCount> m_heightMap;
+    VulkanBuffer m_spectrumBuffer;
+    std::array<std::span<glm::vec2>, tileCount> m_spectrum;
     bool m_downloadHeightMap{false};
 
     struct {

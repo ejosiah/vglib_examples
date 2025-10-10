@@ -416,7 +416,7 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
     profiler.resetAll(commandBuffer);
 
     ocean->preProcess(commandBuffer);
-    computeBuoyancy(commandBuffer);
+//    computeBuoyancy(commandBuffer);
 
     runRenderGraph(commandBuffer);
 
@@ -446,7 +446,7 @@ void FFTOceanDemo::renderObjects(VkCommandBuffer commandBuffer) {
 void FFTOceanDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
-        renderObjects(commandBuffer);
+//        renderObjects(commandBuffer);
         ocean->render(commandBuffer);
 
         renderSkyView(commandBuffer);
@@ -509,24 +509,26 @@ void FFTOceanDemo::update(float time) {
     if(!ImGui::IsAnyItemActive()) {
         camera->update(time);
     }
-    auto impulseCount = physics.sizes[IMPULSE_COUNT];
-    setTitle(fmt::format("{}, camera - {}, FPS - {}, impulses: {}", title, camera->position(), framePerSecond, impulseCount));
+//    auto impulseCount = physics.sizes[IMPULSE_COUNT];
+    setTitle(fmt::format("{}, camera - {}, FPS - {}", title, camera->position(), framePerSecond));
 
-    static constexpr auto dt = 0.00833333f;
-    static const glm::vec3 Gravity{0, -9.8, 0};
-    static const glm::vec3 GravityImpulse = (1.0f/object.body.m_invMass) * Gravity * dt;
-    static constexpr float waterDensity = 1000;
-    object.body.ApplyImpulseLinear(GravityImpulse);
-
-    impulseCount = std::min(impulseCount, 10u);
-    for(auto i = 0; i < impulseCount; ++i) {
-        auto impulse = object.body.m_elasticity * physics.impulses[i];
-        auto impulsePoint =  physics.impulsePoints[i];
-        object.body.ApplyImpulse(impulsePoint, impulse);
-    }
-
-    object.body.Update(dt);
-    object.info->transform = glm::translate(glm::mat4{1}, object.body.m_position) * glm::mat4(object.body.m_orientation);
+//    static constexpr auto dt = 0.00833333f;
+//    static const glm::vec3 Gravity{0, -9.8, 0};
+//    static const glm::vec3 GravityImpulse = (1.0f/object.body.m_invMass) * Gravity * dt;
+//    static constexpr float waterDensity = 1000;
+//    object.body.ApplyImpulseLinear(GravityImpulse);
+//
+//    impulseCount = std::min(impulseCount, 10u);
+//    for(auto i = 0; i < impulseCount; ++i) {
+//        auto impulse = object.body.m_elasticity * physics.impulses[i];
+//        auto impulsePoint =  physics.impulsePoints[i];
+//        spdlog::info("impulse: {}", impulse);
+//        object.body.ApplyImpulse(impulsePoint, impulse);
+//        if(i >= impulseCount - 1) spdlog::info("");
+//    }
+//
+//    object.body.Update(dt);
+//    object.info->transform = glm::translate(glm::mat4{1}, object.body.m_position) * glm::mat4(object.body.m_orientation);
 
 }
 
@@ -602,7 +604,8 @@ void FFTOceanDemo::endFrame() {
 
 void FFTOceanDemo::initObject() {
     auto r = 20.0f;
-    auto primitive = primitives::cube({1, 1, 0, 1}, glm::scale(glm::mat4{1}, {100, 10, 20}));
+    glm::vec3 dim{305, 95, 60};
+    auto primitive = primitives::cube({1, 1, 0, 1}, glm::scale(glm::mat4{1}, dim));
 //    auto sphere = primitives::sphere(500, 500, r, glm::mat4{1}, {1, 0, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     auto numTris = to<uint>(primitive.indices.size()/3);
 
@@ -614,14 +617,14 @@ void FFTOceanDemo::initObject() {
     object.metadata = device.createCpuVisibleBuffer(&info, sizeof(Info), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     object.info = reinterpret_cast<Info*>(object.metadata.map());
 
-    auto mass = 10.0f;
+    auto mass = 205930936.0f;
     auto points = map_range(primitive.vertices, [](auto v){ return v.position.xyz(); });
     object.body.m_shape = std::make_shared<ShapeBox>(points.data(), to<int>(points.size()));
     object.body.m_invMass  = 1.0f/mass;
     object.body.m_elasticity = 0.6;
     object.body.m_position = glm::vec3{0, 0, 0};
 //    object.info->density = (3.0f * mass)/(4.0f * glm::pi<float>() * r * r * r);
-    object.info->density = (3.0f * mass)/(100 * 20 * 10);
+    object.info->density = (3.0f * mass)/(dim.x * dim.x * dim.z);
     object.info->numTris = numTris;
 
     int numCounters = 2;

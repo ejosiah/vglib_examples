@@ -309,7 +309,7 @@ Shading shade(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L ) {
     vec3 Lsun = skyIrradiance + sunIrradiance;
 
     vec3 env = getAtmosphere(Pa, R, L);
-    vec3 F = fresnel(V, H);
+    vec3 F = fresnel(N, L);
 
     vec3 scatter = scatteredLight(P, N, V, R, H, L, Lsun);
 

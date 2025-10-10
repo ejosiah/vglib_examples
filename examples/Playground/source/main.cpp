@@ -10,29 +10,22 @@
 #include <numeric>
 #include "vulkan_context.hpp"
 
-int main() {
-    ContextCreateInfo info{};
-    info.applicationInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    info.applicationInfo.pApplicationName = "subgroup_check";
-    info.applicationInfo.apiVersion = VK_API_VERSION_1_3;
-    info.applicationInfo.pEngineName = "";
-    VulkanContext ctx{info};
-    ctx.init();
-
-    VkPhysicalDeviceSubgroupProperties subgroupProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES };
-    VkPhysicalDeviceProperties2 properties{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-        .pNext = &subgroupProperties
-    };
-
-    ctx.device.getPhysicalDeviceProperties(properties);
-
-    fmt::print("subgroupSize: {}\n", subgroupProperties.subgroupSize);
-    fmt::print("supportedStages: {}\n", subgroupProperties.supportedStages);
-    fmt::print("supportedOperations: {}\n", subgroupProperties.supportedOperations);
-    fmt::print("supportedOperations: {}\n", subgroupProperties.supportedOperations);
-    fmt::print("quadOperationsInAllStages: {}\n", subgroupProperties.quadOperationsInAllStages);
+auto GSeris(auto a, auto r, auto n) {
+    return a * std::pow(r, n - 1);
 }
+
+int main() {
+    auto i = 2;
+    auto k = 5e-3;
+
+    while(k < 1e6) {
+        k *= 1.001; // this line cause major diff between k & nk
+        auto nk = GSeris(5e-3, 1.001, i);
+        fmt::print("{}: {} => {}, diff: {}\n", i, k, nk, std::abs(k - nk));
+        i++;
+    }
+}
+
 
 //int main() {
 //    fmt::print("Hello World!\n");

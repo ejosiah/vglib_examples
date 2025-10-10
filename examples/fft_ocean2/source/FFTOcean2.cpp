@@ -17,7 +17,7 @@ void FFTOcean2::init() {
     createSimTextures();
     initUniforms();
     SubdivisionGrid::init();
-    generateGaussianNoise();
+    computeSpectrum();
 }
 
 PipelineMetaData FFTOcean2::subdivisionMetadata() {
@@ -29,6 +29,17 @@ PipelineMetaData FFTOcean2::subdivisionMetadata() {
             .ranges = {{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)}}
     };
 }
+
+void FFTOcean2::computeSpectrum() {
+    m_device->graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
+        generateGaussianNoise(commandBuffer);
+        generateSpectralComponents(commandBuffer);
+        generateSpectralHeightField(commandBuffer);
+        downloadSpectrumMap(commandBuffer);
+        Barrier::computeWriteToHostRead(commandBuffer);
+    });
+}
+
 
 void FFTOcean2::generateGaussianNoise() {
     m_device->graphicsCommandPool().oneTimeCommand([this](auto commandBuffer){
@@ -664,7 +675,6 @@ void FFTOcean2::createSimTextures() {
     m_textures.fftSlopeZ.layers = tileCount;
     m_textures.normalMap.layers = tileCount;
     m_textures.minMax.layers = tileCount;
-    m_textures.minMax.levels = to<uint>(std::log2(tileSize)) + 1;
 
     textures::createNoTransition(*m_device, m_textures.noise, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {tileSize, tileSize, 1});
     textures::createNoTransition(*m_device, m_textures.staging[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
@@ -728,16 +738,23 @@ void FFTOcean2::createSimTextures() {
     m_bindlessDescriptor->update({ &m_textures.heightField, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_previewIndex, VK_IMAGE_LAYOUT_GENERAL });
     m_bindlessDescriptor->update({ &m_textures.normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_normalIndex, VK_IMAGE_LAYOUT_GENERAL });
 
+    size_t tileSizeBytes = sizeof(glm::vec4) * tileSize * tileSize;
     if(m_downloadHeightMap) {
-        size_t tileSizeBytes = sizeof(glm::vec4) * tileSize * tileSize;
-        m_heightMapBuffer = m_device->createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU,
-                                                   tileSizeBytes * tileCount, "height_map");
+        m_heightMapBuffer = m_device->createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, tileSizeBytes * tileCount, "height_map");
         auto mapping = reinterpret_cast<char *>(m_heightMapBuffer.map());
         m_heightMap[0] = {reinterpret_cast<glm::vec4 *>(mapping), tileSizeBytes};
         m_heightMap[1] = {reinterpret_cast<glm::vec4 *>(mapping + tileSizeBytes), tileSizeBytes};
         m_heightMap[2] = {reinterpret_cast<glm::vec4 *>(mapping + tileSizeBytes * 2), tileSizeBytes};
         m_heightMap[3] = {reinterpret_cast<glm::vec4 *>(mapping + tileSizeBytes * 2), tileSizeBytes};
     }
+
+    tileSizeBytes = sizeof(glm::vec2) * tileSize * tileSize;
+    m_spectrumBuffer = m_device->createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, tileSizeBytes * tileCount, "height_map");
+    auto mapping = reinterpret_cast<char *>(m_spectrumBuffer.map());
+    m_spectrum[0] = {reinterpret_cast<glm::vec2 *>(mapping), tileSizeBytes};
+    m_spectrum[1] = {reinterpret_cast<glm::vec2 *>(mapping + tileSizeBytes), tileSizeBytes};
+    m_spectrum[2] = {reinterpret_cast<glm::vec2 *>(mapping + tileSizeBytes * 2), tileSizeBytes};
+    m_spectrum[3] = {reinterpret_cast<glm::vec2 *>(mapping + tileSizeBytes * 2), tileSizeBytes};
 
 }
 
@@ -918,6 +935,43 @@ void FFTOcean2::downloadHeightMap(VkCommandBuffer commandBuffer) {
     vkCmdCopyImageToBuffer2(commandBuffer, &copyInfo);
 
     Barriers::pushAndFlush(commandBuffer, m_textures.heightField.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+
+}
+
+void FFTOcean2::downloadSpectrumMap(VkCommandBuffer commandBuffer) {
+    Barriers::pushAndFlush(commandBuffer, m_textures.staging[0].image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
+    static bool once = true;
+    static VkBufferImageCopy2 region{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = tileCount,
+        },
+        .imageExtent = {tileSize, tileSize, 1},
+    };
+
+
+    static VkCopyImageToBufferInfo2 copyInfo{
+        .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2,
+        .srcImage = m_textures.staging[0].image,
+        .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .dstBuffer = m_spectrumBuffer,
+        .regionCount = 1,
+        .pRegions = &region
+    };
+
+    vkCmdCopyImageToBuffer2(commandBuffer, &copyInfo);
+
+    Barriers::pushAndFlush(commandBuffer, m_textures.staging[0].image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_TRANSFER_BIT,
                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
 
