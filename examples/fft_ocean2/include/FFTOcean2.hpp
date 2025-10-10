@@ -26,11 +26,17 @@ public:
 
     void endFrame();
 
-    void controls(bool show = true);
+    void controls(bool show = true, bool composite = false);
 
     void updateMouse(glm::ivec2 mouse, int state = 0);
 
     void refresh(Prototypes& prototypes);
+
+    uint heightMapTextureIndex() const;
+
+    glm::vec4 patchLengths() const;
+
+    float sampleHeight(glm::vec2 position);
 
 protected:
     PipelineMetaData subdivisionMetadata() final;
@@ -54,6 +60,8 @@ protected:
     void visualize(VkCommandBuffer commandBuffer);
 
     void computeMinMaxHeight(VkCommandBuffer commandBuffer);
+
+    void downloadHeightMap(VkCommandBuffer commandBuffer);
 
     std::vector<PipelineMetaData> additionalMetadata() override;
 
@@ -176,7 +184,7 @@ private:
         bool wire{false};
         bool showTiles{false};
         bool visualizer{false};
-        bool showNormals{false};
+        int debug{0};
     } m_options;
 
     VulkanDescriptorSetLayout m_descriptorSetLayout;
@@ -187,6 +195,8 @@ private:
 
     VulkanDescriptorSetLayout m_uniformsDescriptorSetLayout;
     VkDescriptorSet m_uniformsDescriptorSet{};
+    VulkanBuffer m_heightMapBuffer;
+    std::array<std::span<glm::vec4>, tileCount> m_heightMap;
 
     struct {
         struct {

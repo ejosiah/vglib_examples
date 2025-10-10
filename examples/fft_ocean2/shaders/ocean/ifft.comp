@@ -16,7 +16,7 @@ layout (local_size_x_id = 0) in;
 
 layout(constant_id = 0) const uint sharedSize = 1024;
 
-layout (set = 0, binding = 0, rg16f) uniform readonly image2D readbuff[];
+layout (set = 0, binding = 0, rg32f) uniform readonly image2D readbuff[];
 layout (set = 0, binding = 1) uniform writeonly image2D writebuff[];
 
 shared vec2 pingpong[2][DISP_MAP_SIZE];

@@ -1,0 +1,50 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+
+layout(local_size_x = 1024) in;
+
+layout(set = 0, binding = 2, scalar) buffer PointBuffer {
+    vec3 points[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer AreaBuffer {
+    float areas[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer ObjectInfo {
+    mat4 transform;
+    uint numTris;
+    float density;
+};
+
+layout(set = 1, binding = 0, scalar) buffer SamplePointsBuffer {
+    vec3 samplePoints[];
+};
+
+layout(set = 1, binding = 1, scalar) buffer SampleAreasBuffer {
+    float sampleAreas[];
+};
+
+layout(set = 1, binding = 2, scalar) buffer CountBuffer {
+    uint numSamples;
+    uint updates;
+};
+
+layout(push_constant) uniform PushConstants {
+    float height;
+};
+
+void main() {
+    int index = int(gl_GlobalInvocationID);
+
+    if(index >= numTris) return;
+
+    vec3 p = points[index];
+
+    if(p.y > height) return;
+
+    uint sIndex = atomicAdd(numSamples, 1);
+    samplePoints[sIndex] = p;
+    sampleAreas[sIndex] = areas[index];
+}

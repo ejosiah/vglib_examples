@@ -229,6 +229,7 @@ void FFTOcean2::preProcess(VkCommandBuffer commandBuffer) {
     computeMinMaxHeight(commandBuffer);
     visualize(commandBuffer);
     update(commandBuffer);
+    downloadHeightMap(commandBuffer);
 }
 
 void FFTOcean2::newFrame() {
@@ -268,9 +269,9 @@ void FFTOcean2::newFrame() {
     m_uniforms.cpu->lightDirection = lightDirection;
 
     m_uniforms.cpu->flags = 0;
-    m_uniforms.cpu->flags |= (uint(m_options.wire) << 0);
-    m_uniforms.cpu->flags |= (uint(m_options.showTiles) << 1);
-    m_uniforms.cpu->flags |= (uint(m_options.showNormals) << 2);
+    m_uniforms.cpu->flags |= uint(m_options.debug != 0 ? 1 << m_options.debug : 0);
+    m_uniforms.cpu->flags |= (uint(m_options.wire) << 5);
+    m_uniforms.cpu->flags |= (uint(m_options.showTiles) << 6);
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, projection * view);
@@ -665,21 +666,21 @@ void FFTOcean2::createSimTextures() {
     m_textures.minMax.layers = tileCount;
     m_textures.minMax.levels = to<uint>(std::log2(tileSize)) + 1;
 
-    textures::createNoTransition(*m_device, m_textures.noise, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.staging[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.staging[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.staging[2], VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.staging[3], VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.staging[4], VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.fftHeightField, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.fftHeightFieldX, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.fftHeightFieldZ, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.fftSlopeX, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.fftSlopeZ, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.normalMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.heightField, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_textures.minMax, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
-    textures::createNoTransition(*m_device, m_visualizer.texture, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.noise, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.staging[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.staging[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.staging[2], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.staging[3], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.staging[4], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.fftHeightField, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.fftHeightFieldX, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.fftHeightFieldZ, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.fftSlopeX, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.fftSlopeZ, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.normalMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.heightField, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_textures.minMax, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {tileSize, tileSize, 1});
+    textures::createNoTransition(*m_device, m_visualizer.texture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {tileSize, tileSize, 1});
 
 
     auto subResource = DEFAULT_SUB_RANGE;
@@ -705,18 +706,18 @@ void FFTOcean2::createSimTextures() {
     subResource.layerCount = 1;
     for(auto i = 0; i < tileCount; ++i) {
         subResource.baseArrayLayer = i;
-        m_views.staging[0][i] = m_textures.staging[0].image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.staging[1][i] = m_textures.staging[1].image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.staging[2][i] = m_textures.staging[2].image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.staging[3][i] = m_textures.staging[3].image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.staging[4][i] = m_textures.staging[4].image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.fftHeightField[i] =  m_textures.fftHeightField.image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.fftHeightFieldX[i] =  m_textures.fftHeightFieldX.image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.fftHeightFieldZ[i] =  m_textures.fftHeightFieldZ.image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.fftSlopeX[i] =  m_textures.fftSlopeX.image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.fftSlopeZ[i] =  m_textures.fftSlopeZ.image.createView(VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.heightField[i] =  m_textures.heightField.image.createView(VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
-        m_views.normalMap[i] =  m_textures.normalMap.image.createView(VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.staging[0][i] = m_textures.staging[0].image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.staging[1][i] = m_textures.staging[1].image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.staging[2][i] = m_textures.staging[2].image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.staging[3][i] = m_textures.staging[3].image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.staging[4][i] = m_textures.staging[4].image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.fftHeightField[i] =  m_textures.fftHeightField.image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.fftHeightFieldX[i] =  m_textures.fftHeightFieldX.image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.fftHeightFieldZ[i] =  m_textures.fftHeightFieldZ.image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.fftSlopeX[i] =  m_textures.fftSlopeX.image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.fftSlopeZ[i] =  m_textures.fftSlopeZ.image.createView(VK_FORMAT_R32G32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.heightField[i] =  m_textures.heightField.image.createView(VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
+        m_views.normalMap[i] =  m_textures.normalMap.image.createView(VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_VIEW_TYPE_2D, subResource);
     }
 
 
@@ -726,6 +727,15 @@ void FFTOcean2::createSimTextures() {
     m_bindlessDescriptor->update({ &m_textures.heightField, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_heightMapIndex, VK_IMAGE_LAYOUT_GENERAL });
     m_bindlessDescriptor->update({ &m_textures.heightField, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_previewIndex, VK_IMAGE_LAYOUT_GENERAL });
     m_bindlessDescriptor->update({ &m_textures.normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_normalIndex, VK_IMAGE_LAYOUT_GENERAL });
+
+    size_t tileSizeBytes = sizeof(glm::vec4) * tileSize * tileSize;
+    m_heightMapBuffer = m_device->createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, tileSizeBytes * tileCount, "height_map");
+    auto mapping = reinterpret_cast<char*>(m_heightMapBuffer.map());
+    m_heightMap[0] = { reinterpret_cast<glm::vec4*>(mapping), tileSizeBytes };
+    m_heightMap[1] = { reinterpret_cast<glm::vec4*>(mapping + tileSizeBytes), tileSizeBytes };
+    m_heightMap[2] = { reinterpret_cast<glm::vec4*>(mapping + tileSizeBytes * 2), tileSizeBytes };
+    m_heightMap[3] = { reinterpret_cast<glm::vec4*>(mapping + tileSizeBytes * 2), tileSizeBytes };
+
 }
 
 std::vector<PipelineMetaData> FFTOcean2::additionalMetadata() {
@@ -783,11 +793,13 @@ std::vector<PipelineMetaData> FFTOcean2::additionalMetadata() {
     };
 }
 
-void FFTOcean2::controls(bool show) {
+void FFTOcean2::controls(bool show, bool composite) {
     if(!show) return;
 
-    ImGui::Begin("ocean");
-    ImGui::SetWindowSize({});
+    if(!composite){
+        ImGui::Begin("ocean");
+        ImGui::SetWindowSize({});
+    }
 
     ImGui::SliderFloat("Pixels/Edge", &m_options.primitivePixelLengthTarget, 1, 32);
     ImGui::SliderFloat("Dmap scale", &m_options.dmapScale, 0, 1);
@@ -799,7 +811,6 @@ void FFTOcean2::controls(bool show) {
     ImGui::SameLine();
     ImGui::Checkbox("topView", &m_options.topView);
     ImGui::Checkbox("Show tiles", &m_options.showTiles);
-    ImGui::Checkbox("Show normals", &m_options.showNormals);
     ImGui::Checkbox("Show visualizer", &m_options.visualizer);
 
     if(ImGui::CollapsingHeader("lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -810,13 +821,16 @@ void FFTOcean2::controls(bool show) {
     }
 
 
+    static std::array<const char*, 5> labels{"None","Normal","Scatter","Specular","Reflection"};
+    ImGui::Combo("debug", &m_options.debug, labels.data(), labels.size());
+
     const auto& cp = m_camera->position();
     const auto& cd = m_camera->viewDir;
-    ImGui::Text("Wave Info\n\tmax height: %f", m_uniforms.cpu->heightMinMax[0].y);
-    ImGui::Text("Camera:\n\tposition: (%f,%f, %f),\n\tdirection: (%f, %f, %f)", cp.x, cp.y, cp.z, cd.x, cd.y, cd.z);
+    ImGui::Text("Wave Info\n\tmax height: %.3f", m_uniforms.cpu->heightMinMax[0].y);
+    ImGui::Text("Camera:\n\tposition: %.3f, %.3f, %.3f,\n\tdirection: %.3f, %.3f, %.3f", cp.x, cp.y, cp.z, cd.x, cd.y, cd.z);
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
 
-    ImGui::End();
+    if(!composite) ImGui::End();
 }
 
 void FFTOcean2::renderTopView(VkCommandBuffer commandBuffer) {
@@ -858,5 +872,62 @@ void FFTOcean2::updateMouse(glm::ivec2 mouse, int state) {
 void FFTOcean2::refresh(Prototypes& prototypes) {
     m_prototypes = &prototypes;
     createPipelines();
+}
+
+uint FFTOcean2::heightMapTextureIndex() const {
+    return m_heightMapIndex;
+}
+
+glm::vec4 FFTOcean2::patchLengths() const {
+    return m_uniforms.cpu->horizontalLength;
+}
+
+void FFTOcean2::downloadHeightMap(VkCommandBuffer commandBuffer) {
+    Barriers::pushAndFlush(commandBuffer, m_textures.heightField.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
+    static bool once = true;
+    static VkBufferImageCopy2 region{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = tileCount,
+        },
+        .imageExtent = {tileSize, tileSize, 1},
+    };
+
+
+    static VkCopyImageToBufferInfo2 copyInfo{
+        .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2,
+        .srcImage = m_textures.heightField.image,
+        .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .dstBuffer = m_heightMapBuffer,
+        .regionCount = 1,
+        .pRegions = &region
+    };
+
+    vkCmdCopyImageToBuffer2(commandBuffer, &copyInfo);
+
+    Barriers::pushAndFlush(commandBuffer, m_textures.heightField.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+
+}
+
+float FFTOcean2::sampleHeight(glm::vec2 position) {
+    float H = 0;
+
+    auto patches = m_uniforms.cpu->horizontalLength;
+    for(auto i = 0; i < tileCount; ++i) {
+        auto uv = glm::uvec2{ glm::fract(position/patches[i])} * tileSize;
+        auto index = uv.y * tileSize + uv.y;
+        H += m_heightMap[i][index].y;
+    }
+    return H;
 }
 

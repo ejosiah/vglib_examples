@@ -1,0 +1,92 @@
+#version 460
+
+/*
+    computes object's surface area by summing up all the sample areas
+*/
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_debug_printf : enable
+
+#define DATA_SET_PER_WG 1024
+
+layout(local_size_x = 1024) in;
+
+layout(set = 0, binding = 2, scalar) buffer PointBuffer {
+    vec3 points[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer AreaBuffer {
+    float areas[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer ObjectInfo {
+    mat4 transform;
+    uint numTris;
+    float density;
+};
+
+layout(set = 1, binding = 0, scalar) buffer SamplePointsBuffer {
+    vec3 samplePoints[];
+};
+
+layout(set = 1, binding = 1, scalar) buffer SampleAreasBuffer {
+    float sampleAreas[];
+};
+
+layout(set = 1, binding = 2, scalar) buffer CountBuffer {
+    uint numSamples;
+    uint updates;
+};
+
+layout(set = 1, binding = 3, scalar) buffer StagingBuffer {
+    float staging[];
+};
+
+layout(push_constant) uniform Constants {
+    uint pass;
+};
+
+
+shared float localArea[32];
+
+void main() {
+
+    if(gl_LocalInvocationIndex < 32) {
+        localArea[gl_LocalInvocationIndex] = 0;
+    }
+
+    float area = 0;
+    if(pass == 0) {
+        uint offset = gl_WorkGroupID.x * DATA_SET_PER_WG;
+        uint index = gl_LocalInvocationIndex + offset;
+        area = (index < numSamples) ? sampleAreas[index] : 0;
+    }else {
+        uint index = gl_LocalInvocationIndex;
+        uint sumCount = ((numSamples + DATA_SET_PER_WG - 1)/DATA_SET_PER_WG);
+        area = (index < sumCount) ? staging[gl_LocalInvocationIndex] : 0;
+    }
+
+    area = subgroupAdd(area);
+
+    if (subgroupElect()) {
+        localArea[gl_SubgroupID] = area;
+    }
+
+    barrier();
+
+    if (subgroupAll(gl_SubgroupID < 1)) {
+
+        area = localArea[gl_SubgroupInvocationID];
+        area = subgroupAdd(area);
+
+        if (subgroupElect()) {
+            if(pass == 0){
+                staging[gl_WorkGroupID.x] = area;
+            }else {
+                sampleAreas[gl_WorkGroupID.x] = area;
+            }
+        }
+    }
+}

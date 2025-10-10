@@ -4,6 +4,7 @@
 #include "BindPoints.hpp"
 #include "FFTOcean2.hpp"
 #include "Profiler.hpp"
+#include "PhysicsBody.hpp"
 
 class FFTOceanDemo : public VulkanBaseApp{
 public:
@@ -17,6 +18,8 @@ protected:
     void initProfiler();
 
     void initFFTOcean();
+
+    void initObject();
 
     void initRenderGraphInputs();
 
@@ -36,6 +39,8 @@ protected:
 
     void initLoader();
 
+    void createComputePipeline();
+
     void createRenderPipeline();
 
     void onSwapChainDispose() override;
@@ -43,6 +48,8 @@ protected:
     void onSwapChainRecreation() override;
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
+
+    void renderObjects(VkCommandBuffer commandBuffer);
 
     void runRenderGraph(VkCommandBuffer commandBuffer);
 
@@ -56,6 +63,16 @@ protected:
 
     void renderToDisplay(VkCommandBuffer commandBuffer);
 
+    void computeBuoyancy(VkCommandBuffer commandBuffer);
+
+    void updateObjects(VkCommandBuffer commandBuffer);
+
+    void samplePoints(VkCommandBuffer commandBuffer);
+
+    void computeSurfaceArea(VkCommandBuffer commandBuffer);
+
+    void generateImpulses(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -68,8 +85,14 @@ protected:
 
     void onPause() override;
 
+    std::vector<PipelineMetaData> metadata();
+
 protected:
     struct {
+        struct { ;
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
+        } object;
         struct { ;
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
@@ -116,8 +139,49 @@ protected:
     VulkanDescriptorSetLayout subpassInputDescriptorSetLayout;
     VkDescriptorSet subpassInputDescriptorSet{};
 
+    VulkanDescriptorSetLayout objectDescriptorSetLayout;
+    VkDescriptorSet objectDescriptorSet;
+
+    VulkanDescriptorSetLayout physicsDescriptorSetLayout;
+    VkDescriptorSet physicsDescriptorSet;
+
     Profiler profiler;
     std::unique_ptr<FFTOcean2> ocean;
+
+    struct Info {
+        glm::mat4 transform{1};
+        uint numTris{0};
+        float density{0};
+    };
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer indexes;
+        VulkanBuffer area;
+        VulkanBuffer points;
+        VulkanBuffer metadata;
+        PhysicsBody body;
+        Info* info;
+    } object;
+
+    static constexpr uint SAMPLE_COUNT = 0;
+    static constexpr uint IMPULSE_COUNT = 1;
+    struct {
+        VulkanBuffer samplePoints;
+        VulkanBuffer impulsePointsBuffer;
+        VulkanBuffer sampleArea;
+        VulkanBuffer counts;
+        VulkanBuffer staging;
+        std::span<glm::vec3> impulsePoints{};
+        std::span<glm::vec3> impulses{};
+        std::span<uint> sizes{};
+    } physics;
+
+    struct {
+        glm::vec4 horizontalLength;
+        uint heightMapIndex;
+    } buoyancyConstants;
+
+    ComputePipelines compute;
 
     void localReadBarrier(VkCommandBuffer commandBuffer);
 };

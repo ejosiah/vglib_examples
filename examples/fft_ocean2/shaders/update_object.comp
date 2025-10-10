@@ -1,0 +1,53 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+
+layout(local_size_x = 1024) in;
+
+struct Vertex {
+    vec4 position;
+    vec4 color;
+    vec3 normal;
+    vec3 tangent;
+    vec3 bitangent;
+    vec2 uv;
+};
+
+layout(set = 0, binding = 0) buffer VertexBuffer {
+    Vertex vertices[];
+};
+
+layout(set = 0, binding = 1, scalar) buffer IndexBuffer {
+    uint indexes[];
+};
+
+layout(set = 0, binding = 2, scalar) buffer PointBuffer {
+    vec3 points[];
+};
+
+layout(set = 0, binding = 3, scalar) buffer AreaBuffer {
+    float areas[];
+};
+
+layout(set = 0, binding = 4, scalar) buffer ObjectInfo {
+    mat4 transform;
+    uint numTris;
+    float density;
+};
+
+void main() {
+    int index = int(gl_GlobalInvocationID);
+    if(index >= numTris) return;
+
+    vec4 v0 = vertices[indexes[index * 3 + 0]].position;
+    vec4 v1 = vertices[indexes[index * 3 + 1]].position;
+    vec4 v2 = vertices[indexes[index * 3 + 2]].position;
+
+    v0 = transform * v0;
+    v1 = transform * v1;
+    v2 = transform * v2;
+
+    points[index] = (v0 + v1 + v2).xyz/3;
+    areas[index] = abs(length(cross((v1 - v0).xyz, (v2 - v0).xyz))) * 0.5;
+
+}

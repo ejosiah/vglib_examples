@@ -23,7 +23,7 @@ layout(location = 1) out vec4 extras;
 
 
 vec4 getGradient() {
-    return vec4(sampleNormal(fs_in.worldPos.xz), 1);
+    return computeNormalAndJacobian(fs_in.worldPos.xz);
 }
 
 
@@ -32,25 +32,36 @@ const float far = 25000; // 1km
 void main() {
     vec4 grad = getGradient();
     vec3 Nw = vec3(0, 1, 0);
-//    vec3 N = sampleNormal(fs_in.worldPos.xz);
     vec3 N = normalize(grad.xyz);
     vec3 L = normalize(u.lightDirection.xyz);
     vec3 V = normalize(fs_in.viewDirection);
     vec3 H = normalize(V + L);
+    if (dot(V, N) < 0.0) {
+        N = reflect(N, V); // reflects backfacing normals
+    }
 
     float depth = linearizeDepth(gl_FragCoord.z, 1, far);
     N = N = mix(N, Nw, 0.8 * min(1.0, sqrt(depth/u.normalFallOff) * 1.1));
     vec3 R = normalize(reflect(-V, N));
     R.y = abs(R.y);
 
-    vec3 turbulence;
-    vec3 radiance = shadeBasic(fs_in.worldPos.xyz, N, V, R, H, L);
+
+    Shading s = shade(fs_in.worldPos.xyz, N, V, R, H, L);
+
+    vec3 radiance = mix(s.scatter, s.env, s.fresnel) + s.spec * s.sunLight;
+
     vec3 color = mixWireFrame(radiance, distance);
 
     if(showNormals()) {
         color = N;
+    }else if(showScatter()) {
+        color = s.scatter;
+    }else if(showSpecular()) {
+        color = s.spec;
+    }else if(showReflection()) {
+        color = s.env;
     }
 
-    fragColor = vec4(color, 1);
+    fragColor = vec4(color, 0.8);
     extras.x = gl_FragCoord.z;
 }

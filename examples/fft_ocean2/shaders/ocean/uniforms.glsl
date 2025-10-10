@@ -8,9 +8,12 @@
 #   error User must specify the set location for ocean uniforms
 #endif
 
-#define WIRE_FRAME_ON 1u
-#define TILES_ON 2u
-#define DEBUG_NORMALS 4u
+#define DEBUG_NORMALS 2u
+#define DEBUG_SCATTER 4u
+#define DEBUG_SPECULAR 8u
+#define DEBUG_REFLECTION 16u
+#define WIRE_FRAME_ON 32u
+#define TILES_ON 64u
 
 layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     mat4 modelMatrix;
@@ -66,6 +69,19 @@ bool showTiles() {
 bool showNormals() {
     return (u.flags & DEBUG_NORMALS) == DEBUG_NORMALS;
 }
+
+bool showScatter() {
+    return (u.flags & DEBUG_SCATTER) == DEBUG_SCATTER;
+}
+
+bool showSpecular() {
+    return (u.flags & DEBUG_SPECULAR) == DEBUG_SPECULAR;
+}
+
+bool showReflection() {
+    return (u.flags & DEBUG_REFLECTION) == DEBUG_REFLECTION;
+}
+
 vec3 sampleDisplacement(vec2 p) {
     float H = 0;
     float Dx = 0;

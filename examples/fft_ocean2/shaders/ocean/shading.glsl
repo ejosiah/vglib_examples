@@ -111,6 +111,41 @@ Jacobian2D computeJacobian(vec2 p) {
     return Jsum;
 }
 
+vec4 computeNormalAndJacobian(vec2 p) {
+    float Sx = 0, Sz = 0;
+
+    const uint tileCount = u.tileCount;
+    for(uint i = 0; i < tileCount; ++i){
+        vec2 uv = fract(p/u.horizontalLength[i]);
+        vec3 loc = vec3(uv, i);
+        vec2 slope = texture(u_NormalSampler, loc).xy;
+
+        Sx += slope.x;
+        Sz += slope.y;
+    }
+    vec3 n =  normalize(vec3(-Sx, 1, -Sz));
+
+    Jacobian2D J = Jacobian2D(0.0, 0.0, 0.0, 0.0, 0.0);
+    for (int layer = 0; layer < tileCount; ++layer) {
+
+        Jacobian2D Ji = computeJacobian(p, layer);
+        J.Dxx += Ji.Dxx;
+        J.Dxz += Ji.Dxz;
+        J.Dzx += Ji.Dzx;
+        J.Dzz += Ji.Dzz;
+    }
+
+    float lambda = u.choppiness;
+    float Jxx = 1 + J.Dxx * lambda;
+    float Jzz = 1 + J.Dzz * lambda;
+    float Jzx = J.Dzx * lambda;
+    float Jxz = J.Dxz * lambda;
+
+    float jD = Jxx * Jzz - Jxz * Jzx;
+
+    return vec4(n, jD);
+}
+
 vec3 normalFromJacobian(vec2 p, int layer, Jacobian2D J)
 {
     float L = u.horizontalLength[layer];
@@ -144,16 +179,15 @@ vec3 fresnel(vec3 R, vec3 N) {
 }
 
 
-vec3 specular(vec3 L, vec3 V, vec3 N) {
+vec3 specular(vec3 N, vec3 V, vec3 H, vec3 L, float roughness) {
     const float ONE_OVER_4PI = 1.0/(4.0 * PI);
 
     const float rho = 0.3;
     const float ax = 0.25;
     const float ay = 0.1;
 
-    vec3 H = L + V;
-    vec3 X = cross(L, N);
-    vec3 Y = cross(X, N);
+    vec3 X = normalize(cross(L, N));
+    vec3 Y = normalize(cross(X, N));
 
     float HdotX = dot(H, X) / ax;
     float HdotY = dot(H, Y) / ay;
@@ -193,7 +227,7 @@ float Beckmann(float ndoth, float roughness) {
     return exp(exp_arg) / (PI * roughness * roughness * ndoth * ndoth * ndoth * ndoth);
 }
 
-vec3 specluar2(vec3 N, vec3 V, vec3 H, vec3 L, float roughness) {
+vec3 specular2(vec3 N, vec3 V, vec3 H, vec3 L, float roughness) {
     float NdotV = dot(N, V);
     float NdotL = dot(N, L);
     float NdotH = dot(N, H);
@@ -219,8 +253,7 @@ vec3 specluar2(vec3 N, vec3 V, vec3 H, vec3 L, float roughness) {
     return vec3(spec);
 }
 
-vec3 scatteredLight(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L) {
-    const vec3 Lsun	= vec3(1.0, 1.0, 0.47);
+vec3 scatteredLight(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L, vec3 Lsun) {
     float _Roughness = 1;
 
     float waveHeight = max(0, P.y) * 0.1;
@@ -248,20 +281,42 @@ vec3 shadeBasic(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L) {
     vec3 Pa = P - u.earthCenter.xyz;
     vec3 skyIrradiance;
     vec3 sunIrradiance = GetSunAndSkyIrradiance(Pa, N, L, skyIrradiance);
+    vec3 Lsun = skyIrradiance + sunIrradiance;
 
     vec3 env = getAtmosphere(Pa, R, L);
     vec3 F = fresnel(R, N);
 
-    vec3 scatter = scatteredLight(P, N, V, R, H, L);
+    vec3 scatter = scatteredLight(P, N, V, R, H, L, Lsun);
     scatter = mix(scatter, env, F);
 
 //    vec3 spec = specular(L, V, N);
-    vec3 spec = specluar2(N, V, H, L, 0.3);
-    return scatter + spec * (skyIrradiance + sunIrradiance);
+    vec3 spec = specular2(N, V, H, L, 0.3);
+    return scatter + spec * Lsun;
 }
 
-vec3 shade(vec3 P, vec3 N, vec3 V, vec3 R, vec3 L, vec3 scatterColor) {
-    return vec3(1);
+struct Shading{
+    vec3 scatter;
+    vec3 spec;
+    vec3 env;
+    vec3 sunLight;
+    vec3 fresnel;
+};
+
+Shading shade(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L ) {
+    vec3 Pa = P - u.earthCenter.xyz;
+    vec3 skyIrradiance;
+    vec3 sunIrradiance = GetSunAndSkyIrradiance(Pa, N, L, skyIrradiance);
+    vec3 Lsun = skyIrradiance + sunIrradiance;
+
+    vec3 env = getAtmosphere(Pa, R, L);
+    vec3 F = fresnel(R, N);
+
+    vec3 scatter = scatteredLight(P, N, V, R, H, L, Lsun);
+
+    //    vec3 spec = specular(L, V, N);
+    vec3 spec = specular2(N, V, H, L, 0.3);
+
+    return Shading(scatter, spec, env, Lsun, F);
 }
 
 #endif // OCEAN_SHADING_GLSL

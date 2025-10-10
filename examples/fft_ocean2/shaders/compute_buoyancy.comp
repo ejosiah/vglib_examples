@@ -1,0 +1,82 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1024) in;
+
+layout(set = 0, binding = 4, scalar) buffer ObjectInfo {
+    mat4 transform;
+    uint numTris;
+    float density;
+};
+
+layout(set = 1, binding = 0, scalar) buffer SamplePointsBuffer {
+    vec3 samplePoints[];
+};
+
+layout(set = 1, binding = 1, scalar) buffer SampleAreasBuffer {
+    float sampleAreas[];
+};
+
+layout(set = 1, binding = 2, scalar) buffer CountBuffer {
+    uint numSamples;
+    uint updates;
+};
+
+layout(set = 1, binding = 3, scalar) buffer StagingBuffer {
+    vec3 buoyancyImpluses[];
+};
+
+layout(set = 1, binding = 4, scalar) buffer ImpusePointBuffer {
+    vec3 impulsePoints[];
+};
+
+layout(set = 2, binding = 10) uniform sampler2DArray globalTextures[];
+
+#define height_map globalTextures[nonuniformEXT(u.heightMapIndex)]
+
+layout(push_constant) uniform Constants {
+    vec4 horizontalLength;
+    uint heightMapIndex;
+} u;
+
+float sampleWaterHeight(vec2 p) {
+    float H = 0;
+
+    const uint tileCount = 4;
+    for(uint i = 0; i < tileCount; ++i){
+        vec2 uv = fract(p/u.horizontalLength[i]);
+        vec3 loc = vec3(uv, i);
+        vec3 disp = texture(height_map, loc).xyz;
+
+        H += disp.y;
+    }
+
+    return  H;
+}
+
+const vec3 Gravity = vec3(0, -9.8, 0);
+const float waterDensity = 1000;
+const float dt = 0.00833333;
+
+void main() {
+    int index = int(gl_GlobalInvocationID);
+
+    if(index >= numSamples) return;
+
+    vec3 point = samplePoints[index];
+    float waterHeight = sampleWaterHeight(point.xz);
+    float displacement = waterHeight - point.y;
+
+    if(displacement <= 0) return;
+
+    float unitForce = (waterDensity - density) * sampleAreas[0];
+    vec3 bouyqancyImpluse = -Gravity * displacement * unitForce * dt;
+
+    uint updateIndex = atomicAdd(updates, 1);
+    buoyancyImpluses[updateIndex] = bouyqancyImpluse;
+    impulsePoints[updateIndex] = point;
+
+}

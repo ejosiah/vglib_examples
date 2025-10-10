@@ -1,5 +1,9 @@
 #version 460
 
+/**
+    compute min and max of a 1024 * 1024 image
+*/
+
 #extension GL_KHR_shader_subgroup_arithmetic : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #extension GL_EXT_debug_printf : enable
@@ -13,8 +17,8 @@
 
 layout(local_size_x_id = 0) in;
 
-layout(set = 0, binding = 11, rgba16f) uniform image2D minMax[];
-layout(set = 0, binding = 1, rg16f)  uniform image2D staging[];
+layout(set = 0, binding = 11, rgba32f) uniform image2D minMax[];
+layout(set = 0, binding = 1, rg32f)  uniform image2D staging[];
 
 layout(push_constant) uniform PushConstant {
     int pass;
@@ -51,10 +55,10 @@ void main() {
     barrier();
 
     if (subgroupAll(gl_SubgroupID < 1)) {
-        minValue = minLocal[gl_SubgroupID];
+        minValue = minLocal[gl_SubgroupInvocationID];
         minValue = subgroupMin(minValue);
 
-        maxValue = maxLocal[gl_SubgroupID];
+        maxValue = maxLocal[gl_SubgroupInvocationID];
         maxValue = subgroupMax(maxValue);
 
         if (subgroupElect()) {

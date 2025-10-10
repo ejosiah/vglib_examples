@@ -9,11 +9,11 @@
 
 layout(local_size_x = 32, local_size_y = 32) in;
 
-layout(set = 0, binding = 3, rg16f) readonly uniform image2D spectral_height_field[];
-layout(set = 0, binding = 5, rg16f) readonly uniform image2D spectral_height_x_field[];
-layout(set = 0, binding = 6, rg16f) readonly uniform image2D spectral_height_z_field[];
-layout(set = 0, binding = 7, rg16f) readonly uniform image2D spectral_height_slope_x_field[];
-layout(set = 0, binding = 8, rg16f) readonly uniform image2D spectral_height_slope_z_field[];
+layout(set = 0, binding = 3, rg32f) readonly uniform image2D spectral_height_field[];
+layout(set = 0, binding = 5, rg32f) readonly uniform image2D spectral_height_x_field[];
+layout(set = 0, binding = 6, rg32f) readonly uniform image2D spectral_height_z_field[];
+layout(set = 0, binding = 7, rg32f) readonly uniform image2D spectral_height_slope_x_field[];
+layout(set = 0, binding = 8, rg32f) readonly uniform image2D spectral_height_slope_z_field[];
 
 layout(set = 0, binding = 4) writeonly uniform image2D height_field[];
 layout(set = 0, binding = 9) writeonly uniform image2D normal_map[];

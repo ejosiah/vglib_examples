@@ -21,6 +21,7 @@ FFTOceanDemo::FFTOceanDemo(const Settings& settings) : VulkanBaseApp("FFT Ocean"
 
 void FFTOceanDemo::initApp() {
     initCamera();
+    initObject();
     createDescriptorPool();
     initBindlessDescriptor();
     initRenderGraphInputs();
@@ -34,6 +35,7 @@ void FFTOceanDemo::initApp() {
     updateDescriptorSets();
     createCommandPool();
     createPipelineCache();
+    createComputePipeline();
     createRenderPipeline();
 }
 
@@ -123,14 +125,69 @@ void FFTOceanDemo::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
         .createLayout();
+
+    objectDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("object_descriptor_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(4)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
+
+    physicsDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("physics_descriptor_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(4)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
+        .createLayout();
 }
 
 void FFTOceanDemo::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ displayDescriptorSetLayout, subpassInputDescriptorSetLayout });
+    auto sets = descriptorPool.allocate({
+        displayDescriptorSetLayout, subpassInputDescriptorSetLayout, objectDescriptorSetLayout,
+        physicsDescriptorSetLayout
+    });
     displayDescriptorSet = sets[0];
     subpassInputDescriptorSet = sets[1];
+    objectDescriptorSet = sets[2];
+    physicsDescriptorSet = sets[3];
 
-    auto writes = initializers::writeDescriptorSets<3>();
+    auto writes = initializers::writeDescriptorSets<13>();
 
     writes[0].dstSet = displayDescriptorSet;
     writes[0].dstBinding = 0;
@@ -152,6 +209,76 @@ void FFTOceanDemo::updateDescriptorSets(){
     writes[2].descriptorCount = 1;
     VkDescriptorImageInfo extrasPosInfo{ VK_NULL_HANDLE, renderGraphInputs.extras.imageView.handle, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR };
     writes[2].pImageInfo = &extrasPosInfo;
+    
+    writes[3].dstSet = objectDescriptorSet;
+    writes[3].dstBinding = 0;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[3].descriptorCount = 1;
+    VkDescriptorBufferInfo vertexInfo{ object.vertices, 0, VK_WHOLE_SIZE };
+    writes[3].pBufferInfo = &vertexInfo;
+
+    writes[4].dstSet = objectDescriptorSet;
+    writes[4].dstBinding = 1;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
+    VkDescriptorBufferInfo indexInfo{ object.indexes, 0, VK_WHOLE_SIZE };
+    writes[4].pBufferInfo = &indexInfo;
+
+    writes[5].dstSet = objectDescriptorSet;
+    writes[5].dstBinding = 2;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[5].descriptorCount = 1;
+    VkDescriptorBufferInfo pointInfo{ object.points, 0, VK_WHOLE_SIZE };
+    writes[5].pBufferInfo = &pointInfo;
+
+    writes[6].dstSet = objectDescriptorSet;
+    writes[6].dstBinding = 3;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[6].descriptorCount = 1;
+    VkDescriptorBufferInfo areaInfo{ object.area, 0, VK_WHOLE_SIZE };
+    writes[6].pBufferInfo = &areaInfo;
+
+    writes[7].dstSet = objectDescriptorSet;
+    writes[7].dstBinding = 4;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[7].descriptorCount = 1;
+    VkDescriptorBufferInfo info{ object.metadata, 0, VK_WHOLE_SIZE };
+    writes[7].pBufferInfo = &info;
+
+    writes[8].dstSet = physicsDescriptorSet;
+    writes[8].dstBinding = 0;
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[8].descriptorCount = 1;
+    VkDescriptorBufferInfo samplePointsInfo{ physics.samplePoints, 0, VK_WHOLE_SIZE };
+    writes[8].pBufferInfo = &samplePointsInfo;
+
+    writes[9].dstSet = physicsDescriptorSet;
+    writes[9].dstBinding = 1;
+    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[9].descriptorCount = 1;
+    VkDescriptorBufferInfo sampleAreasInfo{ physics.sampleArea, 0, VK_WHOLE_SIZE };
+    writes[9].pBufferInfo = &sampleAreasInfo;
+
+    writes[10].dstSet = physicsDescriptorSet;
+    writes[10].dstBinding = 2;
+    writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[10].descriptorCount = 1;
+    VkDescriptorBufferInfo countsInfo{ physics.counts, 0, VK_WHOLE_SIZE };
+    writes[10].pBufferInfo = &countsInfo;
+
+    writes[11].dstSet = physicsDescriptorSet;
+    writes[11].dstBinding = 3;
+    writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[11].descriptorCount = 1;
+    VkDescriptorBufferInfo stagingInfo{ physics.staging, 0, VK_WHOLE_SIZE };
+    writes[11].pBufferInfo = &stagingInfo;
+
+    writes[12].dstSet = physicsDescriptorSet;
+    writes[12].dstBinding = 4;
+    writes[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[12].descriptorCount = 1;
+    VkDescriptorBufferInfo impulsePointsInfo{ physics.impulsePointsBuffer, 0, VK_WHOLE_SIZE };
+    writes[12].pBufferInfo = &impulsePointsInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -249,6 +376,22 @@ void FFTOceanDemo::createRenderPipeline() {
             .addDescriptorSetLayout(subpassInputDescriptorSetLayout)
         .name("areal_perspective")
     .build(render.arealPerspective.layout);
+
+    render.object.pipeline =
+        prototypes->cloneGraphicsPipeline()
+        .shaderStage()
+            .vertexShader(resource("render_object.vert.spv"))
+            .fragmentShader(resource("solid.frag.spv"))
+        .dynamicRenderPass()
+            .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+            .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+            .depthAttachment(VK_FORMAT_D16_UNORM)
+        .name("render_object")
+    .build(render.object.layout);
+
+
+
+
     //    @formatter:on
 }
 
@@ -274,6 +417,7 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
     profiler.resetAll(commandBuffer);
 
     ocean->preProcess(commandBuffer);
+//    computeBuoyancy(commandBuffer);
 
     runRenderGraph(commandBuffer);
 
@@ -289,9 +433,19 @@ VkCommandBuffer *FFTOceanDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t
     return &commandBuffer;
 }
 
+void FFTOceanDemo::renderObjects(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.object.pipeline.handle);
+    camera->push(commandBuffer, render.object.layout, object.info->transform);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, object.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, object.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, object.indexes.sizeAs<uint>(), 1, 0, 0, 0);
+}
+
 void FFTOceanDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
+//        renderObjects(commandBuffer);
         ocean->render(commandBuffer);
 
         renderSkyView(commandBuffer);
@@ -354,7 +508,28 @@ void FFTOceanDemo::update(float time) {
     if(!ImGui::IsAnyItemActive()) {
         camera->update(time);
     }
-    setTitle(fmt::format("{}, camera - {}, FPS - {}", title, camera->position(), framePerSecond));
+    auto impulseCount = physics.sizes[IMPULSE_COUNT];
+    setTitle(fmt::format("{}, camera - {}, FPS - {}, impulses: {}", title, camera->position(), framePerSecond, impulseCount));
+
+//    static constexpr auto dt = 0.00833333f;
+//    static const glm::vec3 Gravity{0, -9.8, 0};
+//    static const glm::vec3 GravityImpulse = (1.0f/object.body.m_invMass) * Gravity * dt;
+//    static constexpr float waterDensity = 1000;
+//    object.body.ApplyImpulseLinear(GravityImpulse);
+//    auto sampleArea = 0.010053f;
+//
+////    auto samplePotion = object.body.m_position + glm::vec3(0, -object.body.m_shape->m_radius, 0);
+////    auto waterHeight = ocean->sampleHeight(samplePotion.xz);
+////    float displacement = waterHeight - samplePotion.y;
+////    if(displacement > 0) {
+////        float unitForce = (waterDensity - object.info->density) * sampleArea;
+////        auto buoyancyImpulse = -Gravity * displacement * unitForce * dt;
+////        object.body.ApplyImpulse(samplePotion, buoyancyImpulse);
+////    }
+//
+//
+//    object.body.Update(dt);
+//    object.info->transform = glm::translate(glm::mat4{1}, object.body.m_position) * glm::mat4(object.body.m_orientation);
 
 }
 
@@ -426,6 +601,152 @@ void FFTOceanDemo::newFrame() {
 void FFTOceanDemo::endFrame() {
     ocean->endFrame();
     profiler.endFrame();
+}
+
+void FFTOceanDemo::initObject() {
+    auto r = 10.0f;
+    auto sphere = primitives::sphere(100, 100, r, glm::mat4{1}, {1, 0, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    auto numTris = to<uint>(sphere.indices.size()/3);
+
+    Info info{};
+    object.vertices = device.createDeviceLocalBuffer(sphere.vertices.data(), BYTE_SIZE(sphere.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    object.indexes = device.createDeviceLocalBuffer(sphere.indices.data(), BYTE_SIZE(sphere.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    object.area = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(float) * numTris, "object_area");
+    object.points = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::vec3) * numTris, "object_points");
+    object.metadata = device.createCpuVisibleBuffer(&info, sizeof(Info), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    object.info = reinterpret_cast<Info*>(object.metadata.map());
+
+    auto mass = 30.0f;
+    object.body.m_shape = std::make_shared<ShapeSphere>();
+    object.body.m_shape->m_radius = r;
+    object.body.m_invMass  = 1.0f/mass;
+    object.body.m_position = glm::vec3{0, 100, 0};
+    object.info->density = (3.0f * mass)/(4.0f * glm::pi<float>() * r * r * r);
+    object.info->numTris = numTris;
+
+    int numCounters = 2;
+    physics.samplePoints = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(glm::vec3) * numTris, "sample_points");
+    physics.sampleArea = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(float) * numTris, "sample_areas");
+    physics.counts = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint) * numCounters, "sample_counts");
+    physics.staging = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(vec3) * numTris, "staging_buffer");
+    physics.impulsePointsBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(vec3) * numTris, "impulse_points");
+
+    physics.impulses = physics.staging.span<glm::vec3>();
+    physics.impulsePoints = physics.impulsePointsBuffer.span<glm::vec3>();
+    physics.sizes = physics.counts.span<uint>();
+    spdlog::error("object density: {}, triangle count: {}", object.info->density, numTris);
+
+}
+
+void FFTOceanDemo::createComputePipeline() {
+    compute = ComputePipelines{&device, metadata()};
+    compute.createPipelines();
+}
+
+std::vector<PipelineMetaData> FFTOceanDemo::metadata() {
+    buoyancyConstants.horizontalLength = ocean->patchLengths();
+    buoyancyConstants.heightMapIndex = ocean->heightMapTextureIndex();
+    return {
+        {
+            .name = "update_object",
+            .shadePath = resource("update_object.comp.spv"),
+            .layouts = { &objectDescriptorSetLayout, &physicsDescriptorSetLayout },
+        },
+        {
+            .name = "sample_points",
+            .shadePath = resource("sample_points.comp.spv"),
+            .layouts = { &objectDescriptorSetLayout, &physicsDescriptorSetLayout },
+            .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float)} }
+        },
+        {
+            .name = "surface_area",
+            .shadePath = resource("compute_surface_area.comp.spv"),
+            .layouts = { &objectDescriptorSetLayout, &physicsDescriptorSetLayout },
+            .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint)} }
+        },
+        {
+            .name = "buoyancy",
+            .shadePath = resource("compute_buoyancy.comp.spv"),
+            .layouts = { &objectDescriptorSetLayout, &physicsDescriptorSetLayout, const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout) },
+            .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint)} }
+        },
+    };
+}
+
+void FFTOceanDemo::computeBuoyancy(VkCommandBuffer commandBuffer) {
+    updateObjects(commandBuffer);
+    samplePoints(commandBuffer);
+    computeSurfaceArea(commandBuffer);
+    generateImpulses(commandBuffer);
+}
+
+
+void FFTOceanDemo::updateObjects(VkCommandBuffer commandBuffer) {
+    const auto height = 4 * m;
+    const auto gx = to<uint>(std::ceil(object.info->numTris/1024.0));
+
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = objectDescriptorSet;
+    sets[1] = physicsDescriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("update_object") );
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("update_object"), 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+
+
+void FFTOceanDemo::samplePoints(VkCommandBuffer commandBuffer) {
+    const auto height = 4 * m;
+    const auto gx = to<uint>(std::ceil(object.info->numTris/1024.0));
+
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = objectDescriptorSet;
+    sets[1] = physicsDescriptorSet;
+
+    vkCmdFillBuffer(commandBuffer, physics.counts, 0, physics.counts.size, 0);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("sample_points") );
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("sample_points"), 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdPushConstants(commandBuffer, compute.layout("sample_points"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float), &height);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void FFTOceanDemo::computeSurfaceArea(VkCommandBuffer commandBuffer) {
+    const auto gx = to<uint>(std::ceil(object.info->numTris/1024.0));
+
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = objectDescriptorSet;
+    sets[1] = physicsDescriptorSet;
+
+    auto pass = 0u;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("surface_area") );
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("surface_area"), 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdPushConstants(commandBuffer, compute.layout("surface_area"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint), &pass);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+
+    if(gx > 1) {
+        pass = 1u;
+        vkCmdPushConstants(commandBuffer, compute.layout("surface_area"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint), &pass);
+        vkCmdDispatch(commandBuffer, 1, 1, 1);
+        Barrier::computeWriteToRead(commandBuffer);
+    }
+}
+
+void FFTOceanDemo::generateImpulses(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = objectDescriptorSet;
+    sets[1] = physicsDescriptorSet;
+    sets[2] = bindlessDescriptor.descriptorSet;
+
+    const auto gx = to<uint>(std::ceil(object.info->numTris/1024.0));
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("buoyancy") );
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("buoyancy"), 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdPushConstants(commandBuffer, compute.layout("buoyancy"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(buoyancyConstants), &buoyancyConstants);
+    vkCmdDispatch(commandBuffer, gx, 1, 1);
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 int main(){
