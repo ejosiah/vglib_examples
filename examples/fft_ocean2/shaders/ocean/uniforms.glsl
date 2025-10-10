@@ -12,8 +12,9 @@
 #define DEBUG_SCATTER 4u
 #define DEBUG_SPECULAR 8u
 #define DEBUG_REFLECTION 16u
-#define WIRE_FRAME_ON 32u
-#define TILES_ON 64u
+#define DEBUG_FRESNEL 32U
+#define WIRE_FRAME_ON 64u
+#define TILES_ON 128u
 
 layout(set = OCEAN_UNIFORM_SET, binding = 0, scalar) buffer Uniforms {
     mat4 modelMatrix;
@@ -80,6 +81,10 @@ bool showSpecular() {
 
 bool showReflection() {
     return (u.flags & DEBUG_REFLECTION) == DEBUG_REFLECTION;
+}
+
+bool showFresnel() {
+    return (u.flags & DEBUG_FRESNEL) == DEBUG_FRESNEL;
 }
 
 vec3 sampleDisplacement(vec2 p) {

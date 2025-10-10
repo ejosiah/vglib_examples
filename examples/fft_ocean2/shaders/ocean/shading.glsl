@@ -234,7 +234,7 @@ vec3 specular2(vec3 N, vec3 V, vec3 H, vec3 L, float roughness) {
 
     float NDF = distributionGGX(N, H, roughness);
     float G   = geometrySmith(N, V, L, roughness);
-    float  F   = SchlickFresnel(N, V);
+    float  F   = SchlickFresnel(V, H);
 
     float  numerator = NDF * G * F;
     float  spec  = numerator / (4.0 * NdotV * NdotL + 1e-4);
@@ -309,7 +309,7 @@ Shading shade(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L ) {
     vec3 Lsun = skyIrradiance + sunIrradiance;
 
     vec3 env = getAtmosphere(Pa, R, L);
-    vec3 F = fresnel(R, N);
+    vec3 F = fresnel(V, H);
 
     vec3 scatter = scatteredLight(P, N, V, R, H, L, Lsun);
 
@@ -318,5 +318,4 @@ Shading shade(vec3 P, vec3 N, vec3 V, vec3 R, vec3 H, vec3 L ) {
 
     return Shading(scatter, spec, env, Lsun, F);
 }
-
 #endif // OCEAN_SHADING_GLSL

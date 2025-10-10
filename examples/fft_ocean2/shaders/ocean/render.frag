@@ -7,7 +7,7 @@
 #define OCEAN_UNIFORM_SET 2
 #define ATMOSPHERE_PARAMS_SET 3
 #define ATMOSPHERE_LUT_SET 4
-#include "shading.glsl"
+#include "bruneton.glsl"
 
 
 layout(location = 0) in struct {
@@ -45,10 +45,13 @@ void main() {
     vec3 R = normalize(reflect(-V, N));
     R.y = abs(R.y);
 
+    float turbulence = max(1.6 - grad.w, 0.0);
+    float color_mod = 1.0 + 3.0 * smoothstep(1.2, 1.8, turbulence);
+
 
     Shading s = shade(fs_in.worldPos.xyz, N, V, R, H, L);
 
-    vec3 radiance = mix(s.scatter, s.env, s.fresnel) + s.spec * s.sunLight;
+    vec3 radiance = mix(s.scatter, s.env * color_mod, s.fresnel) + s.spec * s.sunLight;
 
     vec3 color = mixWireFrame(radiance, distance);
 
@@ -60,6 +63,8 @@ void main() {
         color = s.spec;
     }else if(showReflection()) {
         color = s.env;
+    }else if(showFresnel()) {
+        color = s.fresnel;
     }
 
     fragColor = vec4(color, 0.8);

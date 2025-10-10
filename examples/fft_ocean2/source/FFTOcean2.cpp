@@ -270,8 +270,8 @@ void FFTOcean2::newFrame() {
 
     m_uniforms.cpu->flags = 0;
     m_uniforms.cpu->flags |= uint(m_options.debug != 0 ? 1 << m_options.debug : 0);
-    m_uniforms.cpu->flags |= (uint(m_options.wire) << 5);
-    m_uniforms.cpu->flags |= (uint(m_options.showTiles) << 6);
+    m_uniforms.cpu->flags |= (uint(m_options.wire) << 6);
+    m_uniforms.cpu->flags |= (uint(m_options.showTiles) << 7);
 
     static Frustum frustum;
     Frustum::extractFrustum(frustum, projection * view);
@@ -728,13 +728,16 @@ void FFTOcean2::createSimTextures() {
     m_bindlessDescriptor->update({ &m_textures.heightField, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_previewIndex, VK_IMAGE_LAYOUT_GENERAL });
     m_bindlessDescriptor->update({ &m_textures.normalMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_normalIndex, VK_IMAGE_LAYOUT_GENERAL });
 
-    size_t tileSizeBytes = sizeof(glm::vec4) * tileSize * tileSize;
-    m_heightMapBuffer = m_device->createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, tileSizeBytes * tileCount, "height_map");
-    auto mapping = reinterpret_cast<char*>(m_heightMapBuffer.map());
-    m_heightMap[0] = { reinterpret_cast<glm::vec4*>(mapping), tileSizeBytes };
-    m_heightMap[1] = { reinterpret_cast<glm::vec4*>(mapping + tileSizeBytes), tileSizeBytes };
-    m_heightMap[2] = { reinterpret_cast<glm::vec4*>(mapping + tileSizeBytes * 2), tileSizeBytes };
-    m_heightMap[3] = { reinterpret_cast<glm::vec4*>(mapping + tileSizeBytes * 2), tileSizeBytes };
+    if(m_downloadHeightMap) {
+        size_t tileSizeBytes = sizeof(glm::vec4) * tileSize * tileSize;
+        m_heightMapBuffer = m_device->createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU,
+                                                   tileSizeBytes * tileCount, "height_map");
+        auto mapping = reinterpret_cast<char *>(m_heightMapBuffer.map());
+        m_heightMap[0] = {reinterpret_cast<glm::vec4 *>(mapping), tileSizeBytes};
+        m_heightMap[1] = {reinterpret_cast<glm::vec4 *>(mapping + tileSizeBytes), tileSizeBytes};
+        m_heightMap[2] = {reinterpret_cast<glm::vec4 *>(mapping + tileSizeBytes * 2), tileSizeBytes};
+        m_heightMap[3] = {reinterpret_cast<glm::vec4 *>(mapping + tileSizeBytes * 2), tileSizeBytes};
+    }
 
 }
 
@@ -821,7 +824,7 @@ void FFTOcean2::controls(bool show, bool composite) {
     }
 
 
-    static std::array<const char*, 5> labels{"None","Normal","Scatter","Specular","Reflection"};
+    static std::array<const char*, 6> labels{"None","Normal","Scatter","Specular","Reflection", "Fresnel"};
     ImGui::Combo("debug", &m_options.debug, labels.data(), labels.size());
 
     const auto& cp = m_camera->position();
@@ -883,6 +886,7 @@ glm::vec4 FFTOcean2::patchLengths() const {
 }
 
 void FFTOcean2::downloadHeightMap(VkCommandBuffer commandBuffer) {
+    if(!m_downloadHeightMap) return;
     Barriers::pushAndFlush(commandBuffer, m_textures.heightField.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL,
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -920,6 +924,7 @@ void FFTOcean2::downloadHeightMap(VkCommandBuffer commandBuffer) {
 }
 
 float FFTOcean2::sampleHeight(glm::vec2 position) {
+    assert(m_downloadHeightMap && "downloading of height map disabled");
     float H = 0;
 
     auto patches = m_uniforms.cpu->horizontalLength;

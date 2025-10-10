@@ -72,7 +72,7 @@ void main() {
 
     if(displacement <= 0) return;
 
-    float unitForce = (waterDensity - density) * sampleAreas[0];
+    float unitForce = (waterDensity - density) / sampleAreas[0];
     vec3 bouyqancyImpluse = -Gravity * displacement * unitForce * dt;
 
     uint updateIndex = atomicAdd(updates, 1);

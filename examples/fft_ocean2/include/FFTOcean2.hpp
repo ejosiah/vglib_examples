@@ -117,9 +117,9 @@ private:
 
     struct {
         glm::vec4 windOrientation{-0.79, 1.57, 0.79, 0.0};
-        glm::vec4 windSpeed{10, 8, 6.5, 2};
-        glm::vec4 amplitude{0.2};
-        glm::vec4 horizontalLength{1000, 500.653, 200, 100};
+        glm::vec4 windSpeed{5.0};
+        glm::vec4 amplitude{1};
+        glm::vec4 horizontalLength{5488, 392, 28, 2.0};
         glm::vec4 windPower{1};
         float time{0};
     } m_controls;
@@ -177,7 +177,7 @@ private:
         int tile{4};
         float rho{0.9};
         float sigma{30};
-        float lightZenith{15};
+        float lightZenith{4};
         float lightAzimuth{90};
         float normalFallOff{10};
         bool topView{false};
@@ -197,6 +197,7 @@ private:
     VkDescriptorSet m_uniformsDescriptorSet{};
     VulkanBuffer m_heightMapBuffer;
     std::array<std::span<glm::vec4>, tileCount> m_heightMap;
+    bool m_downloadHeightMap{false};
 
     struct {
         struct {

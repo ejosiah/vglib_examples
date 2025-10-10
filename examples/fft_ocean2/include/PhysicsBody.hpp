@@ -2,7 +2,9 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+
 #include <memory>
+#include <vector>
 
 struct Bounds {
     Bounds() { Clear(); }
@@ -43,11 +45,13 @@ struct Shape {
 
     virtual float FastestLinearSpeed( const glm::vec3 & angularVelocity, const glm::vec3 & dir ) const { return 0.0f; }
 
+protected:
     glm::vec3 m_centerOfMass{};
 };
 
-struct ShapeSphere : public Shape {
+class ShapeSphere : public Shape {
 public:
+    ShapeSphere(float radius) :m_radius(radius) {}
 
     glm::vec3 Support( const glm::vec3 & dir, const glm::vec3 & pos, const glm::quat & orient, const float bias ) const override;
 
@@ -58,8 +62,36 @@ public:
 
     shapeType_t GetType() const override { return SHAPE_SPHERE; }
 
+private:
+    const float m_radius;
+};
+
+/*
+====================================================
+ShapeBox
+====================================================
+*/
+class ShapeBox : public Shape {
 public:
-    float m_radius{0};
+    explicit ShapeBox( const glm::vec3 * pts, const int num ) {
+        Build( pts, num );
+    }
+    void Build( const glm::vec3 * pts, const int num );
+
+    glm::vec3 Support( const glm::vec3 & dir, const glm::vec3 & pos, const glm::quat & orient, const float bias ) const override;
+
+    glm::mat3 InertiaTensor() const override;
+
+    Bounds GetBounds( const glm::vec3 & pos, const glm::quat & orient ) const override;
+    Bounds GetBounds() const override { return m_bounds; }
+
+    float FastestLinearSpeed( const glm::vec3 & angularVelocity, const glm::vec3 & dir ) const override;
+
+    shapeType_t GetType() const override { return SHAPE_BOX; }
+
+private:
+    std::vector<glm::vec3> m_points;
+    Bounds m_bounds;
 };
 
 struct PhysicsBody {
@@ -68,7 +100,7 @@ struct PhysicsBody {
     glm::quat		m_orientation{1.0f, 0.0f, 0.0f, 0.0f };
     glm::vec3		m_linearVelocity{};
     glm::vec3		m_angularVelocity{};
-    std::shared_ptr<ShapeSphere>          m_shape{};
+    std::shared_ptr<Shape>          m_shape{};
 
     float		m_invMass{0};
     float		m_elasticity{0};
