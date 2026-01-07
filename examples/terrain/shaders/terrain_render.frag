@@ -186,7 +186,7 @@ void main() {
     float vis = sampleShadowPCF(f.uv);
     float ambient = 0.3;
     radiance = mixWireFrame(shadeFragment(material, N, V, L, vis, trans, vec3(ambient)));
-    radiance = vec3(f.uv, 0);
+//    radiance = vec3(f.uv, 0);
 //    radiance = vec3(max(0, dot(N, V)));
 //
 //    if(debugOn()) {
