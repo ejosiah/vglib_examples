@@ -24,7 +24,6 @@ public:
 
     void update(const AbstractCamera& camera, const glm::vec3& lightDirection, std::span<float> splitDepth, std::span<glm::vec3> extents = {});
 
-
     void capture(const Scene& scene, VkCommandBuffer commandBuffer, int currentFrame);
 
     const Texture& shadowMap(int index) const;
@@ -42,6 +41,8 @@ public:
     VulkanDescriptorSetLayout  descriptorSetLayout() const;
 
     VkDescriptorSet descriptorSet() const;
+
+    bool forGltfMesh = true;
 
 private:
     void createShadowMapTexture();

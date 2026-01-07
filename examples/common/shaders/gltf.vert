@@ -1,9 +1,10 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
 
 #include "gltf.glsl"
 
-layout(set = 0, binding = 0) buffer MeshData {
+layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
 };
 
@@ -33,7 +34,7 @@ layout(location = 0) out struct {
     vec2 uv[2];
 } vs_out;
 
-layout(location = 13) out flat int drawId;
+layout(location = 11) out flat int drawId;
 
 void main(){
     drawId = gl_DrawID;

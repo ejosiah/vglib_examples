@@ -55,7 +55,7 @@ layout(location = 0) in struct {
     vec2 uv[2];
 } fs_in;
 
-layout(location = 13) in flat int drawId;
+layout(location = 11) in flat int drawId;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -102,11 +102,9 @@ vec3 computeVisibility(out uint cascadeIndex) {
 void main() {
     vec3 L = ubo.lightDir;
     vec3 N = normalize(fs_in.normal);
-    vec3 albedo = MATERIAL.baseColor.rgb;
+    vec3 albedo = fs_in.color.rgb;
 
     float diffuse = max(0, dot(N, L));
-
-
     vec3 color = (Ambient + diffuse) * albedo;
 
     uint cascadeIndex;

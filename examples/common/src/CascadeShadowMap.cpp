@@ -276,11 +276,12 @@ void CascadeShadowMap::updateDescriptorSets() {
 }
 
 void CascadeShadowMap::createPipeline() {
+    const auto vertexShaderPath = forGltfMesh ? "gltf_cascade_shadow_map.vert.spv" : "cascade_shadow_map.vert.spv";
     _pipeline =
         device().graphicsPipelineBuilder()
             .allowDerivatives()
             .shaderStage()
-                .vertexShader(FileManager::resource("gltf_cascade_shadow_map.vert.spv"))
+                .vertexShader(FileManager::resource(vertexShaderPath))
                 .fragmentShader(FileManager::resource("cascade_shadow_map.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescription(VertexMultiAttributes::bindingDescription())
