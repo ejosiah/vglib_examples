@@ -12,10 +12,10 @@ set(SPV_DIR "${CMAKE_CURRENT_LIST_DIR}/spv")
 compile_glsl_directory(SRC_DIR "${GLSL_SOURCE_DIR}" OUT_DIR "${SPV_DIR}" INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/data/shaders")
 
 add_executable(cloth2 ${CPP_FILES} ${HPP_FILES})
-target_link_libraries(cloth2 VulkanBase ImGuiPlugin)
+target_link_libraries(cloth2 VulkanBase ImGuiPlugin common)
 
 if (OpenCL_FOUND)
     include_directories("${OpenCL_INCLUDE_DIRS}")
     add_definitions( -DOPENCL_FOUND=1 )
-    target_link_libraries(cloth2 common ${OpenCL_LIBRARIES})
+    target_link_libraries(cloth2 ${OpenCL_LIBRARIES})
 endif()

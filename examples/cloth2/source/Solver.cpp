@@ -1,9 +1,9 @@
-#include "Integrator.hpp"
+#include "Solver.hpp"
 
 #include <utility>
 #include "DescriptorSetBuilder.hpp"
 
-Integrator::Integrator(
+Solver::Solver(
         VulkanDevice &device,
         VulkanDescriptorPool &descriptorPool,
         VulkanDescriptorSetLayout accStructDescriptorSetLayout,
@@ -23,7 +23,7 @@ Integrator::Integrator(
         , constants{ .inv_cloth_size{ cloth->size()/cloth->gridSize() } }
         {}
 
-void Integrator::init() {
+void Solver::init() {
     _profiler.addQuery("integrator");
     initializeBuffers();
     initDescriptorSetLayout();
@@ -32,16 +32,19 @@ void Integrator::init() {
     createPipelines();
 }
 
-void Integrator::integrate(VkCommandBuffer commandBuffer) {
+void Solver::solve(VkCommandBuffer commandBuffer) {
     _fixedUpdate([&]{
         _profiler.profile("integrator", commandBuffer, [&]{
-            integrate0(commandBuffer);
+            solve0(commandBuffer);
+
+            const auto gx = uint32_t(_cloth->gridSize().x + wgSize - 1)/wgSize;
+            const auto gy = uint32_t(_cloth->gridSize().y + wgSize - 1)/wgSize;
 
             Barrier::computeWriteToRead(commandBuffer, { _points } );
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("copy_positions"));
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("copy_positions"), 0, 1, &_attributesSet, 0, VK_NULL_HANDLE);
             vkCmdPushConstants(commandBuffer, layout("copy_positions"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-            vkCmdDispatch(commandBuffer, _cloth->gridSize().x/10, _cloth->gridSize().y/10, 1);
+            vkCmdDispatch(commandBuffer, gx, gy, 1);
 
 
             Barrier::computeWriteToFragmentRead(commandBuffer, { _cloth->buffer() });
@@ -49,20 +52,20 @@ void Integrator::integrate(VkCommandBuffer commandBuffer) {
     });
 }
 
-void Integrator::update(float dt) {
+void Solver::update(float dt) {
     _fixedUpdate.advance(dt);
     constants.elapsedTime += dt;
 }
 
-VulkanDescriptorPool &Integrator::descriptorPool() {
+VulkanDescriptorPool &Solver::descriptorPool() {
     return *_descriptorPool;
 }
 
-void Integrator::onFrameEnd() {
+void Solver::onFrameEnd() {
     _profiler.commit();
 }
 
-void Integrator::initializeBuffers() {
+void Solver::initializeBuffers() {
     const auto mesh = _cloth->initialState();
     auto numPoints = mesh.vertices.size();
 
@@ -76,9 +79,10 @@ void Integrator::initializeBuffers() {
         vNormals.emplace_back( vertex.normal, 0 );
     }
     _points = device->createDeviceLocalBuffer(vertices.data(), BYTE_SIZE(vertices), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    constants.numPoints = numPoints;
 }
 
-void Integrator::initDescriptorSetLayout() {
+void Solver::initDescriptorSetLayout() {
     _attributesSetLayout =
         device->descriptorSetLayoutBuilder()
                 .name("cloth_attributes")
@@ -102,7 +106,7 @@ void Integrator::initDescriptorSetLayout() {
             .createLayout();
 }
 
-void Integrator::initDescriptorSets() {
+void Solver::initDescriptorSets() {
     auto sets = _descriptorPool->allocate({ _attributesSetLayout, _geometrySetLayout });
     _attributesSet = sets[0];
     _geometrySet = sets[1];
@@ -134,11 +138,11 @@ void Integrator::initDescriptorSets() {
     device->updateDescriptorSets(writes);
 }
 
-std::vector<PipelineMetaData> Integrator::pipelineMetaData() {
+std::vector<PipelineMetaData> Solver::pipelineMetaData() {
     auto meta = pipelineMetaData0();
     meta.push_back({
           "copy_positions",
-          R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\spv\copy_positions.comp.spv)",
+          FileManager::resource("copy_positions.comp.spv"),
           { &_attributesSetLayout},
           { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
     });

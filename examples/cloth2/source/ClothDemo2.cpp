@@ -2,11 +2,14 @@
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
-#include "VerletIntegrator.hpp"
+#include "VerletSolver.hpp"
 
 ClothDemo2::ClothDemo2(const Settings& settings) : VulkanBaseApp("Cloth", settings) {
     fileManager().addSearchPathFront("../data");
     fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/cloth");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("common/spv");
     fileManager().addSearchPathFront("cloth2");
     fileManager().addSearchPathFront("cloth2/spv");
     fileManager().addSearchPathFront("cloth2/textures");
@@ -28,9 +31,9 @@ void ClothDemo2::initApp() {
 }
 
 void ClothDemo2::initIntegrators() {
-    integrator = std::make_unique<VerletIntegrator>(device, descriptorPool, accStructDescriptorSetLayout,
-                                                    accStructDescriptorSet, cloth, geometry, 960);
-    integrator->init();
+    solver = std::make_unique<VerletSolver>(device, descriptorPool, accStructDescriptorSetLayout,
+                                            accStructDescriptorSet, cloth, geometry, 960);
+    solver->init();
 }
 
 void ClothDemo2::createFloor() {
@@ -47,6 +50,7 @@ void ClothDemo2::createFloor() {
 void ClothDemo2::loadModel() {
     std::vector<mesh::Mesh> meshes;
     mesh::load(meshes, resource("cow.ply"));
+//    mesh::normalize(meshes, 2.5);
     for(auto& mesh : meshes) {
         for(auto& vertex : mesh.vertices){
             vertex.position = glm::vec4{vertex.position.xyz() * 1.04f, 1};
@@ -310,6 +314,7 @@ void ClothDemo2::onSwapChainDispose() {
 }
 
 void ClothDemo2::onSwapChainRecreation() {
+    camera->perspective(swapChain.aspectRatio());
     updateDescriptorSets();
     createRenderPipeline();
 }
@@ -349,7 +354,7 @@ VkCommandBuffer *ClothDemo2::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     vkCmdUpdateBuffer(commandBuffer, geometry->uboBuffer, 0, sizeof(geometry->ubo), &geometry->ubo);
     Barrier::transferWriteToComputeRead(commandBuffer, geometry->uboBuffer);
 
-    integrator->integrate(commandBuffer);
+    solver->solve(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -487,17 +492,17 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
         geometry->switchTo(static_cast<Geometry::Type>(collider));
     }
 
-    static bool wind = integrator->constants.simWind;
+    static bool wind = solver->constants.simWind;
     ImGui::Text("Wind:");
     ImGui::Indent(16);
     if(wind){
-        ImGui::SliderFloat("strength", &integrator->constants.windStrength, 1, 10);
-        ImGui::SliderFloat("speed", &integrator->constants.windSpeed, 0.1, 1);
+        ImGui::SliderFloat("strength", &solver->constants.windStrength, 1, 10);
+        ImGui::SliderFloat("speed", &solver->constants.windSpeed, 0.1, 1);
     }
     ImGui::Checkbox("on", &wind);
     ImGui::Indent(-16);
 
-    integrator->constants.simWind = wind;
+    solver->constants.simWind = wind;
 
 //    ImGui::SliderFloat("shine", &shine, 1, 100);
 //    ImGui::Text("%d iteration(s), timeStep: %.3f ms", numIterations, frameTime * 1000);
@@ -558,8 +563,8 @@ void ClothDemo2::update(float time) {
     geometry->ubo.localSpaceXform = glm::inverse(gTransform);
 
     if(simRunning) {
-        integrator->constants.collider = static_cast<int>(collider);
-        integrator->update(time);
+        solver->constants.collider = static_cast<int>(collider);
+        solver->update(time);
     }
 
 }
@@ -592,6 +597,15 @@ void ClothDemo2::beforeDeviceCreation() {
     }else {
         spdlog::warn("ray tracing position fetch not supported...");
     }
+
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+
+    auto atomicFeatures = findExtension<VkPhysicalDeviceShaderAtomicFloatFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT, deviceCreateNextChain);
+    atomicFeatures->shaderBufferFloat32AtomicAdd = VK_TRUE;
+    atomicFeatures->shaderBufferFloat32Atomics = VK_TRUE;
 }
 
 int main(){
@@ -603,7 +617,9 @@ int main(){
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.fillModeNonSolid = true;
         settings.enabledFeatures.geometryShader = true;
+        settings.enableBindlessDescriptors = true;
         settings.deviceExtensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 
         auto app = ClothDemo2{settings };

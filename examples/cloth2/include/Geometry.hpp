@@ -1,6 +1,7 @@
 #pragma once
 
 #include "VulkanBuffer.h"
+#include "VulkanDevice.h"
 #include "FileManager.hpp"
 #include "primitives.h"
 #include "Mesh.h"
@@ -63,6 +64,7 @@ struct Geometry {
 
         std::vector<mesh::Mesh> meshes;
         mesh::load(meshes, FileManager::instance().getFullPath("cow.ply")->string());
+//        mesh::normalize(meshes, 2.5);
         auto& mesh = meshes.front();
         for(auto& vertex : mesh.vertices){
             vertex.color = glm::vec4(1, 1, 0, 1);

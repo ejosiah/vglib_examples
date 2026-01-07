@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 10, local_size_y = 10) in;
+layout(local_size_x = 16, local_size_y = 16) in;
 
 #include "shared.glsl"
 
@@ -40,6 +40,8 @@ vec3 calculateNormal(vec3 position, out vec3 tangent, out vec3 bitangent){
 }
 
 void main() {
+    if(outOfBounds) return;
+
     vec4 position = positions[id];
     vertices[id].position = position;
 

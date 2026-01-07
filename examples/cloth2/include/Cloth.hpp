@@ -22,7 +22,8 @@ public:
 
     Cloth() = default;
 
-    Cloth(VulkanDevice& device, std::vector<VkDescriptorSet> materialSets);
+    Cloth(VulkanDevice& device, std::vector<VkDescriptorSet> materialSets,
+          glm::vec2 numPoints = glm::vec2{100}, glm::vec2 size = glm::vec2{6});
 
     void init();
 
@@ -54,8 +55,10 @@ private:
     VulkanBuffer _indices;
     uint32_t _indexCount{};
     uint32_t _vertexCount{};
-    glm::vec2 _size = glm::vec2(6);
-    glm::vec2 _gridSize{100};
+    glm::vec2 _gridSize;
+    glm::ivec2 _numCells;
+    glm::vec2 _size;
+
     VkBufferUsageFlags bufferUsage =
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |

@@ -1,18 +1,18 @@
-#include "VerletIntegrator.hpp"
-
+#include "VerletSolver.hpp"
+#include "filemanager.hpp"
 #include <utility>
 
-VerletIntegrator::VerletIntegrator(VulkanDevice &device,
-                                   VulkanDescriptorPool &descriptorPool,
-                                   VulkanDescriptorSetLayout accStructDescriptorSetLayout,
-                                   VkDescriptorSet accStructDescriptorSet,
-                                   std::shared_ptr<Cloth> cloth,
-                                   std::shared_ptr<Geometry> geometry,
-                                   int fps)
-: Integrator(device, descriptorPool, std::move(accStructDescriptorSetLayout), accStructDescriptorSet,  std::move(cloth), std::move(geometry), fps)
+VerletSolver::VerletSolver(VulkanDevice &device,
+                           VulkanDescriptorPool &descriptorPool,
+                           VulkanDescriptorSetLayout accStructDescriptorSetLayout,
+                           VkDescriptorSet accStructDescriptorSet,
+                           std::shared_ptr<Cloth> cloth,
+                           std::shared_ptr<Geometry> geometry,
+                           int fps)
+: Solver(device, descriptorPool, std::move(accStructDescriptorSetLayout), accStructDescriptorSet, std::move(cloth), std::move(geometry), fps)
 {}
 
-void VerletIntegrator::init0() {
+void VerletSolver::init0() {
     createBuffers();
     createDescriptorSetLayout();
     updateDescriptorSets();
@@ -22,20 +22,23 @@ void VerletIntegrator::init0() {
     sets.push_back(_accStructDescriptorSet);
 }
 
-void VerletIntegrator::integrate0(VkCommandBuffer commandBuffer) {
+void VerletSolver::solve0(VkCommandBuffer commandBuffer) {
+    const auto gx = uint32_t(_cloth->gridSize().x + wgSize - 1)/wgSize;
+    const auto gy = uint32_t(_cloth->gridSize().y + wgSize - 1)/wgSize;
+
     uint32_t numIterations = 1;
     constants.timeStep = _fixedUpdate.period()/static_cast<float>(numIterations);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("verlet_integrator"));
     vkCmdPushConstants(commandBuffer, layout("verlet_integrator"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
     for(auto i = 0; i < numIterations; i++) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("verlet_integrator"), 0, COUNT(sets), sets.data(), 0, nullptr);
-        vkCmdDispatch(commandBuffer, _cloth->gridSize().x/10, _cloth->gridSize().y/10, 1);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
         Barrier::computeWriteToRead(commandBuffer, { positions[0], positions[1] } );
  //       std::swap(descriptorSet[0], descriptorSet[1]);
     }
 }
 
-void VerletIntegrator::createDescriptorSetLayout() {
+void VerletSolver::createDescriptorSetLayout() {
     descriptorSetLayout =
             device->descriptorSetLayoutBuilder()
                     .name("positions_0")
@@ -46,7 +49,7 @@ void VerletIntegrator::createDescriptorSetLayout() {
                     .createLayout();
 }
 
-void VerletIntegrator::createBuffers() {
+void VerletSolver::createBuffers() {
     auto numPoints = _cloth->vertexCount();
     positions[0] = _points;
     positions[1] = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, numPoints * sizeof(glm::vec4));
@@ -59,7 +62,7 @@ void VerletIntegrator::createBuffers() {
 }
 
 
-void VerletIntegrator::updateDescriptorSets() {
+void VerletSolver::updateDescriptorSets() {
     auto sets = _descriptorPool->allocate({ descriptorSetLayout, descriptorSetLayout });
     descriptorSet[0] = sets[0];
     descriptorSet[1] = sets[1];
@@ -88,11 +91,11 @@ void VerletIntegrator::updateDescriptorSets() {
     device->updateDescriptorSets(writes);
 }
 
-std::vector<PipelineMetaData> VerletIntegrator::pipelineMetaData0() {
+std::vector<PipelineMetaData> VerletSolver::pipelineMetaData0() {
     return {
             {
                 "verlet_integrator",
-                R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\cloth2\spv\verlet_integrator.comp.spv)",
+                FileManager::resource("verlet_integrator.comp.spv"),
                 { &descriptorSetLayout, &descriptorSetLayout, &_geometrySetLayout, &_accStructDescriptorSetLayout},
                 { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             }

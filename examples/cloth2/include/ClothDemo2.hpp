@@ -1,6 +1,6 @@
 #include "VulkanBaseApp.h"
 #include "Cloth.hpp"
-#include "Integrator.hpp"
+#include "Solver.hpp"
 #include "Geometry.hpp"
 #include "VulkanRayTraceModel.hpp"
 #include "VulkanRayQuerySupport.hpp"
@@ -100,7 +100,7 @@ protected:
     bool showPoints{};
     bool showNormals{};
     bool simRunning{};
-    std::unique_ptr<Integrator> integrator;
+    std::unique_ptr<Solver> solver;
     VulkanDrawable model;
 
     VulkanDescriptorSetLayout accStructDescriptorSetLayout;

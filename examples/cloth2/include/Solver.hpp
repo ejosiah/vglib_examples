@@ -11,7 +11,7 @@
 
 #include <memory>
 
-class Integrator : public ComputePipelines {
+class Solver : public ComputePipelines {
 public:
     struct {
         glm::vec2 inv_cloth_size;
@@ -30,24 +30,25 @@ public:
         float windStrength{1};
         float windSpeed{1};
         int collider{};
+        int numPoints{};
     } constants{};
 
 public:
-    Integrator() = default;
+    Solver() = default;
 
-    Integrator(VulkanDevice& device,
-               VulkanDescriptorPool& descriptorPool,
-               VulkanDescriptorSetLayout accStructDescriptorSetLayout,
-               VkDescriptorSet accStructDescriptorSet,
-               std::shared_ptr<Cloth> cloth,
-               std::shared_ptr<Geometry> geometry,
-               int fps = 480);
+    Solver(VulkanDevice& device,
+           VulkanDescriptorPool& descriptorPool,
+           VulkanDescriptorSetLayout accStructDescriptorSetLayout,
+           VkDescriptorSet accStructDescriptorSet,
+           std::shared_ptr<Cloth> cloth,
+           std::shared_ptr<Geometry> geometry,
+           int fps = 1000);
 
-    virtual ~Integrator() = default;
+    virtual ~Solver() = default;
 
     void init();
 
-    void integrate(VkCommandBuffer commandBuffer);
+    void solve(VkCommandBuffer commandBuffer);
 
     void update(float dt);
 
@@ -58,7 +59,7 @@ protected:
 
     virtual void init0() = 0;
 
-    virtual void integrate0(VkCommandBuffer commandBuffer) = 0;
+    virtual void solve0(VkCommandBuffer commandBuffer) = 0;
 
     virtual std::vector<PipelineMetaData> pipelineMetaData0() = 0;
 
@@ -86,5 +87,6 @@ protected:
     VulkanDescriptorSetLayout _geometrySetLayout;
     VkDescriptorSet _geometrySet{};
 
+    static constexpr uint32_t wgSize = 16;
 
 };
