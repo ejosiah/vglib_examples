@@ -161,7 +161,7 @@ protected:
         float ambientFactor{0.3};
         float translucency{0.996};
         bool ssEnabled{true};
-        bool taaEnabled{true};
+        bool taaEnabled{false};
     } options;
 
     struct {

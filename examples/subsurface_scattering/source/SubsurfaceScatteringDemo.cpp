@@ -479,7 +479,7 @@ void SubsurfaceScatteringDemo::loadModel() {
 
 void SubsurfaceScatteringDemo::loadEnvironment() {
     textures::fromFile(device, environment.brdfLut, resource("lut_ggx.png"));
-    textures::fromFile(device, environment.beckmannLut, resource("lut_beckmann.png"), true);
+    textures::fromFile(device, environment.beckmannLut, resource("lut_beckmann.png"));
     environment.albedo = textures::equirectangularToOctahedralMap(device, resource(environment.path), 2048);
     textures::ibl(device, environment.albedo, environment.irradiance, environment.specular);
 }
