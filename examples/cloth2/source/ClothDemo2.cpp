@@ -40,7 +40,7 @@ void ClothDemo2::initSolvers() {
     verletSolver->init();
     pbdSolver->init();
 
-    solver = pbdSolver.get();
+    solver = solverType == 0 ? verletSolver.get() : pbdSolver.get();
 }
 
 void ClothDemo2::createFloor() {
@@ -343,6 +343,13 @@ void ClothDemo2::onSwapChainDispose() {
 }
 
 void ClothDemo2::onSwapChainRecreation() {
+    if(resetRequested) {
+        createCloth();
+        initSolvers();
+        simRunning = false;
+        resetRequested = false;
+    }
+
     camera->perspective(swapChain.aspectRatio());
     updateDescriptorSets();
     createRenderPipeline();
@@ -499,18 +506,11 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SetWindowSize("Cloth Simulation", {0, 0});
     static int option = static_cast<int>(shading);
 
-    ImGui::Text("Debug:");
+    ImGui::Text("Solver:");
     ImGui::Indent(16);
-    ImGui::RadioButton("wireframe", &option, 0);
+    ImGui::RadioButton("Verlet", &solverType, 0);
     ImGui::SameLine();
-    ImGui::RadioButton("shaded", &option, 1);
-    shading = static_cast<Shading>(option);
-
-    bool showWireframeOptions = shading == Shading::WIREFRAME;
-    if(ImGui::CollapsingHeader("wireframe options", &showWireframeOptions, ImGuiTreeNodeFlags_DefaultOpen)){
-        ImGui::Checkbox("points", &showPoints);
-        ImGui::Checkbox("normals", &showNormals);
-    }
+    ImGui::RadioButton("PBD", &solverType, 1);
     ImGui::Indent(-16);
 
     ImGui::Text("Cloth:");
@@ -556,13 +556,32 @@ void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
 
     solver->constants.simWind = wind;
 
+    ImGui::Text("Debug:");
+    ImGui::Indent(16);
+    ImGui::RadioButton("wireframe", &option, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("shaded", &option, 1);
+    shading = static_cast<Shading>(option);
+
+    bool showWireframeOptions = shading == Shading::WIREFRAME;
+    if(ImGui::CollapsingHeader("wireframe options", &showWireframeOptions, ImGuiTreeNodeFlags_DefaultOpen)){
+        ImGui::Checkbox("points", &showPoints);
+        ImGui::Checkbox("normals", &showNormals);
+    }
+    ImGui::Indent(-16);
+
 //    ImGui::SliderFloat("shine", &shine, 1, 100);
 //    ImGui::Text("%d iteration(s), timeStep: %.3f ms", numIterations, frameTime * 1000);
 //    ImGui::Text("Application average %.3f ms/frame, (%d FPS)", 1000.0/framePerSecond, framePerSecond);
 //    ImGui::Text("compute: %.3f ms", computeDuration);
 //    ImGui::Text(fmt::format("Camera position: {}, target: {}", cameraController->position(), cameraController->target).c_str());
-    if(ImGui::Button("run") && !simRunning){
+    if(ImGui::Button("Start") && !simRunning){
         simRunning = true;
+    }
+    ImGui::SameLine();
+    if(ImGui::Button("Reset") && simRunning && !resetRequested) {
+        resetRequested = true;
+        invalidateSwapChain();
     }
     ImGui::End();
 

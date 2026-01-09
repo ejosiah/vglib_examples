@@ -131,4 +131,6 @@ protected:
         glm::vec3 rotation{0};
     } xform{};
     VulkanBuffer dummyBuffer;
+    bool resetRequested{};
+    int solverType = 0;
 };

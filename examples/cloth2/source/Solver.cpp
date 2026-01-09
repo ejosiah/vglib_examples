@@ -38,7 +38,7 @@ void Solver::solve(VkCommandBuffer commandBuffer) {
         _profiler.profile("integrator", commandBuffer, [&]{
             solve0(commandBuffer);
 
-            const auto gx = uint32_t(_cloth->gridSize().x + wgSize - 1)/wgSize;
+            auto gx = uint32_t(_cloth->gridSize().x + wgSize - 1)/wgSize;
             const auto gy = uint32_t(_cloth->gridSize().y + wgSize - 1)/wgSize;
 
             Barrier::computeWriteToRead(commandBuffer );
@@ -95,6 +95,10 @@ void Solver::initDescriptorSetLayout() {
                     .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .binding(2)
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
+                    .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
 
     _geometrySetLayout =
@@ -114,7 +118,7 @@ void Solver::initDescriptorSets() {
 
     device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("integrator_cloth_attributes_set", _attributesSet);
 
-    auto writes = initializers::writeDescriptorSets<3>();
+    auto writes = initializers::writeDescriptorSets<4>();
     writes[0].dstSet = _attributesSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -126,15 +130,22 @@ void Solver::initDescriptorSets() {
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[1].descriptorCount = 1;
-    VkDescriptorBufferInfo normalInfo{ _cloth->buffer(), 0, VK_WHOLE_SIZE };
-    writes[1].pBufferInfo = &normalInfo;
+    VkDescriptorBufferInfo vertexInfo{ _cloth->buffer(), 0, VK_WHOLE_SIZE };
+    writes[1].pBufferInfo = &vertexInfo;
 
-    writes[2].dstSet = _geometrySet;
-    writes[2].dstBinding = 0;
+    writes[2].dstSet = _attributesSet;
+    writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[2].descriptorCount = 1;
+    VkDescriptorBufferInfo indexInfo{ _cloth->indexes(), 0, VK_WHOLE_SIZE };
+    writes[2].pBufferInfo = &indexInfo;
+
+    writes[3].dstSet = _geometrySet;
+    writes[3].dstBinding = 0;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[3].descriptorCount = 1;
     VkDescriptorBufferInfo geometryInfo{ _geometry->uboBuffer, 0, VK_WHOLE_SIZE };
-    writes[2].pBufferInfo = &geometryInfo;
+    writes[3].pBufferInfo = &geometryInfo;
 
     device->updateDescriptorSets(writes);
 }
@@ -144,6 +155,12 @@ std::vector<PipelineMetaData> Solver::pipelineMetaData() {
     meta.push_back({
           "copy_positions",
           FileManager::resource("copy_positions.comp.spv"),
+          { &_attributesSetLayout},
+          { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
+    });
+    meta.push_back({
+          "update_normals",
+          FileManager::resource("update_normals.comp.spv"),
           { &_attributesSetLayout},
           { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
     });

@@ -28,17 +28,157 @@ layout(set = 2, binding = 4, scalar) buffer INV_MASS {
     float invMass[];
 };
 
+layout(set = 3, binding = 0) buffer LEVEL_SET_GEOMETRY {
+    mat4 worldSpaceXform;
+    mat4 localSpaceXform;
+    vec3 center;
+    float radius;
+} geometry;
+
+layout(set = 4, binding = 1) buffer VERTEX_BUFFER {
+    Vertex v[];
+} vertices[];
+
+layout(set = 4, binding = 2) buffer INDEX_BUFFER {
+    int i[];
+} indices[];
+
+layout(set = 4, binding = 3) buffer VETEX_OFFSETS {
+    VertexOffsets vo[];
+} offsets[];
+
+layout(set = 4, binding = 0) uniform accelerationStructure tlas;
+
+void collisionMesh(inout vec3 prev_pos, inout vec3 pos) {
+    vec3 p0 = (geometry.localSpaceXform * vec4(prev_pos, 1)).xyz;
+    vec3 p1 = (geometry.localSpaceXform * vec4(pos, 1)).xyz;
+    vec3 origin = p1;
+    vec3 dir =  p0 - p1;
+    vec3 rayDir = normalize(dir);
+    float tmin = 0;
+    float tmax = 10;
+    rayQuery rQuery;
+    rayQueryInitializeEXT(rQuery, tlas, gl_RayFlagsOpaque, 0xFF, origin, tmin, rayDir, tmax);
+    while(rayQueryProceed(rQuery)){ }
+
+    const float t = rayQueryGetIntersectionT(rQuery, true);
+    if(t == tmax) return ;
+
+    vec2 barryCenter = rayQueryGetIntersectionBarycentricsEXT(rQuery, true);
+    float u = 1 - barryCenter.x - barryCenter.y;
+    float v = barryCenter.x;
+    float w = barryCenter.y;
+
+    int customIndex = rayQueryGetIntersectionInstanceCustomIndex(rQuery, true);
+    VertexOffsets offset = offsets[0].vo[customIndex];
+
+    int primitiveIndex = rayQueryGetIntersectionPrimitiveIndex(rQuery, true);
+    ivec3 index = ivec3(
+    indices[0].i[offset.firstIndex + 3 * primitiveIndex + 0],
+    indices[0].i[offset.firstIndex + 3 * primitiveIndex + 1],
+    indices[0].i[offset.firstIndex + 3 * primitiveIndex + 2]
+    );
+
+    Vertex v0 = vertices[0].v[index.x + offset.vertexOffset];
+    Vertex v1 = vertices[0].v[index.y + offset.vertexOffset];
+    Vertex v2 = vertices[0].v[index.z + offset.vertexOffset];
+
+    vec3 e0 = v1.position.xyz - v0.position.xyz;
+    vec3 e1 = v2.position.xyz - v0.position.xyz;
+
+    vec3 N = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
+
+
+    float pd = dot(N, dir * t);
+    vec3 hit = offsetRay(origin + N * (pd + 0.005), N);
+    //    vec3 hit = (v0.position * u + v1.position * v + v2.position * w).xyz;
+    //    hit = offsetRay(origin + N * (pd + 0.005), N);
+
+    pos = (geometry.worldSpaceXform * vec4(hit, 1)).xyz;
+    prev_pos = pos;
+}
+
+void collisionTest(vec3 prev_pos, inout vec3 pos) {
+    float friction = 0.01;
+
+    if(collider == 0){
+        vec3 p = (geometry.localSpaceXform * vec4(pos, 1)).xyz; // bring into sphere local space
+        float d = length(p) - 1;
+        if (d < COLLISION_MARGIN) {
+            vec3 p0 = (geometry.localSpaceXform * vec4(prev_pos, 1)).xyz;
+            p = mix(p, p0, friction);
+            vec3 N = normalize(p);
+            p = N + N * COLLISION_MARGIN;
+            pos = (geometry.worldSpaceXform * vec4(p, 1)).xyz;
+        }
+    }else if(collider == 1) {
+        vec3 p = (geometry.localSpaceXform * vec4(pos, 1)).xyz; // bring into sphere local space
+        float d = sdBox(p);
+        if(d < COLLISION_MARGIN) {
+            vec3 p0 = (geometry.localSpaceXform * vec4(prev_pos, 1)).xyz;
+            p = mix(p, p0, friction);
+            vec3 N = boxNormal(p);
+            p = p + N * (abs(d) + 0.000);
+            pos = (geometry.worldSpaceXform * vec4(p, 1)).xyz;
+        }
+    }else if(collider == 2){
+        collisionMesh(prev_pos, pos);
+    }
+
+    if(pos.y < COLLISION_MARGIN) {
+        pos = mix(pos, prev_pos, friction);
+        pos.y = COLLISION_MARGIN;
+    }
+}
+
+vec3 calculateNormal(vec3 position){
+    ivec2 coord;
+    int nid;
+    int count = 0;
+    vec3 normal = vec3(0);
+    for(int i = 1; i <= 4; i++){
+        if(!neighbour(i - 1, nid, coord)) continue;
+        vec3 A = positions[nid].xyz - position;
+
+        if(!neighbour(i%4, nid, coord)) continue;
+        vec3 B = positions[nid].xyz - position;
+        normal += cross(B, A);
+        count++;
+    }
+    normal /= count;
+    return normalize(normal);
+}
+
 void main() {
     if(outOfBounds) return;
 
-    if(invMass[id] == 0){
+    float imass = invMass[id];
+    if(imass == 0){
         return;
     }
     const float dt = timeStep;
     vec3 position = positions[id].xyz;
-    prev_positions[id].xyz = position;
+    vec3 prevPosition = position.xyz;
 
     vec3 velocity = velocities[id] + gravity * dt;
-    positions[id].xyz = position + velocity * dt;
+
+    if(bool(simWind)){
+        vec3 pos = position;
+        float t = elapsedTime;
+        float f = 2 * TWO_PI * windSpeed;
+        float amp = windStrength;
+        vec3 N = calculateNormal(pos);
+        vec3 wind = vec3(0);
+        wind.x = amp * sin((pos.x + 1) * f) * sin((pos.y + t) * f);
+        wind.y = amp * sin((pos.y + 1) * f) * sin((pos.z + t) * f);
+        wind.z = amp * sin((pos.z + 1) * f) * sin((pos.x + t) * f);
+        velocity += kd * 0.5 * abs(dot(wind - velocity, N)) * imass * dt;
+    }
+
+    position = position + velocity * dt;
+    collisionTest(prevPosition, position);
+
+    prev_positions[id].xyz = prevPosition;
+    positions[id].xyz = position;
     velocities[id] = velocity;
 }

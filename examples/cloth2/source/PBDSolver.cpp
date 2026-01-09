@@ -38,7 +38,7 @@ void PBDSolver::integrate(VkCommandBuffer commandBuffer) {
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("integrate"));
     vkCmdPushConstants(commandBuffer, layout("integrate"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("integrate"), 0, 3, sets.data(), 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("integrate"), 0, COUNT(sets), sets.data(), 0, nullptr);
     vkCmdDispatch(commandBuffer, gx, gy, 1);
     Barrier::computeWriteToRead(commandBuffer);
 }
@@ -322,7 +322,7 @@ std::vector<PipelineMetaData> PBDSolver::pipelineMetaData0() {
             {
                     "integrate",
                     FileManager::resource("pbd_integrate.comp.spv"),
-                    { &positionSetLayout, &positionSetLayout, &descriptorSetLayout},
+                    { &positionSetLayout, &positionSetLayout, &descriptorSetLayout, &_geometrySetLayout, &_accStructDescriptorSetLayout},
                     { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             },
             {

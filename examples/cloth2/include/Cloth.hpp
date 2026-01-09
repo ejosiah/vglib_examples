@@ -45,6 +45,8 @@ public:
 
     inline VulkanBuffer buffer() const { return _buffer; }
 
+    inline VulkanBuffer indexes() const { return _indices; }
+
     void bindVertexBuffers(VkCommandBuffer commandBuffer);
 
     void bindMaterial(VkCommandBuffer commandBuffer, VkPipelineLayout layout, int id = 0);

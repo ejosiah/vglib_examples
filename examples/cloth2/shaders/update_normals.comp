@@ -1,0 +1,69 @@
+#version 460
+
+#extension GL_EXT_shader_atomic_float : enable
+
+layout(local_size_x = 1024) in;
+
+#include "shared.glsl"
+
+layout(set = 0, binding = 1) buffer CLOTH_VERTICES {
+    Vertex vertices[];
+};
+
+layout(set = 0, binding = 2) buffer CLOTH_INDEXES {
+    int indexes[];
+};
+
+void main() {
+    int triOffset = int(gl_GlobalInvocationID.x);
+
+    int i0 = indexes[triOffset * 3 + 0];
+    int i1 = indexes[triOffset * 3 + 1];
+    int i2 = indexes[triOffset * 3 + 2];
+
+    Vertex v0 = vertices[i0];
+    Vertex v1 = vertices[i1];
+    Vertex v2 = vertices[i2];
+
+    vec3 e0 = v1.position.xyz - v0.position.xyz;
+    vec3 e1 = v2.position.xyz - v0.position.xyz;
+
+    vec3 normal = normalize(cross(e0, e1));
+
+
+    atomicAdd(vertices[i0].normal.x, normal.x);
+    atomicAdd(vertices[i0].normal.y, normal.y);
+    atomicAdd(vertices[i0].normal.z, normal.z);
+
+    atomicAdd(vertices[i0].tangent.x, e0.x);
+    atomicAdd(vertices[i0].tangent.y, e0.y);
+    atomicAdd(vertices[i0].tangent.z, e0.z);
+
+    atomicAdd(vertices[i0].bitangent.x, e1.x);
+    atomicAdd(vertices[i0].bitangent.y, e1.y);
+    atomicAdd(vertices[i0].bitangent.z, e1.z);
+
+    atomicAdd(vertices[i1].normal.x, normal.x);
+    atomicAdd(vertices[i1].normal.y, normal.y);
+    atomicAdd(vertices[i1].normal.z, normal.z);
+
+    atomicAdd(vertices[i1].tangent.x, e0.x);
+    atomicAdd(vertices[i1].tangent.y, e0.y);
+    atomicAdd(vertices[i1].tangent.z, e0.z);
+
+    atomicAdd(vertices[i1].bitangent.x, e1.x);
+    atomicAdd(vertices[i1].bitangent.y, e1.y);
+    atomicAdd(vertices[i1].bitangent.z, e1.z);
+
+    atomicAdd(vertices[i2].normal.x, normal.x);
+    atomicAdd(vertices[i2].normal.y, normal.y);
+    atomicAdd(vertices[i2].normal.z, normal.z);
+
+    atomicAdd(vertices[i2].tangent.x, e0.x);
+    atomicAdd(vertices[i2].tangent.y, e0.y);
+    atomicAdd(vertices[i2].tangent.z, e0.z);
+
+    atomicAdd(vertices[i2].bitangent.x, e1.x);
+    atomicAdd(vertices[i2].bitangent.y, e1.y);
+    atomicAdd(vertices[i2].bitangent.z, e1.z);
+}

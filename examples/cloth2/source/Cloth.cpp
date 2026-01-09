@@ -21,7 +21,7 @@ void Cloth::init() {
     auto state = initialState();
 
     _buffer = device.createDeviceLocalBuffer(state.vertices.data(), BYTE_SIZE(state.vertices), bufferUsage);
-    _indices = device.createDeviceLocalBuffer(state.indices.data(), BYTE_SIZE(state.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    _indices = device.createDeviceLocalBuffer(state.indices.data(), BYTE_SIZE(state.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     _indexCount = state.indices.size();
     _vertexCount = state.vertices.size();
     
