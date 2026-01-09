@@ -4,6 +4,7 @@
 #include "Geometry.hpp"
 #include "VulkanRayTraceModel.hpp"
 #include "VulkanRayQuerySupport.hpp"
+#include "PBDSolver.hpp"
 
 class ClothDemo2 : public VulkanBaseApp, public VulkanRayQuerySupport {
 public:
@@ -14,7 +15,7 @@ public:
 protected:
     void initApp() override;
 
-    void initIntegrators();
+    void initSolvers();
 
     void createFloor();
 
@@ -58,6 +59,8 @@ protected:
 
     void renderNormals(VkCommandBuffer commandBuffer);
 
+    void renderGraph(VkCommandBuffer commandBuffer);
+
     void renderUI(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
@@ -76,6 +79,7 @@ protected:
         Pipeline floor;
         Pipeline solid;
         Pipeline solidTex;
+        Pipeline graphColor;
     } render;
 
     VulkanDescriptorPool descriptorPool;
@@ -99,8 +103,11 @@ protected:
 
     bool showPoints{};
     bool showNormals{};
+    bool showGraph{true};
     bool simRunning{};
-    std::unique_ptr<Solver> solver;
+    std::unique_ptr<Solver> verletSolver;
+    std::unique_ptr<PBDSolver> pbdSolver;
+    Solver* solver{};
     VulkanDrawable model;
 
     VulkanDescriptorSetLayout accStructDescriptorSetLayout;
@@ -123,4 +130,5 @@ protected:
         glm::vec3 scale{1};
         glm::vec3 rotation{0};
     } xform{};
+    VulkanBuffer dummyBuffer;
 };

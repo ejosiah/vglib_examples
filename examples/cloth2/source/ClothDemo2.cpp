@@ -24,16 +24,23 @@ void ClothDemo2::initApp() {
     initCamera();
     loadModel();
     updateDescriptorSets();
-    initIntegrators();
+    initSolvers();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+    dummyBuffer = device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::vec3), "dummy_buffer");
 }
 
-void ClothDemo2::initIntegrators() {
-    solver = std::make_unique<VerletSolver>(device, descriptorPool, accStructDescriptorSetLayout,
+void ClothDemo2::initSolvers() {
+    verletSolver = std::make_unique<VerletSolver>(device, descriptorPool, accStructDescriptorSetLayout,
+                                                  accStructDescriptorSet, cloth, geometry, 960);
+
+    pbdSolver = std::make_unique<PBDSolver>(device, descriptorPool, accStructDescriptorSetLayout,
                                             accStructDescriptorSet, cloth, geometry, 960);
-    solver->init();
+    verletSolver->init();
+    pbdSolver->init();
+
+    solver = pbdSolver.get();
 }
 
 void ClothDemo2::createFloor() {
@@ -75,7 +82,7 @@ void ClothDemo2::loadModel() {
 
 void ClothDemo2::createCloth() {
     auto materialSets = descriptorPool.allocate( { materialSetLayout, materialSetLayout, materialSetLayout, materialSetLayout });
-    cloth = std::make_shared<Cloth>( device, materialSets );
+    cloth = std::make_shared<Cloth>( device, materialSets, glm::vec2{100} );
     cloth->init();
 }
 
@@ -263,8 +270,30 @@ void ClothDemo2::createRenderPipeline() {
 			.build(render.normals.layout);
 
 	auto builder3 = prototypes->cloneGraphicsPipeline();
+	render.graphColor.pipeline =
+		builder3
+			.shaderStage()
+				.vertexShader(resource("graph_coloring.vert.spv"))
+				.geometryShader(resource("graph_coloring.geom.spv"))
+                .fragmentShader(resource("flat.frag.spv"))
+            .vertexInputState().clear()
+			.inputAssemblyState()
+				.points()
+			.rasterizationState()
+				.cullNone()
+                .lineWidth(2.5)
+            .depthStencilState()
+                .compareOpAlways()
+            .layout().clear()
+                .addPushConstantRange(VK_SHADER_STAGE_GEOMETRY_BIT, 0, sizeof(Camera) + sizeof(int) * 2)
+                .addDescriptorSetLayout(pbdSolver->positionSetLayout)
+                .addDescriptorSetLayout(pbdSolver->descriptorSetLayout)
+			.name("render_graph")
+			.build(render.graphColor.layout);
+
+	auto builder4 = prototypes->cloneGraphicsPipeline();
 	render.floor.pipeline =
-        builder3
+        builder4
 			.shaderStage()
 				.vertexShader(resource("floor.vert.spv"))
                 .fragmentShader(resource("floor.frag.spv"))
@@ -282,9 +311,9 @@ void ClothDemo2::createRenderPipeline() {
 			.name("render_floor")
 			.build(render.floor.layout);
 
-	auto builder4 = prototypes->cloneGraphicsPipeline();
+	auto builder5 = prototypes->cloneGraphicsPipeline();
 	render.solid.pipeline =
-        builder4
+        builder5
 			.shaderStage()
 				.vertexShader(resource("solid.vert.spv"))
                 .fragmentShader(resource("solid.frag.spv"))
@@ -297,7 +326,7 @@ void ClothDemo2::createRenderPipeline() {
 			.build(render.solid.layout);
 
     render.solidTex.pipeline =
-        builder4
+        builder5
             .shaderStage()
                 .fragmentShader(resource("solid_texture.frag.spv"))
             .layout()
@@ -346,6 +375,7 @@ VkCommandBuffer *ClothDemo2::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     renderCloth(commandBuffer);
     renderPoints(commandBuffer);
     renderNormals(commandBuffer);
+//    renderGraph(commandBuffer);
 
     renderUI(commandBuffer);
 
@@ -438,6 +468,28 @@ void ClothDemo2::renderNormals(VkCommandBuffer commandBuffer) {
 
     cloth->bindVertexBuffers(commandBuffer);
     vkCmdDraw(commandBuffer, cloth->vertexCount(), 1, 0, 0);
+}
+
+void ClothDemo2::renderGraph(VkCommandBuffer commandBuffer) {
+    if(!showGraph) return;
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, dummyBuffer, &offset);
+
+    int passOffset = 0;
+    for(auto pass = 0; pass < 5; ++pass) {
+        const uint32_t instanceCount = pbdSolver->passSizes[pass];
+
+        std::array<VkDescriptorSet, 2> sets{pbdSolver->positionDescriptorSet[0], pbdSolver->descriptorSet};
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.graphColor.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.graphColor.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        camera->push(commandBuffer, render.graphColor.layout, glm::mat4{1}, VK_SHADER_STAGE_GEOMETRY_BIT);
+        vkCmdPushConstants(commandBuffer, render.graphColor.layout.handle, VK_SHADER_STAGE_GEOMETRY_BIT, sizeof(Camera), sizeof(pass), &pass);
+        vkCmdPushConstants(commandBuffer, render.graphColor.layout.handle, VK_SHADER_STAGE_GEOMETRY_BIT, sizeof(Camera) + sizeof(int), sizeof(passOffset), &passOffset);
+        vkCmdDraw(commandBuffer, 1, instanceCount, 0, 0);
+
+        passOffset += instanceCount;
+    }
 }
 
 void ClothDemo2::renderUI(VkCommandBuffer commandBuffer) {
@@ -617,6 +669,7 @@ int main(){
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.fillModeNonSolid = true;
         settings.enabledFeatures.geometryShader = true;
+        settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;
         settings.deviceExtensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);

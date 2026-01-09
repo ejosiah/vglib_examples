@@ -30,6 +30,7 @@ void Solver::init() {
     initDescriptorSets();
     init0();
     createPipelines();
+    postInit();
 }
 
 void Solver::solve(VkCommandBuffer commandBuffer) {
@@ -40,14 +41,14 @@ void Solver::solve(VkCommandBuffer commandBuffer) {
             const auto gx = uint32_t(_cloth->gridSize().x + wgSize - 1)/wgSize;
             const auto gy = uint32_t(_cloth->gridSize().y + wgSize - 1)/wgSize;
 
-            Barrier::computeWriteToRead(commandBuffer, { _points } );
+            Barrier::computeWriteToRead(commandBuffer );
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("copy_positions"));
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("copy_positions"), 0, 1, &_attributesSet, 0, VK_NULL_HANDLE);
             vkCmdPushConstants(commandBuffer, layout("copy_positions"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
             vkCmdDispatch(commandBuffer, gx, gy, 1);
 
 
-            Barrier::computeWriteToFragmentRead(commandBuffer, { _cloth->buffer() });
+            Barrier::computeWriteToFragmentRead(commandBuffer);
         });
     });
 }
@@ -147,4 +148,8 @@ std::vector<PipelineMetaData> Solver::pipelineMetaData() {
           { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
     });
     return meta;
+}
+
+void Solver::postInit() {
+
 }

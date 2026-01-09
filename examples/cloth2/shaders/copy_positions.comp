@@ -30,9 +30,9 @@ vec3 calculateNormal(vec3 position, out vec3 tangent, out vec3 bitangent){
         bitangent += A;
         count++;
     }
-    normal /= count;
-    tangent /= count;
-    bitangent /= count;
+//    normal /= count;
+//    tangent /= count;
+//    bitangent /= count;
 
     tangent = normalize(tangent);
     bitangent = normalize(bitangent);

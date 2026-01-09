@@ -31,6 +31,11 @@ public:
         float windSpeed{1};
         int collider{};
         int numPoints{};
+        int pinCorners{1};
+        int numConstraints{};
+        int constraintOffset{};
+        int solveType{1};
+        float jacobiScale{0.2};
     } constants{};
 
 public:
@@ -58,6 +63,8 @@ protected:
     std::vector<PipelineMetaData> pipelineMetaData() final;
 
     virtual void init0() = 0;
+
+    virtual void postInit();
 
     virtual void solve0(VkCommandBuffer commandBuffer) = 0;
 

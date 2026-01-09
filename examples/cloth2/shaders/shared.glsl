@@ -39,7 +39,14 @@ layout(push_constant) uniform SIM_CONSTANTS {
     float windSpeed;
     int collider;
     int numPoints;
+    int _pinCorners;
+    int numConstraints;
+    int constraintOffset;
+    int solveType;
+    float jacobiScale;
 };
+
+bool pinCorners() { return _pinCorners == 1; }
 
 vec3 gravity = vec3(0, gravityY, 0);
 int width = int(sqrt(numPoints));

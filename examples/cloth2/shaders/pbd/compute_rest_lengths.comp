@@ -1,0 +1,25 @@
+#version 460
+
+layout(local_size_x = 1024) in;
+
+#extension GL_EXT_scalar_block_layout : enable
+
+layout(set = 0, binding = 0) buffer POINT_MASSES_IN {
+    vec4 positions[];
+};
+
+layout(set = 1, binding = 0, scalar) buffer CONSTRAINT_IDS {
+    int constraintIDs[];
+};
+
+layout(set = 1, binding = 1, scalar) buffer REST_LENGTHS {
+    float restLengths[];
+};
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+
+    vec3 p0 = positions[constraintIDs[2 * gid]].xyz;
+    vec3 p1 = positions[constraintIDs[2 * gid + 1]].xyz;
+    restLengths[gid] = distance(p0, p1);
+}

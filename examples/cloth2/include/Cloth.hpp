@@ -39,6 +39,10 @@ public:
 
     inline glm::vec2 gridSize() const { return _gridSize; }
 
+    inline size_t numPoints() const { return static_cast<size_t>(_gridSize.x * _gridSize.y); }
+
+    inline glm::ivec2 numCells() const { return _numCells; }
+
     inline VulkanBuffer buffer() const { return _buffer; }
 
     void bindVertexBuffers(VkCommandBuffer commandBuffer);

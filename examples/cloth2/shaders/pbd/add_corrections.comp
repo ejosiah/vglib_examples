@@ -1,0 +1,34 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+#include "../shared.glsl"
+
+layout(set = 0, binding = 0) buffer POINT_MASSES_IN {
+    vec4 positions[];
+};
+
+layout(set = 1, binding = 0, scalar) buffer CONSTRAINT_IDS {
+    int constraintIDs[];
+};
+
+layout(set = 1, binding = 1, scalar) buffer REST_LENGTHS {
+    float restLengths[];
+};
+
+layout(set = 1, binding = 3, scalar) buffer CORRECTIONS {
+    vec3 corrections[];
+};
+
+layout(set = 1, binding = 4, scalar) buffer INV_MASS {
+    float invMass[];
+};
+
+void main() {
+    if(outOfBounds) return;
+
+    positions[id].xyz = positions[id].xyz + corrections[id] * jacobiScale;
+}

@@ -1,0 +1,44 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define COLLISION_MARGIN 0.01
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+#include "../shared.glsl"
+#include "ray_query_lang.glsl"
+
+
+layout(set = 0, binding = 0) buffer POINT_MASSES_IN{
+    vec4 positions[];
+};
+
+layout(set = 1, binding = 0) buffer POINT_MASS_OUT{
+    vec4 prev_positions[];
+};
+
+layout(set = 2, binding = 2, scalar) buffer VELOCITY {
+    vec3 velocities[];
+};
+
+layout(set = 2, binding = 4, scalar) buffer INV_MASS {
+    float invMass[];
+};
+
+void main() {
+    if(outOfBounds) return;
+
+    if(invMass[id] == 0){
+        return;
+    }
+    const float dt = timeStep;
+    vec3 position = positions[id].xyz;
+    prev_positions[id].xyz = position;
+
+    vec3 velocity = velocities[id] + gravity * dt;
+    positions[id].xyz = position + velocity * dt;
+    velocities[id] = velocity;
+}

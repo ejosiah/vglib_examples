@@ -33,8 +33,7 @@ void VerletSolver::solve0(VkCommandBuffer commandBuffer) {
     for(auto i = 0; i < numIterations; i++) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("verlet_integrator"), 0, COUNT(sets), sets.data(), 0, nullptr);
         vkCmdDispatch(commandBuffer, gx, gy, 1);
-        Barrier::computeWriteToRead(commandBuffer, { positions[0], positions[1] } );
- //       std::swap(descriptorSet[0], descriptorSet[1]);
+        Barrier::computeWriteToRead(commandBuffer );
     }
 }
 
