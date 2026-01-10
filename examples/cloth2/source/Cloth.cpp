@@ -18,9 +18,17 @@ Cloth::Cloth(VulkanDevice &device, std::vector<VkDescriptorSet> materialSets, gl
 void Cloth::init() {
     auto& device = *_device;
 
-    auto state = initialState();
+    const auto state = initialState();
+    const auto numPoints = state.vertices.size();
+    auto invMasses = std::vector<float>(numPoints, 1);
+    const auto width = static_cast<size_t>(_gridSize.x);
+
+    invMasses[numPoints - width] = 0; // pin top left corner;
+    invMasses[numPoints - 1] = 0; // pin top right corner;
 
     _buffer = device.createDeviceLocalBuffer(state.vertices.data(), BYTE_SIZE(state.vertices), bufferUsage);
+    _restPositions = device.createDeviceLocalBuffer(state.vertices.data(), BYTE_SIZE(state.vertices), bufferUsage);
+    _invMass = device.createDeviceLocalBuffer(invMasses.data(), BYTE_SIZE(invMasses), bufferUsage);
     _indices = device.createDeviceLocalBuffer(state.indices.data(), BYTE_SIZE(state.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     _indexCount = state.indices.size();
     _vertexCount = state.vertices.size();

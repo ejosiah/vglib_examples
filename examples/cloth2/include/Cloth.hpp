@@ -47,6 +47,9 @@ public:
 
     inline VulkanBuffer indexes() const { return _indices; }
 
+    inline VulkanBuffer restPositions() const { return _restPositions; };
+    inline VulkanBuffer invMass() const { return _invMass; };
+
     void bindVertexBuffers(VkCommandBuffer commandBuffer);
 
     void bindMaterial(VkCommandBuffer commandBuffer, VkPipelineLayout layout, int id = 0);
@@ -58,6 +61,8 @@ public:
 private:
     VulkanDevice* _device{};
     VulkanBuffer _buffer;
+    VulkanBuffer _restPositions;
+    VulkanBuffer _invMass;
     VulkanBuffer _indices;
     uint32_t _indexCount{};
     uint32_t _vertexCount{};

@@ -20,13 +20,14 @@ void VerletSolver::init0() {
     sets.push_back(descriptorSet[1]);
     sets.push_back(_geometrySet);
     sets.push_back(_accStructDescriptorSet);
+    sets.push_back(_attributesSet);
 }
 
 void VerletSolver::solve0(VkCommandBuffer commandBuffer) {
     const auto gx = uint32_t(_cloth->gridSize().x + wgSize - 1)/wgSize;
     const auto gy = uint32_t(_cloth->gridSize().y + wgSize - 1)/wgSize;
 
-    uint32_t numIterations = 1;
+    uint32_t numIterations = 30;
     constants.timeStep = _fixedUpdate.period()/static_cast<float>(numIterations);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("verlet_integrator"));
     vkCmdPushConstants(commandBuffer, layout("verlet_integrator"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
@@ -95,8 +96,13 @@ std::vector<PipelineMetaData> VerletSolver::pipelineMetaData0() {
             {
                 "verlet_integrator",
                 FileManager::resource("verlet_integrator.comp.spv"),
-                { &descriptorSetLayout, &descriptorSetLayout, &_geometrySetLayout, &_accStructDescriptorSetLayout},
+                { &descriptorSetLayout, &descriptorSetLayout, &_geometrySetLayout, &_accStructDescriptorSetLayout, &_attributesSetLayout},
                 { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             }
     };
+}
+
+VulkanBuffer VerletSolver::position(const int index) const {
+    assert(index < positions.size());
+    return positions[index];
 }

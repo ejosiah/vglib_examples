@@ -14,6 +14,8 @@ public:
 
     ~VerletSolver() final = default;
 
+    VulkanBuffer position(const int index) const final;
+
 protected:
     void init0() final;
 

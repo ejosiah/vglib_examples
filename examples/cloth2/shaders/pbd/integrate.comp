@@ -24,10 +24,6 @@ layout(set = 2, binding = 2, scalar) buffer VELOCITY {
     vec3 velocities[];
 };
 
-layout(set = 2, binding = 4, scalar) buffer INV_MASS {
-    float invMass[];
-};
-
 layout(set = 3, binding = 0) buffer LEVEL_SET_GEOMETRY {
     mat4 worldSpaceXform;
     mat4 localSpaceXform;
@@ -48,6 +44,11 @@ layout(set = 4, binding = 3) buffer VETEX_OFFSETS {
 } offsets[];
 
 layout(set = 4, binding = 0) uniform accelerationStructure tlas;
+
+layout(set = 5, binding = 3, scalar) buffer INV_MASS {
+    float invMass[];
+};
+
 
 void collisionMesh(inout vec3 prev_pos, inout vec3 pos) {
     vec3 p0 = (geometry.localSpaceXform * vec4(prev_pos, 1)).xyz;

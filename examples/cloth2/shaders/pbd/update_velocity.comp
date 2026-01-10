@@ -24,7 +24,7 @@ layout(set = 2, binding = 2, scalar) buffer VELOCITY {
     vec3 velocities[];
 };
 
-layout(set = 2, binding = 4, scalar) buffer INV_MASS {
+layout(set = 3, binding = 3, scalar) buffer INV_MASS {
     float invMass[];
 };
 

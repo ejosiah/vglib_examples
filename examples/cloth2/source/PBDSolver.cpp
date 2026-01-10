@@ -22,7 +22,7 @@ PBDSolver::PBDSolver(VulkanDevice &device,
 }
 
 void PBDSolver::solve0(VkCommandBuffer commandBuffer) {
-    uint32_t numIterations = 1;
+    uint32_t numIterations = 30;
     constants.timeStep = _fixedUpdate.period()/static_cast<float>(numIterations);
 
     for(auto i = 0; i < numIterations; i++) {
@@ -76,6 +76,7 @@ void PBDSolver::solveConstraints(VkCommandBuffer commandBuffer, int solver, int 
     vkCmdPushConstants(commandBuffer, layout("solve_constraints"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("solve_constraints"), 0, 1, &positionDescriptorSet[0], 0, nullptr);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("solve_constraints"), 1, 1, &descriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("solve_constraints"), 2, 1, &_attributesSet, 0, nullptr);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
     Barrier::computeWriteToRead(commandBuffer);
 }
@@ -88,6 +89,7 @@ void PBDSolver::addCorrections(VkCommandBuffer commandBuffer) {
     vkCmdPushConstants(commandBuffer, layout("add_corrections"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("add_corrections"), 0, 1, &positionDescriptorSet[0], 0, nullptr);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("add_corrections"), 1, 1, &descriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("add_corrections"), 2, 1, &_attributesSet, 0, nullptr);
     vkCmdDispatch(commandBuffer, gx, gy, 1);
     Barrier::computeWriteToRead(commandBuffer);
 }
@@ -98,7 +100,10 @@ void PBDSolver::updateVelocity(VkCommandBuffer commandBuffer) {
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("update_velocity"));
     vkCmdPushConstants(commandBuffer, layout("update_velocity"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("update_velocity"), 0, 3, sets.data(), 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("update_velocity"), 0, 1, &positionDescriptorSet[0], 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("update_velocity"), 1, 1, &positionDescriptorSet[1], 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("update_velocity"), 2, 1, &descriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("update_velocity"), 3, 1, &_attributesSet, 0, nullptr);
     vkCmdDispatch(commandBuffer, gx, gy, 1);
     Barrier::computeWriteToRead(commandBuffer);
 }
@@ -113,7 +118,6 @@ void PBDSolver::createBuffers() {
     initPositions();
     generateConstraints();
     createVelocityBuffer();
-    createMassBuffer();
     createCorrectionsBuffer();
 }
 
@@ -146,10 +150,6 @@ void PBDSolver::createDescriptorSetLayout() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_COMPUTE_BIT)
-            .binding(4)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
 }
 
@@ -163,7 +163,7 @@ void PBDSolver::updateDescriptorSets() {
     device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("pbd_positions_1", positionDescriptorSet[1]);
 
 
-    auto writes = initializers::writeDescriptorSets<7>();
+    auto writes = initializers::writeDescriptorSets<6>();
 
     writes[0].dstSet = positionDescriptorSet[0];
     writes[0].dstBinding = 0;
@@ -208,13 +208,6 @@ void PBDSolver::updateDescriptorSets() {
     VkDescriptorBufferInfo correctionInfo{ corrections, 0, VK_WHOLE_SIZE };
     writes[5].pBufferInfo = &correctionInfo;
 
-    writes[6].dstSet = descriptorSet;
-    writes[6].dstBinding = 4;
-    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[6].descriptorCount = 1;
-    VkDescriptorBufferInfo massInfo{ invMass, 0, VK_WHOLE_SIZE };
-    writes[6].pBufferInfo = &massInfo;
-
     device->updateDescriptorSets(writes);
 
     sets.push_back(positionDescriptorSet[0]);
@@ -222,6 +215,7 @@ void PBDSolver::updateDescriptorSets() {
     sets.push_back(descriptorSet);
     sets.push_back(_geometrySet);
     sets.push_back(_accStructDescriptorSet);
+    sets.push_back(_attributesSet);
 }
 
 void PBDSolver::generateConstraints() {
@@ -322,25 +316,26 @@ std::vector<PipelineMetaData> PBDSolver::pipelineMetaData0() {
             {
                     "integrate",
                     FileManager::resource("pbd_integrate.comp.spv"),
-                    { &positionSetLayout, &positionSetLayout, &descriptorSetLayout, &_geometrySetLayout, &_accStructDescriptorSetLayout},
+                    { &positionSetLayout, &positionSetLayout, &descriptorSetLayout, &_geometrySetLayout,
+                      &_accStructDescriptorSetLayout, &_attributesSetLayout},
                     { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             },
             {
                     "solve_constraints",
                     FileManager::resource("pbd_dist_constraints.comp.spv"),
-                    { &positionSetLayout, &descriptorSetLayout},
+                    { &positionSetLayout, &descriptorSetLayout, &_attributesSetLayout},
                     { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             },
             {
                     "add_corrections",
                     FileManager::resource("pbd_add_corrections.comp.spv"),
-                    { &positionSetLayout, &descriptorSetLayout},
+                    { &positionSetLayout, &descriptorSetLayout, &_attributesSetLayout},
                     { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             },
             {
                     "update_velocity",
                     FileManager::resource("pbd_update_velocity.comp.spv"),
-                    { &positionSetLayout, &positionSetLayout, &descriptorSetLayout},
+                    { &positionSetLayout, &positionSetLayout, &descriptorSetLayout, &_attributesSetLayout},
                     { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
             },
     };}
@@ -372,19 +367,12 @@ void PBDSolver::createCorrectionsBuffer() {
     device->setName<VK_OBJECT_TYPE_BUFFER>("pbd_corrections", corrections.buffer);
 }
 
-void PBDSolver::createMassBuffer() {
-    const auto numPoints = _cloth->numPoints();
-    const auto width = static_cast<size_t>(_cloth->gridSize().x);
-
-    std::vector<float> allocation(numPoints, 1.0f);
-    allocation[numPoints - width] = 0; // pin top left corner;
-    allocation[numPoints - 1] = 0; // pin top right corner;
-
-    invMass = device->createDeviceLocalBuffer(allocation.data(), BYTE_SIZE(allocation), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    device->setName<VK_OBJECT_TYPE_BUFFER>("pbd_inverse_mass", invMass.buffer);
-}
-
 void PBDSolver::clear(VkCommandBuffer commandBuffer, const VulkanBuffer& buffer) {
     vkCmdFillBuffer(commandBuffer, buffer, 0, buffer.size, 0);
     Barrier::transferWriteToComputeRead(commandBuffer);
+}
+
+VulkanBuffer PBDSolver::position(const int index) const {
+    assert(index < positions.size());
+    return positions[index];
 }

@@ -33,12 +33,17 @@ void ClothDemo2::initApp() {
 
 void ClothDemo2::initSolvers() {
     verletSolver = std::make_unique<VerletSolver>(device, descriptorPool, accStructDescriptorSetLayout,
-                                                  accStructDescriptorSet, cloth, geometry, 960);
+                                                  accStructDescriptorSet, cloth, geometry, 60);
 
     pbdSolver = std::make_unique<PBDSolver>(device, descriptorPool, accStructDescriptorSetLayout,
-                                            accStructDescriptorSet, cloth, geometry, 960);
+                                            accStructDescriptorSet, cloth, geometry, 60);
     verletSolver->init();
     pbdSolver->init();
+
+    positions[0][0] = verletSolver->position(0);
+    positions[0][1] = verletSolver->position(1);
+    positions[1][0] = pbdSolver->position(0);
+    positions[1][1] = pbdSolver->position(1);
 
     solver = solverType == 0 ? verletSolver.get() : pbdSolver.get();
 }
@@ -392,6 +397,7 @@ VkCommandBuffer *ClothDemo2::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     Barrier::transferWriteToComputeRead(commandBuffer, geometry->uboBuffer);
 
     solver->solve(commandBuffer);
+    switchSolver(commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -677,6 +683,29 @@ void ClothDemo2::beforeDeviceCreation() {
     auto atomicFeatures = findExtension<VkPhysicalDeviceShaderAtomicFloatFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT, deviceCreateNextChain);
     atomicFeatures->shaderBufferFloat32AtomicAdd = VK_TRUE;
     atomicFeatures->shaderBufferFloat32Atomics = VK_TRUE;
+}
+
+void ClothDemo2::switchSolver(VkCommandBuffer commandBuffer) {
+    static int prevSolverType = solverType;
+
+    if(!simRunning || prevSolverType == solverType) return;
+
+    auto source = positions[prevSolverType][0];
+    auto destination = positions[solverType][0];
+
+    VkBufferCopy region{0, 0, source.size};
+    vkCmdCopyBuffer(commandBuffer, source, destination, 1, &region);
+
+    source = positions[prevSolverType][1];
+    destination = positions[solverType][1];
+
+    region = VkBufferCopy{0, 0, source.size};
+    vkCmdCopyBuffer(commandBuffer, source, destination, 1, &region);
+
+    Barrier::transferWriteToComputeWrite(commandBuffer);
+
+    solver = solverType == 0 ? verletSolver.get() : pbdSolver.get();
+    prevSolverType = solverType;
 }
 
 int main(){

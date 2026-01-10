@@ -22,6 +22,8 @@ public:
 
     ~PBDSolver() final = default;
 
+    VulkanBuffer position(const int index) const final;
+
 protected:
     void init0() final;
 
@@ -58,8 +60,6 @@ private:
 
     void createCorrectionsBuffer();
 
-    void createMassBuffer();
-
     void updateDescriptorSets();
 
     void computeRestLengths();
@@ -75,7 +75,6 @@ private:
     VulkanBuffer constraintIDs;
     VulkanBuffer restLengths;
     VulkanBuffer velocities;
-    VulkanBuffer invMass;
     VulkanDescriptorSetLayout positionSetLayout;
     VulkanDescriptorSetLayout descriptorSetLayout;
     std::array<VkDescriptorSet, 2> positionDescriptorSet{};

@@ -99,6 +99,10 @@ void Solver::initDescriptorSetLayout() {
                     .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .binding(3)
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
+                    .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
 
     _geometrySetLayout =
@@ -118,7 +122,7 @@ void Solver::initDescriptorSets() {
 
     device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("integrator_cloth_attributes_set", _attributesSet);
 
-    auto writes = initializers::writeDescriptorSets<4>();
+    auto writes = initializers::writeDescriptorSets<5>();
     writes[0].dstSet = _attributesSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -140,12 +144,19 @@ void Solver::initDescriptorSets() {
     VkDescriptorBufferInfo indexInfo{ _cloth->indexes(), 0, VK_WHOLE_SIZE };
     writes[2].pBufferInfo = &indexInfo;
 
-    writes[3].dstSet = _geometrySet;
-    writes[3].dstBinding = 0;
+    writes[3].dstSet = _attributesSet;
+    writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[3].descriptorCount = 1;
+    VkDescriptorBufferInfo massInfo{ _cloth->invMass(), 0, VK_WHOLE_SIZE };
+    writes[3].pBufferInfo = &massInfo;
+
+    writes[4].dstSet = _geometrySet;
+    writes[4].dstBinding = 0;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
     VkDescriptorBufferInfo geometryInfo{ _geometry->uboBuffer, 0, VK_WHOLE_SIZE };
-    writes[3].pBufferInfo = &geometryInfo;
+    writes[4].pBufferInfo = &geometryInfo;
 
     device->updateDescriptorSets(writes);
 }

@@ -63,6 +63,8 @@ protected:
 
     void renderUI(VkCommandBuffer commandBuffer);
 
+    void switchSolver(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -133,4 +135,5 @@ protected:
     VulkanBuffer dummyBuffer;
     bool resetRequested{};
     int solverType = 0;
+    std::array<std::array<VulkanBuffer, 2>, 2> positions;
 };

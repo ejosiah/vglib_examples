@@ -59,6 +59,8 @@ public:
 
     void onFrameEnd();
 
+    virtual VulkanBuffer position(const int index) const  = 0;
+
 protected:
     std::vector<PipelineMetaData> pipelineMetaData() final;
 
