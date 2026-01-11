@@ -911,8 +911,8 @@ int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 2048;
-        settings.height = 1536;
+        settings.width = 1536;
+        settings.height = 1152;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = false;
         settings.enabledFeatures.geometryShader = VK_TRUE;

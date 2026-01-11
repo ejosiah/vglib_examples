@@ -300,7 +300,7 @@ protected:
         Texture texture;
     } regionalReduction;
 
-    bool useRegionalReduction{false};
+    bool useRegionalReduction{true};
 
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;

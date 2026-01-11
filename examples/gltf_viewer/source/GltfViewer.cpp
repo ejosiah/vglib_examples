@@ -904,7 +904,7 @@ void GltfViewer::onPause() {
 
 void GltfViewer::openFileDialog() {
     static char* file_dialog_buffer = nullptr;
-    static char path[500] =  R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\dependencies\glTF-Sample-Assets\Models)";
+    static char path[500] =  R"(C:\Users\joebh\CLionProjects\vglib_examples\dependencies\glTF-Sample-Assets\Models)";
 //    static char path[500] =  "";
 
     file_dialog_buffer = path;

@@ -76,9 +76,9 @@ void main() {
     barrier();
     if(skip) return;
 
-    if(gl_LocalInvocationIndex == 0){
-        debugPrintfEXT("%d made it here\n", int(gl_WorkGroupID));
-    }
+//    if(gl_LocalInvocationIndex == 0){
+//        debugPrintfEXT("%d made it here\n", int(gl_WorkGroupID));
+//    }
 
     uint i0 = gl_LocalInvocationIndex * 3 + 0;
     uint i1 = gl_LocalInvocationIndex * 3 + 1;

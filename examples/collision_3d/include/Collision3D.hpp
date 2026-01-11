@@ -1,3 +1,5 @@
+#pragma once
+
 #include "gltf/GltfLoader.hpp"
 #include "VulkanRayTraceModel.hpp"
 #include "VulkanRayTraceBaseApp.hpp"

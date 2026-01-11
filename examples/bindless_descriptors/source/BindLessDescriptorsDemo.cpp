@@ -32,11 +32,11 @@ void BindLessDescriptorsDemo::initApp() {
 }
 
 void BindLessDescriptorsDemo::loadModel() {
-    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
-//    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/OneDrive/media/models/amazon_lumberyard_bistro/Exterior/exterior.obj)", centimetre);
-//    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/OneDrive/media/models/amazon_lumberyard_bistro/Interior/interior.obj)", centimetre);
-//    _sponza = loader->load(R"(C:/Users/Josiah Ebhomenye/OneDrive/media/models/sibenik/sibenik.obj)");
-//    phong::load(R"(C:/Users/Josiah Ebhomenye/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", device, descriptorPool, sponza, {}, false, 1, centimetre);
+    _sponza = loader->load(R"(C:/Users/getOSUsername()/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", centimetre);
+//    _sponza = loader->load(R"(C:/Users/getOSUsername()/OneDrive/media/models/amazon_lumberyard_bistro/Exterior/exterior.obj)", centimetre);
+//    _sponza = loader->load(R"(C:/Users/getOSUsername()/OneDrive/media/models/amazon_lumberyard_bistro/Interior/interior.obj)", centimetre);
+//    _sponza = loader->load(R"(C:/Users/getOSUsername()/OneDrive/media/models/sibenik/sibenik.obj)");
+//    phong::load(R"(C:/Users/getOSUsername()/source/repos/VolumetricLighting/bin/Debug/meshes/sponza.obj)", device, descriptorPool, sponza, {}, false, 1, centimetre);
 //    using namespace std::chrono_literals;
 //    std::this_thread::sleep_for(5s);
 }

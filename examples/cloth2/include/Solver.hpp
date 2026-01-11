@@ -8,6 +8,7 @@
 #include "Vertex.h"
 #include "Cloth.hpp"
 #include "Geometry.hpp"
+#include <PrefixSum.hpp>
 
 #include <memory>
 
@@ -81,6 +82,8 @@ private:
 
     void initDescriptorSets();
 
+    void initHashGrid();
+
 protected:
     VulkanDescriptorPool* _descriptorPool{};
     std::shared_ptr<Cloth> _cloth;
@@ -89,12 +92,24 @@ protected:
     VulkanBuffer _points;
     std::shared_ptr<Geometry> _geometry;
 
+    struct {
+        VulkanBuffer counts;
+        VulkanBuffer hashes;
+        VulkanBuffer cellIds;
+        PrefixSum prefixSum;
+        float spacing{0};
+        size_t size{0};
+    } _hashGrid;
+
     VulkanDescriptorSetLayout _attributesSetLayout;
     VulkanDescriptorSetLayout _accStructDescriptorSetLayout;
     VkDescriptorSet _accStructDescriptorSet;
     VkDescriptorSet _attributesSet{};
     VulkanDescriptorSetLayout _geometrySetLayout;
     VkDescriptorSet _geometrySet{};
+    VulkanDescriptorSetLayout _hashGridDescriptorSetLayout;
+    VkDescriptorSet _hashGridDescriptorSet{};
+
 
     static constexpr uint32_t wgSize = 16;
 

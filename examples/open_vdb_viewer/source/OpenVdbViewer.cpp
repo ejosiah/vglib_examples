@@ -838,7 +838,7 @@ void OpenVdbViewer::renderUI(VkCommandBuffer commandBuffer) {
 
 bool OpenVdbViewer::openFileDialog() {
     static char* file_dialog_buffer = nullptr;
-    static char path[500] = R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\_VDB-Smoke-Pack)";
+    static char path[500] = R"(C:\Users\joebh\OneDrive\media\volumes\_VDB-Smoke-Pack)";
 
     file_dialog_buffer = path;;
 

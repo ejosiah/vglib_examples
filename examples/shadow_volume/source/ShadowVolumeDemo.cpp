@@ -491,7 +491,7 @@ void ShadowVolumeDemo::initBuffers() {
 
     phong::VulkanDrawableInfo info{};
     info.generateAdjacencyTriangles = true;
-    phong::load(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\ChineseDragon.obj)", device, descriptorPool, model, {}, true, 2);
+    phong::load(R"(C:\Users\joebh\OneDrive\media\models\ChineseDragon.obj)", device, descriptorPool, model, {}, true, 2);
 
 
 }

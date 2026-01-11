@@ -28,6 +28,7 @@ void Solver::init() {
     initializeBuffers();
     initDescriptorSetLayout();
     initDescriptorSets();
+    initHashGrid();
     init0();
     createPipelines();
     postInit();
@@ -179,5 +180,21 @@ std::vector<PipelineMetaData> Solver::pipelineMetaData() {
 }
 
 void Solver::postInit() {
+
+}
+
+void Solver::initHashGrid() {
+    const auto numPoints = _cloth->numPoints();
+    _hashGrid.size = numPoints * 5;
+    _hashGrid.spacing = glm::max(constants.inv_cloth_size.x, constants.inv_cloth_size.y) * 2.f;
+
+    auto capacity = (_hashGrid.size + 1) * sizeof(uint32_t);
+    _hashGrid.counts = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, capacity, "hash_grid_counts");
+
+    capacity = numPoints * sizeof(int);
+    _hashGrid.cellIds = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, capacity, "hash_grid_cellIDs");
+
+    _hashGrid.prefixSum = PrefixSum{ device };
+    _hashGrid.prefixSum.init();
 
 }

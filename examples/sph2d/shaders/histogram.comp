@@ -24,5 +24,4 @@ void main() {
 //    int hash = hashes[i];
     int hash = computeHash(position[i].xy);
     atomicAdd(counts[hash], 1);
-
 }

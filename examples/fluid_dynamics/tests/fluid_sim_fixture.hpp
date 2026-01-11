@@ -65,7 +65,7 @@ protected:
     void initFileManager(){
         _fileManager.addSearchPath(".");
         // TODO install resource files to avoid relative/absolute paths specifications
-        _fileManager.addSearchPath(R"(C:\Users\Josiah Ebhomenye\CLionProjects\vulkan_bootstrap\examples\fluid_dynamics\spv)");
+        _fileManager.addSearchPath(R"(C:\Users\joebh\CLionProjects\vulkan_bootstrap\examples\fluid_dynamics\spv)");
         _fileManager.addSearchPath("../../examples/fluid_dynamics");
         _fileManager.addSearchPath("../../examples/fluid_dynamics/spv");
         _fileManager.addSearchPath("../../data/shaders");

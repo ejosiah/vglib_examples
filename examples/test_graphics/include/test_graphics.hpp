@@ -117,5 +117,5 @@ protected:
         VulkanBuffer vertices;
         VulkanBuffer indices;
     } primitive;
-    const char* path{R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\signal_processing\textures\lena.png)"};
+    const char* path{R"(C:\Users\joebh\CLionProjects\vglib_examples\examples\signal_processing\textures\lena.png)"};
 };

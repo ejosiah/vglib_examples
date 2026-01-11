@@ -202,7 +202,7 @@ void FFTOcean::initTextures() {
 
 void FFTOcean::loadInputSignal() {
     int w, h, channels;
-    auto image = stbi_load(R"(C:\Users\Josiah Ebhomenye\CLionProjects\vglib_examples\examples\signal_processing\textures\lena_1024.png)", &w, &h, &channels, STBI_rgb_alpha);
+    auto image = stbi_load(R"(C:\Users\joebh\CLionProjects\vglib_examples\examples\signal_processing\textures\lena_1024.png)", &w, &h, &channels, STBI_rgb_alpha);
 
     std::vector<float> hrImage(w * h *  4, 0);
     for(int i = 0; i < w; ++i){

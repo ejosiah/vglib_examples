@@ -192,7 +192,7 @@ protected:
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
     std::string vdbPath;
-    std::string startPath = R"(C:\Users\Josiah Ebhomenye\OneDrive\media\volumes\VDB-Clouds-Pack-Pixel-Lab\VDB Cloud Files)";
+    std::string startPath = R"(C:\Users\joebh\OneDrive\media\volumes\VDB-Clouds-Pack-Pixel-Lab\VDB Cloud Files)";
 
 
     VulkanDescriptorSetLayout descriptorSetLayout;

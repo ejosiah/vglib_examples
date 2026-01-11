@@ -1,0 +1,32 @@
+#version 460
+
+layout(local_size_x = 1024) in;
+
+layout(set = 0, binding = 0) buffer ParticlePosition {
+    vec4 positions[];
+};
+
+layout(set = 0, binding = 1) buffer Counts {
+    int counts[];
+};
+
+layout(set = 0, binding = 2) buffer CellIds {
+    int cellid[];
+};
+
+layout(push_constant) uniform Constants {
+    uint tableSize;
+    uint numPoints;
+    float spacing;
+};
+
+void main() {
+    int i = int(gl_GlobalInvocationID.x);
+    if(i >= numPoints) return;
+
+    ivec3 p = ivec3(positions[i]/spacing);
+    uint hash = (p.x * 92837111) ^ (p.y * 689287499) ^ (p.z * 283923481);
+
+    int index = atomicAdd(counts[hash], -1) - 1;
+    cellid[index] = i;
+}

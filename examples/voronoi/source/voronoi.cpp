@@ -144,7 +144,7 @@ void Voronoi::initClipSpaceBuffer() {
 
 void Voronoi::runGeneratePoints() {
     Texture texture;
-    textures::fromFile(device, texture, R"(C:\Users\Josiah Ebhomenye\Downloads\1453849.jpg)");
+    textures::fromFile(device, texture, R"(C:\Users\joebh\Downloads\1453849.jpg)");
     VulkanDescriptorSetLayout setLayout =
         device.descriptorSetLayoutBuilder()
             .binding(0)

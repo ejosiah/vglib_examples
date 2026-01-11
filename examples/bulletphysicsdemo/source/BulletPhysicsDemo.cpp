@@ -275,7 +275,7 @@ void BulletPhysicsDemo::createRigidBodies() {
     createAccelerationStructure(rigidBodies);
 
 //    std::vector<mesh::Mesh> meshes;
-//    mesh::load(meshes, R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\werewolf.obj)");
+//    mesh::load(meshes, R"(C:\Users\joebh\OneDrive\media\models\werewolf.obj)");
 //    mesh::normalize(meshes, 1.0);
 //
 //    glm::vec3 vMin, vMax;

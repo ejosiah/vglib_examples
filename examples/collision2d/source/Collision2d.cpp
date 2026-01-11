@@ -717,7 +717,6 @@ void Collision2d::initializeCellIds(VkCommandBuffer commandBuffer) {
 }
 
 void Collision2d::sortCellIds(VkCommandBuffer commandBuffer) {
-    Records records{objects.attributes, 8};
     sort.sortWithIndices(commandBuffer, objects.cellIds, objects.indices);
     addComputeBarrier(commandBuffer, { objects.cellIds, objects.indices });
 }
@@ -1149,29 +1148,14 @@ void Collision2d::endFrame() {
 
 void Collision2d::beforeDeviceCreation() {
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
-    if(devFeatures12.has_value()) {
-        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
-        devFeatures12.value()->shaderOutputViewportIndex = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-        devFeatures12.scalarBlockLayout = VK_TRUE;
-        devFeatures12.shaderOutputViewportIndex = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
-    }
-
+    devFeatures12->scalarBlockLayout = VK_TRUE;
+    devFeatures12->shaderOutputViewportIndex = VK_TRUE;
 
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-        devFeatures13.value()->maintenance4 = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        devFeatures13.maintenance4 = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };}
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+}
 
 int main(){
     try{

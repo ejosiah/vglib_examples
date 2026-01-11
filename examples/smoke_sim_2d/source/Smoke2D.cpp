@@ -13,10 +13,10 @@ Smoke2D::Smoke2D(const Settings& settings) :
     fileManager().addSearchPath("smoke_sim_2d/spv");
     fileManager().addSearchPath("smoke_sim_2d/models");
     fileManager().addSearchPath("smoke_sim_2d/textures");
-    fileManager().addSearchPath("data/shaders");
-    fileManager().addSearchPath("data/models");
-    fileManager().addSearchPath("data/textures");
-    fileManager().addSearchPath("data");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data/models");
+    fileManager().addSearchPath("../data/textures");
+    fileManager().addSearchPath("../data");
 }
 
 void Smoke2D::initApp() {
@@ -335,9 +335,9 @@ VkCommandBuffer *Smoke2D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 
 //    fluidSolver.renderVectorField(commandBuffer);
 //    renderSource(commandBuffer);
-    renderSmoke(commandBuffer);
+//    renderSmoke(commandBuffer);
 //    renderTemperature(commandBuffer);
-//    fieldVisualizer.renderStreamLines(commandBuffer);
+    fieldVisualizer.renderStreamLines(commandBuffer);
 //    fieldVisualizer.renderPressure(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -634,32 +634,16 @@ void Smoke2D::copy(VkCommandBuffer commandBuffer, Texture &source, const VulkanB
 
 void Smoke2D::beforeDeviceCreation() {
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->maintenance4 = VK_TRUE;
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
 
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->maintenance4 = VK_TRUE;
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.maintenance4 = VK_TRUE;
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
 
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
-    if(devFeatures12.has_value()) {
-        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-        devFeatures12.scalarBlockLayout = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
-    };
+    devFeatures12->scalarBlockLayout = VK_TRUE;
 
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
-
+    auto dsFeatures = findExtension<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT, deviceCreateNextChain);
+    dsFeatures->extendedDynamicState3PolygonMode = VK_TRUE;
 }
 
 void Smoke2D::updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc) {

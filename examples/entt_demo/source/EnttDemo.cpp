@@ -245,7 +245,7 @@ void EnttDemo::initCamera() {
 }
 
 void EnttDemo::createSkyBox() {
-    SkyBox::create(skyBox, R"(C:\Users\Josiah Ebhomenye\OneDrive\media\textures\skybox\005)"
+    SkyBox::create(skyBox, R"(C:\Users\joebh\OneDrive\media\textures\skybox\005)"
             , {"right.jpg", "left.jpg", "top.jpg", "bottom.jpg", "front.jpg", "back.jpg"});
 
     auto entity = createEntity("sky_box");

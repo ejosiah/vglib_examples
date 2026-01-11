@@ -566,9 +566,9 @@ void RayTracerDemo::loadSpaceShip() {
     phong::load(resource("bigship1.obj"), device, descriptorPool, spaceShip, info, true, 1);
  //   spaceShip = VulkanDrawable::flatten(device, descriptorPool, spaceShip.descriptorSetLayout, spaceShip, 0, 0, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     drawables.insert(std::make_pair("spaceShip", std::move(spaceShip)));
-  //  phong::load(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\ChineseDragon.obj)", device, descriptorPool, spaceShip, info);
-   // phong::load(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\Lucy-statue\metallic-lucy-statue-stanford-scan.obj)", device, descriptorPool, spaceShip, info, true, 1);
-   // phong::load(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\werewolf.obj)", device, descriptorPool, spaceShip, info);
+  //  phong::load(R"(C:\Users\joebh\OneDrive\media\models\ChineseDragon.obj)", device, descriptorPool, spaceShip, info);
+   // phong::load(R"(C:\Users\joebh\OneDrive\media\models\Lucy-statue\metallic-lucy-statue-stanford-scan.obj)", device, descriptorPool, spaceShip, info, true, 1);
+   // phong::load(R"(C:\Users\joebh\OneDrive\media\models\werewolf.obj)", device, descriptorPool, spaceShip, info);
     rt::MeshObjectInstance spaceShipInstance{};
     spaceShipInstance.object =  rt::TriangleMesh{ &drawables["spaceShip"] };
     spaceShipInstance.xform = glm::translate(glm::mat4{1}, {0, drawables["spaceShip"].height() * 0.5f, 0});
@@ -591,7 +591,7 @@ void RayTracerDemo::loadSpaceShip() {
     VulkanDrawable plane_l;
     phong::load(resource("plane.gltf"), device, descriptorPool, plane_l,  info);
     drawables.insert(std::make_pair("plane", std::move(plane_l)));
-//    phong::load(R"(C:\Users\Josiah Ebhomenye\OneDrive\media\models\Lucy-statue\metallic-lucy-statue-stanford-scan.obj)", device, descriptorPool, plane,  info, true, 1);
+//    phong::load(R"(C:\Users\joebh\OneDrive\media\models\Lucy-statue\metallic-lucy-statue-stanford-scan.obj)", device, descriptorPool, plane,  info, true, 1);
  //   phong::load("../../data/models/bigship1.obj", device, descriptorPool, plane,  info, true, 1);
     rt::MeshObjectInstance planeInstance{};
     planeInstance.object = rt::TriangleMesh{ &drawables["plane"] };
