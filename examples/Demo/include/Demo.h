@@ -74,6 +74,8 @@ protected:
 
     void displayMenu(VkCommandBuffer commandBuffer);
 
+    void beforeDeviceCreation() override;
+
 private:
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;

@@ -30,7 +30,6 @@ void VideoPlayback::initApp() {
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     createDescriptorSetLayouts();
-    updateDescriptorSets();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
@@ -183,50 +182,25 @@ void VideoPlayback::onPause() {
 }
 
 void VideoPlayback::beforeDeviceCreation() {
-    auto devFeatures11 = findExtension<VkPhysicalDeviceVulkan11Features>(
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, deviceCreateNextChain);
-    if (devFeatures11.has_value()) {
-        devFeatures11.value()->samplerYcbcrConversion = VK_TRUE;
-    } else {
-        static VkPhysicalDeviceVulkan11Features devFeatures11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
-        devFeatures11.samplerYcbcrConversion = VK_TRUE;
-    }
+    auto devFeatures11 = findExtension<VkPhysicalDeviceVulkan11Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, deviceCreateNextChain);
+    devFeatures11->samplerYcbcrConversion = VK_TRUE;
 
+    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    devFeatures12->scalarBlockLayout = VK_TRUE;
+    devFeatures12->shaderOutputViewportIndex = VK_TRUE;
 
-    auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
-    if (devFeatures12.has_value()) {
-        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
-        devFeatures12.value()->shaderOutputViewportIndex = VK_TRUE;
-    } else {
-        static VkPhysicalDeviceVulkan12Features devFeatures12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-        devFeatures12.scalarBlockLayout = VK_TRUE;
-        devFeatures12.shaderOutputViewportIndex = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
-    }
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
 
-    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if (devFeatures13.has_value()) {
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-        devFeatures13.value()->maintenance4 = VK_TRUE;
-    } else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        devFeatures13.maintenance4 = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    }
-
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+    auto dsFeatures = findExtension<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT, deviceCreateNextChain);
+    dsFeatures->extendedDynamicState3PolygonMode = VK_TRUE;
 }
 
 void VideoPlayback::loadVideo() {
     auto parser = video::VideoParser{device};
-    video = parser.parse(resource("855289-hd_1920_1080_25fps.mp4"));
+    video = parser.parse(resource("3116737-hd_1920_1080_25fps.mp4"));
     
     std::vector<int> intra_frames{};
     for(auto i = 0; i < video->slice_header_count; ++i) {
@@ -325,7 +299,7 @@ void VideoPlayback::createSampler() {
 int main() {
     try {
         fs::current_path("../../../../examples");
-        Settings settings;
+        Settings settings{};
         settings.uniqueQueueFlags |= VK_QUEUE_VIDEO_DECODE_BIT_KHR;
         settings.depthTest = true;
         settings.enableBindlessDescriptors = true;

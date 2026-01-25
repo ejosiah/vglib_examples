@@ -32,7 +32,7 @@ void SsaoDemo::initApp() {
 }
 
 void SsaoDemo::loadModel() {
-    phong::load(resource("leaving_room/living_room.obj"), device, descriptorPool, model);
+    phong::load(R"(C:\Users\joebh\OneDrive\media\models\Sports_car\highpolyGHS.obj)", device, descriptorPool, model);
 }
 
 void SsaoDemo::initCamera() {

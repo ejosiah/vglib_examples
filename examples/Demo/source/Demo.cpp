@@ -2,15 +2,18 @@
 #include "Demo.h"
 
 #include <memory>
+#include <format>
 #include "Mesh.h"
 #include "ImGuiPlugin.hpp"
 
 Demo::Demo(const Settings &settings)
     : VulkanBaseApp("Demo", settings,  {})
 {
-`
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/data");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../../examples/data");
     
     actions.help = &mapToKey(Key::H, "Help menu", Action::detectInitialPressOnly());
     actions.toggleVSync = &mapToKey(Key::V, "Toggle VSync", Action::detectInitialPressOnly());
@@ -86,9 +89,16 @@ void Demo::loadFloor() {
     floor.vertices = device.createDeviceLocalBuffer(plane.vertices.data(), sizeof(Vertex) * plane.vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     floor.indices = device.createDeviceLocalBuffer(plane.indices.data(), sizeof(uint32_t) * plane.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
     floor.indexCount =  plane.indices.size();
-    textures::fromFile(device, floor.texture, resource("textures/floor_color_map.tga"), true, VK_FORMAT_R8G8B8A8_SRGB);
-    textures::fromFile(device, floor.lightMap, resource("textures/floor_light_map.tga"));
+    textures::fromFile(device, floor.texture, resource("floor_color_map.tga"), true, VK_FORMAT_R8G8B8A8_SRGB,  1, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device, floor.lightMap, resource("floor_light_map.tga"), false, VK_FORMAT_R8G8B8A8_UNORM, 1, VK_SAMPLER_ADDRESS_MODE_REPEAT);
     createFloorDescriptors();
+}
+
+void Demo::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->maintenance4 = VK_TRUE;
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
 }
 
 void Demo::createFloorDescriptors() {
@@ -366,29 +376,29 @@ std::string Demo::menu() const {
         auto velocity = cameraController->velocity();
 
         ss
-            << "FPS: {}\n"
-            << "Multisample anti-aliasing: {}x\n"
-            << "Anisotropic filtering: {}x\n"
-            << "Vertical sync: {}\n\n"
+            << "FPS: " << framePerSecond << "\n"
+            << "Multisample anti-aliasing: " << msaaSamples << "x\n"
+            << "Anisotropic filtering: " << maxAnisotrophy << "x\n"
+            << "Vertical sync: " << verticalSync << "\n\n"
             << "Camera\n"
-            << "\tPosition: {}\n"
-            << "\tVelocity: {}\n"
-            << "\tMode: {}\n"
-            << "\tRotation Speed: {}\n"
-            << "\tOrbit Style: {}\n\n"
+            << "\tPosition:  [" << position.x << ", " << position.y << ", " << position.z << "]\n"
+            << "\tVelocity: ["<< velocity.x << ", " << velocity.y << ", " << velocity.z << "\n"
+            << "\tMode: " << currentMode << "\n"
+            << "\tRotation Speed: " << rotationSpeed << "\n"
+            << "\tOrbit Style: " << orbitStyle << "\n\n"
             << "Mouse\n"
-            << "\tSmoothing: {}\n"
-            << "\tSensitivity: {}\n\n"
+            << "\tSmoothing: " << mouseSmoothing << "\n"
+            << "\tSensitivity: " << mouseSensivitiy << "\n\n"
             << "Press H to display help";
 
-        return fmt::format(ss.str(), framePerSecond, msaaSamples, maxAnisotrophy, verticalSync, position, velocity
-                                   , currentMode, rotationSpeed, orbitStyle, mouseSmoothing, mouseSensivitiy);
+        return ss.str();
     }
 }
 
 
 int main(){
     try{
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.relativeMouseMode = true;
@@ -403,7 +413,7 @@ int main(){
 
         std::vector<FontInfo> fonts {
 #ifdef WIN32
-                {"JetBrainsMono", R"(C:\Users\joebh\CLionProjects\vulkan_bootstrap\data\fonts\JetBrainsMono\JetBrainsMono-Regular.ttf)", 20},
+                {"JetBrainsMono", R"(..\data\fonts\JetBrainsMono\JetBrainsMono-Regular.ttf)", 20},
                 {"Arial", R"(C:\Windows\Fonts\arial.ttf)", 20},
                 {"Arial", R"(C:\Windows\Fonts\arial.ttf)", 15}
 #elif defined(__APPLE__)

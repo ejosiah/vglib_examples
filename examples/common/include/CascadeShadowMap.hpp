@@ -8,7 +8,7 @@ class CascadeShadowMap {
 public:
     static constexpr uint32_t DEFAULT_SHADOW_MAP_SIZE = 4096;
     static constexpr uint32_t DEFAULT_CASCADE_COUNT = 4;
-    static constexpr float DEFAULT_CASCADE_SLIT_LAMBDA = 0.55f;
+    static constexpr float DEFAULT_CASCADE_SLIT_LAMBDA = 0.95f;
     using Scene = std::function<void(VulkanPipelineLayout&)>;
 
     CascadeShadowMap() = default;
