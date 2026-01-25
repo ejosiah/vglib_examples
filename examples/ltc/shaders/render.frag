@@ -127,7 +127,7 @@ layout(set = 3, binding = 1, scalar) uniform Light_Points {
 
 #include "gltf.glsl"
 
-layout(set = 0, binding = 0) buffer MeshData {
+layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
 };
 

@@ -1,9 +1,10 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
 
 #include "gltf.glsl"
 
-layout(set = 0, binding = 0) buffer MeshData {
+layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
 };
 
