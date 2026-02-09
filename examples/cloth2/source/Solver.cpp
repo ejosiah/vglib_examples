@@ -194,7 +194,7 @@ void Solver::initHashGrid() {
     capacity = numPoints * sizeof(int);
     _hashGrid.cellIds = device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, capacity, "hash_grid_cellIDs");
 
-    _hashGrid.prefixSum = PrefixSum{ device };
-    _hashGrid.prefixSum.init();
+    // _hashGrid.prefixSum = PrefixSum{ device };
+    // _hashGrid.prefixSum.init();
 
 }

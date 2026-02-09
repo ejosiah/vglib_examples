@@ -1,0 +1,14 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+
+layout (location = 0) in vec2 uv;
+layout (location = 1) flat in uint texture_id;
+
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+    fragColor = texture(global_textures[nonuniformEXT(texture_id)], uv);
+}

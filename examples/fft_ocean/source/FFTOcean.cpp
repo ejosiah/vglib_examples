@@ -891,7 +891,7 @@ void FFTOcean::createWindControl() {
 
     windControl.renderInfo = {
         .colorAttachments = { { .imageView = windControl.ColorBuffer.imageView, .format = VK_FORMAT_R8G8B8A8_UNORM } },
-        .renderArea{ 1024 }
+        .renderArea{ 1024u }
     };
 }
 

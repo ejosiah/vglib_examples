@@ -7,7 +7,7 @@
 
 float rcp(float x) { return 1.0/x; }
 
-float linearizeDepth(float z, float near, float far) {
+float Depth(float z, float near, float far) {
     return (near * far) / (far - z * (far - near));
 }
 

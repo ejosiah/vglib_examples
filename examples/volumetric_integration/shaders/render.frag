@@ -99,7 +99,7 @@ layout(set = 2, binding = 10) uniform samplerCube global_textures_cubemap[];
 #include "gltf.glsl"
 #include "punctual_lights.glsl"
 
-layout(set = 0, binding = 0) buffer MeshData {
+layout(set = 0, binding = 0, scalar) buffer MeshData {
     Mesh meshes[];
 };
 

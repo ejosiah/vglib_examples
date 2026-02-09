@@ -104,17 +104,29 @@ void collisionMesh(inout vec3 prev_pos, inout vec3 pos) {
 
     vec3 e0 = v1.position.xyz - v0.position.xyz;
     vec3 e1 = v2.position.xyz - v0.position.xyz;
+    vec3 e2 = v2.position.xyz - v1.position.xyz;
 
     vec3 N = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
 
+    vec3 p = v0.position.xyz * u + v1.position.xyz * v + v2.position.xyz * w;
+    float r = max( length(e2), max(length(e0), length(e1))) * 0.5;
 
-    float pd = dot(N, dir * t);
-    vec3 hit = offsetRay(origin + N * (pd + 0.005), N);
-//    vec3 hit = (v0.position * u + v1.position * v + v2.position * w).xyz;
-//    hit = offsetRay(origin + N * (pd + 0.005), N);
+    vec3 c0 = p1 - p;
+    float d = length(c0) - r;
+    if (d < COLLISION_MARGIN) {
+        vec3 N = normalize(c0) * r;
+        p += N * COLLISION_MARGIN;
+        pos = (geometry.worldSpaceXform * vec4(p, 1)).xyz;
+        prev_pos = pos;
+    }
 
-    pos = (geometry.worldSpaceXform * vec4(hit, 1)).xyz;
-    prev_pos = pos;
+//    float pd = dot(N, dir * t);
+//    vec3 hit = offsetRay(origin + N * (pd + 0.005), N);
+////    vec3 hit = (v0.position * u + v1.position * v + v2.position * w).xyz;
+////    hit = offsetRay(origin + N * (pd + 0.005), N);
+//
+//    pos = (geometry.worldSpaceXform * vec4(hit, 1)).xyz;
+//    prev_pos = pos;
 }
 
 void collisionTest(inout vec3 prev_pos, inout vec3 pos) {

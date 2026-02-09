@@ -11,13 +11,8 @@ bool InShadow(vec3 origin, vec3 direction, float dist, uint cullMask){
     rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, cullMask, origin, 0.01, direction, dist);
 
     while(rayQueryProceed(rQuery)){
-        if(rayQueryGetIntersectionType(rQuery, false) == gl_RayQueryCandidateIntersectionTriangle){
-            // TODO Determine if an opaque triangle hit occurred
-            bool opaqueHit = true;
-            if(opaqueHit){
-                rayQueryConfirmIntersection(rQuery);
-            }
-        }else if(rayQueryGetIntersectionType(rQuery, false) == gl_RayQueryCandidateIntersectionAABB){
+        const uint intersectionType = rayQueryGetIntersectionType(rQuery, false);
+        if(intersectionType == gl_RayQueryCandidateIntersectionTriangle || intersectionType == gl_RayQueryCandidateIntersectionAABB){
             // TODO Determine if an opaque triangle hit occurred
             bool opaqueHit = true;
             if(opaqueHit){
@@ -43,7 +38,7 @@ float shadow(vec3 objPos, vec3 lightPos, uint cullMask, int nSamples){
         sum += InShadow(objPos, lightDir, dist, cullMask) ? 1 : 0;
         vec2 uv = hash23(lightDir);
 //        vec2 uv = hammersleySquare(i, nSamples);
-        lightDir = N + 0.3 * uniformSampleSphere(uv);
+        lightDir = N + 0.01 * uniformSampleSphere(uv);
     }
     return sum/float(nSamples);
 }

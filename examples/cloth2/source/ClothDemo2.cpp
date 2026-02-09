@@ -61,8 +61,8 @@ void ClothDemo2::createFloor() {
 
 void ClothDemo2::loadModel() {
     std::vector<mesh::Mesh> meshes;
-    mesh::load(meshes, resource("cow.ply"));
-//    mesh::normalize(meshes, 2.5);
+    mesh::load(meshes, resource("werewolf.obj"));
+    mesh::normalize(meshes, 5);
     for(auto& mesh : meshes) {
         for(auto& vertex : mesh.vertices){
             vertex.position = glm::vec4{vertex.position.xyz() * 1.04f, 1};

@@ -13,6 +13,7 @@ public:
         VulkanImageView imageView;
         VkFormat format;
         glm::vec4 clearValue{0, 0, 0, 1};
+        std::optional<VulkanImageView> resolve;
         bool clear{true};
     };
 
@@ -33,7 +34,7 @@ public:
     };
     Offscreen() = default;
 
-    static void render(VkCommandBuffer commandBuffer, const RenderInfo renderInfo, auto scene) {
+    static void render(VkCommandBuffer commandBuffer, const RenderInfo& renderInfo, auto scene) {
         VkRenderingInfo info{ VK_STRUCTURE_TYPE_RENDERING_INFO };
         info.flags = 0;
         info.renderArea = {{0, 0}, {renderInfo.renderArea.x, renderInfo.renderArea.y}};
@@ -41,7 +42,7 @@ public:
         info.viewMask = renderInfo.viewMask;
 
         std::vector<VkRenderingAttachmentInfo> colorAttachments;
-        for(const auto& [imageView, format, cv, clear] : renderInfo.colorAttachments) {
+        for(const auto& [imageView, format, cv, resolve, clear] : renderInfo.colorAttachments) {
             VkRenderingAttachmentInfo attachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
             attachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             attachmentInfo.resolveMode = VK_RESOLVE_MODE_NONE;
@@ -49,6 +50,12 @@ public:
             attachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             attachmentInfo.clearValue.color = {cv.r, cv.g, cv.b, cv.a};
             attachmentInfo.imageView = imageView.handle;
+
+            if (resolve.has_value()) {
+                attachmentInfo.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+                attachmentInfo.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                attachmentInfo.resolveImageView = resolve->handle;
+            }
 
             colorAttachments.push_back(attachmentInfo);
         }

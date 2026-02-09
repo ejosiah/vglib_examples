@@ -8,7 +8,7 @@
 #include "Vertex.h"
 #include "Cloth.hpp"
 #include "Geometry.hpp"
-#include <PrefixSum.hpp>
+// #include <PrefixSum.hpp>
 
 #include <memory>
 
@@ -96,7 +96,7 @@ protected:
         VulkanBuffer counts;
         VulkanBuffer hashes;
         VulkanBuffer cellIds;
-        PrefixSum prefixSum;
+        // PrefixSum prefixSum;
         float spacing{0};
         size_t size{0};
     } _hashGrid;

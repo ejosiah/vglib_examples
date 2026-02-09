@@ -955,15 +955,8 @@ void VolumetricFog::createBox() {
 }
 
 void VolumetricFog::beforeDeviceCreation() {
-    auto maybeExt = findExtension<VkPhysicalDeviceVulkan11Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, deviceCreateNextChain);
-    if(maybeExt.has_value()) {
-        auto ext = *maybeExt;
-        ext->multiview = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan11Features  vulkan11Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
-        vulkan11Features.multiview = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, vulkan11Features);
-    }
+    auto ext = findExtension<VkPhysicalDeviceVulkan11Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, deviceCreateNextChain);
+    ext->multiview = VK_TRUE;
 }
 
 

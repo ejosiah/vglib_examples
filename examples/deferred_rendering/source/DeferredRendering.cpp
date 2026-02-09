@@ -9,12 +9,16 @@ const std::string DeferredRendering::kAttachment_GBUFFER_POSITION = "GBUFFER_POS
 const std::string DeferredRendering::kAttachment_GBUFFER_EMISSION = "GBUFFER_EMISSION_INDEX";
 
 DeferredRendering::DeferredRendering(const Settings& settings) : VulkanBaseApp("Deferred Rendering", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/deferred_rendering");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("deferred_rendering");
+    fileManager().addSearchPathFront("deferred_rendering/data");
+    fileManager().addSearchPathFront("deferred_rendering/spv");
+    fileManager().addSearchPathFront("deferred_rendering/models");
+    fileManager().addSearchPathFront("deferred_rendering/textures");
     selectOption = &mapToKey(Key::SPACE_BAR, "display option", Action::Behavior::DETECT_INITIAL_PRESS_ONLY);
 }
 
@@ -283,7 +287,7 @@ void DeferredRendering::onPause() {
 }
 
 void DeferredRendering::loadSponza() {
-    phong::load(fileManager.getFullPath("Sponza/sponza.obj")->string(), device, descriptorPool, sponza);
+    phong::load(resource("Sponza/sponza.obj"), device, descriptorPool, sponza);
 }
 
 void DeferredRendering::initCamera() {
@@ -671,7 +675,7 @@ void DeferredRendering::initLights() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.relativeMouseMode = true;

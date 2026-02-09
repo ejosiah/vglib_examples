@@ -63,8 +63,8 @@ struct Geometry {
         cube.indices = device.createDeviceLocalBuffer(c.indices.data(), BYTE_SIZE(c.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
         std::vector<mesh::Mesh> meshes;
-        mesh::load(meshes, FileManager::instance().getFullPath("cow.ply")->string());
-//        mesh::normalize(meshes, 2.5);
+        mesh::load(meshes, FileManager::instance().getFullPath("werewolf.obj")->string());
+        mesh::normalize(meshes, 5);
         auto& mesh = meshes.front();
         for(auto& vertex : mesh.vertices){
             vertex.color = glm::vec4(1, 1, 0, 1);
@@ -94,5 +94,5 @@ struct Geometry {
     Type type() const { return _type; }
     
 private:
-    Type _type = Type::Box;
+    Type _type = Type::Cow;
 };

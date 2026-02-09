@@ -40,7 +40,7 @@ void main() {
         N = reflect(N, V); // reflects backfacing normals
     }
 
-    float depth = linearizeDepth(gl_FragCoord.z, 1, far);
+    float depth = eDepth(gl_FragCoord.z, 1, far);
     N = N = mix(N, Nw, 0.8 * min(1.0, sqrt(depth/u.normalFallOff) * 1.1));
     vec3 R = normalize(reflect(-V, N));
     R.y = abs(R.y);

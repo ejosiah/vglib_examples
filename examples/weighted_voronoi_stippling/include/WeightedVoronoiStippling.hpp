@@ -189,5 +189,5 @@ protected:
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<OrbitingCameraController> camera;
     std::optional<std::filesystem::path> imagePath;
-    static constexpr int MaxPoints = 20000;
+    static constexpr int MaxPoints = 50000;
 };

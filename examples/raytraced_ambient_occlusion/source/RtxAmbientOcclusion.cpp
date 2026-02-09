@@ -307,9 +307,9 @@ void RtxAmbientOcclusion::loadModel() {
     info.materialUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     info.materialIdUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     info.generateMaterialId = true;
-//    phong::load(resource("lte-orb.obj"), device, descriptorPool, model, info);
-    phong::load(resource("ico_sphere.obj"), device, descriptorPool, model, info);
-//    phong::load(resource("leaving_room/living_room.obj"), device, descriptorPool, model, info);
+    // phong::load(resource("lte-orb.obj"), device, descriptorPool, model, info);
+    // phong::load(resource("ico_sphere.obj"), device, descriptorPool, model, info);
+    phong::load(resource("leaving_room/living_room.obj"), device, descriptorPool, model, info);
 //    phong::load(resource("conference.obj"), device, descriptorPool, model, info);
     phong::load(resource("plane.obj"), device, descriptorPool, plane, info);
 }

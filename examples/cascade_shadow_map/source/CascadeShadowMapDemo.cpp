@@ -45,8 +45,8 @@ void CascadeShadowMapDemo::initCamera() {
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.acceleration = glm::vec3(10);
     cameraSettings.velocity = glm::vec3(50.f);
-    cameraSettings.zNear = 0.5;
-    cameraSettings.zFar = 1000;
+    cameraSettings.zNear = 0.1;
+    cameraSettings.zFar = 100;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     sceneCamera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
@@ -358,7 +358,7 @@ void CascadeShadowMapDemo::renderUI(VkCommandBuffer commandBuffer) {
         freezePressed = ImGui::Checkbox("freeze shadow", &freezeShadowMap);
 
         if(!freezeShadowMap) {
-            ImGui::SliderFloat("Split lambda", &splitLambda, 0.1, 1.0);
+            ImGui::SliderFloat("Split lambda", &splitLambda, 0.0, 1.0);
         }
         ImGui::Checkbox("Color cascades", &color_cascades);
 

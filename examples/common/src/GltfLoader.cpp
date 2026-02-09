@@ -242,10 +242,10 @@ namespace gltf {
         model->meshes.u32.handle = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | biTransferUsage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_instance_u32", _modelId));
 
         byteSize = sizeof(Light) + sizeof(Light) * counts.numLights;
-        model->lights = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_lights", _modelId));
+        model->lights = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, byteSize, fmt::format("model{}_lights", _modelId));
 
         byteSize = sizeof(LightInstance) + sizeof(LightInstance) * counts.numLightInstances;
-        model->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, byteSize, fmt::format("model{}_light_instances", _modelId));
+        model->lightInstances = _device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, byteSize, fmt::format("model{}_light_instances", _modelId));
 
         std::vector<MaterialData> materials(gltf->materials.size() + 1);
         std::vector<TextureInfo> textureInfos(materials.size() * NUM_TEXTURE_MAPPING, TextureInfo{ });

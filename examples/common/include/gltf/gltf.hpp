@@ -134,7 +134,7 @@ namespace gltf {
 
         void render(VkCommandBuffer commandBuffer, VulkanPipelineLayout& layout, uint32_t meshDescriptorOffset = 0);
 
-        void renderWithMaterial(VkCommandBuffer commandBuffer, VulkanPipelineLayout& layout, uint32_t firstSet = 0, bool blend = false);
+        void renderWithMaterial(VkCommandBuffer commandBuffer, const VulkanPipelineLayout& layout, uint32_t firstSet = 0, bool blend = false);
 
     private:
         Condition _loaded;

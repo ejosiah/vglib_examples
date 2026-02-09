@@ -166,5 +166,18 @@ bool hasNormal();
 Iridescence getIridescence();
 vec2 transformUV(TextureInfo textureInfo);
 
+bool isThinWalled(Material material) {
+    return material.attenuationDistance <= 0;
+}
+
+float computeEta(Material material, bool inside) {
+    const float ior = material.ior;
+    const float fromAir = 1.0;
+    if(isThinWalled(material)) {
+        return fromAir/ior;
+    }
+
+    return inside ? (ior/fromAir) : (fromAir/ior);
+}
 
 #endif // GLTF_GLSL
