@@ -1,20 +1,20 @@
 #ifndef LIGHTS_DESCRIPTOR_GLSL
 #define LIGHTS_DESCRIPTOR_GLSL
 
-#ifndef MATERIAL_SET
-#define MATERIAL_SET 1
+#ifndef LIGHT_SET
+#define LIGHT_SET 1
 #define LIGHT_BINDING_POINT 1
 #define LIGHT_INSTANCE_BINDING_POINT 2
 #endif
 
 #include "punctual_lights.glsl"
 
-layout(set = MATERIAL_SET, binding = LIGHT_BINDING_POINT, scalar) buffer PunctualLights {
+layout(set = LIGHT_SET, binding = LIGHT_BINDING_POINT, scalar) buffer PunctualLights {
     Light lights[];
 };
 
 
-layout(set = MATERIAL_SET, binding = LIGHT_INSTANCE_BINDING_POINT, scalar) buffer PunctualLightsInstances {
+layout(set = LIGHT_SET, binding = LIGHT_INSTANCE_BINDING_POINT, scalar) buffer PunctualLightsInstances {
     LightInstance lightInstances[];
 };
 

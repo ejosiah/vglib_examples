@@ -1,3 +1,6 @@
+#ifndef OCTAHEDRAL_GLSL
+#define OCTAHEDRAL_GLSL
+
 /** Efficient GPU implementation of the octahedral unit vector encoding from
 
     Cigolle, Donow, Evangelakos, Mara, McGuire, Meyer,
@@ -34,3 +37,5 @@ vec3 octDecode(vec2 o) {
     }
     return normalize(v);
 }
+
+#endif // OCTAHEDRAL_GLSL

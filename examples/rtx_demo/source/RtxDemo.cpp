@@ -4,6 +4,8 @@
 #include "ImGuiPlugin.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
+#include "Barrier.hpp"
+#include "spectrum/spectrum.hpp"
 
 RtxDemo::RtxDemo(const Settings& settings) : VulkanBaseApp("RTX Demo", settings) {
     fileManager().addSearchPathFront(".");
@@ -20,17 +22,19 @@ RtxDemo::RtxDemo(const Settings& settings) : VulkanBaseApp("RTX Demo", settings)
 }
 
 void RtxDemo::initApp() {
-    initCamera();
     initBindlessDescriptor();
-    initBuffers();
-    initUniforms();
-    initRenderInfo();
     createDescriptorPool();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     initLoader();
+    initLights();
     createDescriptorSetLayouts();
-    updateDescriptorSets();
+    initCamera();
+    initBuffers();
     loadScene();
+    initUniforms();
+    initRenderInfo();
+    updateDescriptorSets();
+    initShadow();
 
     createCommandPool();
     createPipelineCache();
@@ -43,15 +47,17 @@ void RtxDemo::initBuffers() {
     textures::create(device, depthBuffer, VK_IMAGE_TYPE_2D, VK_FORMAT_D16_UNORM, {width, height, 1});
 
     colorBufferIndex = bindlessDescriptor.update(colorBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    normalBufferIndex = bindlessDescriptor.update(normalBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     depthBufferIndex = bindlessDescriptor.update(depthBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+    auto prim = primitives::sphere(10, 10, 0.1);
+    sphere.vertices = device.createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    sphere.indexes = device.createDeviceLocalBuffer(prim.indices.data(), BYTE_SIZE(prim.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
 }
 
 void RtxDemo::initUniforms() {
-    UniformData defaults{
-        .viewportSize =  { width, height },
-        .near =  1.0,
-        .far =  10.0f
-    };
+    UniformData defaults{};
 
     uniforms.gpu = device.createCpuVisibleBuffer(&defaults, sizeof(defaults), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     uniforms.cpu = reinterpret_cast<UniformData *>(uniforms.gpu.map());
@@ -61,8 +67,9 @@ void RtxDemo::initRenderInfo() {
     renderInfo = {
         .colorAttachments = {
             { colorBuffer.imageView, VK_FORMAT_R32G32B32A32_SFLOAT },
+            { normalBuffer.imageView, VK_FORMAT_R32G32_SFLOAT },
         },
-        .depthAttachment = {{ .imageView = depthBuffer.imageView, .format = VK_FORMAT_D16_UNORM, .clear = false }},
+        .depthAttachment = {{ .imageView = depthBuffer.imageView, .format = VK_FORMAT_D16_UNORM }},
         .renderArea = { width, height}
     };
     dppRenderInfo = {
@@ -78,10 +85,14 @@ void RtxDemo::initCamera() {
     // cameraSettings.orbitMaxZoom = 512.0f;
     // cameraSettings.offsetDistance = 1.0f;
     // cameraSettings.sceneHeight = 0.5;
+
+    const auto extent = swapChain.extent;
     cameraSettings.fieldOfView = 60.0f;
-    cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
+    cameraSettings.aspectRatio = float(extent.width)/float(extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    cameraInfo = std::make_shared<CameraInfo>(device, descriptorPool, camera->camera, extent.width, extent.height, camera->near(), camera->far() );
+    cameraInfo->init();
 }
 
 void RtxDemo::initBindlessDescriptor() {
@@ -163,17 +174,6 @@ void RtxDemo::loadScene() {
     scene = loader->loadGltf(resource("Sponza/glTF/Sponza.gltf"));
     scene->sync();
 
-    lights = scene->lights.span<gltf::Light>();
-    lights[0].direction = glm::vec3(0, -1, 0);
-    lights[0].intensity = 100;
-    lights[0].range = 10;
-    lights[0].color = glm::vec3(1.0);
-    lights[0].type = to<int>(gltf::LightType::POINT);
-
-    lightInstances = scene->lightInstances.span<gltf::LightInstance>();
-    lightInstances[0].model = glm::translate(glm::mat4(1), glm::vec3(0, 3, 0));
-    lightInstances[0].ModelInverse = glm::inverse(lightInstances[0].model);
-
     bvh = gltf::bvh::Bvh{ device, descriptorPool, scene };
     bvh.build();
 }
@@ -188,13 +188,27 @@ void RtxDemo::createDescriptorSetLayouts() {
              .shaderStages(VK_SHADER_STAGE_ALL)
      .createLayout();
 
+    lightInfo.descriptorSetLayout =
+     device.descriptorSetLayoutBuilder()
+         .name("light_set_layout")
+         .binding(0)
+             .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+             .descriptorCount(1)
+             .shaderStages(VK_SHADER_STAGE_ALL)
+         .binding(1)
+             .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+             .descriptorCount(1)
+             .shaderStages(VK_SHADER_STAGE_ALL)
+     .createLayout();
+
 }
 
 void RtxDemo::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ uniformDescriptorSetLayout });
+    auto sets = descriptorPool.allocate({ uniformDescriptorSetLayout, lightInfo.descriptorSetLayout });
     uniformDescriptorSet = sets[0];
+    lightInfo.descriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<1>();
+    auto writes = initializers::writeDescriptorSets<3>();
 
     writes[0].dstSet = uniformDescriptorSet;
     writes[0].dstBinding = 0;
@@ -202,6 +216,20 @@ void RtxDemo::updateDescriptorSets(){
     writes[0].descriptorCount = 1;
     VkDescriptorBufferInfo uniformInfo{uniforms.gpu, 0, VK_WHOLE_SIZE};
     writes[0].pBufferInfo = &uniformInfo;
+
+    writes[1].dstSet = lightInfo.descriptorSet;
+    writes[1].dstBinding = 0;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].descriptorCount = 1;
+    VkDescriptorBufferInfo lights{lightInfo.lightBuffer, 0, VK_WHOLE_SIZE};
+    writes[1].pBufferInfo = &lights;
+
+    writes[2].dstSet = lightInfo.descriptorSet;
+    writes[2].dstBinding = 1;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].descriptorCount = 1;
+    VkDescriptorBufferInfo lightInstance{lightInfo.lightInstanceBuffer, 0, VK_WHOLE_SIZE};
+    writes[2].pBufferInfo = &lightInstance;
 
     device.updateDescriptorSets(writes);
 }
@@ -237,14 +265,21 @@ void RtxDemo::createRenderPipeline() {
                         .srcAlphaBlendFactor().zero()
                         .dstAlphaBlendFactor().one()
                     .add()
+                    .attachment()
+                    .add()
                 .dynamicState()
                     .colorBlendEnable()
+                .dynamicRenderPass()
+                    .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                    .addColorAttachment(VK_FORMAT_R32G32_SFLOAT)
+                    .depthAttachment(VK_FORMAT_D16_UNORM)
                 .layout().clear()
                     .addPushConstantRange(Camera::pushConstant())
                     .addDescriptorSetLayout(loader->descriptorSetLayout())
                     .addDescriptorSetLayout(loader->materialDescriptorSetLayout())
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                     .addDescriptorSetLayout(gltf::bvh::Bvh::rtxDescriptorSetLayout)
+                    .addDescriptorSetLayout(lightInfo.descriptorSetLayout)
                 .name("pbr_render")
                 .build(render.pbr.layout);
 
@@ -291,6 +326,19 @@ void RtxDemo::createRenderPipeline() {
                 .name("fullscreen_render")
                 .build(render.fullscreen.layout);
 
+        render.toneMap.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("fullscreen.vert.spv"))
+                    .fragmentShader(resource("tone_map.frag.spv"))
+                .vertexInputState().clear()
+                .rasterizationState()
+                    .cullNone()
+                .layout().clear()
+                    .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
+                .name("tone_mapper")
+                .build(render.toneMap.layout);
+
         render.depthBufferVis.pipeline =
             prototypes->cloneGraphicsPipeline()
                 .shaderStage()
@@ -300,10 +348,39 @@ void RtxDemo::createRenderPipeline() {
                 .rasterizationState()
                     .cullNone()
                 .layout().clear()
-                    .addDescriptorSetLayout(uniformDescriptorSetLayout)
+                    .addDescriptorSetLayout(*cameraInfo->descriptorSetLayout())
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                 .name("depth_buffer_render")
                 .build(render.depthBufferVis.layout);
+
+        render.lights.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("lights.vert.spv"))
+                    .fragmentShader(resource("flat.frag.spv"))
+                .inputAssemblyState()
+                    .triangleStrip()
+                    .enablePrimitiveRestart()
+                .colorBlendState()
+                    .attachment().clear()
+                        .enableBlend()
+                        .colorBlendOp().add()
+                        .alphaBlendOp().add()
+                        .srcColorBlendFactor().srcAlpha()
+                        .dstColorBlendFactor().oneMinusSrcAlpha()
+                        .srcAlphaBlendFactor().zero()
+                        .dstAlphaBlendFactor().one()
+                    .add()
+                    .attachment()
+                    .add()
+                .dynamicRenderPass()
+                    .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                    .addColorAttachment(VK_FORMAT_R32G32_SFLOAT)
+                    .depthAttachment(VK_FORMAT_D16_UNORM)
+                .layout()
+                    .addDescriptorSetLayout(lightInfo.descriptorSetLayout)
+                .name("light_render")
+            .build(render.lights.layout);
     //    @formatter:on
 }
 
@@ -314,7 +391,7 @@ void RtxDemo::onSwapChainDispose() {
 
 void RtxDemo::onSwapChainRecreation() {
     camera->perspective(swapChain.aspectRatio());
-    uniforms.cpu->viewportSize = { width, height};
+    cameraInfo->cpu().viewportSize = { width, height};
 
     updateDescriptorSets();
     createRenderPipeline();
@@ -327,13 +404,19 @@ VkCommandBuffer *RtxDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    depthPrepass(commandBuffer);
+    Offscreen::render(commandBuffer, renderInfo, [&]{
+        renderLights(commandBuffer);
+        renderScene(commandBuffer, render.pbr);
+    });
+    Barrier::fragmentWriteToComputeRead(commandBuffer);
+
+    shadow.exec(commandBuffer);
 
     clearColor(0, 0, 0);
 
     renderToSwapChain([&]{
-        // renderScene(commandBuffer, render.pbr);
-        visualizeDepthBuffer(commandBuffer);
+//        visualizeDepthBuffer(commandBuffer);
+        toneMap(commandBuffer);
     }, commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -350,16 +433,26 @@ void RtxDemo::depthPrepass(VkCommandBuffer commandBuffer) {
 
 void RtxDemo::visualizeDepthBuffer(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.depthBufferVis.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.depthBufferVis.layout.handle, 0, 1, &uniformDescriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.depthBufferVis.layout.handle, 0, 1, cameraInfo->descriptorSet(), 0, VK_NULL_HANDLE);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.depthBufferVis.layout.handle, 1, 1, &bindlessDescriptor.descriptorSet, 0, VK_NULL_HANDLE);
     vkCmdDraw(commandBuffer, 3, 1, 0, depthBufferIndex);}
 
 
 void RtxDemo::renderScene(VkCommandBuffer commandBuffer, const Pipeline& pipeline) {
+    static VkBool32 blendingEnabled = VK_FALSE;
+
     camera->push(commandBuffer, pipeline.layout);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 3, 1, &scene->rtxDescriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 4, 1, &lightInfo.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdSetColorBlendEnableEXT(commandBuffer, 1, 1, &blendingEnabled);
     scene->renderWithMaterial(commandBuffer, pipeline.layout);
+}
+
+void RtxDemo::toneMap(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.toneMap.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.toneMap.layout.handle, 0, 1, &bindlessDescriptor.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdDraw(commandBuffer, 3, 1, 0, colorBufferIndex);
 }
 
 void RtxDemo::renderFullscreenQuad(VkCommandBuffer commandBuffer, uint textureIndex) {
@@ -388,15 +481,46 @@ void RtxDemo::onPause() {
 
 void RtxDemo::newFrame() {
     camera->newFrame();
+    cameraInfo->newFrame();
 }
 
 void RtxDemo::endFrame() {
-    uniforms.cpu->projection = camera->cam().proj;
-    uniforms.cpu->view = camera->cam().view;
-    uniforms.cpu->model = camera->cam().model;
-    uniforms.cpu->inverseProjection = glm::inverse(camera->cam().proj);
-    uniforms.cpu->inverseView = glm::inverse(camera->cam().view);
-    uniforms.cpu->previousViewProjection = camera->previousCamera().proj * camera->previousCamera().view;
+    cameraInfo->endFrame();
+}
+
+void RtxDemo::initShadow() {
+    shadow = rtx::shadow{{ device, bindlessDescriptor, descriptorPool, cameraInfo, lightInfo.descriptorSetLayout,
+                           gltf::bvh::Bvh::rtxDescriptorSetLayout, lightInfo.descriptorSet, scene->rtxDescriptorSet,
+                          1, depthBufferIndex, normalBufferIndex }};
+    shadow.init();
+}
+
+void RtxDemo::initLights() {
+    const auto numLights = lightInfo.numLights;
+    lightInfo.lightBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(gltf::Light) * numLights, "lights");
+    lightInfo.lightInstanceBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(gltf::LightInstance) * numLights, "light_instances");
+    lightInfo.lights = lightInfo.lightBuffer.span<gltf::Light>(numLights);
+    lightInfo.lightInstances = lightInfo.lightInstanceBuffer.span<gltf::LightInstance>(numLights);
+
+    const auto intensity = 20.0f;
+    lightInfo.lights[0].direction = glm::vec3(0, -1, 0);
+    lightInfo.lights[0].intensity = intensity;
+    lightInfo.lights[0].range = 10;
+    lightInfo.lights[0].color = spectrum::blackbodySpectrum({3000, intensity}).front();
+    lightInfo.lights[0].type = to<int>(gltf::LightType::POINT);
+
+    lightInfo.lightInstances[0].model = glm::translate(glm::mat4(1), glm::vec3(0, 3, 0));
+    lightInfo.lightInstances[0].ModelInverse = glm::inverse(lightInfo.lightInstances[0].model);
+
+}
+
+void RtxDemo::renderLights(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.lights.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.lights.layout.handle, 0, 1, &lightInfo.descriptorSet, 0, 0);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, sphere.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, sphere.indexes.sizeAs<uint32_t>(), lightInfo.numLights, 0, 0, 0);
 }
 
 
@@ -409,6 +533,7 @@ int main(){
         settings.depthTest = true;
         // settings.fullscreen = true;
         settings.enabledFeatures.wideLines = true;
+        settings.enabledFeatures.independentBlend = true;
         settings.enableBindlessDescriptors = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);

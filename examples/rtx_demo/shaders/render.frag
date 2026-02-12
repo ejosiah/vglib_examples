@@ -2,6 +2,7 @@
 
 #extension GL_EXT_ray_query : require
 #include "ray_query_lang.glsl"
+#include "octahedral.glsl"
 
 layout(location = 10) in flat int drawId;
 
@@ -18,13 +19,17 @@ layout(location = 0) in struct {
 } fs_in;
 
 #include "gltf/material_descriptor.glsl"
+
+#define LIGHT_SET 4
+#define LIGHT_BINDING_POINT 0
+#define LIGHT_INSTANCE_BINDING_POINT 1
 #include "gltf/lights_descriptor.glsl"
-#include "tone_mapping.glsl"
 
 layout(set = 3, binding = 0) uniform accelerationStructure tlas;
 #include "ray_traced_shadows.glsl"
 
 layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec2 normalOut;
 
 const int num_lights = 1;
 vec3 f_diffuse = vec3(0);
@@ -83,7 +88,7 @@ void main() {
             vec3 l_diffuse = intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
             vec3 l_specular = intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);;
 
-            float visibility = 1 - shadow(fs_in.position, light.position, 0xff, 8);
+            float visibility = 1 - shadow(fs_in.position, light.position, 0xff, 1);
 
             f_diffuse += visibility * l_diffuse;
             f_specular += visibility * l_specular;
@@ -93,8 +98,7 @@ void main() {
     vec3 specular = f_specular;
 
     vec3 color =  diffuse + specular;
-    color = tone_map(color, Uncharted2);
-    color = pow(color, vec3(0.454));
 
     fragColor = vec4(color, baseColor.a);
+    normalOut = octEncode(normal);
 }

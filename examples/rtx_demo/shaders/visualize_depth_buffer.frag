@@ -3,7 +3,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout: enable
 
-#include "uniforms.glsl"
+#include "camera_uniform.glsl"
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 
@@ -13,9 +13,9 @@ layout (location = 1) flat in uint texture_id;
 layout(location = 0) out vec4 fragColor;
 
 float linearizeDepth(float z){
-//    return (ubo.near * ubo.far) / (z * (ubo.far - ubo.near) - ubo.far);
+//    return (camera.near * camera.far) / (z * (camera.far - camera.near) - camera.far);
 
-    return (2.0 * ubo.near) / (ubo.far + ubo.near - z * (ubo.far - ubo.near));
+    return (2.0 * camera.near) / (camera.far + camera.near - z * (camera.far - camera.near));
 }
 
 void main() {

@@ -6,6 +6,9 @@
 #include "VulkanRayQuerySupport.hpp"
 #include "gltf/Bvh.hpp"
 #include "ComputePipelins.hpp"
+#include "CameraInfo.hpp"
+#include "rtx/shadow.hpp"
+#include "Sampler.hpp"
 
 class RtxDemo : public VulkanBaseApp {
 public:
@@ -15,6 +18,8 @@ protected:
     void initApp() override;
 
     void initCamera();
+
+    void initShadow();
 
     void loadScene();
 
@@ -40,6 +45,8 @@ protected:
 
     void initLoader();
 
+    void initLights();
+
     void createRenderPipeline();
 
     void onSwapChainDispose() override;
@@ -54,7 +61,11 @@ protected:
 
     void visualizeDepthBuffer(VkCommandBuffer commandBuffer);
 
+    void toneMap(VkCommandBuffer commandBuffer);
+
     void renderFullscreenQuad(VkCommandBuffer commandBuffer, uint textureIndex = 0);
+
+    void renderLights(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -73,6 +84,8 @@ protected:
         Pipeline prePass;
         Pipeline fullscreen;
         Pipeline depthBufferVis;
+        Pipeline lights;
+        Pipeline toneMap;
     } render;
 
     Offscreen::RenderInfo renderInfo;
@@ -81,8 +94,9 @@ protected:
     Texture normalBuffer;
     Texture depthBuffer;
 
-    uint32_t depthBufferIndex{~0u};
     uint32_t colorBufferIndex{~0u};
+    uint32_t normalBufferIndex{~0u};
+    uint32_t depthBufferIndex{~0u};
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -94,19 +108,20 @@ protected:
     std::shared_ptr<gltf::Model> scene;
     gltf::bvh::Bvh bvh;
 
-    std::span<gltf::Light> lights;
-    std::span<gltf::LightInstance> lightInstances;
+
+
+    struct {
+        std::span<gltf::Light> lights;
+        std::span<gltf::LightInstance> lightInstances;
+        VulkanBuffer lightBuffer;
+        VulkanBuffer lightInstanceBuffer;
+        VulkanDescriptorSetLayout descriptorSetLayout;
+        VkDescriptorSet descriptorSet{};
+        uint32_t numLights{1};
+    } lightInfo;
 
     struct UniformData {
-        glm::mat4 projection{1};
-        glm::mat4 view{1};
-        glm::mat4 model{1};
-        glm::mat4 inverseProjection{1};
-        glm::mat4 inverseView{1};
-        glm::mat4 previousViewProjection{1};
-        glm::vec2 viewportSize{};
-        float near;
-        float far;
+        int dummy;
     };
 
     struct {
@@ -116,4 +131,10 @@ protected:
 
     VulkanDescriptorSetLayout uniformDescriptorSetLayout;
     VkDescriptorSet uniformDescriptorSet{};
+    std::shared_ptr<CameraInfo> cameraInfo;
+    rtx::shadow shadow;
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer indexes;
+    } sphere;
 };

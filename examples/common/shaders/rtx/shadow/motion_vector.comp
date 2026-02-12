@@ -1,0 +1,55 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#include "octahedral.glsl"
+
+#include "constants.glsl"
+
+#define CAMERA_SET 1
+#include "../../camera_uniform.glsl"
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 2, binding = 10) uniform sampler2D global_textures[];
+layout(set = 2, binding = 11) uniform writeonly image2D global_images[];
+
+
+vec3 reconstructViewPos(vec2 uv, float depth) {
+    vec4 ndc = vec4(2 * uv - 1, depth, 1);
+    vec4 viewPos = camera.inverseProjection * ndc;
+    return viewPos.xyz / viewPos.w;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    
+    vec2 texel  = 1.0 / textureSize(global_textures[depth_texture_index], 0);
+    vec2 uv = vec2(gid + 0.5) * texel;
+
+
+    vec3 worldNormal = octDecode(texture(global_textures[normal_buffer_index], uv).xy);
+    vec3 viewNormal = normalize((camera.view * vec4(worldNormal, 0))).xyz;
+    imageStore(global_images[view_normal_image_index], gid, vec4(viewNormal, 0));
+    
+    // reprojection
+    float rawDepth = texture(global_textures[normal_buffer_index], uv).r;
+    vec4 currentNdc = vec4(2 * uv - 1, rawDepth, 1);
+    vec4 viewPos = camera.inverseProjection * currentNdc;
+    viewPos.xyz /= viewPos.w;
+    vec4 currentWorldPos = camera.inverseView * vec4(viewPos.xyz, 1);
+
+    vec4 previousNdc = camera.previousViewProjection * currentWorldPos;
+    previousNdc /= previousNdc.w;
+
+    float depth_diff = abs( 1.0 - ( previousNdc.z / currentNdc.z ) );
+
+    float c1 = 0.003;
+    float c2 = 0.017;
+    float eps = c1 + c2 * abs( viewNormal.z );
+
+    vec2 visibility = depth_diff < eps ? currentNdc.xy - previousNdc.xy  : vec2(-1);
+
+    imageStore(global_images[motion_vector_image_index], gid, vec4(visibility, 0, 0));
+}
+

@@ -1,0 +1,26 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+
+#include "constants.glsl"
+
+layout(set = 1, binding = 10) uniform sampler3D global_textures[];
+layout(set = 1, binding = 11) uniform writeonly image3D global_images[];
+
+
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+
+    // last visibility values
+    vec4 lv = texelFetch(global_textures[visibility_cache_texture_index], gid, 0);
+
+    float max_v = max(max(lv.x, lv.y), max(lv.z, lv.w));
+    float min_v = min(min(lv.x, lv.y), min(lv.z, lv.w));
+
+    float delta = max_v - min_v;
+
+    imageStore(global_images[variation_image_index], gid, vec4(delta, 0, 0, 0));
+}
