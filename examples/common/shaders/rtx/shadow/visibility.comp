@@ -21,6 +21,7 @@ layout(set = 3, binding = 0) uniform accelerationStructure tlas;
 layout(set = 4, binding = 10) uniform sampler2D global_textures[];
 layout(set = 4, binding = 10) uniform usampler3D global_utextures_3d[];
 layout(set = 4, binding = 10) uniform sampler3D global_textures_3d[];
+layout(set = 4, binding = 11) uniform writeonly image2D global_images[];
 layout(set = 4, binding = 11) uniform writeonly image3D global_images_3d[];
 layout(set = 4, binding = 11) uniform writeonly uimage3D global_uimages_3d[];
 
@@ -31,59 +32,59 @@ vec2 resolution = camera.viewportSize;
 #define SAMPLE_NUM 32
 vec2 POISSON_SAMPLES[SAMPLE_NUM] =
 {
-    vec2( 0.39963964752463255f, 0.8910925368990373f ),
-    vec2( -0.4940572704167889f, -0.8620650241721987f ),
-    vec2( 0.8075570857119035f, -0.5440713505497983f ),
-    vec2( -0.9116635046112362f, 0.2639502616182513f ),
-    vec2( 0.05343036802745114f, 0.021474316209819044f ),
-    vec2( 0.8499579311323042f, 0.27318537130618137f ),
-    vec2( -0.3403992818902896f, 0.7063573920801801f ),
-    vec2( 0.2101073022086032f, -0.8129909357248446f ),
-    vec2( -0.9005900483859263f, -0.391550837884129f ),
-    vec2( -0.19587476659917602f, -0.3981303634779107f ),
-    vec2( -0.4648065562502342f, 0.02105911800771148f ),
-    vec2( 0.35934411533835076f, 0.4121051098766807f ),
-    vec2( 0.5065318505687553f, -0.10705978878497402f ),
-    vec2( -0.7602340603847367f, 0.6493924352633489f ),
-    vec2( -0.019782992429490595f, 0.8925406666774142f ),
-    vec2( 0.3983473193951535f, -0.4801357934668924f ),
-    vec2( 0.9869656537989692f, -0.09638640479894947f ),
-    vec2( -0.25015603010828763f, 0.2972338092340553f ),
-    vec2( -0.13317277640560815f, -0.9143508644248124f ),
-    vec2( 0.6996155560882538f, 0.6876222716775685f ),
-    vec2( -0.6345508708611187f, -0.24002497065722314f ),
-    vec2( 0.07481225966233056f, 0.6194024571949546f ),
-    vec2( -0.5795518698024703f, 0.35706998381720817f ),
-    vec2( 0.10538818335743431f, -0.5072259616736443f ),
-    vec2( 0.5901520300517671f, -0.8055715970062381f ),
-    vec2( 0.4997349661429248f, 0.18391430091175387f ),
-    vec2( -0.8936441537563113f, -0.09018813624787847f ),
-    vec2( -0.49099986787705147f, -0.5534594920185129f ),
-    vec2( 0.7883035678609505f, -0.2850303445322458f ),
-    vec2( 0.20190051133128753f, -0.2287805625191621f ),
-    vec2( 0.10095624109822983f, 0.356329397671627f ),
-    vec2( 0.5999403247649068f, 0.4733652413019988f ),
+vec2(0.39963964752463255f, 0.8910925368990373f),
+vec2(-0.4940572704167889f, -0.8620650241721987f),
+vec2(0.8075570857119035f, -0.5440713505497983f),
+vec2(-0.9116635046112362f, 0.2639502616182513f),
+vec2(0.05343036802745114f, 0.021474316209819044f),
+vec2(0.8499579311323042f, 0.27318537130618137f),
+vec2(-0.3403992818902896f, 0.7063573920801801f),
+vec2(0.2101073022086032f, -0.8129909357248446f),
+vec2(-0.9005900483859263f, -0.391550837884129f),
+vec2(-0.19587476659917602f, -0.3981303634779107f),
+vec2(-0.4648065562502342f, 0.02105911800771148f),
+vec2(0.35934411533835076f, 0.4121051098766807f),
+vec2(0.5065318505687553f, -0.10705978878497402f),
+vec2(-0.7602340603847367f, 0.6493924352633489f),
+vec2(-0.019782992429490595f, 0.8925406666774142f),
+vec2(0.3983473193951535f, -0.4801357934668924f),
+vec2(0.9869656537989692f, -0.09638640479894947f),
+vec2(-0.25015603010828763f, 0.2972338092340553f),
+vec2(-0.13317277640560815f, -0.9143508644248124f),
+vec2(0.6996155560882538f, 0.6876222716775685f),
+vec2(-0.6345508708611187f, -0.24002497065722314f),
+vec2(0.07481225966233056f, 0.6194024571949546f),
+vec2(-0.5795518698024703f, 0.35706998381720817f),
+vec2(0.10538818335743431f, -0.5072259616736443f),
+vec2(0.5901520300517671f, -0.8055715970062381f),
+vec2(0.4997349661429248f, 0.18391430091175387f),
+vec2(-0.8936441537563113f, -0.09018813624787847f),
+vec2(-0.49099986787705147f, -0.5534594920185129f),
+vec2(0.7883035678609505f, -0.2850303445322458f),
+vec2(0.20190051133128753f, -0.2287805625191621f),
+vec2(0.10095624109822983f, 0.356329397671627f),
+vec2(0.5999403247649068f, 0.4733652413019988f),
 };
 
-float get_directional_light_visibility( Light light, uint sample_count, vec3 world_position, vec3 normal, uint frame_index ) {
+float get_directional_light_visibility(Light light, uint sample_count, vec3 world_position, vec3 normal, uint frame_index) {
     vec3 L = normalize(-light.direction);
     vec3 N = normalize(normal);
     float NdotL = dot(N, L);
 
-    if(NdotL <= 0.001f) return 0;
+    if (NdotL <= 0.001f) return 0;
 
     vec3 x_axis =  L.y == 1.0f ? normalize(cross(L, vec3(0.0f, 0.0f, 1.0f))) : normalize(cross(L, vec3(0.0f, 1.0f, 0.0f)));
     vec3 y_axis = normalize(cross(x_axis, L));
     float visibility = 0;
-    for ( uint s = 0; s < sample_count; ++s ) {
-        vec2 poisson_sample = POISSON_SAMPLES[ (s * FRAME_HISTORY_COUNT + frame_index) % SAMPLE_NUM ];
+    for (uint s = 0; s < sample_count; ++s) {
+        vec2 poisson_sample = POISSON_SAMPLES[(s * FRAME_HISTORY_COUNT + frame_index) % SAMPLE_NUM];
         vec3 random_x = x_axis * poisson_sample.x * 0.01;
         vec3 random_y = y_axis * poisson_sample.y * 0.01;
         vec3 random_dir = normalize(L + random_x + random_y);
 
         rayQuery rQuery;
-        rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xff, world_position, 0.01, random_dir, 100.0);
-        while (rayQueryProceed(rQuery)) {};
+        rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xff, world_position, 0.05, random_dir, 100.0);
+        while (rayQueryProceed(rQuery)) { };
 
         if (rayQueryGetIntersectionType(rQuery, true) == gl_RayQueryCommittedIntersectionNone) {
             visibility += 1.0f;
@@ -93,13 +94,13 @@ float get_directional_light_visibility( Light light, uint sample_count, vec3 wor
     return visibility / float(sample_count);
 }
 
-float get_point_light_visibility( Light light, uint sample_count, vec3 world_position, vec3 normal, uint frame_index ) {
+float get_point_light_visibility(Light light, uint sample_count, vec3 world_position, vec3 normal, uint frame_index) {
     const vec3 position_to_light = light.position - world_position;
-    const vec3 L = normalize( position_to_light );
-    const vec3 N = normalize( normal );
+    const vec3 L = normalize(position_to_light);
+    const vec3 N = normalize(normal);
     const float NdotL = dot(N, L);
 
-    if(NdotL <= 1e-4) return 0.0;
+    if (NdotL <= 1e-4) return 0.0;
 
     float d = length(position_to_light);
 
@@ -110,48 +111,50 @@ float get_point_light_visibility( Light light, uint sample_count, vec3 world_pos
 
     float attenuation = getRangeAttenuation(light.range, d);
 
-    if(attenuation <= 1e-4) return 0.0;
+    if (attenuation <= 1e-4) return 0.0;
 
-    const float scaled_distance = light.range / d;
+    const float scaled_distance = light.range != 0 ? light.range / d : 1;
     float visibility = 0.0;
 
-    const float tMin = 0.01;
+    const float tMin = 0.05;
     const float tMax = d;
 
-    for ( uint s = 0; s < sample_count; ++s ) {
-        vec2 poisson_sample = POISSON_SAMPLES[ (s * FRAME_HISTORY_COUNT + frame_index) % SAMPLE_NUM ];
+    float t = 0;
+    for (uint s = 0; s < sample_count; ++s) {
+        vec2 poisson_sample = POISSON_SAMPLES[(s * FRAME_HISTORY_COUNT + frame_index) % SAMPLE_NUM];
         vec3 random_x = x_axis * poisson_sample.x * (scaled_distance) * 0.01;
         vec3 random_y = y_axis * poisson_sample.y * (scaled_distance) * 0.01;
         vec3 random_dir = normalize(L + random_x + random_y);
 
         rayQuery rQuery;
         rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xff, world_position, tMin, random_dir, tMax);
-        while (rayQueryProceed(rQuery)) {};
+        while (rayQueryProceed(rQuery)) { };
 
+        t = rayQueryGetIntersectionT(rQuery, true);
         if (rayQueryGetIntersectionType(rQuery, true) == gl_RayQueryCommittedIntersectionNone) {
             visibility += 1.0f;
         }
     }
 
-    return visibility / float( sample_count );
+    return visibility / float(sample_count);
 }
 
-float get_spot_light_visibility( Light light, uint sample_count, vec3 world_position, vec3 normal, uint frame_index ) {
+float get_spot_light_visibility(Light light, uint sample_count, vec3 world_position, vec3 normal, uint frame_index) {
     // TODO implement
     return 0;
 }
 
-float get_light_visibility(uint light_index, uint sample_count, vec3 world_position, vec3 normal, uint frame_index ) {
+float get_light_visibility(uint light_index, uint sample_count, vec3 world_position, vec3 normal, uint frame_index) {
     Light light = lightAt(int(light_index));
-    switch(light.type) {
+    switch (light.type) {
         case LightType_Directional:
-            return get_directional_light_visibility(light, sample_count, world_position, normal, frame_index);
+        return get_directional_light_visibility(light, sample_count, world_position, normal, frame_index);
         case LightType_Point:
-            return get_point_light_visibility(light, sample_count, world_position, normal, frame_index);
+        return get_point_light_visibility(light, sample_count, world_position, normal, frame_index);
         case LightType_Spot:
-            return get_spot_light_visibility(light, sample_count, world_position, normal, frame_index);
-        default:
-            return 0;
+        return get_spot_light_visibility(light, sample_count, world_position, normal, frame_index);
+        default :
+        return 0;
     }
 }
 
@@ -159,173 +162,173 @@ float get_light_visibility(uint light_index, uint sample_count, vec3 world_posit
 #define MAX_SHADOW_VISIBILITY_SAMPLE_COUNT 5
 
 #define GROUP_SIZE 8
-#define LOCAL_DATA_SIZE ( GROUP_SIZE + 6 * 2 ) // NOTE(marco): we need to cover up to 13x13 around the pixel
+#define LOCAL_DATA_SIZE (GROUP_SIZE + 6 * 2)// NOTE(marco): we need to cover up to 13x13 around the pixel
 
 layout(local_size_x = GROUP_SIZE, local_size_y = GROUP_SIZE, local_size_z = 1) in;
 
-shared float local_image_data[ LOCAL_DATA_SIZE ][ LOCAL_DATA_SIZE ];
-shared float local_max_image_data[ LOCAL_DATA_SIZE ][ LOCAL_DATA_SIZE ];
+shared float local_image_data[LOCAL_DATA_SIZE][LOCAL_DATA_SIZE];
+shared float local_max_image_data[LOCAL_DATA_SIZE][LOCAL_DATA_SIZE];
 
 float tent_kernel[13][13] = {
-    { 0.00041649, 0.00083299, 0.00124948, 0.00166597, 0.00208247, 0.00249896, 0.00291545, 0.00249896, 0.00208247, 0.00166597, 0.00124948, 0.00083299, 0.00041649 },
-    { 0.00083299, 0.00166597, 0.00249896, 0.00333195, 0.00416493, 0.00499792, 0.0058309,  0.00499792, 0.00416493, 0.00333195, 0.00249896, 0.00166597, 0.00083299 },
-    { 0.00124948, 0.00249896, 0.00374844, 0.00499792, 0.0062474,  0.00749688, 0.00874636, 0.00749688, 0.0062474,  0.00499792, 0.00374844, 0.00249896, 0.00124948 },
-    { 0.00166597, 0.00333195, 0.00499792, 0.00666389, 0.00832986, 0.00999584, 0.01166181, 0.00999584, 0.00832986, 0.00666389, 0.00499792, 0.00333195, 0.00166597 },
-    { 0.00208247, 0.00416493, 0.0062474,  0.00832986, 0.01041233, 0.01249479, 0.01457726, 0.01249479, 0.01041233, 0.00832986, 0.0062474,  0.00416493, 0.00208247 },
-    { 0.00249896, 0.00499792, 0.00749688, 0.00999584, 0.01249479, 0.01499375, 0.01749271, 0.01499375, 0.01249479, 0.00999584, 0.00749688, 0.00499792, 0.00249896 },
-    { 0.00291545, 0.0058309,  0.00874636, 0.01166181, 0.01457726, 0.01749271, 0.02040816, 0.01749271, 0.01457726, 0.01166181, 0.00874636, 0.0058309, 0.00291545 },
-    { 0.00249896, 0.00499792, 0.00749688, 0.00999584, 0.01249479, 0.01499375, 0.01749271, 0.01499375, 0.01249479, 0.00999584, 0.00749688, 0.00499792, 0.00249896 },
-    { 0.00208247, 0.00416493, 0.0062474,  0.00832986, 0.01041233, 0.01249479, 0.01457726, 0.01249479, 0.01041233, 0.00832986, 0.0062474,  0.00416493, 0.00208247 },
-    { 0.00166597, 0.00333195, 0.00499792, 0.00666389, 0.00832986, 0.00999584, 0.01166181, 0.00999584, 0.00832986, 0.00666389, 0.00499792, 0.00333195, 0.00166597 },
-    { 0.00124948, 0.00249896, 0.00374844, 0.00499792, 0.0062474,  0.00749688, 0.00874636, 0.00749688, 0.0062474,  0.00499792, 0.00374844, 0.00249896, 0.00124948 },
-    { 0.00083299, 0.00166597, 0.00249896, 0.00333195, 0.00416493, 0.00499792, 0.0058309,  0.00499792, 0.00416493, 0.00333195, 0.00249896, 0.00166597, 0.00083299 },
-    { 0.00041649, 0.00083299, 0.00124948, 0.00166597, 0.00208247, 0.00249896, 0.00291545, 0.00249896, 0.00208247, 0.00166597, 0.00124948, 0.00083299, 0.00041649 }
+{ 0.00041649, 0.00083299, 0.00124948, 0.00166597, 0.00208247, 0.00249896, 0.00291545, 0.00249896, 0.00208247, 0.00166597, 0.00124948, 0.00083299, 0.00041649 },
+{ 0.00083299, 0.00166597, 0.00249896, 0.00333195, 0.00416493, 0.00499792, 0.0058309, 0.00499792, 0.00416493, 0.00333195, 0.00249896, 0.00166597, 0.00083299 },
+{ 0.00124948, 0.00249896, 0.00374844, 0.00499792, 0.0062474, 0.00749688, 0.00874636, 0.00749688, 0.0062474, 0.00499792, 0.00374844, 0.00249896, 0.00124948 },
+{ 0.00166597, 0.00333195, 0.00499792, 0.00666389, 0.00832986, 0.00999584, 0.01166181, 0.00999584, 0.00832986, 0.00666389, 0.00499792, 0.00333195, 0.00166597 },
+{ 0.00208247, 0.00416493, 0.0062474, 0.00832986, 0.01041233, 0.01249479, 0.01457726, 0.01249479, 0.01041233, 0.00832986, 0.0062474, 0.00416493, 0.00208247 },
+{ 0.00249896, 0.00499792, 0.00749688, 0.00999584, 0.01249479, 0.01499375, 0.01749271, 0.01499375, 0.01249479, 0.00999584, 0.00749688, 0.00499792, 0.00249896 },
+{ 0.00291545, 0.0058309, 0.00874636, 0.01166181, 0.01457726, 0.01749271, 0.02040816, 0.01749271, 0.01457726, 0.01166181, 0.00874636, 0.0058309, 0.00291545 },
+{ 0.00249896, 0.00499792, 0.00749688, 0.00999584, 0.01249479, 0.01499375, 0.01749271, 0.01499375, 0.01249479, 0.00999584, 0.00749688, 0.00499792, 0.00249896 },
+{ 0.00208247, 0.00416493, 0.0062474, 0.00832986, 0.01041233, 0.01249479, 0.01457726, 0.01249479, 0.01041233, 0.00832986, 0.0062474, 0.00416493, 0.00208247 },
+{ 0.00166597, 0.00333195, 0.00499792, 0.00666389, 0.00832986, 0.00999584, 0.01166181, 0.00999584, 0.00832986, 0.00666389, 0.00499792, 0.00333195, 0.00166597 },
+{ 0.00124948, 0.00249896, 0.00374844, 0.00499792, 0.0062474, 0.00749688, 0.00874636, 0.00749688, 0.0062474, 0.00499792, 0.00374844, 0.00249896, 0.00124948 },
+{ 0.00083299, 0.00166597, 0.00249896, 0.00333195, 0.00416493, 0.00499792, 0.0058309, 0.00499792, 0.00416493, 0.00333195, 0.00249896, 0.00166597, 0.00083299 },
+{ 0.00041649, 0.00083299, 0.00124948, 0.00166597, 0.00208247, 0.00249896, 0.00291545, 0.00249896, 0.00208247, 0.00166597, 0.00124948, 0.00083299, 0.00041649 }
 };
 
-float max_filter( ivec3 index ) {
+float max_filter(ivec3 index) {
     // NOTE(marco): visibility values should be between 0 and 1
     float max_v = -1.0;
 
     // NOTE(marco): 5x5 max filter
-    for ( int y = -2; y <= 2; ++y  ) {
-        for ( int x = -2; x <= 2; ++x ) {
-            ivec2 xy = index.xy + ivec2( x, y );
+    for (int y = -2; y <= 2; ++y) {
+        for (int x = -2; x <= 2; ++x) {
+            ivec2 xy = index.xy + ivec2(x, y);
 
-            float v = local_image_data[ xy.y ][ xy.x ];
-            max_v = max( max_v, v );
+            float v = local_image_data[xy.y][xy.x];
+            max_v = max(max_v, v);
         }
     }
 
     return max_v;
 }
 
-float read_variation_value( ivec3 index ) {
-    bool valid_index = ( any( lessThan( index.xy, ivec2( 0 ) ) ) || any( greaterThanEqual( index.xy, ivec2( resolution * 0.5 ) ) ) );
+float read_variation_value(ivec3 index) {
+    bool valid_index = (any(lessThan(index.xy, ivec2(0))) || any(greaterThanEqual(index.xy, ivec2(resolution * 0.5))));
 
-    float v = valid_index ? texelFetch( global_textures_3d[ variation_texture_index ], index, 0 ).r : 0.0;
+    float v = valid_index ? texelFetch(global_textures_3d[variation_texture_index], index, 0).r : 0.0;
 
     return v;
 }
 
 void main() {
-    ivec3 local_index = ivec3( gl_LocalInvocationID.xyz ) + ivec3( 6, 6, 0 );
-    ivec3 global_index = ivec3( gl_GlobalInvocationID.xyz );
+    ivec3 local_index = ivec3(gl_LocalInvocationID.xyz) + ivec3(6, 6, 0);
+    ivec3 global_index = ivec3(gl_GlobalInvocationID.xyz);
     Light light = lightAt(int(gl_GlobalInvocationID.z));
 
-    local_image_data[ local_index.y ][ local_index.x ] = texelFetch( global_textures_3d[ variation_texture_index ], global_index, 0 ).r;
+    local_image_data[local_index.y][local_index.x] = texelFetch(global_textures_3d[variation_texture_index], global_index, 0).r;
 
-    if ( gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0 ) {
-        for ( int y = -6; y <= -1; ++y  ) {
-            for ( int x = -6; x <= -1; ++x ) {
-                ivec3 offset = ivec3( x, y, 0 );
+    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0) {
+        for (int y = -6; y <= -1; ++y) {
+            for (int x = -6; x <= -1; ++x) {
+                ivec3 offset = ivec3(x, y, 0);
                 ivec3 index = local_index + offset;
                 ivec3 filter_index = global_index + offset;
-                local_image_data[ index.y ][ index.x ] = read_variation_value( filter_index );
+                local_image_data[index.y][index.x] = read_variation_value(filter_index);
             }
         }
     }
 
-    if ( gl_LocalInvocationID.x == 0 ) {
-        for ( int i = -6; i <= -1; ++i ) {
-            ivec3 offset = ivec3( i, 0, 0 );
+    if (gl_LocalInvocationID.x == 0) {
+        for (int i = -6; i <= -1; ++i) {
+            ivec3 offset = ivec3(i, 0, 0);
             ivec3 index = local_index + offset;
             ivec3 filter_index = global_index + offset;
-            local_image_data[ index.y ][ index.x ] = read_variation_value( filter_index );
+            local_image_data[index.y][index.x] = read_variation_value(filter_index);
         }
     }
 
-    if ( gl_LocalInvocationID.y == 0 ) {
-        for ( int i = -6; i <= -1; ++i ) {
-            ivec3 offset = ivec3( 0, i, 0 );
+    if (gl_LocalInvocationID.y == 0) {
+        for (int i = -6; i <= -1; ++i) {
+            ivec3 offset = ivec3(0, i, 0);
             ivec3 index = local_index + offset;
             ivec3 filter_index = global_index + offset;
-            local_image_data[ index.y ][ index.x ] = read_variation_value( filter_index );
+            local_image_data[index.y][index.x] = read_variation_value(filter_index);
         }
     }
 
-    if ( gl_LocalInvocationID.x == ( GROUP_SIZE - 1 ) && gl_LocalInvocationID.y == ( GROUP_SIZE - 1 ) ) {
-        for ( int y = 1; y <= 6; ++y  ) {
-            for ( int x = 1; x <= 6; ++x ) {
-                ivec3 offset = ivec3( x, y, 0 );
+    if (gl_LocalInvocationID.x == (GROUP_SIZE - 1) && gl_LocalInvocationID.y == (GROUP_SIZE - 1)) {
+        for (int y = 1; y <= 6; ++y) {
+            for (int x = 1; x <= 6; ++x) {
+                ivec3 offset = ivec3(x, y, 0);
                 ivec3 index = local_index + offset;
                 ivec3 filter_index = global_index + offset;
-                local_image_data[ index.y ][ index.x ] = read_variation_value( filter_index );
+                local_image_data[index.y][index.x] = read_variation_value(filter_index);
             }
         }
     }
 
-    if ( gl_LocalInvocationID.x == ( GROUP_SIZE - 1 ) ) {
-        for ( int i = 1; i <= 6; ++i ) {
-            ivec3 offset = ivec3( i, 0, 0 );
+    if (gl_LocalInvocationID.x == (GROUP_SIZE - 1)) {
+        for (int i = 1; i <= 6; ++i) {
+            ivec3 offset = ivec3(i, 0, 0);
             ivec3 index = local_index + offset;
             ivec3 filter_index = global_index + offset;
-            local_image_data[ index.y ][ index.x ] = read_variation_value( filter_index );
+            local_image_data[index.y][index.x] = read_variation_value(filter_index);
         }
     }
 
-    if ( gl_LocalInvocationID.y == ( GROUP_SIZE - 1 ) ) {
-        for ( int i = 1; i <= 6; ++i ) {
-            ivec3 offset = ivec3( 0, i, 0 );
+    if (gl_LocalInvocationID.y == (GROUP_SIZE - 1)) {
+        for (int i = 1; i <= 6; ++i) {
+            ivec3 offset = ivec3(0, i, 0);
             ivec3 index = local_index + offset;
             ivec3 filter_index = global_index + offset;
-            local_image_data[ index.y ][ index.x ] = read_variation_value( filter_index );
+            local_image_data[index.y][index.x] = read_variation_value(filter_index);
         }
     }
 
     memoryBarrierShared();
     barrier();
 
-    local_max_image_data[ local_index.y ][ local_index.x ] = max_filter( local_index );
+    local_max_image_data[local_index.y][local_index.x] = max_filter(local_index);
 
-    if ( gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0 ) {
-        for ( int y = -6; y <= -1; ++y  ) {
-            for ( int x = -6; x <= -1; ++x ) {
-                ivec3 offset = ivec3( x, y, 0 );
+    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0) {
+        for (int y = -6; y <= -1; ++y) {
+            for (int x = -6; x <= -1; ++x) {
+                ivec3 offset = ivec3(x, y, 0);
                 ivec3 index = local_index + offset;
-                local_max_image_data[ index.y ][ index.x ] = max_filter( index );
+                local_max_image_data[index.y][index.x] = max_filter(index);
             }
         }
     }
 
-    if ( gl_LocalInvocationID.x == 0 ) {
-        for ( int i = -6; i <= -1; ++i ) {
-            ivec3 offset = ivec3( i, 0, 0 );
+    if (gl_LocalInvocationID.x == 0) {
+        for (int i = -6; i <= -1; ++i) {
+            ivec3 offset = ivec3(i, 0, 0);
             ivec3 index = local_index + offset;
-            local_max_image_data[ index.y ][ index.x ] = max_filter( index );
+            local_max_image_data[index.y][index.x] = max_filter(index);
         }
     }
 
-    if ( gl_LocalInvocationID.y == 0 ) {
-        for ( int i = -6; i <= -1; ++i ) {
-            ivec3 offset = ivec3( 0, i, 0 );
+    if (gl_LocalInvocationID.y == 0) {
+        for (int i = -6; i <= -1; ++i) {
+            ivec3 offset = ivec3(0, i, 0);
             ivec3 index = local_index + offset;
-            local_max_image_data[ index.y ][ index.x ] = max_filter( index );
+            local_max_image_data[index.y][index.x] = max_filter(index);
         }
     }
 
-    if ( gl_LocalInvocationID.x == ( GROUP_SIZE - 1 ) && gl_LocalInvocationID.y == ( GROUP_SIZE - 1 ) ) {
-        for ( int y = 1; y <= 6; ++y  ) {
-            for ( int x = 1; x <= 6; ++x ) {
-                ivec3 offset = ivec3( x, y, 0 );
+    if (gl_LocalInvocationID.x == (GROUP_SIZE - 1) && gl_LocalInvocationID.y == (GROUP_SIZE - 1)) {
+        for (int y = 1; y <= 6; ++y) {
+            for (int x = 1; x <= 6; ++x) {
+                ivec3 offset = ivec3(x, y, 0);
                 ivec3 index = local_index + offset;
-                local_max_image_data[ index.y ][ index.x ] = max_filter( index );
+                local_max_image_data[index.y][index.x] = max_filter(index);
             }
         }
     }
 
-    if ( gl_LocalInvocationID.x == ( GROUP_SIZE - 1 ) ) {
-        for ( int i = 1; i <= 6; ++i ) {
-            ivec3 offset = ivec3( i, 0, 0 );
+    if (gl_LocalInvocationID.x == (GROUP_SIZE - 1)) {
+        for (int i = 1; i <= 6; ++i) {
+            ivec3 offset = ivec3(i, 0, 0);
             ivec3 index = local_index + offset;
-            local_max_image_data[ index.y ][ index.x ] = max_filter( index );
+            local_max_image_data[index.y][index.x] = max_filter(index);
         }
     }
 
-    if ( gl_LocalInvocationID.y == ( GROUP_SIZE - 1 ) ) {
-        for ( int i = 1; i <= 6; ++i ) {
-            ivec3 offset = ivec3( 0, i, 0 );
+    if (gl_LocalInvocationID.y == (GROUP_SIZE - 1)) {
+        for (int i = 1; i <= 6; ++i) {
+            ivec3 offset = ivec3(0, i, 0);
             ivec3 index = local_index + offset;
-            local_max_image_data[ index.y ][ index.x ] = max_filter( index );
+            local_max_image_data[index.y][index.x] = max_filter(index);
         }
     }
 
@@ -335,79 +338,80 @@ void main() {
     // NOTE(marco): 13x13 tent filter
     // TODO(marco): use separable version
     float spatial_filtered_value = 0.0;
-    for ( int y = -6; y <= 6; ++y ) {
-        for ( int x = -6; x <= 6; ++x ) {
-            ivec2 index = local_index.xy + ivec2( x, y );
-            float v = local_max_image_data[ index.y ][ index.x ];
-            float f = tent_kernel[ y + 6 ][ x + 6 ];
+    for (int y = -6; y <= 6; ++y) {
+        for (int x = -6; x <= 6; ++x) {
+            ivec2 index = local_index.xy + ivec2(x, y);
+            float v = local_max_image_data[index.y][index.x];
+            float f = tent_kernel[y + 6][x + 6];
 
             spatial_filtered_value += v * f;
         }
     }
 
-    vec4 last_variation_values = texelFetch( global_textures_3d[ variation_cache_texture_index ], global_index, 0 );
+    vec4 last_variation_values = texelFetch(global_textures_3d[variation_cache_texture_index], global_index, 0);
 
-    float filtered_value = 0.5 * ( spatial_filtered_value + 0.25 * ( last_variation_values.x + last_variation_values.y + last_variation_values.z + last_variation_values.w ) );
+    float filtered_value = 0.5 * (spatial_filtered_value + 0.25 * (last_variation_values.x + last_variation_values.y + last_variation_values.z + last_variation_values.w));
 
     last_variation_values.w = last_variation_values.z;
     last_variation_values.z = last_variation_values.y;
     last_variation_values.y = last_variation_values.x;
-    last_variation_values.x = texelFetch( global_textures_3d[ variation_texture_index ], global_index, 0 ).r;
+    last_variation_values.x = texelFetch(global_textures_3d[variation_texture_index], global_index, 0).r;
 
-    ivec2 scaled_xy = ivec2( global_index.xy * resolution_scale_rcp );
+    ivec2 scaled_xy = ivec2(global_index.xy * resolution_scale_rcp);
 
-    float motion_vectors_value = texelFetch( global_textures[ motion_vectors_texture_index ], scaled_xy.xy, 0 ).r;
-    uvec4 sample_count_history = texelFetch( global_utextures_3d[ samples_count_cache_texture_index ], global_index, 0 );
-    const float raw_depth = texelFetch( global_textures[ depth_texture_index ], scaled_xy.xy, 0).r;
+    float motion_vectors_value = texelFetch(global_textures[motion_vectors_texture_index], scaled_xy.xy, 0).r;
+    uvec4 sample_count_history = texelFetch(global_utextures_3d[samples_count_cache_texture_index], global_index, 0);
+    const float raw_depth = texelFetch(global_textures[depth_texture_index], scaled_xy.xy, 0).r;
 
     uint sample_count = MAX_SHADOW_VISIBILITY_SAMPLE_COUNT;
-    if ( motion_vectors_value.r != -1.0 ) {
+    if (motion_vectors_value.r != -1.0) {
         sample_count = sample_count_history.x;
 
-        bool stable_sample_count = ( sample_count_history.x == sample_count_history.y ) && ( sample_count_history.x == sample_count_history.z ) && ( sample_count_history.x == sample_count_history.w );
+        //        bool stable_sample_count = ( sample_count_history.x == sample_count_history.y ) && ( sample_count_history.x == sample_count_history.z ) && ( sample_count_history.x == sample_count_history.w );
+        bool stable_sample_count = all(equal(sample_count_history.xxx, sample_count_history.yzw));
 
-        if ( raw_depth == 1.0f ) {
+        if (raw_depth == 1.0f) {
             sample_count = 0;
         } else {
             float delta = 0.2;
-            if ( filtered_value > delta && sample_count < MAX_SHADOW_VISIBILITY_SAMPLE_COUNT ) {
+            if (filtered_value > delta && sample_count < MAX_SHADOW_VISIBILITY_SAMPLE_COUNT) {
                 sample_count += 1;
-            } else if ( stable_sample_count && sample_count >= 1 && (filtered_value < delta) ) {
+            } else if (stable_sample_count && sample_count >= 1 && (filtered_value < delta)) {
                 sample_count -= 1;
             }
 
-#if 0
+            #if 0
             // NOTE(marco): this is the implementation described in the book. If we don't
             // sample for one frame, the output is very noisy and blocky. Always forcing at
             // least one sample reduces this issue. Needs further investigation.
-            uvec4 new_sample_count_history = uvec4( sample_count, sample_count_history.x, sample_count_history.y, sample_count_history.z );
-            bool zeroSampleHistory = all( lessThan( new_sample_count_history, uvec4( 1 ) ) );
-            if ( zeroSampleHistory ) {
+            uvec4 new_sample_count_history = uvec4(sample_count, sample_count_history.x, sample_count_history.y, sample_count_history.z);
+            bool zeroSampleHistory = all(lessThan(new_sample_count_history, uvec4(1)));
+            if (zeroSampleHistory) {
                 // NOTE(marco): force this frame to have at least one sample
                 sample_count = 1;
             }
-#else
-            if ( sample_count <= 0 ) {
+            #else
+            if (sample_count <= 0) {
                 sample_count = 1;
             }
-#endif
+            #endif
         }
     }
 
     float visibility = 0.0;
-    if ( sample_count > 0 ) {
-        const vec2 screen_uv = uv_nearest( global_index.xy, resolution * resolution_scale );
-        const vec3 pixel_world_position = world_position_from_depth( screen_uv, raw_depth);
+    if (sample_count > 0) {
+        const vec2 screen_uv = uv_nearest(global_index.xy, resolution * resolution_scale);
+        const vec3 pixel_world_position = world_position_from_depth(screen_uv, raw_depth);
 
-        vec2 encoded_normal = texelFetch( global_textures[ normals_texture_index ], scaled_xy, 0).rg;
-        vec3 normal = octDecode( encoded_normal );
-        visibility = get_light_visibility(gl_GlobalInvocationID.z, sample_count, pixel_world_position, normal, frame_index );
+        vec2 encoded_normal = texelFetch(global_textures[normals_texture_index], scaled_xy, 0).rg;
+        vec3 normal = octDecode(encoded_normal);
+        visibility = get_light_visibility(gl_GlobalInvocationID.z, 1, pixel_world_position, normal, frame_index);
 
     }
 
     vec4 last_visibility_values = vec4(0);
-    if ( motion_vectors_value.r != -1.0 ) {
-        last_visibility_values = texelFetch( global_textures_3d[ visibility_cache_texture_index ], global_index, 0 );
+    if (motion_vectors_value.r != -1.0) {
+        last_visibility_values = texelFetch(global_textures_3d[visibility_cache_texture_index], global_index, 0);
 
         last_visibility_values.w = last_visibility_values.z;
         last_visibility_values.z = last_visibility_values.y;
@@ -424,14 +428,11 @@ void main() {
     sample_count_history.y = sample_count_history.x;
     sample_count_history.x = sample_count;
 
-    memoryBarrierImage(); // NOTE(marco): we are reading and writing from the same image
+    memoryBarrierImage();// NOTE(marco): we are reading and writing from the same image
     barrier();
 
-    imageStore( global_images_3d[ visibility_cache_texture_index ], global_index, last_visibility_values );
-
-    imageStore( global_images_3d[ filtered_variation_image_index ], global_index, vec4( spatial_filtered_value, 0, 0, 0 ) );
-
-    imageStore( global_images_3d[ variation_cache_texture_index ], global_index, last_variation_values );
-
-    imageStore( global_uimages_3d[ samples_count_cache_image_index ], global_index, sample_count_history );
+    imageStore(global_images_3d[visibility_cache_image_index], global_index, last_visibility_values);
+    imageStore(global_images_3d[filtered_variation_image_index], global_index, vec4(spatial_filtered_value, 0, 0, 0));
+    imageStore(global_images_3d[variation_cache_image_index], global_index, last_variation_values);
+    imageStore(global_uimages_3d[samples_count_cache_image_index], global_index, sample_count_history);
 }

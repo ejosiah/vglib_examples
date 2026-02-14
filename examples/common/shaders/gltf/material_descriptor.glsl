@@ -118,6 +118,7 @@ layout(set = MATERIAL_SET, binding = TEXTURE_INFO_BINDING_POINT) buffer TextureI
 
 
 layout(set = 2, binding = 10) uniform sampler2D global_textures[];
+layout(set = 2, binding = 10) uniform sampler3D global_textures_3d[];
 
 float saturate(float x) {
     return clamp(x, 0, 1);

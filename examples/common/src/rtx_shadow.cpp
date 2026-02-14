@@ -15,7 +15,7 @@ rtx::shadow::shadow(const Params& p)
 , m_lightsDescriptorSet{ p.lightDescriptorSet }
 , m_bvhDescriptorSet{ p.bvhDescriptorSet }
 , m_numLights{ p.numLights }
-, m_constants{  .depthBufferIndex = p.depthBufferIndex, .normalBufferIndex = p.normalBufferIndex }
+, m_constants{  .depthBufferIndex = p.depthBufferIndex, .normalsTextureIndex = p.normalBufferIndex }
 {
     assert(p.numLights > 0);
 }
@@ -29,14 +29,23 @@ void rtx::shadow::init() {
 }
 
 void rtx::shadow::exec(VkCommandBuffer commandBuffer) {
-    computeMotionVectors(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
+    m_device->group([&]{
+        vkCmdUpdateBuffer(commandBuffer, m_constantsBuffer, 0, sizeof(m_constants), &m_constants);
+        Barrier::transferWriteToComputeRead(commandBuffer);
 
-    computeVisibilityVariance(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
+        computeMotionVectors(commandBuffer);
+        Barrier::computeWriteToRead(commandBuffer);
 
-    computeVisibility(commandBuffer);
-    Barrier::computeWriteToFragmentRead(commandBuffer);
+        computeVisibilityVariance(commandBuffer);
+        Barrier::computeWriteToRead(commandBuffer);
+
+        computeVisibility(commandBuffer);
+        Barrier::computeWriteToRead(commandBuffer);
+
+        filterVisibility(commandBuffer);
+
+        Barrier::computeWriteToFragmentRead(commandBuffer);
+    }, commandBuffer, "shadow_visibility_pass");
 }
 
 void rtx::shadow::computeMotionVectors(VkCommandBuffer commandBuffer) {
@@ -89,6 +98,24 @@ void rtx::shadow::computeVisibility(VkCommandBuffer commandBuffer) {
 }
 
 
+
+void rtx::shadow::filterVisibility(VkCommandBuffer commandBuffer) {
+    const auto gx = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.x/2 + 7) / 8u;
+    const auto gy = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.y/2 + 7) / 8u;
+    const auto gz = m_numLights;
+
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = m_constantsDescriptorSet;
+    sets[1] = *m_cameraInfo->descriptorSet();
+    sets[2] = m_bindlessDescriptor->descriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("filter_visibility"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("filter_visibility"), 0, COUNT(sets), sets.data(), 0, 0);
+    vkCmdDispatch(commandBuffer, gx, gy, gz);
+
+}
+
+
 void rtx::shadow::initComputePipelines() {
     m_compute = ComputePipelines{ m_device, pipelines() };
     m_compute.createPipelines();
@@ -101,20 +128,18 @@ void rtx::shadow::initTextures() {
     const auto h2 = h/2;
 
     // todo ceil32
-    textures::create(*m_device, m_viewNormal, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {w, h, 1});
     textures::create(*m_device, m_motionVector, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {w, h, 1});
     textures::create(*m_device, m_visibilityCache, VK_IMAGE_TYPE_3D, VK_FORMAT_R16G16B16A16_SFLOAT, {w2, h2, m_numLights});
-    textures::create(*m_device, m_variation, VK_IMAGE_TYPE_2D, VK_FORMAT_R16_SFLOAT, {w2, h2, m_numLights});
-    textures::create(*m_device, m_variationCache, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, {w2, h2, m_numLights});
-    textures::create(*m_device, m_filteredVariation, VK_IMAGE_TYPE_2D, VK_FORMAT_R16_SFLOAT, {w2, h2, m_numLights});
-    textures::create(*m_device, m_filteredVisibility, VK_IMAGE_TYPE_2D, VK_FORMAT_R16_SFLOAT, {w2, h2, m_numLights});
-    textures::create(*m_device, m_sampleCountCache, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UINT, {w2, h2, m_numLights});
+    textures::create(*m_device, m_variation, VK_IMAGE_TYPE_3D, VK_FORMAT_R16_SFLOAT, {w2, h2, m_numLights});
+    textures::create(*m_device, m_variationCache, VK_IMAGE_TYPE_3D, VK_FORMAT_R16G16B16A16_SFLOAT, {w2, h2, m_numLights});
+    textures::create(*m_device, m_filteredVariation, VK_IMAGE_TYPE_3D, VK_FORMAT_R16_SFLOAT, {w2, h2, m_numLights});
+    textures::create(*m_device, m_filteredVisibility, VK_IMAGE_TYPE_3D, VK_FORMAT_R16_SFLOAT, {w2, h2, m_numLights});
+    textures::create(*m_device, m_sampleCountCache, VK_IMAGE_TYPE_3D, VK_FORMAT_R8G8B8A8_UINT, {w2, h2, m_numLights});
+    textures::create(*m_device, m_debugTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {w2, h2, 1});
 
-    m_viewNormal.image.transitionLayout(m_device->graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
     m_motionVector.image.transitionLayout(m_device->graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 
     m_constants.motionVectorImageIndex = m_bindlessDescriptor->update(m_motionVector, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
-    m_constants.viewNormalImageIndex = m_bindlessDescriptor->update(m_viewNormal, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
 
     m_constants.visibilityCacheImageIndex = m_bindlessDescriptor->update(m_visibilityCache, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
     m_constants.variationImageIndex = m_bindlessDescriptor->update(m_variation, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
@@ -124,7 +149,6 @@ void rtx::shadow::initTextures() {
     m_constants.sampleCountCacheImageIndex = m_bindlessDescriptor->update(m_sampleCountCache, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
 
     m_constants.motionVectorTextureIndex = m_bindlessDescriptor->update(m_motionVector, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
-    m_constants.normalsTextureIndex = m_bindlessDescriptor->update(m_viewNormal, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
 
     m_constants.visibilityCacheTextureIndex = m_bindlessDescriptor->update(m_visibilityCache, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
     m_constants.variationTextureIndex = m_bindlessDescriptor->update(m_variation, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
@@ -132,6 +156,9 @@ void rtx::shadow::initTextures() {
     m_constants.filteredVariationTextureIndex = m_bindlessDescriptor->update(m_filteredVariation, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
     m_constants.filteredVisibilityTextureIndex = m_bindlessDescriptor->update(m_filteredVisibility, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
     m_constants.sampleCountCacheTextureIndex = m_bindlessDescriptor->update(m_sampleCountCache, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
+
+    m_constants.debugImageIndex = m_bindlessDescriptor->update(m_debugTexture, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
+    debugTextureIndex = m_bindlessDescriptor->update(m_debugTexture, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_GENERAL);
 }
 
 void rtx::shadow::createDescriptorSetLayouts() {
@@ -192,6 +219,15 @@ std::vector<PipelineMetaData> rtx::shadow::pipelines() {
                     m_bindlessDescriptor->ncDescriptorSetLayout(),
                 }
             },
+            {
+                .name = "filter_visibility",
+                .shadePath = FileManager::resource("rtx_shadow_filter_visibility.comp.spv"),
+                .layouts = {
+                    &m_constantsDescriptorSetLayout,
+                    m_cameraInfo->descriptorSetLayout(),
+                    m_bindlessDescriptor->ncDescriptorSetLayout(),
+                }
+            }
     };
 }
 
@@ -208,7 +244,19 @@ uint32_t rtx::shadow::variance() const {
     return m_constants.variationTextureIndex;
 }
 
+uint32_t rtx::shadow::debug() const {
+    return debugTextureIndex;
+}
+
+uint32_t rtx::shadow::visibility() const {
+    return m_constants.filteredVisibilityTextureIndex;
+}
+
 void rtx::shadow::newFrame() {
+    m_constants.frameIndex %= 4;
+}
+
+void rtx::shadow::endFrame() {
     m_constants.frameIndex++;
 }
 

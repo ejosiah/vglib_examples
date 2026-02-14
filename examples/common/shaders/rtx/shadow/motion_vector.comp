@@ -28,12 +28,11 @@ void main() {
     vec2 uv = vec2(gid + 0.5) * texel;
 
 
-    vec3 worldNormal = octDecode(texture(global_textures[normal_buffer_index], uv).xy);
+    vec3 worldNormal = octDecode(texture(global_textures[normals_texture_index], uv).xy);
     vec3 viewNormal = normalize((camera.view * vec4(worldNormal, 0))).xyz;
-    imageStore(global_images[view_normal_image_index], gid, vec4(viewNormal, 0));
-    
+
     // reprojection
-    float rawDepth = texture(global_textures[normal_buffer_index], uv).r;
+    float rawDepth = texture(global_textures[depth_texture_index], uv).r;
     vec4 currentNdc = vec4(2 * uv - 1, rawDepth, 1);
     vec4 viewPos = camera.inverseProjection * currentNdc;
     viewPos.xyz /= viewPos.w;

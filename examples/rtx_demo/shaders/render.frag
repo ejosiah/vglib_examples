@@ -20,13 +20,17 @@ layout(location = 0) in struct {
 
 #include "gltf/material_descriptor.glsl"
 
+layout(set = 3, binding = 0) uniform accelerationStructure tlas;
+#include "ray_traced_shadows.glsl"
+
 #define LIGHT_SET 4
 #define LIGHT_BINDING_POINT 0
 #define LIGHT_INSTANCE_BINDING_POINT 1
 #include "gltf/lights_descriptor.glsl"
 
-layout(set = 3, binding = 0) uniform accelerationStructure tlas;
-#include "ray_traced_shadows.glsl"
+
+#define CAMERA_SET 5
+#include "camera_uniform.glsl"
 
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 normalOut;
@@ -34,6 +38,12 @@ layout(location = 1) out vec2 normalOut;
 const int num_lights = 1;
 vec3 f_diffuse = vec3(0);
 vec3 f_specular = vec3(0);
+
+float ray_traced_shadows(int lightId, int shadowIndex) {
+    vec2 screen_uv = (gl_FragCoord.xy + 0.5) / camera.viewportSize;
+    vec3 lid = vec3(screen_uv, lightId);
+    return texture(global_textures_3d[shadowIndex], lid).r;
+}
 
 void main() {
     vec4 baseColor = getBaseColor();
@@ -88,7 +98,8 @@ void main() {
             vec3 l_diffuse = intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
             vec3 l_specular = intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);;
 
-            float visibility = 1 - shadow(fs_in.position, light.position, 0xff, 1);
+//            float visibility = 1 - shadow(fs_in.position, light.position, 0xff, 1);
+            float visibility = ray_traced_shadows(i, light.shadowMapIndex);
 
             f_diffuse += visibility * l_diffuse;
             f_specular += visibility * l_specular;

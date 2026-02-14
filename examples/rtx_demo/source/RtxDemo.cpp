@@ -39,6 +39,9 @@ void RtxDemo::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+
+    jitter.sampler.type = static_cast<SamplerType>(SamplerType::Interleaved_Gradients);
+    jitter.period(4);
 }
 
 void RtxDemo::initBuffers() {
@@ -280,6 +283,7 @@ void RtxDemo::createRenderPipeline() {
                     .addDescriptorSetLayout(*bindlessDescriptor.descriptorSetLayout)
                     .addDescriptorSetLayout(gltf::bvh::Bvh::rtxDescriptorSetLayout)
                     .addDescriptorSetLayout(lightInfo.descriptorSetLayout)
+                    .addDescriptorSetLayout(*cameraInfo->descriptorSetLayout())
                 .name("pbr_render")
                 .build(render.pbr.layout);
 
@@ -404,20 +408,26 @@ VkCommandBuffer *RtxDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    Offscreen::render(commandBuffer, renderInfo, [&]{
-        renderLights(commandBuffer);
-        renderScene(commandBuffer, render.pbr);
-    });
-    Barrier::fragmentWriteToComputeRead(commandBuffer);
+    device.group([&]{
+        device.group([&]{
+            Offscreen::render(commandBuffer, renderInfo, [&]{
+//                renderLights(commandBuffer);
+                renderScene(commandBuffer, render.pbr);
+            });
+            Barrier::fragmentWriteToComputeRead(commandBuffer);
+        }, commandBuffer, "lighting_pass");
 
-    shadow.exec(commandBuffer);
+        shadow.exec(commandBuffer);
 
-    clearColor(0, 0, 0);
+        clearColor(0, 0, 0);
+        renderToSwapChain([&]{
+    //        visualizeDepthBuffer(commandBuffer);
+            toneMap(commandBuffer);
+//            renderFullscreenQuad(commandBuffer, shadow.debug());
+        }, commandBuffer);
+    }, commandBuffer, "frame");
 
-    renderToSwapChain([&]{
-//        visualizeDepthBuffer(commandBuffer);
-        toneMap(commandBuffer);
-    }, commandBuffer);
+
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -445,6 +455,7 @@ void RtxDemo::renderScene(VkCommandBuffer commandBuffer, const Pipeline& pipelin
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 3, 1, &scene->rtxDescriptorSet, 0, VK_NULL_HANDLE);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 4, 1, &lightInfo.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 5, 1, cameraInfo->descriptorSet(), 0, VK_NULL_HANDLE);
     vkCmdSetColorBlendEnableEXT(commandBuffer, 1, 1, &blendingEnabled);
     scene->renderWithMaterial(commandBuffer, pipeline.layout);
 }
@@ -480,11 +491,17 @@ void RtxDemo::onPause() {
 }
 
 void RtxDemo::newFrame() {
-    camera->newFrame();
+    jitterValue = (-1.f + 2.f * jitter.nextSample()) * .5f;
+    jitterValue /= glm::vec2(width, height);
+
     cameraInfo->newFrame();
+    camera->newFrame();
+//    camera->jitter(jitterValue.x, jitterValue.y);
+    shadow.newFrame();
 }
 
 void RtxDemo::endFrame() {
+    shadow.endFrame();
     cameraInfo->endFrame();
 }
 
@@ -493,6 +510,10 @@ void RtxDemo::initShadow() {
                            gltf::bvh::Bvh::rtxDescriptorSetLayout, lightInfo.descriptorSet, scene->rtxDescriptorSet,
                           1, depthBufferIndex, normalBufferIndex }};
     shadow.init();
+
+    for(auto& light : lightInfo.lights) {
+        light.shadowMapIndex = static_cast<int>(shadow.visibility());
+    }
 }
 
 void RtxDemo::initLights() {

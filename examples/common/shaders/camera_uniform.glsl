@@ -27,7 +27,7 @@ vec2 uv_nearest( ivec2 pixel, vec2 texture_size ) {
 }
 
 vec3 ndc_from_uv_raw_depth( vec2 uv, float raw_depth ) {
-    return vec3( uv.x * 2 - 1, (1 - uv.y) * 2 - 1, raw_depth );
+    return vec3( uv * 2 - 1, raw_depth );
 }
 
 vec3 world_position_from_depth( vec2 uv, float raw_depth ) {

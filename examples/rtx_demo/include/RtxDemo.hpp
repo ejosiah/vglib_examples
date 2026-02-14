@@ -137,4 +137,7 @@ protected:
         VulkanBuffer vertices;
         VulkanBuffer indexes;
     } sphere;
+
+    Jitter jitter{};
+    glm::vec2 jitterValue{};
 };
