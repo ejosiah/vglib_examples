@@ -82,7 +82,7 @@ void main() {
         }
         else {
             pointToLight = -light.direction;
-            light.position = fs_in.position * pointToLight * 1e6;
+            light.position = fs_in.position + pointToLight * 1e6;
         }
 
         vec3 L = normalize(pointToLight);
@@ -98,7 +98,7 @@ void main() {
             vec3 l_diffuse = intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
             vec3 l_specular = intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);;
 
-//            float visibility = 1 - shadow(fs_in.position, light.position, 0xff, 1);
+//            float visibility = 1 - shadow(fs_in.position, light.position, 0xff, 8);
             float visibility = ray_traced_shadows(i, light.shadowMapIndex);
 
             f_diffuse += visibility * l_diffuse;

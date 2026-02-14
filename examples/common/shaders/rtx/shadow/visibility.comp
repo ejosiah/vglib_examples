@@ -83,7 +83,7 @@ float get_directional_light_visibility(Light light, uint sample_count, vec3 worl
         vec3 random_dir = normalize(L + random_x + random_y);
 
         rayQuery rQuery;
-        rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xff, world_position, 0.05, random_dir, 100.0);
+        rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xff, world_position, 0.01, random_dir, 100.0);
         while (rayQueryProceed(rQuery)) { };
 
         if (rayQueryGetIntersectionType(rQuery, true) == gl_RayQueryCommittedIntersectionNone) {
@@ -116,9 +116,6 @@ float get_point_light_visibility(Light light, uint sample_count, vec3 world_posi
     const float scaled_distance = light.range != 0 ? light.range / d : 1;
     float visibility = 0.0;
 
-    const float tMin = 0.05;
-    const float tMax = d;
-
     float t = 0;
     for (uint s = 0; s < sample_count; ++s) {
         vec2 poisson_sample = POISSON_SAMPLES[(s * FRAME_HISTORY_COUNT + frame_index) % SAMPLE_NUM];
@@ -127,7 +124,7 @@ float get_point_light_visibility(Light light, uint sample_count, vec3 world_posi
         vec3 random_dir = normalize(L + random_x + random_y);
 
         rayQuery rQuery;
-        rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xff, world_position, tMin, random_dir, tMax);
+        rayQueryInitialize(rQuery, tlas, gl_RayFlagsTerminateOnFirstHit, 0xff, world_position, 0.01, random_dir, d);
         while (rayQueryProceed(rQuery)) { };
 
         t = rayQueryGetIntersectionT(rQuery, true);

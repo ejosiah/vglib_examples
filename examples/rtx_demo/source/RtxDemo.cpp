@@ -174,7 +174,7 @@ void RtxDemo::initLoader() {
 
 
 void RtxDemo::loadScene() {
-    scene = loader->loadGltf(resource("Sponza/glTF/Sponza.gltf"));
+    scene = loader->loadGltf(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
     scene->sync();
 
     bvh = gltf::bvh::Bvh{ device, descriptorPool, scene };
@@ -523,15 +523,18 @@ void RtxDemo::initLights() {
     lightInfo.lights = lightInfo.lightBuffer.span<gltf::Light>(numLights);
     lightInfo.lightInstances = lightInfo.lightInstanceBuffer.span<gltf::LightInstance>(numLights);
 
-    const auto intensity = 20.0f;
+    const auto intensity = 5.0f;
     lightInfo.lights[0].direction = glm::vec3(0, -1, 0);
     lightInfo.lights[0].intensity = intensity;
     lightInfo.lights[0].range = 10;
-    lightInfo.lights[0].color = spectrum::blackbodySpectrum({3000, intensity}).front();
-    lightInfo.lights[0].type = to<int>(gltf::LightType::POINT);
+    lightInfo.lights[0].color = spectrum::blackbodySpectrum({5000, intensity}).front();
+    lightInfo.lights[0].type = to<int>(gltf::LightType::DIRECTIONAL);
 
-    lightInfo.lightInstances[0].model = glm::translate(glm::mat4(1), glm::vec3(0, 3, 0));
-    lightInfo.lightInstances[0].ModelInverse = glm::inverse(lightInfo.lightInstances[0].model);
+    glm::mat4 model{1};
+    model = glm::rotate(model, glm::radians(45.f), {0, 1, 0});
+    model = glm::rotate(model, glm::radians(45.f), {1, 0, 0});
+    lightInfo.lightInstances[0].model = model;
+    lightInfo.lightInstances[0].ModelInverse = glm::inverse(model);
 
 }
 
