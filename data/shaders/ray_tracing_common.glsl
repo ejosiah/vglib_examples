@@ -1,6 +1,8 @@
 #ifndef RAY_TRACING_COMMON
 #define RAY_TRACING_COMMONG
 
+#extension GL_EXT_ray_tracing : enable
+
 #define accelerationStructure accelerationStructureEXT
 
 #define gl_RayFlagsNone gl_RayFlagsNoneEXT

@@ -18,6 +18,8 @@ public:
 
     void endFrame();
 
+    glm::vec3 position() const;
+
     VulkanDescriptorSetLayout* descriptorSetLayout();
 
     const VkDescriptorSet* descriptorSet() const;
@@ -39,6 +41,7 @@ private:
          glm::mat4 inverseProjection{1};
          glm::mat4 inverseViewProjection{1};
          glm::mat4 previousViewProjection{1};
+         glm::vec3 position{};
          glm::vec2 viewportSize{};
          float near{0.1};
          float far{100};

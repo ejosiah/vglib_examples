@@ -24,7 +24,7 @@ bool InShadow(vec3 origin, vec3 direction, float dist, uint cullMask){
     return rayQueryGetIntersectionType(rQuery, true) != gl_RayQueryCommittedIntersectionNone;
 }
 
-float shadow(vec3 objPos, vec3 lightPos, uint cullMask, int nSamples){
+float shadow(vec3 objPos, vec3 lightPos, float range, uint cullMask, int nSamples){
     vec3 lightDir = lightPos - objPos;
     float dist = length(lightDir);
     lightDir /= dist;
@@ -32,6 +32,8 @@ float shadow(vec3 objPos, vec3 lightPos, uint cullMask, int nSamples){
     vec3 up = N.x > 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0);
     vec3 right = cross(up, N);
     up = cross(N, right);
+
+    dist = range != 0 ? min(range, dist) : dist;
 
     float sum = 0;
     for(int i = 0; i < nSamples; i++){

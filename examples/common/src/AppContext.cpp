@@ -2,6 +2,7 @@
 #include "FileManager.hpp"
 #include "Vertex.h"
 #include "ExtensionChain.hpp"
+#include "primitives.h"
 
 AppContext::AppContext(VulkanDevice &device, VulkanDescriptorPool& descriptorPool, VulkanSwapChain& swapChain, VulkanRenderPass& renderPass)
 :_device{ &device}
@@ -105,6 +106,17 @@ void AppContext::init0() {
 
     createPipelines();
     initFloor();
+    createShapes();
+}
+
+void AppContext::createShapes() {
+    auto prim = primitives::sphere(100, 100, 0.1, glm::mat4{}, glm::vec4{1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    _shapes.sphere.vertices = _device->createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    _shapes.sphere.indexes = _device->createDeviceLocalBuffer(prim.indices.data(), BYTE_SIZE(prim.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+    prim = primitives::cube();
+    _shapes.cube.vertices = _device->createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    _shapes.cube.indexes = _device->createDeviceLocalBuffer(prim.indices.data(), BYTE_SIZE(prim.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 
 void AppContext::initAtmosphere() {
@@ -219,6 +231,20 @@ void AppContext::initFloor() {
 
 void AppContext::renderFloor(VkCommandBuffer commandBuffer, BaseCameraController &camera) {
     instance._floor.render(commandBuffer, camera);
+}
+
+void AppContext::drawSphere(VkCommandBuffer commandBuffer, uint32_t instanceCount) {
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, instance._shapes.sphere.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, instance._shapes.sphere.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, instance._shapes.sphere.indexes.sizeAs<uint32_t>(), instanceCount, 0, 0, 0);
+}
+
+void AppContext::drawCube(VkCommandBuffer commandBuffer, uint32_t instanceCount) {
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, instance._shapes.cube.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, instance._shapes.cube.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, instance._shapes.cube.indexes.sizeAs<uint32_t>(), instanceCount, 0, 0, 0);
 }
 
 void AppContext::addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std::vector<std::reference_wrapper<VulkanImage>> &images,

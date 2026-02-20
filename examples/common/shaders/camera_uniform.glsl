@@ -15,10 +15,13 @@ layout(set = CAMERA_SET, binding = 0, scalar) uniform Camera_Uniforms {
     mat4 inverseProjection;
     mat4 inverseViewProjection;
     mat4 previousViewProjection;
+    vec3 position;
     vec2 viewportSize;
     float near;
     float far;
 } camera;
+
+vec2 resolution = camera.viewportSize;
 
 vec2 uv_nearest( ivec2 pixel, vec2 texture_size ) {
     vec2 uv = floor(pixel) + .5;

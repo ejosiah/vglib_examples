@@ -25,8 +25,6 @@ layout(set = 4, binding = 11) uniform writeonly image2D global_images[];
 layout(set = 4, binding = 11) uniform writeonly image3D global_images_3d[];
 layout(set = 4, binding = 11) uniform writeonly uimage3D global_uimages_3d[];
 
-vec2 resolution = camera.viewportSize;
-
 // NOTE(marco): thanks to https://github.com/bartwronski/PoissonSamplingGenerator
 #define FRAME_HISTORY_COUNT 4
 #define SAMPLE_NUM 32
@@ -200,7 +198,7 @@ float max_filter(ivec3 index) {
 }
 
 float read_variation_value(ivec3 index) {
-    bool valid_index = (any(lessThan(index.xy, ivec2(0))) || any(greaterThanEqual(index.xy, ivec2(resolution * 0.5))));
+    bool valid_index = (any(lessThan(index.xy, ivec2(0))) || any(greaterThanEqual(index.xy, ivec2(resolution * resolution_scale))));
 
     float v = valid_index ? texelFetch(global_textures_3d[variation_texture_index], index, 0).r : 0.0;
 

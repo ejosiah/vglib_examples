@@ -95,8 +95,8 @@ namespace rtx {
         VkDescriptorSet m_constantsDescriptorSet{};
 
         struct {
-            float resolution_scale{0.5};
-            float resolution_scale_rcp{2};
+            float resolution_scale{1};
+            float resolution_scale_rcp{1};
             uint32_t depthBufferIndex{~0u};
             uint32_t normalsTextureIndex{~0u};
 

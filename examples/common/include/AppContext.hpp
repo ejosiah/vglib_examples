@@ -119,6 +119,10 @@ public:
 
     static void renderFloor(VkCommandBuffer commandBuffer, BaseCameraController& camera);
 
+    static void drawSphere(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
+
+    static void drawCube(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
+
     static void shutdown();
 
     static void updateSunDirection(glm::vec3 direction);
@@ -135,6 +139,8 @@ private:
     void updateDescriptorSets();
 
     void init0();
+
+    void createShapes();
 
     void initAtmosphere();
 
@@ -179,6 +185,17 @@ private:
         } dynamic;
     } _shading;
     Floor _floor;
+
+    struct {
+        struct {
+            VulkanBuffer vertices;
+            VulkanBuffer indexes;
+        } sphere;
+        struct {
+            VulkanBuffer vertices;
+            VulkanBuffer indexes;
+        } cube;
+    } _shapes;
 
     Atmosphere _atmosphere;
 

@@ -35,6 +35,7 @@ void RtxDemo::initApp() {
     initRenderInfo();
     updateDescriptorSets();
     initShadow();
+    initDDGI();
 
     createCommandPool();
     createPipelineCache();
@@ -53,7 +54,7 @@ void RtxDemo::initBuffers() {
     normalBufferIndex = bindlessDescriptor.update(normalBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     depthBufferIndex = bindlessDescriptor.update(depthBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
-    auto prim = primitives::sphere(10, 10, 0.1);
+    auto prim = primitives::sphere(10, 10, 1.0, glm::mat4{1}, glm::vec4{1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     sphere.vertices = device.createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     sphere.indexes = device.createDeviceLocalBuffer(prim.indices.data(), BYTE_SIZE(prim.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
@@ -174,7 +175,7 @@ void RtxDemo::initLoader() {
 
 
 void RtxDemo::loadScene() {
-    scene = loader->loadGltf(resource("ABeautifulGame/glTF/ABeautifulGame.gltf"));
+    scene = loader->loadGltf(resource("Sponza/glTF/Sponza.gltf"));
     scene->sync();
 
     bvh = gltf::bvh::Bvh{ device, descriptorPool, scene };
@@ -284,6 +285,7 @@ void RtxDemo::createRenderPipeline() {
                     .addDescriptorSetLayout(gltf::bvh::Bvh::rtxDescriptorSetLayout)
                     .addDescriptorSetLayout(lightInfo.descriptorSetLayout)
                     .addDescriptorSetLayout(*cameraInfo->descriptorSetLayout())
+                    .addDescriptorSetLayout(uniformDescriptorSetLayout)
                 .name("pbr_render")
                 .build(render.pbr.layout);
 
@@ -362,9 +364,8 @@ void RtxDemo::createRenderPipeline() {
                 .shaderStage()
                     .vertexShader(resource("lights.vert.spv"))
                     .fragmentShader(resource("flat.frag.spv"))
-                .inputAssemblyState()
-                    .triangleStrip()
-                    .enablePrimitiveRestart()
+                .depthStencilState()
+                    .disableDepthWrite()
                 .colorBlendState()
                     .attachment().clear()
                         .enableBlend()
@@ -385,6 +386,26 @@ void RtxDemo::createRenderPipeline() {
                     .addDescriptorSetLayout(lightInfo.descriptorSetLayout)
                 .name("light_render")
             .build(render.lights.layout);
+
+        render.probe.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("probes.vert.spv"))
+                    .fragmentShader(resource("flat.frag.spv"))
+                .depthStencilState()
+                    .disableDepthWrite()
+                .colorBlendState()
+                    .attachments(2)
+                .dynamicRenderPass()
+                    .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
+                    .addColorAttachment(VK_FORMAT_R32G32_SFLOAT)
+                    .depthAttachment(VK_FORMAT_D16_UNORM)
+                .layout().clear()
+                    .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(probeConstants))
+                .name("probe_render")
+            .build(render.probe.layout);
+
+
     //    @formatter:on
 }
 
@@ -411,19 +432,21 @@ VkCommandBuffer *RtxDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     device.group([&]{
         device.group([&]{
             Offscreen::render(commandBuffer, renderInfo, [&]{
-//                renderLights(commandBuffer);
                 renderScene(commandBuffer, render.pbr);
+                renderLights(commandBuffer);
+//                renderProbes(commandBuffer);
             });
             Barrier::fragmentWriteToComputeRead(commandBuffer);
         }, commandBuffer, "lighting_pass");
 
         shadow.exec(commandBuffer);
+        ddgi.exec(commandBuffer);
 
         clearColor(0, 0, 0);
         renderToSwapChain([&]{
     //        visualizeDepthBuffer(commandBuffer);
             toneMap(commandBuffer);
-//            renderFullscreenQuad(commandBuffer, shadow.debug());
+//            renderFullscreenQuad(commandBuffer, ddgi.indirectLight());
         }, commandBuffer);
     }, commandBuffer, "frame");
 
@@ -456,6 +479,7 @@ void RtxDemo::renderScene(VkCommandBuffer commandBuffer, const Pipeline& pipelin
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 3, 1, &scene->rtxDescriptorSet, 0, VK_NULL_HANDLE);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 4, 1, &lightInfo.descriptorSet, 0, VK_NULL_HANDLE);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 5, 1, cameraInfo->descriptorSet(), 0, VK_NULL_HANDLE);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout.handle, 6, 1, &uniformDescriptorSet, 0, VK_NULL_HANDLE);
     vkCmdSetColorBlendEnableEXT(commandBuffer, 1, 1, &blendingEnabled);
     scene->renderWithMaterial(commandBuffer, pipeline.layout);
 }
@@ -498,11 +522,20 @@ void RtxDemo::newFrame() {
     camera->newFrame();
 //    camera->jitter(jitterValue.x, jitterValue.y);
     shadow.newFrame();
+    ddgi.newFrame();
 }
 
 void RtxDemo::endFrame() {
     shadow.endFrame();
     cameraInfo->endFrame();
+    ddgi.endFrame();
+
+    auto offset = ddgi.probes().count/2 - ddgi.probes().count;
+
+    probeConstants.model = glm::translate(glm::mat4{1}, {offset.x, 0.5, offset.z}) * glm::scale(glm::mat4{1}, glm::vec3(0.05));
+    probeConstants.viewProjection =  camera->cam().proj * camera->cam().view;
+    probeConstants.probeCount = ddgi.probes().count;
+    probeConstants.probeSpacing = ddgi.probes().spacing;
 }
 
 void RtxDemo::initShadow() {
@@ -516,6 +549,16 @@ void RtxDemo::initShadow() {
     }
 }
 
+void RtxDemo::initDDGI() {
+    glm::vec3 sceneHalfWidth = (scene->bounds.max - scene->bounds.min) * 0.5f;
+    ddgi = rtx::ddgi{{ device, bindlessDescriptor, descriptorPool, cameraInfo, lightInfo.descriptorSetLayout,
+                               gltf::bvh::Bvh::rtxDescriptorSetLayout, lightInfo.descriptorSet, scene->rtxDescriptorSet,
+                              1, depthBufferIndex, normalBufferIndex, sceneHalfWidth }};
+    ddgi.init();
+    uniforms.cpu->indirect_light_texture_index = ddgi.indirectLight();
+    numProbes = ddgi.probes().count.x * ddgi.probes().count.y * ddgi.probes().count.z;
+}
+
 void RtxDemo::initLights() {
     const auto numLights = lightInfo.numLights;
     lightInfo.lightBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(gltf::Light) * numLights, "lights");
@@ -523,16 +566,15 @@ void RtxDemo::initLights() {
     lightInfo.lights = lightInfo.lightBuffer.span<gltf::Light>(numLights);
     lightInfo.lightInstances = lightInfo.lightInstanceBuffer.span<gltf::LightInstance>(numLights);
 
-    const auto intensity = 5.0f;
+    const auto intensity = 10.0f;
     lightInfo.lights[0].direction = glm::vec3(0, -1, 0);
     lightInfo.lights[0].intensity = intensity;
-    lightInfo.lights[0].range = 10;
+    lightInfo.lights[0].range = 5;
     lightInfo.lights[0].color = spectrum::blackbodySpectrum({5000, intensity}).front();
-    lightInfo.lights[0].type = to<int>(gltf::LightType::DIRECTIONAL);
+    lightInfo.lights[0].type = to<int>(gltf::LightType::POINT);
 
     glm::mat4 model{1};
-    model = glm::rotate(model, glm::radians(45.f), {0, 1, 0});
-    model = glm::rotate(model, glm::radians(45.f), {1, 0, 0});
+    model = glm::translate(model, {0, 1, -2});
     lightInfo.lightInstances[0].model = model;
     lightInfo.lightInstances[0].ModelInverse = glm::inverse(model);
 
@@ -547,6 +589,15 @@ void RtxDemo::renderLights(VkCommandBuffer commandBuffer) {
     vkCmdDrawIndexed(commandBuffer, sphere.indexes.sizeAs<uint32_t>(), lightInfo.numLights, 0, 0, 0);
 }
 
+
+void RtxDemo::renderProbes(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.probe.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, render.probe.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(probeConstants), &probeConstants);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, sphere.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, sphere.indexes.sizeAs<uint32_t>(), numProbes, 0, 0, 0);
+}
 
 int main(){
     try{

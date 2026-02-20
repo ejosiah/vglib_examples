@@ -1,0 +1,61 @@
+#version 460
+
+#include "shared.glsl"
+
+#define CAMERA_SET 2
+#include "../../camera_uniform.glsl"
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+ivec2 pixel_offsets[] = ivec2[]( ivec2(0,0), ivec2(0,1), ivec2(1,0), ivec2(1,1));
+
+void main() {
+
+    ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
+
+       int resolution_divider = output_resolution_half == 1 ? 2 : 1;
+       vec2 screen_uv = uv_nearest(coords.xy, resolution / resolution_divider);
+
+       float raw_depth = 1.0f;
+       int chosen_hiresolution_sample_index = 0;
+       if (output_resolution_half == 1) {
+           float closer_depth = 0.f;
+           for ( int i = 0; i < 4; ++i ) {
+
+               float depth = texelFetch(global_textures[nonuniformEXT(depth_texture_index)], (coords.xy) * 2 + pixel_offsets[i], 0).r;
+
+               if ( closer_depth < depth ) {
+                   closer_depth = depth;
+                   chosen_hiresolution_sample_index = i;
+               }
+           }
+
+           raw_depth = closer_depth;
+       }
+       else {
+           raw_depth = texelFetch(global_textures[nonuniformEXT(depth_texture_index)], coords.xy, 0).r;
+       }
+
+       if ( raw_depth == 1.0f ) {
+           imageStore(global_images[ indirect_image_index ], coords.xy, vec4(0,0,0,1));
+           return;
+       }
+
+       // Manually fetch normals when in low resolution.
+       vec3 normal = vec3(0);
+
+       if (output_resolution_half == 1) {
+           vec2 encoded_normal = texelFetch(global_textures[nonuniformEXT(normal_texture_index)], (coords.xy) * 2 + pixel_offsets[chosen_hiresolution_sample_index], 0).rg;
+           normal = normalize(octDecode(encoded_normal));
+       }
+       else {
+           vec2 encoded_normal = texelFetch(global_textures[nonuniformEXT(normal_texture_index)], coords.xy, 0).rg;
+           normal = octDecode(encoded_normal);
+       }
+
+       const vec3 pixel_world_position = world_position_from_depth(screen_uv, raw_depth);
+
+       vec3 irradiance = sample_irradiance( pixel_world_position, normal, camera.position.xyz );
+
+       imageStore(global_images[ indirect_image_index ], coords.xy, vec4(irradiance,1));
+}

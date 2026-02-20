@@ -17,8 +17,6 @@ layout(set = 2, binding = 11) uniform writeonly image3D global_images_3d[];
 #define GROUP_SIZE 8
 #define LOCAL_DATA_SIZE (GROUP_SIZE + 2 * 2)
 
-vec2 resolution = camera.viewportSize;
-
 layout (local_size_x = GROUP_SIZE, local_size_y = GROUP_SIZE, local_size_z = 1) in;
 
 float gaussian_kernel[5][5] = {
@@ -34,7 +32,7 @@ shared vec3 local_normal_data[LOCAL_DATA_SIZE][LOCAL_DATA_SIZE];
 
 
 float visibility_temporal_filter(ivec3 index) {
-    if (any(lessThan(index.xy, ivec2(0))) || any(greaterThanEqual(index.xy, ivec2(resolution * 0.5)))) {
+    if (any(lessThan(index.xy, ivec2(0))) || any(greaterThanEqual(index.xy, ivec2(resolution * resolution_scale)))) {
         return 0.0;
     }
 
@@ -64,7 +62,7 @@ vec3 get_normal(ivec3 index) {
 }
 
 void main() {
-    ivec2 iresolution = ivec2(resolution * 0.5);
+    ivec2 iresolution = ivec2(resolution * resolution_scale);
     if (gl_GlobalInvocationID.x >= iresolution.x || gl_GlobalInvocationID.y >= iresolution.y)
     return;
 

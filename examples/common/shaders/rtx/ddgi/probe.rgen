@@ -1,0 +1,33 @@
+#version 460
+
+#include "shared.glsl"
+
+layout(set = 2, binding = 0) uniform accelerationStructure tlas;
+
+layout(location = 0) rayPayload RayPayload payload;
+
+void main() {
+    const ivec2 pixel_coord = ivec2(gl_LaunchIDEXT.xy);
+    const int probe_index = pixel_coord.y + probe_update_offset;
+    const int ray_index = pixel_coord.x;
+
+    const bool skip_probe = (probe_status[probe_index] == PROBE_STATUS_OFF) || (probe_status[probe_index] == PROBE_STATUS_UNINITIALIZED);
+    if (use_probe_status() && skip_probe) {
+        return;
+    }
+
+    const int probe_counts = probe_counts.x * probe_counts.y * probe_counts.z;
+    if (probe_index >= probe_counts) {
+        return;
+    }
+
+    ivec3 probe_grid_indices = probe_index_to_grid_indices(probe_index);
+    vec3 ray_origin = grid_indices_to_world(probe_grid_indices, probe_index);
+    vec3 direction = normalize(mat3(random_rotation) * spherical_fibonacci(ray_index, probe_rays));
+    payload.radiance = vec3(0);
+    payload.distance = 0;
+
+    traceRay(tlas, gl_RayFlagsOpaque, 0xff, 0, 0, 0, ray_origin, 0.0, direction, 100.0, 0);
+
+    imageStore(global_images[radiance_image_index], ivec2(ray_index, probe_index), vec4(payload.radiance, payload.distance));
+}

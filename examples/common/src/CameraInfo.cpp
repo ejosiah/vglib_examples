@@ -20,10 +20,6 @@ void CameraInfo::init() {
 }
 
 void CameraInfo::newFrame() {
-    m_previous = *m_camera;
-}
-
-void CameraInfo::endFrame() {
     uniforms.cpu->projection = m_camera->proj;
     uniforms.cpu->view = m_camera->view;
     uniforms.cpu->model = m_camera->model;
@@ -31,6 +27,12 @@ void CameraInfo::endFrame() {
     uniforms.cpu->inverseProjection = glm::inverse(m_camera->proj);
     uniforms.cpu->inverseViewProjection = glm::inverse(m_camera->proj * m_camera->view);
     uniforms.cpu->previousViewProjection = m_previous.proj * m_previous.view;
+    uniforms.cpu->position = position();
+
+}
+
+void CameraInfo::endFrame() {
+    m_previous = *m_camera;
 }
 
 void CameraInfo::createDescriptorSetLayout() {
@@ -71,4 +73,8 @@ VulkanDescriptorSetLayout* CameraInfo::descriptorSetLayout() {
 
 const VkDescriptorSet* CameraInfo::descriptorSet() const {
     return &m_descriptorSet;
+}
+
+glm::vec3 CameraInfo::position() const {
+    return (glm::inverse(m_camera->view) * glm::vec4(0)).xyz();
 }

@@ -32,6 +32,9 @@ layout(set = 3, binding = 0) uniform accelerationStructure tlas;
 #define CAMERA_SET 5
 #include "camera_uniform.glsl"
 
+#define UNIFORM_SET 6
+#include "uniforms.glsl"
+
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 normalOut;
 
@@ -40,7 +43,7 @@ vec3 f_diffuse = vec3(0);
 vec3 f_specular = vec3(0);
 
 float ray_traced_shadows(int lightId, int shadowIndex) {
-    vec2 screen_uv = (gl_FragCoord.xy + 0.5) / camera.viewportSize;
+    vec2 screen_uv = (gl_FragCoord.xy) / camera.viewportSize;
     vec3 lid = vec3(screen_uv, lightId);
     return texture(global_textures_3d[shadowIndex], lid).r;
 }
@@ -98,14 +101,21 @@ void main() {
             vec3 l_diffuse = intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
             vec3 l_specular = intensity * NdotL * BRDF_specularGGX(f0, f90, alphaRoughness, specularWeight, VdotH, NdotL, NdotV, NdotH);;
 
-//            float visibility = 1 - shadow(fs_in.position, light.position, 0xff, 8);
+//            float visibility = 1 - shadow(fs_in.position, light.position, light.range, 0xff, 8);
             float visibility = ray_traced_shadows(i, light.shadowMapIndex);
+//            float visibility = 1;
 
             f_diffuse += visibility * l_diffuse;
             f_specular += visibility * l_specular;
         }
     }
-    vec3 diffuse = f_diffuse + ao * baseColor.rgb * 0.005;
+
+    vec2 screen_uv = (gl_FragCoord.xy + 0.5) / camera.viewportSize;
+    vec3 kD = vec3(1.0);
+    vec3 indirect_light = texture(global_textures[indirect_light_texture_index], screen_uv).rgb;
+    vec3 diffuse_indirect = kD * ao * baseColor.rgb * indirect_light;
+
+    vec3 diffuse = f_diffuse + diffuse_indirect;
     vec3 specular = f_specular;
 
     vec3 color =  diffuse + specular;

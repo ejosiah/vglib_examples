@@ -64,8 +64,9 @@ void rtx::shadow::computeMotionVectors(VkCommandBuffer commandBuffer) {
 }
 
 void rtx::shadow::computeVisibilityVariance(VkCommandBuffer commandBuffer) {
-    const auto gx = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.x/2 + 31) / 32u;
-    const auto gy = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.y/2 + 31) / 32u;
+    const auto s = m_constants.resolution_scale;
+    const auto gx = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.x * s + 31) / 32u;
+    const auto gy = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.y * s + 31) / 32u;
     const auto gz = m_numLights;
 
     static std::array<VkDescriptorSet, 2> sets;
@@ -80,8 +81,9 @@ void rtx::shadow::computeVisibilityVariance(VkCommandBuffer commandBuffer) {
 
 
 void rtx::shadow::computeVisibility(VkCommandBuffer commandBuffer) {
-    const auto gx = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.x/2 + 7) / 8u;
-    const auto gy = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.y/2 + 7) / 8u;
+    const auto s = m_constants.resolution_scale;
+    const auto gx = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.x * s + 7) / 8u;
+    const auto gy = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.y * s + 7) / 8u;
     const auto gz = m_numLights;
 
     static std::array<VkDescriptorSet, 5> sets;
@@ -100,8 +102,9 @@ void rtx::shadow::computeVisibility(VkCommandBuffer commandBuffer) {
 
 
 void rtx::shadow::filterVisibility(VkCommandBuffer commandBuffer) {
-    const auto gx = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.x/2 + 7) / 8u;
-    const auto gy = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.y/2 + 7) / 8u;
+    const auto s = m_constants.resolution_scale;
+    const auto gx = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.x * s + 7) / 8u;
+    const auto gy = static_cast<uint32_t>(m_cameraInfo->cpu().viewportSize.y * s + 7) / 8u;
     const auto gz = m_numLights;
 
     static std::array<VkDescriptorSet, 3> sets;
@@ -124,8 +127,8 @@ void rtx::shadow::initComputePipelines() {
 void rtx::shadow::initTextures() {
     const auto w = m_cameraInfo->cpu().viewportSize.x;
     const auto h = m_cameraInfo->cpu().viewportSize.y;
-    const auto w2 = w/2;
-    const auto h2 = h/2;
+    const auto w2 = w * m_constants.resolution_scale;
+    const auto h2 = h * m_constants.resolution_scale;
 
     // todo ceil32
     textures::create(*m_device, m_motionVector, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16_SFLOAT, {w, h, 1});

@@ -8,6 +8,7 @@
 #include "ComputePipelins.hpp"
 #include "CameraInfo.hpp"
 #include "rtx/shadow.hpp"
+#include "rtx/ddgi.hpp"
 #include "Sampler.hpp"
 
 class RtxDemo : public VulkanBaseApp {
@@ -20,6 +21,8 @@ protected:
     void initCamera();
 
     void initShadow();
+
+    void initDDGI();
 
     void loadScene();
 
@@ -67,6 +70,8 @@ protected:
 
     void renderLights(VkCommandBuffer commandBuffer);
 
+    void renderProbes(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -86,6 +91,7 @@ protected:
         Pipeline depthBufferVis;
         Pipeline lights;
         Pipeline toneMap;
+        Pipeline probe;
     } render;
 
     Offscreen::RenderInfo renderInfo;
@@ -121,7 +127,7 @@ protected:
     } lightInfo;
 
     struct UniformData {
-        int dummy;
+        uint indirect_light_texture_index{~0u};
     };
 
     struct {
@@ -133,6 +139,8 @@ protected:
     VkDescriptorSet uniformDescriptorSet{};
     std::shared_ptr<CameraInfo> cameraInfo;
     rtx::shadow shadow;
+    rtx::ddgi ddgi;
+
     struct {
         VulkanBuffer vertices;
         VulkanBuffer indexes;
@@ -140,4 +148,11 @@ protected:
 
     Jitter jitter{};
     glm::vec2 jitterValue{};
+    struct {
+        glm::mat4 model{1};
+        glm::mat4 viewProjection{1};
+        alignas(16) glm::vec3 probeSpacing{};
+        alignas(16) glm::ivec3 probeCount{};
+    } probeConstants;
+    uint32_t numProbes{1};
 };

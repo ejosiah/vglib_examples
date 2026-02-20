@@ -27,5 +27,5 @@ void main(){
 
     vColor = vec4(light.color.rgb, 1);
     vUv = uv;
-    gl_Position = proj * view * model * vec4(light.position + position.xyz, 1);
+    gl_Position = proj * view * model * vec4(light.position + position.xyz * 0.1, 1);
 }
