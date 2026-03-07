@@ -112,7 +112,7 @@ vec3 blend(vec4 color1, float a1, vec4 color2, float a2){
 Material layeredMaterial(vec2 uv){
     Material grassMaterial = loadMaterial(vec3(uv, greenGrass));
     Material dirtMaterial = loadMaterial(vec3(uv, dirtRock));
-    float t = texture(groundMask, fs_in.uv).r;
+    float t = 1 - texture(groundMask, fs_in.uv).r;
 
     Material groundMaterial;
 

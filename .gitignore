@@ -10,6 +10,7 @@ data/**/*.hdr
 data/**/*.tga
 data/**/*.spd
 data/**/*.tif
+data/**/*.tiff
 data/textures/*.*
 
 examples/**/*.png
@@ -18,6 +19,7 @@ examples/**/*.exr
 examples/**/*.hdr
 examples/**/*.tga
 examples/**/*.tif
+examples/**/*.tiff
 
 #models
 data/**/*.obj

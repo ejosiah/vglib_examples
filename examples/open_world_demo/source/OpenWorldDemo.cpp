@@ -6,11 +6,16 @@
 
 OpenWorldDemo::OpenWorldDemo(const Settings& settings) : VulkanBaseApp("Open World Demo", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/open_world_demo");
-    fileManager().addSearchPathFront("../../examples/open_world_demo/data");
-    fileManager().addSearchPathFront("../../examples/open_world_demo/spv");
-    fileManager().addSearchPathFront("../../examples/open_world_demo/models");
-    fileManager().addSearchPathFront("../../examples/open_world_demo/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/atmosphere");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("open_world_demo");
+    fileManager().addSearchPathFront("open_world_demo/data");
+    fileManager().addSearchPathFront("open_world_demo/spv");
+    fileManager().addSearchPathFront("open_world_demo/models");
+    fileManager().addSearchPathFront("open_world_demo/textures");
 }
 
 void OpenWorldDemo::initApp() {
@@ -42,13 +47,13 @@ void OpenWorldDemo::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = sceneData.fieldOfView;
     cameraSettings.aspectRatio = float(width)/float(height);
-    cameraSettings.zNear = sceneData.zNear;
+    cameraSettings.zNear = 0.1;
     cameraSettings.zFar = sceneData.zFar;
-    cameraSettings.acceleration = glm::vec3(60 * km);
+    cameraSettings.acceleration = glm::vec3(10 * km);
     cameraSettings.velocity = glm::vec3(200 * km);
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 //    camera->lookAt(glm::vec3(-28 * km, 10 * km, 14 * km), glm::vec3(0, 0, 0), {0, 1, 0});
-    camera->lookAt(glm::vec3(-3.4 * km, 1.2 * km, 13 * km), glm::vec3(0, 0, 0), {0, 1, 0});
+//    camera->lookAt(glm::vec3(-3.4 * km, 1.2 * km, 13 * km), glm::vec3(0, 0, 0), {0, 1, 0});
 //    auto target = EARTH_CENTER;
 //    auto position = target + glm::vec3(0, 0, 1) * (EARTH_RADIUS);
 //    camera->lookAt(position, target, glm::vec3(0, 1, 0));
@@ -90,24 +95,12 @@ void OpenWorldDemo::loadAtmosphereLUT() {
 
 void OpenWorldDemo::createDescriptorPool() {
     constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 16> poolSizes{
+    std::array<VkDescriptorPoolSize, 4> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
-                    { VK_DESCRIPTOR_TYPE_SAMPLER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 100 * maxSets },
                     { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT, 100 * maxSets },
-                    { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 100 * maxSets }
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
@@ -319,8 +312,8 @@ void OpenWorldDemo::createRenderPipeline() {
     render.pipeline =
         builder
             .shaderStage()
-                .vertexShader("../../data/shaders/pass_through.vert.spv")
-                .fragmentShader("../../data/shaders/pass_through.frag.spv")
+                .vertexShader(resource("pass_through.vert.spv"))
+                .fragmentShader(resource("pass_through.frag.spv"))
             .vertexInputState()
                 .addVertexBindingDescriptions(Vertex::bindingDisc())
                 .addVertexAttributeDescriptions(Vertex::attributeDisc())
@@ -360,7 +353,7 @@ void OpenWorldDemo::createRenderPipeline() {
 }
 
 void OpenWorldDemo::createComputePipeline() {
-    auto module = device.createShaderModule( "../../data/shaders/pass_through.comp.spv");
+    auto module = device.createShaderModule(resource("pass_through.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
@@ -410,7 +403,7 @@ VkCommandBuffer *OpenWorldDemo::buildCommandBuffers(uint32_t imageIndex, uint32_
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     if(terrain->debugMode){
-        skyDome->render(commandBuffer);
+//        skyDome->render(commandBuffer);
         terrain->render(commandBuffer);
 //        shadowVolumeGenerator->render(commandBuffer);
     }else{
@@ -596,6 +589,16 @@ void OpenWorldDemo::createSceneGBuffer() {
     });
 }
 
+void OpenWorldDemo::beforeDeviceCreation() {
+    auto features12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
+    features12->scalarBlockLayout = VK_TRUE;
+
+
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->maintenance4 = VK_TRUE;
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;}
+
 void OpenWorldDemo::createSamplers() {
     samplers = std::make_shared<Samplers>();
     VkSamplerCreateInfo samplerInfo{};
@@ -614,9 +617,11 @@ void OpenWorldDemo::createSamplers() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
 //        settings.fullscreen = true;
+        settings.width = 2160;
+        settings.height = 1280;
         settings.screen = 1;
         settings.depthTest = true;
         settings.enabledFeatures.tessellationShader = VK_TRUE;

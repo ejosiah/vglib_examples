@@ -198,7 +198,7 @@ private:
     VulkanSampler valueSampler;
 
     static constexpr int SQRT_NUM_PATCHES = 64;
-    static constexpr float PATCH_SIZE = 1;
+    static constexpr float PATCH_SIZE = 17 * km;
     static constexpr VkShaderStageFlags ALL_SHADER_STAGES =
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT
             | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;

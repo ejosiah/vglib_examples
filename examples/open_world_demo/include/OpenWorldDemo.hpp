@@ -55,6 +55,8 @@ protected:
 
     void newFrame() override;
 
+    void beforeDeviceCreation() override;
+
 protected:
     struct {
         VulkanPipelineLayout layout;

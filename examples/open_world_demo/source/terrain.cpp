@@ -45,17 +45,17 @@ void Terrain::loadHeightMap() {
     textures::fromFile(device(), heightMap.displacement, resource(fmt::format("terrain/{}.png", terrainPath)));
     textures::fromFile(device(), heightMap.normal, resource(fmt::format("terrain/{}_normal.png", terrainPath)));
 
-    textures::fromFile(device(), randomTexture, resource("random.png"));
+    textures::fromFile(device(), randomTexture, resource("random4.jpg"));
 }
 
 void Terrain::loadShadingTextures() {
     std::vector<std::string> paths{{
-        resource("ground_green_grass/GroundGrassGreen004_COL_4K.jpg"),
+        resource("ground_green_grass/COL_4K.jpg"),
          resource("ground_dirt_012/COL_4K.jpg"),
          resource("ground_dirt_rocky/COL_4K.jpg"),
-        resource("ground_snow/GroundSnowFresh001_COL_4K.jpg")
+        resource("ground_snow/COL_4K.jpg")
     }};
-    textures::fromFile(device(), shadingMap.albedo, paths);
+    textures::fromFile(device(), shadingMap.albedo, paths, false, VK_FORMAT_R8G8B8A8_UNORM, 11);
 
     paths.clear();
     paths = {
@@ -68,42 +68,49 @@ void Terrain::loadShadingTextures() {
 
     paths.clear();
     paths = {
-        resource("ground_green_grass/GroundGrassGreen004_GLOSS_4K.jpg"),
+        resource("ground_green_grass/GLOSS_4K.jpg"),
         resource("ground_dirt_012/GLOSS_4K.jpg"),
         resource("ground_dirt_rocky/GLOSS_4K.jpg"),
-        resource("ground_snow/GroundSnowFresh001_GLOSS_4K.jpg")
+        resource("ground_snow/GLOSS_4K.jpg")
 
     };
-    textures::fromFile(device(), shadingMap.roughness, paths);
+    textures::fromFile(device(), shadingMap.roughness, paths, false, VK_FORMAT_R8G8B8A8_UNORM, 11);
 
     paths.clear();
     paths = {
-        resource("ground_green_grass/GroundGrassGreen004_NRM_4K.jpg"),
+        resource("ground_green_grass/NRM_4K.jpg"),
         resource("ground_dirt_012/NRM_4K.jpg"),
         resource("ground_dirt_rocky/NRM_4K.jpg"),
-        resource("ground_snow/GroundSnowFresh001_NRM_4K.jpg")
+        resource("ground_snow/NRM_4K.jpg")
     };
-    textures::fromFile(device(), shadingMap.normal, paths);
+    textures::fromFile(device(), shadingMap.normal, paths, false, VK_FORMAT_R8G8B8A8_UNORM, 11);
 
     paths.clear();
     paths = {
-        resource("ground_green_grass/GroundGrassGreen004_AO_4K.jpg"),
+        resource("ground_green_grass/AO_4K.jpg"),
         resource("ground_dirt_012/AO_4K.jpg"),
         resource("ground_dirt_rocky/AO_4K.jpg"),
-        resource("ground_snow/GroundSnowFresh001_AO_4K.jpg")
+        resource("ground_snow/AO_4K.jpg")
     };
-    textures::fromFile(device(), shadingMap.ambientOcclusion, paths);
+    textures::fromFile(device(), shadingMap.ambientOcclusion, paths, false, VK_FORMAT_R8G8B8A8_UNORM, 11);
 
     paths.clear();
     paths = {
-        resource("ground_green_grass/GroundGrassGreen004_DISP_4K.jpg"),
+        resource("ground_green_grass/DISP_4K.jpg"),
         resource("ground_dirt_012/DISP_4K.jpg"),
         resource("ground_dirt_rocky/DISP_4K.jpg"),
-        resource("ground_snow/GroundSnowFresh001_DISP_4K.jpg")
+        resource("ground_snow/DISP_4K.jpg")
     };
-    textures::fromFile(device(), shadingMap.displacement, paths);
+    textures::fromFile(device(), shadingMap.displacement, paths, false, VK_FORMAT_R8G8B8A8_UNORM, 11);
 
-    textures::fromFile(device(), shadingMap.groundMask, resource("ground_mask.png"));
+    textures::fromFile(device(), shadingMap.groundMask, resource("ground_mask.png"), false, VK_FORMAT_R8G8B8A8_UNORM, 11);
+
+    textures::generateLOD(device(), shadingMap.albedo, 11, 4);
+    textures::generateLOD(device(), shadingMap.roughness, 11, 4);
+    textures::generateLOD(device(), shadingMap.normal, 11, 4);
+    textures::generateLOD(device(), shadingMap.ambientOcclusion, 11, 4);
+    textures::generateLOD(device(), shadingMap.displacement, 11, 4);
+    textures::generateLOD(device(), shadingMap.groundMask, 11);
 }
 
 std::vector<glm::vec3> Terrain::generateNormals() {
@@ -234,7 +241,7 @@ void Terrain::initUBO() {
     ubo = reinterpret_cast<UniformBufferObject*>(uboBuffer.map());
     ubo->heightScale = 1;
     ubo->minZ = 0 * meters;
-    ubo->maxZ = MAX_HEIGHT;
+    ubo->maxZ = 3 * km;
     ubo->wireframeColor = {1, 0, 0};
     ubo->wireframe = 0;
     ubo->wireframeWidth = 5;

@@ -606,7 +606,8 @@ int main(){
         settings.width = 1440;
         settings.height = 1280;
         settings.depthTest = true;
-        // settings.fullscreen = true;
+//        settings.fullscreen = true;
+//        settings.vSync = true;
         settings.enabledFeatures.wideLines = true;
         settings.enabledFeatures.independentBlend = true;
         settings.enableBindlessDescriptors = true;

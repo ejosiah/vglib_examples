@@ -8,61 +8,43 @@
 #include <glm/glm.hpp>
 #include <fmt/core.h>
 #include <numeric>
+#include <stb_image_write.h>
 #include "vulkan_context.hpp"
+#include "random.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+#ifndef STBI_MSC_SECURE_CRT
+#define STBI_MSC_SECURE_CRT
+#ifndef STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#endif // STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+#endif // STBI_MSC_SECURE_CRT
 
 auto GSeris(auto a, auto r, auto n) {
     return a * std::pow(r, n - 1);
 }
 
+struct char4 {
+    int8_t a, b, c, d;
+};
+
 int main() {
-    auto i = 2;
-    auto k = 5e-3;
+    auto rngX = rng(0.f, 1.f);
+    auto rngY = rng(0.f, 1.f);
+    auto rngZ = rng(0.f, 1.f);
+    auto rngW = rng(0.f, 1.f);
+    std::vector<char4> randoms(1024 * 1024);
+    std::generate(randoms.begin(), randoms.end(), [&]{
+        return  char4{
+                    to<int8_t>(rngX() * 255),
+                    to<int8_t>(rngY() * 255),
+                    to<int8_t>(rngZ() * 255),
+                    to<int8_t>(rngW() * 255)}; } );
 
-    while(k < 1e6) {
-        k *= 1.001; // this line cause major diff between k & nk
-        auto nk = GSeris(5e-3, 1.001, i);
-        fmt::print("{}: {} => {}, diff: {}\n", i, k, nk, std::abs(k - nk));
-        i++;
-    }
+
+    auto w = 1024;
+    auto c = 4;
+    stbi_write_png("random4.png", w, w, c, randoms.data(), w * c);
 }
-
-
-//int main() {
-//    fmt::print("Hello World!\n");
-//
-//    auto input = R"(C:\Users\joebh\Downloads\iryoku-separable-sss-v1.0-0-gb217468\iryoku-separable-sss-245d073\Demo\Media\Head\Head.sdkmesh)";
-//
-//    auto bytes = loadFile(input);
-//
-//    auto header = reinterpret_cast<SDKMESH_HEADER*>(bytes.data());
-//
-//    auto indexHeader = reinterpret_cast<SDKMESH_INDEX_BUFFER_HEADER*>(bytes.data() + header->IndexStreamHeadersOffset);
-//    auto vertexHeader = reinterpret_cast<SDKMESH_VERTEX_BUFFER_HEADER*>(bytes.data() + header->VertexStreamHeadersOffset);
-//
-//    std::span<uint16_t> indices{ reinterpret_cast<uint16_t*>(bytes.data() + indexHeader->DataOffset), size_t{indexHeader->NumIndices} };
-//    std::span<SDKMESH_VERTEX> vertices{ reinterpret_cast<SDKMESH_VERTEX*>(bytes.data() + vertexHeader->DataOffset), size_t{vertexHeader->NumVertices} };
-//
-//    std::span<SDKMESH_MATERIAL> materials{ reinterpret_cast<SDKMESH_MATERIAL*>(bytes.data() + header->MaterialDataOffset), to<size_t>(header->NumMaterials) };
-//    std::span<SDKMESH_MESH> meshes{ reinterpret_cast<SDKMESH_MESH*>(bytes.data() + header->MeshDataOffset), to<size_t>(header->NumMeshes) };
-//    std::span<SDKMESH_FRAME> frames{ reinterpret_cast<SDKMESH_FRAME*>(bytes.data() + header->FrameDataOffset), to<size_t>(header->NumFrames) };
-//    auto vertexSize = sizeof(SDKMESH_VERTEX);
-//    fmt::print("version: {}\n", header->Version);
-//
-//    mesh::Mesh mesh{};
-//    mesh.name = "head";
-//    mesh.vertices = map_range(vertices, [](const SDKMESH_VERTEX& v){
-//        Vertex vv{};
-//        vv.position = glm::vec4(v.position, 1);
-//        vv.normal = v.normal;
-//        vv.tangent = v.tangent;
-//        vv.uv = v.texCoord;
-//        return vv;
-//    });
-//    mesh.indices = map_range(indices, [](const auto i){ return to<uint>(i); });
-//    mesh.textureMaterial.diffuseMap = materials.front().DiffuseTexture;
-//    mesh.textureMaterial.normalMap = materials.front().NormalTexture;
-//
-//    std::vector<mesh::Mesh> objMeshes{ mesh };
-//    mesh::writeToObject(objMeshes, "head_skdmesh");
-//
-//}

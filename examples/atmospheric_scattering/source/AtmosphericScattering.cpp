@@ -5,6 +5,7 @@
 
 AtmosphericScattering::AtmosphericScattering(const Settings& settings) : VulkanBaseApp("Precomputed Atmospheric Scattering", settings) {
     fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data/atmosphere");
     fileManager().addSearchPathFront("atmospheric_scattering");
     fileManager().addSearchPathFront("atmospheric_scattering/data");
     fileManager().addSearchPathFront("atmospheric_scattering/spv");
