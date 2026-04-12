@@ -1,0 +1,60 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 1024, local_size_y = 1) in;
+
+layout(set = 0, binding = 0) buffer WeightsBuffer {
+    float values[];
+} weight[];
+
+layout(set = 0, binding = 1) buffer BiasBuffer {
+    float values[];
+} bias[];
+
+layout(set = 0, binding = 2) buffer Activationuffer {
+    float values[];
+} activation[];
+
+layout(set = 0, binding = 3) buffer IntermediateWeightsBuffer {
+    float values[];
+} intermediate_weights[];
+
+layout(set = 0, binding = 4) buffer Delta {
+    float values[];
+} delta[];
+
+layout(set = 0, binding = 5) buffer NablaWeights {
+    float values[];
+} nablaWeights[];
+
+layout(set = 0, binding = 6) buffer NablaBias {
+    float values[];
+} nablaBias[];
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layerIndex;
+    uint batch;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+void main() {
+    uint k = gl_GlobalInvocationID.x;
+    uint layer = gl_GlobalInvocationID.y;
+
+    uint size = layers[layer] * layers[layer + 1];
+
+    if(k >= size) return;
+
+    const float m = float(batchSize);
+    const float n = eta;
+    float w =  weight[layer].values[k];
+    float nw = nablaWeights[layer].values[k];
+
+    weight[layer].values[k] = w - (n/m) * nw;
+
+}

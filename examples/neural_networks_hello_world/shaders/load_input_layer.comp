@@ -1,0 +1,41 @@
+#version 460
+
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1024, local_size_y = 1) in;
+
+layout(set = 0, binding = 2) buffer ActivationBuffer {
+    float values[];
+} activation[];
+
+layout(set = 1, binding = 0, std430) readonly buffer TrainingImages {
+    float trainingImages[];
+};
+
+layout(set = 1, binding = 1, std430) readonly buffer TrainingLabels {
+    int trainingLabels[];
+};
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layer;
+    uint batch;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+void main() {
+    uint layerSize = layers[0];
+    uint j = gl_LocalInvocationIndex;
+
+    if( j >=  layerSize) return;
+
+    uint imageIndex = gl_GlobalInvocationID.y;
+    uint x = ((batch * batchSize) + imageIndex) * layerSize + j;
+
+    int px = trainingLabels[j];
+
+    activation[0].values[j] = trainingImages[j];
+}
