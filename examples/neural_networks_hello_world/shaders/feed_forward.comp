@@ -1,0 +1,83 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1024) in;
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1, local_size_y = 1024) in;
+
+layout(set = 0, binding = 0) buffer WeightsBUffer {
+    float values[];
+} weight[];
+
+layout(set = 0, binding = 1) buffer BiasBUffer {
+    float values[];
+} bias[];
+
+layout(set = 0, binding = 2) buffer ActivationUffer {
+    float values[];
+} activation[];
+
+layout(set = 0, binding = 3) buffer IntermediateWeightsBUffer {
+    float values[];
+} intermediate_weights[];
+
+layout(set = 0, binding = 4) buffer Delta {
+    float values[];
+} delta[];
+
+layout(set = 0, binding = 5) buffer NablaWeights {
+    float values[];
+} nablaWeights[];
+
+layout(set = 0, binding = 6) buffer NablaBias {
+    float values[];
+} nablaBias[];
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layer;
+    uint batch;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+shared float localSum[32];
+
+float sigmoid(float z) {
+    return 1.0/(1.0 + exp(-z));
+}
+
+void main() {
+
+    uint l = layers[layer];
+    uint row = gl_WorkGroupID.x * l;
+    uint k =  gl_LocalInvocationID.y;
+    float a = k < l ? activation[layer].values[k] : 0.0;
+    float w = k < l ? weight[layer].values[row + k] : 0.0;
+
+    float sum = subgroupAdd(w * a);
+
+    if (subgroupElect()) {
+        localSum[gl_SubgroupID] = sum;
+    }
+
+    barrier();
+
+    if (subgroupAll(gl_SubgroupID < 1)) {
+        float sum = localSum[gl_SubgroupInvocationID];
+        sum = subgroupAdd(sum);
+
+        if(subgroupElect()) {
+            uint j = gl_WorkGroupID.x;
+            float z = sum + bias[layer].values[j];
+            intermediate_weights[layer].values[j] = z;
+            activation[layer+1].values[j] = sigmoid(z);
+        }
+    }
+}
