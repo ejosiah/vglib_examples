@@ -50,6 +50,28 @@ inline auto sigmoid(nda::matrix<T> X) {
 }
 
 template <typename T>
+std::tuple<int, int> argmax(nda::matrix<T> a) {
+    int s = 0, t = 0;
+
+    T maxValue{};
+    if constexpr (std::is_floating_point_v<T>) {
+        maxValue = std::numeric_limits<T>::lowest();
+    } else {
+        maxValue = std::numeric_limits<T>::max();
+    }
+
+    std::numeric_limits<T>::min();
+    for_all_indices(a.shape(), [&](auto i, auto j) {
+        auto x = a(i, j);
+        if (maxValue < x) {
+            maxValue = x;
+            s = i; t = j;
+        }
+    });
+    return std::make_tuple(s, t);
+}
+
+template <typename T>
 inline auto sigmoid_prime(nda::matrix<T> X) {
     for_all_indices(X.shape(), [&](auto i, auto j) {
         auto x = X(i, j);
@@ -144,7 +166,7 @@ inline auto to_matrix(const mnist::Dataset& dataset) {
     for (auto l = 0; l < dataset.labels.size(); l++) {
         nda::matrix<float> label {{10, 1}};
         nda::for_all_indices<>(label.shape(), [&](auto i, auto j) {
-            label(i, j) = float(dataset.labels[l] == i);
+            label(i, j) = static_cast<float>(dataset.labels[l] == i);
         });
         labels.push_back(label);
     }

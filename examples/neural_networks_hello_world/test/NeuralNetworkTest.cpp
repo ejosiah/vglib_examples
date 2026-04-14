@@ -926,8 +926,8 @@ TEST_F(NeuralNetworkFixture, playground) {
 
 }
 
-TEST_F(NeuralNetworkFixture, cppNetTest) {
-    auto samples = 1000;
+TEST_F(NeuralNetworkFixture, DISABLED_cppNetTest) {
+    auto samples = host.trainingDataset.header.num_images;
     mnist::Dataset trainingData{};
     trainingData.header = host.trainingDataset.header;
     trainingData.header.num_images = samples;
@@ -936,19 +936,19 @@ TEST_F(NeuralNetworkFixture, cppNetTest) {
     std::copy_n(host.trainingDataset.images.begin(), 784 * samples, trainingData.images.begin());
     std::copy_n(host.trainingDataset.labels.begin(), 1 * samples, trainingData.labels.begin());
 
-    samples = 100;
+    samples = host.testDataset.header.num_images;
     mnist::Dataset testdata{};
-    testdata.header = host.trainingDataset.header;
+    testdata.header = host.testDataset.header;
     testdata.header.num_images = samples;
     testdata.images.resize(784 * samples);
     testdata.labels.resize(1 * samples);
-    std::copy_n(host.trainingDataset.images.begin(), 784 * samples, testdata.images.begin());
-    std::copy_n(host.trainingDataset.labels.begin(), 1 * samples, testdata.labels.begin());
+    std::copy_n(host.testDataset.images.begin(), 784 * samples, testdata.images.begin());
+    std::copy_n(host.testDataset.labels.begin(), 1 * samples, testdata.labels.begin());
 
     auto data = to_matrix(trainingData);
     auto tData = to_matrix(testdata);
     cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
-    cpuNetwork.train(data, 1, 1, constants.eta, tData);
+    cpuNetwork.train(data, 30, 10, 3.0, tData);
 }
 
 mnist::Dataset NeuralNetworkFixture::s_trainingDataset{};

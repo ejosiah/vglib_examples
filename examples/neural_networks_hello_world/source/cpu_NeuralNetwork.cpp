@@ -81,13 +81,7 @@ float NeuralNetwork::evaluate(const Dataset &dataset) const {
 
     auto results = map_range(dataset, [&](auto& e) {
         auto& [a, y] = e;
-        auto aa = multiply(feedForward(a), y);
-
-        float total = 0;
-
-        enum { i, j };
-        ein_reduce(nda::ein(total) += nda::ein<i, j>(aa));
-        return total > 0.5;
+        return argmax(feedForward(a)) == argmax(y);
     });
     return std::reduce(results.begin(), results.end(), 0.0f);
 }
