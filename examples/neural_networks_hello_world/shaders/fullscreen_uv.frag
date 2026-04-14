@@ -42,7 +42,7 @@ void main() {
 
     uvec2 pixel = min(uvec2(localUv * vec2(constants.width, constants.height)), uvec2(constants.width - 1u, constants.height - 1u));
     uint pixelIndex = imageIndex * (constants.width * constants.height) + pixel.y * constants.width + pixel.x;
-    float value = testImages[pixelIndex];
+    float value = trainingImages[pixelIndex];
 
     fragColor = vec4(vec3(value), 1.0);
 }

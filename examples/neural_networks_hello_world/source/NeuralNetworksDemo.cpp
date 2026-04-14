@@ -5,6 +5,7 @@
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
 #include "Vertex.h"
+#include "Barrier.hpp"
 
 #include "mnist/mnist_loader.hpp"
 #include "cpu/NeuralNetwork.hpp"
@@ -53,7 +54,7 @@ void NeuralNetworksDemo::loadDataset() {
     testSetHeader = testDataset.header;
     constants.width = testDataset.header.cols;
     constants.height = testDataset.header.rows;
-    constants.imageCount = testDataset.header.num_images;
+    constants.imageCount = trainingDataset.header.num_images;
     constants.offset = 0;
     std::vector<int> locks(trainingDataset.header.num_images, 0);
 
@@ -173,7 +174,7 @@ void NeuralNetworksDemo::updateDescriptorSets(){
     writes[1].descriptorCount = 1;
     writes[1].pBufferInfo = &trainingLabelsInfo;
 
-    writes[2].dstSet = testDatasetDescriptorSet;
+    writes[2].dstSet = trainingDatasetDescriptorSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[2].descriptorCount = COUNT(trainingLocksInfo);
@@ -259,9 +260,13 @@ VkCommandBuffer *NeuralNetworksDemo::buildCommandBuffers(uint32_t imageIndex, ui
         const int maxOffset = constants.imageCount > 100 ? static_cast<int>(constants.imageCount - 100) : 0;
 
         ImGui::Begin("Dataset");
-        ImGui::SetWindowSize({300, 110});
+        ImGui::SetWindowSize({300, 140});
         if (ImGui::SliderInt("Offset", &imageOffset, 0, maxOffset)) {
             constants.offset = static_cast<uint32_t>(imageOffset);
+        }
+        if (ImGui::Button("Shuffle")) {
+            network.shuffleTrainingData(commandBuffer);
+            Barrier::computeWriteToFragmentRead(commandBuffer);
         }
         ImGui::Text("Showing images %u - %u", constants.offset, std::min(constants.offset + 99u, constants.imageCount ? constants.imageCount - 1 : 0u));
         ImGui::End();
