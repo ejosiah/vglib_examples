@@ -21,9 +21,9 @@ dev::NeuralNetwork::NeuralNetwork(
     )
     : ComputePipelines{device}
     , m_device{device}
-    , m_datasetDescriptorSetLayout{std::move(datasetDescriptorSetLayout)}
     , m_layers{layers.begin(), layers.end()}
-    , m_params{params} {
+    , m_params{params}
+    , m_datasetDescriptorSetLayout{std::move(datasetDescriptorSetLayout)} {
 
     assert(m_layers.size() <= 8);
     for (auto i = 0; i < m_layers.size(); ++i) {
@@ -47,12 +47,13 @@ void dev::NeuralNetwork::init() {
     createDescriptorSetLayout();
     updateDescriptorSets();
     createPipelines();
+    spdlog::info("NeuralNetwork initialized");
 }
 
 void dev::NeuralNetwork::initNetwork() {
     std::normal_distribution<float> distribution{0.0f, 1.0f};
     std::default_random_engine generator{ m_params.hostVisible ? 1 << 20 : std::random_device{}()};
-    auto rng = std::bind(distribution, generator);
+    auto rng = [distribution, generator] () mutable { return distribution(generator); };
 
     for (auto i = 0; i < m_layers.size(); ++i) {
         const auto L = m_layers[i];
@@ -86,10 +87,16 @@ void dev::NeuralNetwork::initNetwork() {
     }
 }
 
-void dev::NeuralNetwork::shuffleTrainingData(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::shuffleTrainingData(VkCommandBuffer commandBuffer) const {
+    const auto numImages = std::max(1u, m_params.datasetSize);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("shuffle"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("shuffle"), 0, 1, &m_trainingDatasetDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("shuffle"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, 1, numImages, 1);
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
-void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) const {
     assert(m_trainingDataSet);
     assert(m_activations[0]);
 
@@ -146,7 +153,7 @@ void dev::NeuralNetwork::computeBackPropagation(VkCommandBuffer commandBuffer) {
     }
 }
 
-void dev::NeuralNetwork::updateWeights(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::updateWeights(VkCommandBuffer commandBuffer) const {
     constexpr uint32_t localSizeX = 1024;
     const auto layers = m_layers.size() - 1;
     size_t maxSize = 0;
@@ -294,6 +301,12 @@ void dev::NeuralNetwork::updateDescriptorSets() {
 std::vector<PipelineMetaData> dev::NeuralNetwork::pipelineMetaData() {
     return
     {
+        {
+            "shuffle",
+            resource("shuffle.comp.spv"),
+            { &m_datasetDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
+        },
         {
             "load_input_layer",
             resource("load_input_layer.comp.spv"),

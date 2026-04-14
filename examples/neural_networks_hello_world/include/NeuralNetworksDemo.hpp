@@ -3,6 +3,7 @@
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 #include "mnist/mnist_loader.hpp"
+#include "device/NeuralNetwork.hpp"
 
 class NeuralNetworksDemo : public VulkanBaseApp{
 public:
@@ -12,6 +13,8 @@ protected:
     void initApp() override;
 
     void loadDataset();
+
+    void initNetwork();
 
     void initCamera();
 
@@ -66,11 +69,13 @@ protected:
     VkDescriptorSet testDatasetDescriptorSet{VK_NULL_HANDLE};
     VulkanBuffer trainingImages;
     VulkanBuffer trainingLabels;
+    std::array<VulkanBuffer, 2> trainingLocks;
     VulkanBuffer testImages;
     VulkanBuffer testLabels;
     VulkanBuffer fullscreenQuad;
     mnist::Header trainingSetHeader;
     mnist::Header testSetHeader;
+    dev::NeuralNetwork network;
 
     struct {
         uint32_t width{};

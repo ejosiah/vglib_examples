@@ -41,6 +41,7 @@ void NeuralNetworksDemo::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+    initNetwork();
 }
 
 void NeuralNetworksDemo::loadDataset() {
@@ -54,14 +55,29 @@ void NeuralNetworksDemo::loadDataset() {
     constants.height = testDataset.header.rows;
     constants.imageCount = testDataset.header.num_images;
     constants.offset = 0;
+    std::vector<int> locks(trainingDataset.header.num_images, 0);
 
     trainingImages = device.createDeviceLocalBuffer(trainingDataset.images.data(), BYTE_SIZE(trainingDataset.images), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT );
     trainingLabels = device.createDeviceLocalBuffer(trainingDataset.labels.data(), BYTE_SIZE(trainingDataset.labels), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT );
+    trainingLocks[0] = device.createDeviceLocalBuffer(locks.data(), BYTE_SIZE(locks), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT );
+    trainingLocks[1] = device.createDeviceLocalBuffer(locks.data(), BYTE_SIZE(locks), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT );
 
     testImages = device.createDeviceLocalBuffer(testDataset.images.data(), BYTE_SIZE(testDataset.images), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT );
     testLabels = device.createDeviceLocalBuffer(testDataset.labels.data(), BYTE_SIZE(testDataset.labels), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT );
 
     spdlog::info("MNIST dataset loaded");
+}
+
+void NeuralNetworksDemo::initNetwork() {
+    network = dev::NeuralNetwork{ &device, datasetDescriptorSetLayout, {784, 30, 10},  {
+        .trainingData = std::make_tuple(trainingDatasetDescriptorSet, trainingImages),
+        .epochs = 30,
+        .numBatches = 6000,
+        .datasetSize = trainingSetHeader.num_images,
+        .eta = 3.0f,
+        .testData = std::make_tuple(testDatasetDescriptorSet, testImages),
+    }};
+    network.init();
 }
 
 void NeuralNetworksDemo::initCamera() {
@@ -122,6 +138,10 @@ void NeuralNetworksDemo::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(COUNT(trainingLocks))
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
 }
 
@@ -130,12 +150,16 @@ void NeuralNetworksDemo::updateDescriptorSets(){
     trainingDatasetDescriptorSet = sets[0];
     testDatasetDescriptorSet = sets[1];
 
-    auto writes = initializers::writeDescriptorSets<4>();
+    auto writes = initializers::writeDescriptorSets<5>();
 
     VkDescriptorBufferInfo trainingImagesInfo{ trainingImages, 0, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo trainingLabelsInfo{ trainingLabels, 0, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo testImagesInfo{ testImages, 0, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo testLabelsInfo{ testLabels, 0, VK_WHOLE_SIZE };
+    auto descriptorInfo = [](const auto& buffer) {
+        return VkDescriptorBufferInfo{ buffer, 0, VK_WHOLE_SIZE };
+    };
+    auto trainingLocksInfo = map_range(trainingLocks, descriptorInfo);
 
     writes[0].dstSet = trainingDatasetDescriptorSet;
     writes[0].dstBinding = 0;
@@ -150,16 +174,22 @@ void NeuralNetworksDemo::updateDescriptorSets(){
     writes[1].pBufferInfo = &trainingLabelsInfo;
 
     writes[2].dstSet = testDatasetDescriptorSet;
-    writes[2].dstBinding = 0;
+    writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[2].descriptorCount = 1;
-    writes[2].pBufferInfo = &testImagesInfo;
+    writes[2].descriptorCount = COUNT(trainingLocksInfo);
+    writes[2].pBufferInfo = trainingLocksInfo.data();
 
     writes[3].dstSet = testDatasetDescriptorSet;
-    writes[3].dstBinding = 1;
+    writes[3].dstBinding = 0;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[3].descriptorCount = 1;
-    writes[3].pBufferInfo = &testLabelsInfo;
+    writes[3].pBufferInfo = &testImagesInfo;
+
+    writes[4].dstSet = testDatasetDescriptorSet;
+    writes[4].dstBinding = 1;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
+    writes[4].pBufferInfo = &testLabelsInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -270,59 +300,60 @@ void NeuralNetworksDemo::onPause() {
 
 
 int main(){
-    // try{
-    fs::current_path("../../../../examples/");
-    //     Settings settings;
-    //     settings.width = 1440;
-    //     settings.height = 1280;
-    //     settings.depthTest = true;
-    //     settings.enabledFeatures.wideLines = true;
-    //     settings.enableBindlessDescriptors = true;
-    //     settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
-    //     settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
-    //     settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
-    //     settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
-    //     settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
-    //     settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
+    try{
+        fs::current_path("../../../../examples/");
+        Settings settings;
+        settings.width = 1440;
+        settings.height = 1280;
+        settings.depthTest = true;
+        settings.enabledFeatures.wideLines = true;
+        settings.enableBindlessDescriptors = true;
+        settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+        settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
+        settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
+        settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
+
+        std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
+        auto app = NeuralNetworksDemo{ settings };
+        app.addPlugin(imGui);
+        app.run();
+    }catch(std::runtime_error& err){
+        spdlog::error(err.what());
+    }
+
+    // fs::current_path("../../../../examples/");
+    // FileManager::instance().addSearchPathFront("../data");
+    // FileManager::instance().addSearchPathFront("../data/textures");
+    // FileManager::instance().addSearchPathFront("../data/shaders");
+    // FileManager::instance().addSearchPathFront("../data/models");
     //
-    //     std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
-    //     auto app = NeuralNetworksDemo{ settings };
-    //     app.addPlugin(imGui);
-    //     app.run();
-    // }catch(std::runtime_error& err){
-    //     spdlog::error(err.what());
-    // }
-
-    FileManager::instance().addSearchPathFront("../data");
-    FileManager::instance().addSearchPathFront("../data/textures");
-    FileManager::instance().addSearchPathFront("../data/shaders");
-    FileManager::instance().addSearchPathFront("../data/models");
-
-    auto testDataset = mnist::load(FileManager::resource("mnist_dataset/t10k-images.idx3-ubyte"),
-                                    FileManager::resource("mnist_dataset/t10k-labels.idx1-ubyte"));
-    auto trainingDataset = mnist::load(FileManager::resource("mnist_dataset/train-images.idx3-ubyte"),
-                                        FileManager::resource("mnist_dataset/train-labels.idx1-ubyte"));
-
-    auto samples = trainingDataset.header.num_images;
-    mnist::Dataset trainingData{};
-    trainingData.header = trainingDataset.header;
-    trainingData.header.num_images = samples;
-    trainingData.images.resize(784 * samples);
-    trainingData.labels.resize(1 * samples);
-    std::copy_n(trainingDataset.images.begin(), 784 * samples, trainingData.images.begin());
-    std::copy_n(trainingDataset.labels.begin(), 1 * samples, trainingData.labels.begin());
-
-    samples = testDataset.header.num_images;
-    mnist::Dataset testdata{};
-    testdata.header = trainingDataset.header;
-    testdata.header.num_images = samples;
-    testdata.images.resize(784 * samples);
-    testdata.labels.resize(1 * samples);
-    std::copy_n(trainingDataset.images.begin(), 784 * samples, testdata.images.begin());
-    std::copy_n(trainingDataset.labels.begin(), 1 * samples, testdata.labels.begin());
-
-    auto data = to_matrix(trainingData);
-    auto tData = to_matrix(testdata);
-    cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
-    cpuNetwork.train(data, 30, 10, 3.0, tData);
+    // auto testDataset = mnist::load(FileManager::resource("mnist_dataset/t10k-images.idx3-ubyte"),
+    //                                 FileManager::resource("mnist_dataset/t10k-labels.idx1-ubyte"));
+    // auto trainingDataset = mnist::load(FileManager::resource("mnist_dataset/train-images.idx3-ubyte"),
+    //                                     FileManager::resource("mnist_dataset/train-labels.idx1-ubyte"));
+    //
+    // auto samples = trainingDataset.header.num_images;
+    // mnist::Dataset trainingData{};
+    // trainingData.header = trainingDataset.header;
+    // trainingData.header.num_images = samples;
+    // trainingData.images.resize(784 * samples);
+    // trainingData.labels.resize(1 * samples);
+    // std::copy_n(trainingDataset.images.begin(), 784 * samples, trainingData.images.begin());
+    // std::copy_n(trainingDataset.labels.begin(), 1 * samples, trainingData.labels.begin());
+    //
+    // samples = testDataset.header.num_images;
+    // mnist::Dataset testdata{};
+    // testdata.header = trainingDataset.header;
+    // testdata.header.num_images = samples;
+    // testdata.images.resize(784 * samples);
+    // testdata.labels.resize(1 * samples);
+    // std::copy_n(trainingDataset.images.begin(), 784 * samples, testdata.images.begin());
+    // std::copy_n(trainingDataset.labels.begin(), 1 * samples, testdata.labels.begin());
+    //
+    // auto data = to_matrix(trainingData);
+    // auto tData = to_matrix(testdata);
+    // cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
+    // cpuNetwork.train(data, 30, 10, 3.0, tData);
 }

@@ -1,0 +1,73 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "random.glsl"
+
+layout(local_size_x = 1024, local_size_y = 1) in;
+
+layout(set = 0, binding = 0, std430)  buffer TrainingImages {
+    float trainingImages[];
+};
+
+layout(set = 0, binding = 1, std430)  buffer TrainingLabels {
+    int trainingLabels[];
+};
+
+layout(set = 0, binding = 2, std430) buffer ImageLock {
+    int values[];
+} lock[];
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layerIndex;
+    uint batch;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+void main() {
+    uint imageSize = layers[0];
+    uint pixelIndex = gl_LocalInvocationIndex;
+
+    if(pixelIndex >= imageSize) return;
+
+    uint index = gl_GlobalInvocationID.y;
+    RngStateType rngState = initRNG(vec2(index), vec2(batchSize), epoch);
+
+    uint numImages = gl_NumWorkGroups.y;
+    uint newIndex = int(rand(rngState) * numImages);
+    uint firstIndex = min(index, newIndex);
+    uint secondIndex = max(index, newIndex);
+
+
+    if(gl_LocalInvocationIndex == 0 ) {
+        while (atomicCompSwap(lock[0].values[firstIndex], 0, 1) == 1) { }// first index in use wait
+        while (atomicCompSwap(lock[1].values[secondIndex], 0, 1) == 1) { }// second index in use wait
+    }
+    barrier();
+
+    float thisImage = trainingImages[index * imageSize + pixelIndex];
+    float thatImage = trainingImages[newIndex * imageSize + pixelIndex];
+
+    trainingImages[index * imageSize + pixelIndex] = thatImage;
+    trainingImages[newIndex * imageSize + pixelIndex] = thisImage;
+
+    if(gl_LocalInvocationIndex == 0){
+        int thisLabel = trainingLabels[index];
+        int thatLabel = trainingLabels[newIndex];
+
+        trainingLabels[index] = thatLabel;
+        trainingLabels[newIndex] = thisLabel;
+    }
+
+    barrier();
+
+    if(gl_LocalInvocationIndex == 0){
+        atomicExchange(lock[0].values[firstIndex], 0);// release first index
+        atomicExchange(lock[1].values[secondIndex], 0);// release second index
+    }
+
+}

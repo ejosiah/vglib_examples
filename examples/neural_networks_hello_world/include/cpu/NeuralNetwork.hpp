@@ -48,5 +48,6 @@ namespace cpu {
         int m_numLayers{};
         Weights m_weights;
         Biases m_biases;
+        bool m_testMode{};
     };
 }

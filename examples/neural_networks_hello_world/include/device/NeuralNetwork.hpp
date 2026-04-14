@@ -32,9 +32,9 @@ namespace dev {
 
         void initNetwork();
 
-        void shuffleTrainingData(VkCommandBuffer commandBuffer);
+        void shuffleTrainingData(VkCommandBuffer commandBuffer) const;
 
-        void loadInputLayer(VkCommandBuffer commandBuffer);
+        void loadInputLayer(VkCommandBuffer commandBuffer) const;
 
         void feedForward(VkCommandBuffer commandBuffer);
 
@@ -42,7 +42,7 @@ namespace dev {
 
         void computeBackPropagation(VkCommandBuffer commandBuffer);
 
-        void updateWeights(VkCommandBuffer commandBuffer);
+        void updateWeights(VkCommandBuffer commandBuffer) const;
 
         void updateBiases(VkCommandBuffer commandBuffer);
 

@@ -55,6 +55,7 @@ protected:
     VkDescriptorSet neuralNetworkDescriptorSet{VK_NULL_HANDLE};
     VulkanBuffer trainingImages;
     VulkanBuffer trainingLabels;
+    std::array<VulkanBuffer, 2> trainingLocks;
     VulkanBuffer testImages;
     VulkanBuffer testLabels;
 
@@ -213,6 +214,17 @@ protected:
             BYTE_SIZE(host.trainingDataset.labels),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
         );
+        std::vector<int> locks(host.trainingDataset.header.num_images, 0);
+        trainingLocks[0] = context->device.createCpuVisibleBuffer(
+            locks.data(),
+            BYTE_SIZE(locks),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+        );
+        trainingLocks[1] = context->device.createCpuVisibleBuffer(
+            locks.data(),
+            BYTE_SIZE(locks),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+        );
         testImages = context->device.createCpuVisibleBuffer(
             host.testDataset.images.data(),
             BYTE_SIZE(host.testDataset.images),
@@ -236,6 +248,10 @@ protected:
                     .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_ALL)
+                .binding(2)
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(COUNT(trainingLocks))
+                    .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
                 .createLayout();
 
         neuralNetworkDescriptorSetLayout =
@@ -277,7 +293,7 @@ protected:
         testDatasetDescriptorSet = sets[1];
         neuralNetworkDescriptorSet = sets[2];
 
-        auto writes = initializers::writeDescriptorSets<11>();
+        auto writes = initializers::writeDescriptorSets<12>();
 
         VkDescriptorBufferInfo trainingImagesInfo{ trainingImages, 0, VK_WHOLE_SIZE };
         VkDescriptorBufferInfo trainingLabelsInfo{ trainingLabels, 0, VK_WHOLE_SIZE };
@@ -287,6 +303,7 @@ protected:
             return VkDescriptorBufferInfo{ buffer, 0, VK_WHOLE_SIZE };
         };
 
+        auto trainingLocksInfo = map_range(trainingLocks, descriptorInfo);
         auto weightsInfo = map_range(device.weights, descriptorInfo);
         auto biasesInfo = map_range(device.biases, descriptorInfo);
         auto activationsInfo = map_range(device.activations, descriptorInfo);
@@ -307,59 +324,65 @@ protected:
         writes[1].descriptorCount = 1;
         writes[1].pBufferInfo = &trainingLabelsInfo;
 
-        writes[2].dstSet = testDatasetDescriptorSet;
-        writes[2].dstBinding = 0;
+        writes[2].dstSet = trainingDatasetDescriptorSet;
+        writes[2].dstBinding = 2;
         writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &testImagesInfo;
+        writes[2].descriptorCount = COUNT(trainingLocksInfo);
+        writes[2].pBufferInfo = trainingLocksInfo.data();
 
         writes[3].dstSet = testDatasetDescriptorSet;
-        writes[3].dstBinding = 1;
+        writes[3].dstBinding = 0;
         writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[3].descriptorCount = 1;
-        writes[3].pBufferInfo = &testLabelsInfo;
+        writes[3].pBufferInfo = &testImagesInfo;
 
-        writes[4].dstSet = neuralNetworkDescriptorSet;
-        writes[4].dstBinding = 0;
+        writes[4].dstSet = testDatasetDescriptorSet;
+        writes[4].dstBinding = 1;
         writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[4].descriptorCount = COUNT(weightsInfo);
-        writes[4].pBufferInfo = weightsInfo.data();
+        writes[4].descriptorCount = 1;
+        writes[4].pBufferInfo = &testLabelsInfo;
 
         writes[5].dstSet = neuralNetworkDescriptorSet;
-        writes[5].dstBinding = 1;
+        writes[5].dstBinding = 0;
         writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[5].descriptorCount = COUNT(biasesInfo);
-        writes[5].pBufferInfo = biasesInfo.data();
+        writes[5].descriptorCount = COUNT(weightsInfo);
+        writes[5].pBufferInfo = weightsInfo.data();
 
         writes[6].dstSet = neuralNetworkDescriptorSet;
-        writes[6].dstBinding = 2;
+        writes[6].dstBinding = 1;
         writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[6].descriptorCount = COUNT(activationsInfo);
-        writes[6].pBufferInfo = activationsInfo.data();
+        writes[6].descriptorCount = COUNT(biasesInfo);
+        writes[6].pBufferInfo = biasesInfo.data();
 
         writes[7].dstSet = neuralNetworkDescriptorSet;
-        writes[7].dstBinding = 3;
+        writes[7].dstBinding = 2;
         writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[7].descriptorCount = COUNT(intermediateWeightsInfo);
-        writes[7].pBufferInfo = intermediateWeightsInfo.data();
+        writes[7].descriptorCount = COUNT(activationsInfo);
+        writes[7].pBufferInfo = activationsInfo.data();
 
         writes[8].dstSet = neuralNetworkDescriptorSet;
-        writes[8].dstBinding = 4;
+        writes[8].dstBinding = 3;
         writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[8].descriptorCount = COUNT(deltaInfo);
-        writes[8].pBufferInfo = deltaInfo.data();
+        writes[8].descriptorCount = COUNT(intermediateWeightsInfo);
+        writes[8].pBufferInfo = intermediateWeightsInfo.data();
 
         writes[9].dstSet = neuralNetworkDescriptorSet;
-        writes[9].dstBinding = 5;
+        writes[9].dstBinding = 4;
         writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[9].descriptorCount = COUNT(nablaWeightsInfo);
-        writes[9].pBufferInfo = nablaWeightsInfo.data();
+        writes[9].descriptorCount = COUNT(deltaInfo);
+        writes[9].pBufferInfo = deltaInfo.data();
 
         writes[10].dstSet = neuralNetworkDescriptorSet;
-        writes[10].dstBinding = 6;
+        writes[10].dstBinding = 5;
         writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[10].descriptorCount = COUNT(nablaBiasesInfo);
-        writes[10].pBufferInfo = nablaBiasesInfo.data();
+        writes[10].descriptorCount = COUNT(nablaWeightsInfo);
+        writes[10].pBufferInfo = nablaWeightsInfo.data();
+
+        writes[11].dstSet = neuralNetworkDescriptorSet;
+        writes[11].dstBinding = 6;
+        writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[11].descriptorCount = COUNT(nablaBiasesInfo);
+        writes[11].pBufferInfo = nablaBiasesInfo.data();
 
         context->device.updateDescriptorSets(writes);
     }
@@ -403,7 +426,7 @@ protected:
         compute.createPipelines();
     }
 
-    void updateSearchPath() {
+    static void updateSearchPath() {
         std::filesystem::current_path("../examples");
         spdlog::info("working directory: {}", std::filesystem::current_path().string());
         FileManager::instance().addSearchPathFront(".");
@@ -423,7 +446,7 @@ protected:
         context->device.computeCommandPool().oneTimeCommand(func);
     }
 
-    std::vector<float> dot(const std::span<float> m, const std::span<float> v) {
+    static std::vector<float> dot(const std::span<float> m, const std::span<float> v) {
         assert(m.size() % v.size() == 0);
         auto rSize = m.size()/v.size();
         std::vector<float> result(rSize);
@@ -442,7 +465,7 @@ protected:
         return result;
     }
 
-    std::vector<float> dotSingle(const std::span<float> rowMatrix, const std::span<float> colMatrix) {
+    static std::vector<float> dotSingle(const std::span<float> rowMatrix, const std::span<float> colMatrix) {
         assert(!rowMatrix.empty());
         assert(!colMatrix.empty());
 
@@ -459,7 +482,7 @@ protected:
         return result;
     }
 
-    std::vector<float> plus(const std::span<float> a, const std::span<float> b) {
+    static std::vector<float> plus(const std::span<float> a, const std::span<float> b) {
         assert(a.size() == b.size());
         std::vector<float> result(a.size());
         for (auto i = 0; i < a.size(); ++i) {
@@ -468,7 +491,7 @@ protected:
         return result;
     }
 
-    std::vector<float> minus(const std::span<float> a, const std::span<float> b) {
+    static std::vector<float> minus(const std::span<float> a, const std::span<float> b) {
         assert(a.size() == b.size());
         std::vector<float> result(a.size());
         for (auto i = 0; i < a.size(); ++i) {
@@ -498,13 +521,13 @@ protected:
         return map_range(Z, [](auto z){ return 1.f / (1.f + std::expf(-z)); });
     }
 
-    std::vector<float> sigmoid_prime(std::span<float> Z) {
+    static std::vector<float> sigmoid_prime(std::span<float> Z) {
         auto sig = sigmoid(Z);
         auto a = minus(1.0f, sig);
         return multiply(a, sig);
     }
 
-    std::vector<float> cost_derivative(std::span<float> a, std::span<float>y) {
+    static std::vector<float> cost_derivative(std::span<float> a, std::span<float>y) {
         return minus(a, y);
     }
 
@@ -523,7 +546,7 @@ protected:
         }
     }
 
-    std::vector<float> transpose(std::span<float> m, std::tuple<int, int> shape) {
+    static std::vector<float> transpose(std::span<float> m, std::tuple<int, int> shape) {
         auto [rows, cols] = shape;
 
         assert(m.size() == rows * cols);
@@ -611,7 +634,7 @@ protected:
         updateBiases();
     }
 
-    void copy(VkCommandBuffer commandBuffer, VulkanBuffer source, VulkanBuffer destination) {
+    static void copy(VkCommandBuffer commandBuffer, const VulkanBuffer &source, const VulkanBuffer &destination) {
         assert(source);
         assert(destination);
 
@@ -621,7 +644,7 @@ protected:
         Barrier::transferWriteToComputeRead(commandBuffer);
     }
 
-    void feedForward(VkCommandBuffer commandBuffer) {
+    void feedForward(VkCommandBuffer commandBuffer) const {
         const auto gx = host.layers[constants.layerIndex + 1];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("feed_forward"));
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("feed_forward"), 0, 1, &neuralNetworkDescriptorSet, 0, nullptr);
@@ -630,7 +653,7 @@ protected:
         vkCmdDispatch(commandBuffer, gx, 1, 1);
     }
 
-    void loadTrainingInput(VkCommandBuffer commandBuffer) {
+    void loadTrainingInput(VkCommandBuffer commandBuffer) const {
         copy(commandBuffer, trainingImages, device.activations[0]);
     }
 
@@ -646,7 +669,7 @@ protected:
         }
     }
 
-    void computeOutputActivationDelta(VkCommandBuffer commandBuffer) {
+    void computeOutputActivationDelta(VkCommandBuffer commandBuffer) const {
         const auto gx = host.layers[constants.layerIndex + 1];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("compute_output_activation_delta"));
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("compute_output_activation_delta"), 0, 1, &neuralNetworkDescriptorSet, 0, nullptr);
@@ -655,7 +678,7 @@ protected:
         vkCmdDispatch(commandBuffer, gx, 1, 1);
     }
 
-    void computeBackPropagation(VkCommandBuffer commandBuffer) {
+    void computeBackPropagation(VkCommandBuffer commandBuffer) const {
         const auto gx = host.layers[constants.layerIndex];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("back_propagation"));
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("back_propagation"), 0, 1, &neuralNetworkDescriptorSet, 0, nullptr);
@@ -672,7 +695,7 @@ TEST_F(NeuralNetworkFixture, computeIntermediateWeight) {
     std::copy_n(host.trainingDataset.images.begin(), 784, host.activations[0].begin());
 
     const auto numLayers = host.layers.size();
-    const auto layer = 0;
+    constexpr auto layer = 0;
     auto& a = host.activations[layer];
     auto& b = host.biases[layer];
     auto& w = host.weights[layer];
@@ -692,7 +715,7 @@ TEST_F(NeuralNetworkFixture, computeIntermediateWeight) {
     const auto dev_z = device.intermediateWeights[layer].span<float>();
     const auto host_z = host.intermediateWeights[layer];
 
-    const auto nextLayer = layer + 1;
+    constexpr auto nextLayer = layer + 1;
     for (auto i = 0; i < host.layers[nextLayer]; ++i) {
         EXPECT_NEAR(host_z[i], dev_z[i], 1e-3) << "neuron " << i << " => " << dev_z[i] << " != " << host_z[i];
     }
@@ -867,11 +890,7 @@ TEST_F(NeuralNetworkFixture, playground) {
     auto data = to_matrix(trainingData);
 
     auto [m, l] = data.front();
-    auto mc = m.columns();
-    auto mr = m.rows();
 
-    auto lc = l.columns();
-    auto lr = l.rows();
     cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
     cpuNetwork.train(data, 1, 1, constants.eta);
 
