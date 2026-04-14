@@ -1,4 +1,5 @@
-find_package(GTest)
+find_package(GTest REQUIRED)
+find_package(array REQUIRED)
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 
@@ -13,11 +14,11 @@ set(SPV_DIR "${CMAKE_CURRENT_LIST_DIR}/spv")
 compile_glsl_directory(SRC_DIR "${GLSL_SOURCE_DIR}" OUT_DIR "${SPV_DIR}" INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/data/shaders")
 
 add_executable(neural_networks_hello_world ${CPP_FILES} ${HPP_FILES})
-target_link_libraries(neural_networks_hello_world VulkanBase ImGuiPlugin common)
+target_link_libraries(neural_networks_hello_world VulkanBase ImGuiPlugin common array::array)
 
 enable_testing()
 add_executable(neural_networks_hello_test ${TEST_CPP_FILES} ${HPP_FILES} ${TEST_FILES})
-target_link_libraries(neural_networks_hello_test PRIVATE VulkanBase ImGuiPlugin common Vulkan::Vulkan  gtest::gtest)
+target_link_libraries(neural_networks_hello_test PRIVATE VulkanBase ImGuiPlugin common Vulkan::Vulkan array::array  gtest::gtest)
 
 include(GoogleTest)
 gtest_discover_tests(neural_networks_hello_test)

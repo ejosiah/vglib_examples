@@ -1,4 +1,4 @@
-#include "NeuralNetwork.hpp"
+#include "../include/device/NeuralNetwork.hpp"
 
 #include <algorithm>
 #include <random>
@@ -12,7 +12,8 @@ auto resource(const std::string& name) {
     return res->string();
 }
 
-NeuralNetwork::NeuralNetwork(
+
+dev::NeuralNetwork::NeuralNetwork(
     VulkanDevice *device,
     VulkanDescriptorSetLayout datasetDescriptorSetLayout,
     std::initializer_list<uint> layers,
@@ -40,7 +41,7 @@ NeuralNetwork::NeuralNetwork(
 
 }
 
-void NeuralNetwork::init() {
+void dev::NeuralNetwork::init() {
     initNetwork();
     createDescriptorPool();
     createDescriptorSetLayout();
@@ -48,7 +49,7 @@ void NeuralNetwork::init() {
     createPipelines();
 }
 
-void NeuralNetwork::initNetwork() {
+void dev::NeuralNetwork::initNetwork() {
     std::normal_distribution<float> distribution{0.0f, 1.0f};
     std::default_random_engine generator{ m_params.hostVisible ? 1 << 20 : std::random_device{}()};
     auto rng = std::bind(distribution, generator);
@@ -85,10 +86,10 @@ void NeuralNetwork::initNetwork() {
     }
 }
 
-void NeuralNetwork::shuffleTrainingData(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::shuffleTrainingData(VkCommandBuffer commandBuffer) {
 }
 
-void NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) {
     assert(m_trainingDataSet);
     assert(m_activations[0]);
 
@@ -103,7 +104,7 @@ void NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) {
     Barrier::transferWriteToComputeRead(commandBuffer);
 }
 
-void NeuralNetwork::feedForward(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::feedForward(VkCommandBuffer commandBuffer) {
     auto numLayers = m_layers.size();
 
     for (auto layer = 0; layer < numLayers - 1; ++layer) {
@@ -118,7 +119,7 @@ void NeuralNetwork::feedForward(VkCommandBuffer commandBuffer) {
     }
 }
 
-void NeuralNetwork::computeOutputActivationDelta(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::computeOutputActivationDelta(VkCommandBuffer commandBuffer) {
     const auto last = m_layers.size() - 1;
     const auto outputLayer = last - 1;
     m_constants.layerIndex = static_cast<uint>(outputLayer);
@@ -132,7 +133,7 @@ void NeuralNetwork::computeOutputActivationDelta(VkCommandBuffer commandBuffer) 
     Barrier::computeWriteToRead(commandBuffer);
 }
 
-void NeuralNetwork::computeBackPropagation(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::computeBackPropagation(VkCommandBuffer commandBuffer) {
     const auto start = static_cast<int>(m_layers.size() - 2);
     for (auto layer = start; layer > 0; --layer) {
         m_constants.layerIndex = static_cast<uint>(layer);
@@ -145,7 +146,7 @@ void NeuralNetwork::computeBackPropagation(VkCommandBuffer commandBuffer) {
     }
 }
 
-void NeuralNetwork::updateWeights(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::updateWeights(VkCommandBuffer commandBuffer) {
     constexpr uint32_t localSizeX = 1024;
     const auto layers = m_layers.size() - 1;
     size_t maxSize = 0;
@@ -159,7 +160,7 @@ void NeuralNetwork::updateWeights(VkCommandBuffer commandBuffer) {
     vkCmdDispatch(commandBuffer, gx, static_cast<uint32_t>(layers), 1);
 }
 
-void NeuralNetwork::updateBiases(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::updateBiases(VkCommandBuffer commandBuffer) {
     constexpr uint32_t localSizeX = 1024;
     const auto layers = m_layers.size() - 1;
     const auto maxSize = *std::max_element(m_layers.begin() + 1, m_layers.end());
@@ -170,7 +171,7 @@ void NeuralNetwork::updateBiases(VkCommandBuffer commandBuffer) {
     vkCmdDispatch(commandBuffer, gx, static_cast<uint32_t>(layers), 1);
 }
 
-void NeuralNetwork::updateWeightsAndBiases(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::updateWeightsAndBiases(VkCommandBuffer commandBuffer) {
     updateWeights(commandBuffer);
     updateBiases(commandBuffer);
     Barrier::computeWriteToRead(commandBuffer);
@@ -178,12 +179,12 @@ void NeuralNetwork::updateWeightsAndBiases(VkCommandBuffer commandBuffer) {
 }
 
 
-void NeuralNetwork::train(VkCommandBuffer commandBuffer, const Params& params) {
-    throw std::runtime_error("NeuralNetwork::train not yet implemented!");
+void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer, const Params& params) {
+    throw std::runtime_error("dev::NeuralNetwork::train not yet implemented!");
 }
 
 
-void NeuralNetwork::createDescriptorPool() {
+void dev::NeuralNetwork::createDescriptorPool() {
     constexpr uint32_t maxSets = 10;
     std::array<VkDescriptorPoolSize, 2> poolSizes{{
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
@@ -193,7 +194,7 @@ void NeuralNetwork::createDescriptorPool() {
     m_descriptorPool = m_device->createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
 }
 
-void NeuralNetwork::createDescriptorSetLayout() {
+void dev::NeuralNetwork::createDescriptorSetLayout() {
     m_neuralNetworkDescriptorSetLayout = 
         device->descriptorSetLayoutBuilder()
             .binding(0)
@@ -227,7 +228,7 @@ void NeuralNetwork::createDescriptorSetLayout() {
             .createLayout();
 }
 
-void NeuralNetwork::updateDescriptorSets() {
+void dev::NeuralNetwork::updateDescriptorSets() {
         auto sets = m_descriptorPool.allocate({ m_neuralNetworkDescriptorSetLayout });
         m_neuralNetworkDescriptorSet = sets[0];
 
@@ -290,7 +291,7 @@ void NeuralNetwork::updateDescriptorSets() {
         device->updateDescriptorSets(writes);
 }
 
-std::vector<PipelineMetaData> NeuralNetwork::pipelineMetaData() {
+std::vector<PipelineMetaData> dev::NeuralNetwork::pipelineMetaData() {
     return
     {
         {

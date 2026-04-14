@@ -7,7 +7,7 @@ spdlog/1.15.0
 freetype/2.12.1
 imgui/1.85
 gtest/1.15.0
-argparse/2.1
+argparse/3.2
 bullet3/3.17
 entt/3.8.1
 meshoptimizer/0.17
@@ -16,6 +16,7 @@ taskflow/3.4.0
 zlib/1.2.13
 tinygltf/2.8.19
 gsl-lite/0.42.0
+array/0.1
 
 [generators]
 CMakeDeps
