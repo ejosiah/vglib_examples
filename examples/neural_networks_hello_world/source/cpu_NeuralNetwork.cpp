@@ -8,7 +8,8 @@ namespace cpu {
 
 NeuralNetwork::NeuralNetwork(std::initializer_list<uint> layers, bool testMode)
     :m_layers{layers.begin(), layers.end()}
-    ,m_numLayers {static_cast<int>(layers.size())} {
+    ,m_numLayers {static_cast<int>(layers.size())}
+    , m_testMode{testMode} {
 
     std::normal_distribution<float> distribution{0.0f, 1.0f};
     std::default_random_engine generator{ testMode ? 1 << 20 : std::random_device{}()};
@@ -51,9 +52,9 @@ void NeuralNetwork::train(Dataset &trainingData, uint epochs, uint batchSize, fl
             nextBatch += batchSize;
         }
         if (testData.has_value()) {
-            auto total = evaluate(testData.value());
-            auto n = testData.value().get().size();
-            spdlog::info("Epoch {}: {}/{}", j, total, n);
+            auto total = evaluate(testData.value()) * 100.f;
+            auto n = static_cast<float>(testData.value().get().size());
+            spdlog::info("Epoch {}: {}%", j, total/n);
         }else {
             spdlog::info("Epoch {} complete", j);
         }
@@ -179,6 +180,7 @@ NeuralNetwork::WeightsAndBiases NeuralNetwork::backpropagate(const Image& x, con
 }
 
 void NeuralNetwork::shuffle(Dataset &dataset) const {
+    if (m_testMode) return;
     static std::default_random_engine generator{ 1 << 20 };
 
     std::shuffle(std::begin(dataset), std::end(dataset), generator);

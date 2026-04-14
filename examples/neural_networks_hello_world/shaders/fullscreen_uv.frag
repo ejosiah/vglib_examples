@@ -1,12 +1,5 @@
 #version 460 core
 
-struct DatasetHeader {
-    uint magic;
-    uint numImages;
-    uint rows;
-    uint cols;
-};
-
 layout(push_constant) uniform Constants {
     uint width;
     uint height;
