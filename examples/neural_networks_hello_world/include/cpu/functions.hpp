@@ -53,12 +53,7 @@ template <typename T>
 std::tuple<int, int> argmax(nda::matrix<T> a) {
     int s = 0, t = 0;
 
-    T maxValue{};
-    if constexpr (std::is_floating_point_v<T>) {
-        maxValue = std::numeric_limits<T>::lowest();
-    } else {
-        maxValue = std::numeric_limits<T>::max();
-    }
+    T maxValue{std::numeric_limits<T>::lowest()};
 
     std::numeric_limits<T>::min();
     for_all_indices(a.shape(), [&](auto i, auto j) {
