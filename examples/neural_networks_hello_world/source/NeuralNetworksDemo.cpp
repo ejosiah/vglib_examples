@@ -7,6 +7,7 @@
 #include "Vertex.h"
 
 #include "mnist/mnist_loader.hpp"
+#include "cpu/NeuralNetwork.hpp"
 
 
 NeuralNetworksDemo::NeuralNetworksDemo(const Settings& settings) : VulkanBaseApp("Neural Networks Hello World", settings) {
@@ -269,26 +270,59 @@ void NeuralNetworksDemo::onPause() {
 
 
 int main(){
-    try{
-        fs::current_path("../../../../examples/");
-        Settings settings;
-        settings.width = 1440;
-        settings.height = 1280;
-        settings.depthTest = true;
-        settings.enabledFeatures.wideLines = true;
-        settings.enableBindlessDescriptors = true;
-        settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
-        settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
-        settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
-        settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
-        settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
-        settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
+    // try{
+    fs::current_path("../../../../examples/");
+    //     Settings settings;
+    //     settings.width = 1440;
+    //     settings.height = 1280;
+    //     settings.depthTest = true;
+    //     settings.enabledFeatures.wideLines = true;
+    //     settings.enableBindlessDescriptors = true;
+    //     settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+    //     settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+    //     settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+    //     settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
+    //     settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
+    //     settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
+    //
+    //     std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
+    //     auto app = NeuralNetworksDemo{ settings };
+    //     app.addPlugin(imGui);
+    //     app.run();
+    // }catch(std::runtime_error& err){
+    //     spdlog::error(err.what());
+    // }
 
-        std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
-        auto app = NeuralNetworksDemo{ settings };
-        app.addPlugin(imGui);
-        app.run();
-    }catch(std::runtime_error& err){
-        spdlog::error(err.what());
-    }
+    FileManager::instance().addSearchPathFront("../data");
+    FileManager::instance().addSearchPathFront("../data/textures");
+    FileManager::instance().addSearchPathFront("../data/shaders");
+    FileManager::instance().addSearchPathFront("../data/models");
+
+    auto testDataset = mnist::load(FileManager::resource("mnist_dataset/t10k-images.idx3-ubyte"),
+                                    FileManager::resource("mnist_dataset/t10k-labels.idx1-ubyte"));
+    auto trainingDataset = mnist::load(FileManager::resource("mnist_dataset/train-images.idx3-ubyte"),
+                                        FileManager::resource("mnist_dataset/train-labels.idx1-ubyte"));
+
+    auto samples = trainingDataset.header.num_images;
+    mnist::Dataset trainingData{};
+    trainingData.header = trainingDataset.header;
+    trainingData.header.num_images = samples;
+    trainingData.images.resize(784 * samples);
+    trainingData.labels.resize(1 * samples);
+    std::copy_n(trainingDataset.images.begin(), 784 * samples, trainingData.images.begin());
+    std::copy_n(trainingDataset.labels.begin(), 1 * samples, trainingData.labels.begin());
+
+    samples = testDataset.header.num_images;
+    mnist::Dataset testdata{};
+    testdata.header = trainingDataset.header;
+    testdata.header.num_images = samples;
+    testdata.images.resize(784 * samples);
+    testdata.labels.resize(1 * samples);
+    std::copy_n(trainingDataset.images.begin(), 784 * samples, testdata.images.begin());
+    std::copy_n(trainingDataset.labels.begin(), 1 * samples, testdata.labels.begin());
+
+    auto data = to_matrix(trainingData);
+    auto tData = to_matrix(testdata);
+    cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
+    cpuNetwork.train(data, 30, 10, 3.0, tData);
 }

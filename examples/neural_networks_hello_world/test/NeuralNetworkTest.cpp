@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
-#include "NeuralNetwork.hpp"
+#include "device/NeuralNetwork.hpp"
+#include "cpu/NeuralNetwork.hpp"
 #include <vulkan_context.hpp>
 #include <filemanager.hpp>
 #include <mnist/mnist_loader.hpp>
@@ -19,8 +20,8 @@ protected:
 
     std::unique_ptr<VulkanContext> context;
     ComputePipelines compute;
-    NeuralNetwork::Constants constants{};
-    NeuralNetwork network;
+    dev::NeuralNetwork::Constants constants{};
+    dev::NeuralNetwork network;
 
     struct {
         mnist::Dataset trainingDataset;
@@ -116,16 +117,16 @@ protected:
 
         constants.numLayers = static_cast<uint>(host.layers.size());
         constants.batchSize = 1;
-        constants.eta = 1.0f;
+        constants.eta = 3.0f;
     }
 
     void initDeviceNetwork() {
-        network = NeuralNetwork{ &context->device, datasetDescriptorSetLayout, {784, 30, 10},  {
+        network = dev::NeuralNetwork{ &context->device, datasetDescriptorSetLayout, {784, 30, 10},  {
             .trainingData = std::make_tuple(trainingDatasetDescriptorSet, trainingImages),
             .epochs = 1,
             .numBatches = 1,
             .datasetSize = 1,
-            .eta = 1.0f,
+            .eta = 3.0f,
             .hostVisible = true
         }};
         network.init();
@@ -371,31 +372,31 @@ protected:
                     "feed_forward",
                     resource("feed_forward.comp.spv"),
                     { &neuralNetworkDescriptorSetLayout, &datasetDescriptorSetLayout },
-                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeuralNetwork::Constants) } }
+                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dev::NeuralNetwork::Constants) } }
                 },
                 {
                     "compute_output_activation_delta",
                     resource("compute_output_activation_delta.comp.spv"),
                     { &neuralNetworkDescriptorSetLayout, &datasetDescriptorSetLayout },
-                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeuralNetwork::Constants) } }
+                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dev::NeuralNetwork::Constants) } }
                 },
                 {
                     "back_propagation",
                     resource("back_propagation.comp.spv"),
                     { &neuralNetworkDescriptorSetLayout, &datasetDescriptorSetLayout },
-                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeuralNetwork::Constants) } }
+                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dev::NeuralNetwork::Constants) } }
                 },
                 {
                     "update_weights",
                     resource("update_weights.comp.spv"),
                     { &neuralNetworkDescriptorSetLayout },
-                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeuralNetwork::Constants) } }
+                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dev::NeuralNetwork::Constants) } }
                 },
                 {
                     "update_biases",
                     resource("update_biases.comp.spv"),
                     { &neuralNetworkDescriptorSetLayout },
-                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeuralNetwork::Constants) } }
+                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dev::NeuralNetwork::Constants) } }
                 }
             }
         };
@@ -852,6 +853,83 @@ TEST_F(NeuralNetworkFixture, weightsAndBiasesUpdate) {
                 << fmt::format("biases layer {} [{}] mismatch {} != {}", layer, i, host_biases[i], dev_biases[i]);
         }
     }
+}
+
+TEST_F(NeuralNetworkFixture, playground) {
+    mnist::Dataset trainingData{};
+    trainingData.header = host.trainingDataset.header;
+    trainingData.header.num_images = 1;
+    trainingData.images.resize(784);
+    trainingData.labels.resize(1);
+    std::copy_n(host.trainingDataset.images.begin(), 784, trainingData.images.begin());
+    std::copy_n(host.trainingDataset.labels.begin(), 1, trainingData.labels.begin());
+
+    auto data = to_matrix(trainingData);
+
+    auto [m, l] = data.front();
+    auto mc = m.columns();
+    auto mr = m.rows();
+
+    auto lc = l.columns();
+    auto lr = l.rows();
+    cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
+    cpuNetwork.train(data, 1, 1, constants.eta);
+
+    feedForward();
+    outputActivationDelta();
+    backPropagate();
+    updateWeightsAndBiases();
+
+
+    for (size_t layer = 0; layer < host.weights.size(); ++layer) {
+        const auto dev_weights = cpuNetwork.m_weights[layer];
+        const auto& host_weights = host.weights[layer];
+
+        nda::for_all_indices(dev_weights.shape(), [&](auto i, auto j) {
+            auto index = i * dev_weights.j().extent() + j;
+            EXPECT_NEAR(host_weights[index], dev_weights(i, j), 1E-3)
+                << fmt::format("weights layer {} [{}] mismatch {} != {}, diff = {}", layer, i, host_weights[index], dev_weights(i, j), std::abs(host_weights[index] - dev_weights(i, j)));
+        });
+    }
+
+    for (size_t layer = 0; layer < host.biases.size(); ++layer) {
+        const auto dev_biases = cpuNetwork.m_biases[layer];
+        const auto& host_biases = host.biases[layer];
+
+        nda:;nda::for_all_indices(dev_biases.shape(), [&](auto i, auto j) {
+            auto index = i * dev_biases.j().extent() + j;
+            EXPECT_NEAR(host_biases[index], dev_biases(i, j), 1E-3)
+               << fmt::format("biases layer {} [{}] mismatch {} != {}, diff = {}", layer, i, host_biases[index], dev_biases(i, j), std::abs(host_biases[index] - dev_biases(i, j)));
+        });
+    }
+
+    ASSERT_TRUE(true);
+
+}
+
+TEST_F(NeuralNetworkFixture, cppNetTest) {
+    auto samples = 1000;
+    mnist::Dataset trainingData{};
+    trainingData.header = host.trainingDataset.header;
+    trainingData.header.num_images = samples;
+    trainingData.images.resize(784 * samples);
+    trainingData.labels.resize(1 * samples);
+    std::copy_n(host.trainingDataset.images.begin(), 784 * samples, trainingData.images.begin());
+    std::copy_n(host.trainingDataset.labels.begin(), 1 * samples, trainingData.labels.begin());
+
+    samples = 100;
+    mnist::Dataset testdata{};
+    testdata.header = host.trainingDataset.header;
+    testdata.header.num_images = samples;
+    testdata.images.resize(784 * samples);
+    testdata.labels.resize(1 * samples);
+    std::copy_n(host.trainingDataset.images.begin(), 784 * samples, testdata.images.begin());
+    std::copy_n(host.trainingDataset.labels.begin(), 1 * samples, testdata.labels.begin());
+
+    auto data = to_matrix(trainingData);
+    auto tData = to_matrix(testdata);
+    cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
+    cpuNetwork.train(data, 1, 1, constants.eta, tData);
 }
 
 mnist::Dataset NeuralNetworkFixture::s_trainingDataset{};
