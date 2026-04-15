@@ -37,11 +37,17 @@ namespace dev {
 
         void loadInputLayer(VkCommandBuffer commandBuffer) const;
 
+        void clearNablaBuffers(VkCommandBuffer commandBuffer) const;
+
         void feedForward(VkCommandBuffer commandBuffer);
 
         void computeOutputActivationDelta(VkCommandBuffer commandBuffer);
 
         void computeBackPropagation(VkCommandBuffer commandBuffer);
+
+        void reduceNablaWeights(VkCommandBuffer commandBuffer) const;
+
+        void reduceNablaBiases(VkCommandBuffer commandBuffer) const;
 
         void updateWeights(VkCommandBuffer commandBuffer) const;
 

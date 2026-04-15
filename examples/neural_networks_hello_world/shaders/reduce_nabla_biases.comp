@@ -1,0 +1,65 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 6) buffer NablaBias {
+    float values[];
+} nablaBias[];
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layer;
+    uint batch;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+shared float localSum[32];
+
+void main() {
+    uint k = gl_WorkGroupID.y;
+    uint wgSize = gl_WorkGroupSize.x;
+    uint layer = gl_GlobalInvocationID.z;
+    uint size = layers[layer + 1];
+    if (k >= size) {
+        return;
+    }
+
+    for (uint i = 0; i < batchSize; i += wgSize) {
+        if (subgroupElect()) {
+            localSum[gl_SubgroupID] = 0;
+        }
+        barrier();
+
+        uint nbIndex = i + gl_LocalInvocationID.x;
+        uint index = nbIndex * size + k;
+        float nb = nbIndex < batchSize ? nablaBias[layer].values[index] : 0.0;
+
+        float sum = subgroupAdd(nb);
+        if (subgroupElect()) {
+            localSum[gl_SubgroupID] = sum;
+        }
+
+        barrier();
+
+        if (subgroupAll(gl_SubgroupID < 1)) {
+            float sum = localSum[gl_SubgroupInvocationID];
+            sum = subgroupAdd(sum);
+
+            if (subgroupElect()) {
+                if (i == 0) {
+                    nablaBias[layer].values[k] = sum;
+                } else {
+                    nablaBias[layer].values[k] += sum;
+                }
+            }
+        }
+    }
+}

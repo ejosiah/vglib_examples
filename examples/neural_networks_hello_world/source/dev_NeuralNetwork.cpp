@@ -59,7 +59,7 @@ void dev::NeuralNetwork::initNetwork() {
             std::vector<float> biases(L);
             std::ranges::generate(biases, [&]{ return rng(); });
             auto biasBuffer = createBuffer(biases, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-            auto nablaBiasBuffer = createBuffer(L * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            auto nablaBiasBuffer = createBuffer(L * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
             m_biases.push_back(biasBuffer);
             m_nablaBiases.push_back(nablaBiasBuffer);
 
@@ -71,7 +71,7 @@ void dev::NeuralNetwork::initNetwork() {
             std::ranges::generate(weights, [&]{ return rng(); });
             auto weightsBuffer = createBuffer(weights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             auto intermediateWeights = createBuffer(L1 * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-            auto nablaWeightsBuffer = createBuffer(L * L1 * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            auto nablaWeightsBuffer = createBuffer(L * L1 * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
             m_weights.push_back(weightsBuffer);
             m_nablaWeights.push_back(nablaWeightsBuffer);
             m_intermediateWeights.push_back(intermediateWeights);
@@ -118,6 +118,18 @@ void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) const {
     Barrier::transferWriteToComputeRead(commandBuffer);
 }
 
+void dev::NeuralNetwork::clearNablaBuffers(VkCommandBuffer commandBuffer) const {
+    for (const auto& buffer : m_nablaWeights) {
+        vkCmdFillBuffer(commandBuffer, buffer, 0, buffer.size, 0);
+    }
+
+    for (const auto& buffer : m_nablaBiases) {
+        vkCmdFillBuffer(commandBuffer, buffer, 0, buffer.size, 0);
+    }
+
+    Barrier::transferWriteToComputeWrite(commandBuffer);
+}
+
 void dev::NeuralNetwork::feedForward(VkCommandBuffer commandBuffer) {
     auto numLayers = m_layers.size();
 
@@ -160,6 +172,29 @@ void dev::NeuralNetwork::computeBackPropagation(VkCommandBuffer commandBuffer) {
     }
 }
 
+void dev::NeuralNetwork::reduceNablaWeights(VkCommandBuffer commandBuffer) const {
+    const auto layers = m_layers.size() - 1;
+    size_t maxSize = 0;
+    for (size_t layer = 0; layer < layers; ++layer) {
+        maxSize = std::max(maxSize, static_cast<size_t>(m_layers[layer]) * m_layers[layer + 1]);
+    }
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("reduce_nabla_weights"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("reduce_nabla_weights"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("reduce_nabla_weights"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, 1, static_cast<uint32_t>(maxSize), static_cast<uint32_t>(layers));
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void dev::NeuralNetwork::reduceNablaBiases(VkCommandBuffer commandBuffer) const {
+    const auto layers = m_layers.size() - 1;
+    const auto maxSize = *std::max_element(m_layers.begin() + 1, m_layers.end());
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("reduce_nabla_biases"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("reduce_nabla_biases"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("reduce_nabla_biases"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, 1, maxSize, static_cast<uint32_t>(layers));
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
 void dev::NeuralNetwork::updateWeights(VkCommandBuffer commandBuffer) const {
     constexpr uint32_t localSizeX = 1024;
     const auto layers = m_layers.size() - 1;
@@ -186,6 +221,8 @@ void dev::NeuralNetwork::updateBiases(VkCommandBuffer commandBuffer) {
 }
 
 void dev::NeuralNetwork::updateWeightsAndBiases(VkCommandBuffer commandBuffer) {
+    reduceNablaWeights(commandBuffer);
+    reduceNablaBiases(commandBuffer);
     updateWeights(commandBuffer);
     updateBiases(commandBuffer);
     Barrier::computeWriteToRead(commandBuffer);
@@ -249,6 +286,7 @@ void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer) {
 
 void dev::NeuralNetwork::updateBatch(VkCommandBuffer commandBuffer, uint batchIndex) {
     m_constants.batchIndex = batchIndex;
+    clearNablaBuffers(commandBuffer);
     loadInputLayer(commandBuffer);
     feedForward(commandBuffer);
     computeOutputActivationDelta(commandBuffer);
@@ -368,6 +406,18 @@ std::vector<PipelineMetaData> dev::NeuralNetwork::pipelineMetaData() {
         {
             "update_weights",
             resource("update_weights.comp.spv"),
+            { &m_neuralNetworkDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
+        },
+        {
+            "reduce_nabla_weights",
+            resource("reduce_nabla_weights.comp.spv"),
+            { &m_neuralNetworkDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
+        },
+        {
+            "reduce_nabla_biases",
+            resource("reduce_nabla_biases.comp.spv"),
             { &m_neuralNetworkDescriptorSetLayout },
             { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
         },
