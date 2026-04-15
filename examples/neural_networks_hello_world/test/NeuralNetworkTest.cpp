@@ -943,30 +943,36 @@ TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
     const auto imagePixels = 784u;
     const auto imageSize = imagePixels * sizeof(float);
 
-   uint evalCount = testdata.size();
+   uint evalCount = network.m_constants.batchSize;
     VulkanBuffer testBuffer =
         context->device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, testdata.size() * imageSize);
     testBuffer.copy(host.testDataset.images.data(), BYTE_SIZE(host.testDataset.images));
 
+    execute([&](auto commandBuffer) {
+        auto start = 0;
+        auto end = start + imageSize * evalCount;
+        auto input = testBuffer.region(start, end);
+        network.evaluate(commandBuffer, input);
+    });
+
     for (auto k = 0; k < evalCount; ++k) {
+        spdlog::info("assert image: {}", k);
+        auto [image, label] = testdata[k];
+
         auto start = k * imageSize;
         auto end = start + imageSize;
         auto input = testBuffer.region(start, end);
-
-        auto [image, label] = testdata[k];
 
         auto cpuImage = input.span<float>();
         for_all_indices(image.shape(), [&](auto i, auto j) {
             ASSERT_NEAR(image(i, j), cpuImage[i], 1E-3) << "images don't match";
         });
 
-
-        execute([&](auto commandBuffer) {
-            network.evaluate(commandBuffer, input);
-        });
-
         auto expected = cpuNetwork.feedForward(image);
-        auto actual = network.m_activations[2].span<float>(10);
+        start = k * host.layers[2] * sizeof(float);
+        end = start + host.layers[2] * sizeof(float);
+        auto outputActivation = network.m_activations[2].region(start, end);
+        auto actual = outputActivation.span<float>();
 
         // spdlog::info("actual:   [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]"
         //     , actual[0], actual[1], actual[2], actual[3], actual[4]
@@ -988,6 +994,53 @@ TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
             ASSERT_NEAR(expected(i, j), actual[i], 1E-3) << "no match at index: " << i << " for input " << k;
         });
     }
+}
+
+TEST_F(NeuralNetworkFixture, gpuClassificationRate) {
+    auto numImages = 8000;
+
+    const auto eta = 3.0f;
+    const auto batchSize = 10;
+    const auto numBatches = numImages / batchSize;
+    const auto epochs = 1;
+
+    initDeviceNetwork(epochs, numBatches, numImages, eta);
+
+    execute([&](auto commandBuffer) {
+        network.train(commandBuffer);
+    });
+
+
+    auto testdata = to_matrix(host.testDataset);
+    const auto imagePixels = 784u;
+    const auto imageSize = imagePixels * sizeof(float);
+
+    VulkanBuffer testBuffer =
+        context->device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, testdata.size() * imageSize);
+    testBuffer.copy(host.testDataset.images.data(), BYTE_SIZE(host.testDataset.images));
+
+    uint evalCount = network.m_constants.batchSize;
+    execute([&](auto commandBuffer) {
+        auto start = 0;
+        auto end = start + imageSize * evalCount;
+        auto input = testBuffer.region(start, end);
+        network.evaluate(commandBuffer, input);
+    });
+
+    std::vector<int> totals;
+    for (auto k = 0; k < evalCount; ++k) {
+        auto start = k * host.layers[2] * sizeof(float);
+        auto end = start + host.layers[2] * sizeof(float);
+        auto outputActivation = network.m_activations[2].region(start, end);
+        auto oSpan = outputActivation.span<float>();
+
+        auto expected = host.testDataset.labels[k];
+        auto actual = argmax(oSpan);
+        totals.push_back(expected == actual);
+    }
+
+    auto rate = 100 * std::accumulate(totals.begin(), totals.end(), 0.0f)/evalCount;
+    spdlog::info("classification rate {}%", rate);
 }
 
 mnist::Dataset NeuralNetworkFixture::s_trainingDataset{};
