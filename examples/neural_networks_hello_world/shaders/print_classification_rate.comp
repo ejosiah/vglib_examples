@@ -1,0 +1,51 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 1, binding = 2) readonly buffer TestResults {
+    int results[];
+};
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layerIndex;
+    uint batch;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+shared uint localSum[32];
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    const uint lane = gl_LocalInvocationID.x;
+    const uint workgroupSize = gl_WorkGroupSize.x;
+
+    uint total = 0;
+    for (uint i = index; i < batchSize; i += workgroupSize) {
+        total += uint(results[i]);
+    }
+
+    uint sum = subgroupAdd(total);
+    if (subgroupElect()) {
+        localSum[gl_SubgroupID] = sum;
+    }
+
+    barrier();
+
+    if (subgroupAll(gl_SubgroupID < 1)) {
+        uint subgroupSum = lane < gl_NumSubgroups ? localSum[lane] : 0;
+        subgroupSum = subgroupAdd(subgroupSum);
+
+        if (subgroupElect()) {
+            const float classificationRate = (float(subgroupSum) / float(batchSize)) * 100.0;
+            debugPrintfEXT("Epoch %u classification rate: %.2f%%\n", epoch, classificationRate);
+        }
+    }
+}
