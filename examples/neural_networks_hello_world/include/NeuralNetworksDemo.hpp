@@ -69,6 +69,7 @@ protected:
     VkDescriptorSet testDatasetDescriptorSet{VK_NULL_HANDLE};
     VulkanBuffer trainingImages;
     VulkanBuffer trainingLabels;
+    VulkanBuffer results;
     std::array<VulkanBuffer, 2> trainingLocks;
     VulkanBuffer testImages;
     VulkanBuffer testLabels;

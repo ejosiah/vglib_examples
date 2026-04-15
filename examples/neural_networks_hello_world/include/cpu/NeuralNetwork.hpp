@@ -32,6 +32,7 @@ namespace cpu {
         void train(Dataset& trainingData, uint epochs, uint batchSize,
             float eta, std::optional<std::reference_wrapper<const Dataset>> testData = {});
 
+        [[nodiscard]]
         Activation feedForward(const Activation& a) const;
 
         float evaluate(const Dataset& dataset) const;
@@ -48,6 +49,8 @@ namespace cpu {
         int m_numLayers{};
         Weights m_weights;
         Biases m_biases;
+        mutable std::array<Activation, 8> m_activations;
+        mutable std::array<Activation, 8> m_z;
         bool m_testMode{};
     };
 }

@@ -1,0 +1,75 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) buffer WeightsBuffer {
+    float values[];
+} weight[];
+
+layout(set = 0, binding = 3) buffer IntermediateWeightsBuffer {
+    float values[];
+} intermediate_weights[];
+
+layout(set = 0, binding = 4) buffer Delta {
+    float values[];
+} delta[];
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layerIndex;
+    uint batchIndex;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+shared float localSum[32];
+
+float sigmoid(float z) {
+    return 1.0 / (1.0 + exp(-z));
+}
+
+float sigmoid_prime(float z) {
+    float sig = sigmoid(z);
+    return (1.0 - sig) * sig;
+}
+
+void main() {
+    const uint l = layers[layerIndex];
+    const uint l1 = layers[layerIndex + 1];
+    const uint j = gl_WorkGroupID.x;
+    const uint imageOffset = gl_WorkGroupID.y;
+    const uint k = gl_LocalInvocationID.x;
+
+    if (j >= l) {
+        return;
+    }
+
+    const uint wTIndex = k * l + j;
+    const uint deltaL1Index = imageOffset * l1 + k;
+    const float w = k < l1 ? weight[layerIndex].values[wTIndex] : 0.0;
+    const float deltaL1 = k < l1 ? delta[layerIndex + 1].values[deltaL1Index] : 0.0;
+    float sum = subgroupAdd(w * deltaL1);
+
+    if (subgroupElect()) {
+        localSum[gl_SubgroupID] = sum;
+    }
+
+    barrier();
+
+    if (subgroupAll(gl_SubgroupID < 1)) {
+        float s = gl_SubgroupInvocationID < gl_NumSubgroups ? localSum[gl_SubgroupInvocationID] : 0.0;
+        s = subgroupAdd(s);
+
+        if (subgroupElect()) {
+            const uint deltaIndex = imageOffset * l + j;
+            const float z = intermediate_weights[layerIndex - 1].values[deltaIndex];
+            delta[layerIndex].values[deltaIndex] = s * sigmoid_prime(z);
+        }
+    }
+}

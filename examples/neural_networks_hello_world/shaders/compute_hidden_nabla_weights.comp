@@ -1,0 +1,51 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 2) buffer ActivationBuffer {
+    float values[];
+} activation[];
+
+layout(set = 0, binding = 4) buffer Delta {
+    float values[];
+} delta[];
+
+layout(set = 0, binding = 5) buffer NablaWeights {
+    float values[];
+} nablaWeights[];
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layerIndex;
+    uint batchIndex;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+shared float localDelta;
+
+void main() {
+    const uint l = layers[layerIndex];
+    const uint l0 = layers[layerIndex - 1];
+    const uint i = gl_GlobalInvocationID.x;
+    const uint j = gl_WorkGroupID.y;
+    const uint imageOffset = gl_WorkGroupID.z;
+
+    if (i >= l0 || j >= l) {
+        return;
+    }
+
+    if (gl_LocalInvocationID.x == 0) {
+        localDelta = delta[layerIndex].values[imageOffset * l + j];
+    }
+
+    barrier();
+
+    const uint rowOffset = imageOffset * (l * l0) + j * l0;
+    const uint activationIndex = imageOffset * l0 + i;
+    nablaWeights[layerIndex - 1].values[rowOffset + i] = localDelta * activation[layerIndex - 1].values[activationIndex];
+}

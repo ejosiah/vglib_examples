@@ -65,12 +65,15 @@ void NeuralNetwork::train(Dataset &trainingData, uint epochs, uint batchSize, fl
 
 NeuralNetwork::Activation NeuralNetwork::feedForward(const Activation& a) const {
     auto activation = a;
+    m_activations[0] = a;
     for (auto l = 0; l < m_numLayers - 1; l++) {
         auto& w = m_weights[l];
         auto& b = m_biases[l];
         auto z = dot(w, activation);
         z = add(z, b);
         activation = sigmoid(z);
+        m_activations[l+1] = activation;
+        m_z[l] = z;
     }
     return activation;
 }
