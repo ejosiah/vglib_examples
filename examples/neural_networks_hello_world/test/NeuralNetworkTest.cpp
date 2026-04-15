@@ -119,13 +119,13 @@ protected:
         constants.eta = 3.0f;
     }
 
-    void initDeviceNetwork() {
+    void initDeviceNetwork(const uint epochs = 1, const uint numBatches = 1, const uint datasetSize = 1, const float eta = 3.0f) {
         network = dev::NeuralNetwork{ &context->device, datasetDescriptorSetLayout, {784, 30, 10},  {
             .trainingData = std::make_tuple(trainingDatasetDescriptorSet, dev::NeuralNetwork::Dataset{trainingImages, trainingLabels }),
-            .epochs = 1,
-            .numBatches = 1,
-            .datasetSize = 1,
-            .eta = 3.0f,
+            .epochs = epochs,
+            .numBatches = numBatches,
+            .datasetSize = datasetSize,
+            .eta = eta,
             .testMode = true
         }};
         network.init();
@@ -905,7 +905,7 @@ TEST_F(NeuralNetworkFixture, DISABLED_cppNetTest) {
 }
 
 TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
-    auto numImages = 2;
+    auto numImages = 100;
     mnist::Dataset trainingData{};
     trainingData.header = host.trainingDataset.header;
     trainingData.header.num_images = numImages;
@@ -917,14 +917,11 @@ TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
     auto data = to_matrix(trainingData);
 
     const auto eta = 3.0f;
-    const auto batchSize = numImages;
-    const auto epochs = 1;
+    const auto batchSize = 10;
+    const auto numBatches = numImages / batchSize;
+    const auto epochs = 5;
 
-    network.m_params.numBatches = numImages/batchSize;
-    network.m_params.epochs = epochs;
-    network.m_params.eta = eta;
-    network.m_params.datasetSize = numImages;
-    network.refreshConstants();
+    initDeviceNetwork(epochs, numBatches, numImages, eta);
 
     cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
     cpuNetwork.train(data, epochs, batchSize, eta);

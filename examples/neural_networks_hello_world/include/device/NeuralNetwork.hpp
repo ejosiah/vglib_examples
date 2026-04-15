@@ -104,6 +104,7 @@ namespace dev {
 
         Dataset m_trainingDataSet;
         Dataset m_testDataset;
+        mutable uint m_testModeBatchOffset{0};
 
         struct Constants {
             std::array<uint, 8> layers{};

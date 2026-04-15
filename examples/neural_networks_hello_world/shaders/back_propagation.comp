@@ -1,13 +1,11 @@
 #version 460
 
-layout(local_size_x = 1, local_size_y = 1024) in;
-
 #extension GL_KHR_shader_subgroup_arithmetic : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_debug_printf : enable
 
-layout(local_size_x = 1, local_size_y = 1024) in;
+layout(local_size_x = 1024, local_size_y = 1) in;
 
 layout(set = 0, binding = 0) buffer WeightsBUffer {
     float values[];
@@ -68,7 +66,8 @@ void main() {
     const uint l1 = layers[layer + 1];
     const uint l0 = layers[layer - 1];
     const uint j = gl_WorkGroupID.x;
-    const uint k = gl_LocalInvocationID.y;
+    const uint imageOffset = gl_WorkGroupID.y;
+    const uint k = gl_LocalInvocationID.x;
 
     if (j >= l) {
         return;
@@ -76,7 +75,8 @@ void main() {
 
     const uint row = k * l;
     const float w = k < l1 ? weight[layer].values[row + j] : 0.0;
-    const float d1 = k < l1 ? delta[layer + 1].values[k] : 0.0;
+    const uint nextDeltaIndex = imageOffset * l1 + k;
+    const float d1 = k < l1 ? delta[layer + 1].values[nextDeltaIndex] : 0.0;
     float sum = subgroupAdd(w * d1);
 
     if (subgroupElect()) {
@@ -90,15 +90,17 @@ void main() {
         s = subgroupAdd(s);
 
         if (subgroupElect()) {
-            const float z = intermediate_weights[layer - 1].values[j];
+            const uint deltaIndex = imageOffset * l + j;
+            const uint rowOffset = imageOffset * (l * l0) + j * l0;
+            const float z = intermediate_weights[layer - 1].values[deltaIndex];
             const float d = s * sigmoid_prime(z);
-            const uint prevRow = j * l0;
 
-            delta[layer].values[j] = d;
-            nablaBias[layer - 1].values[j] = d;
+            delta[layer].values[deltaIndex] = d;
+            nablaBias[layer - 1].values[deltaIndex] = d;
 
             for (uint i = 0; i < l0; ++i) {
-                nablaWeights[layer - 1].values[prevRow + i] = d * activation[layer - 1].values[i];
+                const uint activationIndex = imageOffset * l0 + i;
+                nablaWeights[layer - 1].values[rowOffset + i] = d * activation[layer - 1].values[activationIndex];
             }
         }
     }
