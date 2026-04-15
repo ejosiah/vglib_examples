@@ -81,17 +81,8 @@ void dev::NeuralNetwork::initNetwork() {
 
 void dev::NeuralNetwork::shuffleTrainingData(VkCommandBuffer commandBuffer) const {
     if (m_params.testMode) {
-        struct LocalImage { std::array<float, 784> data; };
-        auto localDataSet = m_trainingDataSet.images.span<LocalImage>(m_params.numBatches);
-
-        static auto gen = std::default_random_engine{1 << 20};
-        std::ranges::shuffle(localDataSet, gen);
-        m_trainingDataSet.images.unmap();
-
-        auto localLabel = m_trainingDataSet.labels.span<int>(m_params.numBatches);
-        gen = std::default_random_engine{1 << 20};
-        std::ranges::shuffle(localLabel, gen);
-        m_trainingDataSet.labels.unmap();
+        const auto numBatches = std::max(1u, m_params.numBatches);
+        m_testModeBatchOffset = (m_testModeBatchOffset + 1) % numBatches;
         return;
     }
 
@@ -167,7 +158,7 @@ void dev::NeuralNetwork::computeBackPropagation(VkCommandBuffer commandBuffer) {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("back_propagation"));
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("back_propagation"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, layout("back_propagation"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
-        vkCmdDispatch(commandBuffer, gx, 1, 1);
+        vkCmdDispatch(commandBuffer, gx, m_constants.batchSize, 1);
         Barrier::computeWriteToRead(commandBuffer);
     }
 }
@@ -285,7 +276,12 @@ void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer) {
 }
 
 void dev::NeuralNetwork::updateBatch(VkCommandBuffer commandBuffer, uint batchIndex) {
-    m_constants.batchIndex = batchIndex;
+    if (m_params.testMode) {
+        const auto numBatches = std::max(1u, m_params.numBatches);
+        m_constants.batchIndex = (m_testModeBatchOffset + batchIndex) % numBatches;
+    } else {
+        m_constants.batchIndex = batchIndex;
+    }
     clearNablaBuffers(commandBuffer);
     loadInputLayer(commandBuffer);
     feedForward(commandBuffer);

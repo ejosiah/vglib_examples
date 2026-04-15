@@ -41,7 +41,7 @@ namespace cpu {
 
         WeightsAndBiases backpropagate(const Image& x, const Label& y);
 
-        void shuffle(Dataset& dataset) const;
+        void shuffle(Dataset& dataset, uint batchSize) const;
 
     public:
         Layers m_layers;

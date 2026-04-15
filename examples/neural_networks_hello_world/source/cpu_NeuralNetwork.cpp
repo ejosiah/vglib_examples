@@ -40,7 +40,7 @@ void NeuralNetwork::train(Dataset &trainingData, uint epochs, uint batchSize, fl
         , trainingData.size(), batchSize, epochs, eta);
 
     for (auto j  = 0; j < epochs; j++) {
-        shuffle(trainingData);
+        shuffle(trainingData, batchSize);
         auto numBatches = trainingData.size() / batchSize;
 
         auto nextBatch = trainingData.data();
@@ -171,7 +171,16 @@ NeuralNetwork::WeightsAndBiases NeuralNetwork::backpropagate(const Image& x, con
     return std::make_tuple(nabla_w, nabla_b);
 }
 
-void NeuralNetwork::shuffle(Dataset &dataset) const {
+void NeuralNetwork::shuffle(Dataset &dataset, uint batchSize) const {
+    if (m_testMode) {
+        const auto shift = std::min<size_t>(batchSize, dataset.size());
+        if (shift == 0 || shift == dataset.size()) {
+            return;
+        }
+        std::rotate(dataset.begin(), dataset.begin() + static_cast<std::ptrdiff_t>(shift), dataset.end());
+        return;
+    }
+
     static auto gen = std::default_random_engine(m_testMode ? 1 << 20 : std::random_device{}());
     std::shuffle(std::begin(dataset), std::end(dataset), gen);
 }
