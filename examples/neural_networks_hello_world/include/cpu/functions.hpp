@@ -3,7 +3,10 @@
 #include "array/matrix.h"
 #include "array/ein_reduce.h"
 #include "mnist/mnist_loader.hpp"
+
 #include <tuple>
+#include <span>
+#include <algorithm>
 
 template <typename T>
 inline nda::matrix<T> dot(const nda::matrix<T>& A, const nda::matrix<T>& B) {
@@ -64,6 +67,10 @@ std::tuple<int, int> argmax(nda::matrix<T> a) {
         }
     });
     return std::make_tuple(s, t);
+}
+
+inline size_t argmax(std::span<const float> v) {
+    return std::distance(v.begin(), std::max_element(v.begin(), v.end()));
 }
 
 template <typename T>
