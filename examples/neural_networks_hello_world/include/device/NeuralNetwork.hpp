@@ -37,7 +37,7 @@ namespace dev {
 
         void loadTrainingInputLayer(VkCommandBuffer commandBuffer) const;
 
-        void loadInputLayer(VkCommandBuffer commandBuffer, VulkanBuffer input) const;
+        void loadInputLayer(VkCommandBuffer commandBuffer, BufferRegion input) const;
 
         void clearNablaBuffers(VkCommandBuffer commandBuffer) const;
 
@@ -46,6 +46,12 @@ namespace dev {
         void computeOutputActivationDelta(VkCommandBuffer commandBuffer);
 
         void computeBackPropagation(VkCommandBuffer commandBuffer);
+
+        void computeHiddenDelta(VkCommandBuffer commandBuffer) const;
+
+        void computeHiddenNablaBiases(VkCommandBuffer commandBuffer) const;
+
+        void computeHiddenNablaWeights(VkCommandBuffer commandBuffer) const;
 
         void reduceNablaWeights(VkCommandBuffer commandBuffer) const;
 
@@ -57,11 +63,15 @@ namespace dev {
 
         void updateWeightsAndBiases(VkCommandBuffer commandBuffer);
 
+        void train(VkCommandBuffer commandBuffer, uint epoch);
+
         void train(VkCommandBuffer commandBuffer);
 
         void updateBatch(VkCommandBuffer commandBuffer, uint batchIndex);
 
         void evaluate(VkCommandBuffer commandBuffer, VulkanBuffer input);
+
+        void evaluate(VkCommandBuffer commandBuffer, BufferRegion input);
 
         void evaluateClassificationRate(VkCommandBuffer commandBuffer);
 

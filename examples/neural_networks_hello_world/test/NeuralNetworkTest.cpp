@@ -864,33 +864,34 @@ TEST_F(NeuralNetworkFixture, playground) {
     }
 }
 
-TEST_F(NeuralNetworkFixture, DISABLED_cppNetTest) {
-    auto samples = host.trainingDataset.header.num_images;
+TEST_F(NeuralNetworkFixture, cppNetTest) {
+    // auto numImages = host.trainingDataset.header.num_images;
+    auto numImages = 8000;
     mnist::Dataset trainingData{};
     trainingData.header = host.trainingDataset.header;
-    trainingData.header.num_images = samples;
-    trainingData.images.resize(784 * samples);
-    trainingData.labels.resize(1 * samples);
-    std::copy_n(host.trainingDataset.images.begin(), 784 * samples, trainingData.images.begin());
-    std::copy_n(host.trainingDataset.labels.begin(), 1 * samples, trainingData.labels.begin());
+    trainingData.header.num_images = numImages;
+    trainingData.images.resize(784 * numImages);
+    trainingData.labels.resize(1 * numImages);
+    std::copy_n(host.trainingDataset.images.begin(), 784 * numImages, trainingData.images.begin());
+    std::copy_n(host.trainingDataset.labels.begin(), 1 * numImages, trainingData.labels.begin());
 
-    samples = host.testDataset.header.num_images;
-    mnist::Dataset testdata{};
-    testdata.header = host.testDataset.header;
-    testdata.header.num_images = samples;
-    testdata.images.resize(784 * samples);
-    testdata.labels.resize(1 * samples);
-    std::copy_n(host.testDataset.images.begin(), 784 * samples, testdata.images.begin());
-    std::copy_n(host.testDataset.labels.begin(), 1 * samples, testdata.labels.begin());
+    auto numTestImages = host.testDataset.header.num_images;
+    mnist::Dataset testData{};
+    testData.header = host.testDataset.header;
+    testData.header.num_images = numTestImages;
+    testData.images.resize(784 * numTestImages);
+    testData.labels.resize(1 * numTestImages);
+    std::copy_n(host.trainingDataset.images.begin(), 784 * numTestImages, testData.images.begin());
+    std::copy_n(host.trainingDataset.labels.begin(), 1 * numTestImages, testData.labels.begin());
 
     auto data = to_matrix(trainingData);
-    auto tData = to_matrix(testdata);
+    auto tData = to_matrix(testData);
     cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
-    cpuNetwork.train(data, 30, 10, 3.0, tData);
+    cpuNetwork.train(data, 5, 10, 3.0, tData);
 }
 
 TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
-    auto numImages = 100;
+    auto numImages = 8000;
     mnist::Dataset trainingData{};
     trainingData.header = host.trainingDataset.header;
     trainingData.header.num_images = numImages;
@@ -904,7 +905,7 @@ TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
     const auto eta = 3.0f;
     const auto batchSize = 10;
     const auto numBatches = numImages / batchSize;
-    const auto epochs = 5;
+    const auto epochs = 1;
 
     initDeviceNetwork(epochs, numBatches, numImages, eta);
 
@@ -935,6 +936,56 @@ TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
             auto index = i * host_biases.j().extent() + j;
             EXPECT_NEAR(dev_biases[index], host_biases(i, j), 1E-3)
                << fmt::format("biases layer {} [{}] mismatch {} != {}, diff = {}", layer, i, dev_biases[index], host_biases(i, j), std::abs(dev_biases[index] - host_biases(i, j)));
+        });
+    }
+
+    auto testdata = to_matrix(host.testDataset);
+    const auto imagePixels = 784u;
+    const auto imageSize = imagePixels * sizeof(float);
+
+   uint evalCount = testdata.size();
+    VulkanBuffer testBuffer =
+        context->device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, testdata.size() * imageSize);
+    testBuffer.copy(host.testDataset.images.data(), BYTE_SIZE(host.testDataset.images));
+
+    for (auto k = 0; k < evalCount; ++k) {
+        auto start = k * imageSize;
+        auto end = start + imageSize;
+        auto input = testBuffer.region(start, end);
+
+        auto [image, label] = testdata[k];
+
+        auto cpuImage = input.span<float>();
+        for_all_indices(image.shape(), [&](auto i, auto j) {
+            ASSERT_NEAR(image(i, j), cpuImage[i], 1E-3) << "images don't match";
+        });
+
+
+        execute([&](auto commandBuffer) {
+            network.evaluate(commandBuffer, input);
+        });
+
+        auto expected = cpuNetwork.feedForward(image);
+        auto actual = network.m_activations[2].span<float>(10);
+
+        // spdlog::info("actual:   [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]"
+        //     , actual[0], actual[1], actual[2], actual[3], actual[4]
+        //     , actual[5], actual[6], actual[7], actual[8], actual[9]);
+        //
+        // spdlog::info("expected: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]"
+        //     , expected(0, 0), expected(1, 0), expected(2, 0), expected(3, 0), expected(4, 0)
+        //     , expected(5, 0), expected(6, 0), expected(7, 0), expected(8, 0), expected(9, 0));
+        //
+        // spdlog::info("label: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]"
+        //     , label(0, 0), label(1, 0), label(2, 0), label(3, 0), label(4, 0)
+        //     , label(5, 0), label(6, 0), label(7, 0), label(8, 0), label(9, 0));
+
+        // auto ignore = cpuNetwork.feedForward(image);
+        //
+        // expected = cpuNetwork.m_activations[2];
+        // actual = network.m_activations[2].span<float>();
+        for_all_indices(expected.shape(), [&](auto i, auto j) {
+            ASSERT_NEAR(expected(i, j), actual[i], 1E-3) << "no match at index: " << i << " for input " << k;
         });
     }
 }

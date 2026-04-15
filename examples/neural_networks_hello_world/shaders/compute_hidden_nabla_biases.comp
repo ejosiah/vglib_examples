@@ -1,0 +1,36 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 4) buffer Delta {
+    float values[];
+} delta[];
+
+layout(set = 0, binding = 6) buffer NablaBias {
+    float values[];
+} nablaBias[];
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layerIndex;
+    uint batchIndex;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+void main() {
+    const uint l = layers[layerIndex];
+    const uint j = gl_GlobalInvocationID.x;
+    const uint imageOffset = gl_WorkGroupID.y;
+
+    if (j >= l) {
+        return;
+    }
+
+    const uint index = imageOffset * l + j;
+    nablaBias[layerIndex - 1].values[index] = delta[layerIndex].values[index];
+}

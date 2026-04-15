@@ -51,11 +51,13 @@ void dev::NeuralNetwork::init() {
 void dev::NeuralNetwork::initNetwork() {
     auto rng = rngFn(m_params.testMode ? 1 << 20 : std::random_device{}());
 
-    const auto bs = m_constants.batchSize;
+    const auto bs = m_testDatasetDescriptorSet ? m_testDataset.labels.sizeAs<float>() : m_constants.batchSize;
     for (auto i = 0; i < m_layers.size(); ++i) {
         const auto L = m_layers[i];
         std::vector<float> activations(L * bs, 0.0f);
-        auto activationBuffer = createBuffer(activations, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+        auto activationBuffer = (i+1) ==
+            m_layers.size() ? device->createCpuVisibleBuffer(activations.data(), BYTE_SIZE(activations), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+                            : createBuffer(activations, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
         auto deltaBuffer = createBuffer(BYTE_SIZE(activations), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
         m_activations.push_back(activationBuffer);
         m_delta.push_back(deltaBuffer);
@@ -114,14 +116,15 @@ void dev::NeuralNetwork::loadTrainingInputLayer(VkCommandBuffer commandBuffer) c
     Barrier::transferWriteToComputeRead(commandBuffer);
 }
 
-void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer, VulkanBuffer input) const {
+void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer, BufferRegion input) const {
     assert(m_trainingDataSet.images);
     assert(m_activations[0]);
 
     const VkBufferCopy region{
-        .size = std::min(m_activations[0].size, input.size)
+        .srcOffset = input.offset,
+        .size = std::min(m_activations[0].size, input.size())
     };
-    vkCmdCopyBuffer(commandBuffer, input, m_activations[0], 1, &region);
+    vkCmdCopyBuffer(commandBuffer, input.buffer->buffer, m_activations[0], 1, &region);
     Barrier::transferWriteToComputeRead(commandBuffer);
 }
 
@@ -166,16 +169,45 @@ void dev::NeuralNetwork::computeOutputActivationDelta(VkCommandBuffer commandBuf
     Barrier::computeWriteToRead(commandBuffer);
 }
 
+void dev::NeuralNetwork::computeHiddenDelta(VkCommandBuffer commandBuffer) const {
+    const auto gx = m_layers[m_constants.layerIndex];
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("compute_hidden_delta"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("compute_hidden_delta"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("compute_hidden_delta"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, gx, m_constants.batchSize, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void dev::NeuralNetwork::computeHiddenNablaBiases(VkCommandBuffer commandBuffer) const {
+    constexpr uint32_t localSizeX = 1024;
+    const auto size = m_layers[m_constants.layerIndex];
+    const auto gx = nearestMultiple(size, localSizeX) / localSizeX;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("compute_hidden_nabla_biases"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("compute_hidden_nabla_biases"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("compute_hidden_nabla_biases"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, gx, m_constants.batchSize, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void dev::NeuralNetwork::computeHiddenNablaWeights(VkCommandBuffer commandBuffer) const {
+    constexpr uint32_t localSizeX = 1024;
+    const auto size = m_layers[m_constants.layerIndex - 1];
+    const auto gx = nearestMultiple(size, localSizeX) / localSizeX;
+    const auto gy = m_layers[m_constants.layerIndex];
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("compute_hidden_nabla_weights"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("compute_hidden_nabla_weights"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("compute_hidden_nabla_weights"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, gx, gy, m_constants.batchSize);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
 void dev::NeuralNetwork::computeBackPropagation(VkCommandBuffer commandBuffer) {
     const auto start = static_cast<int>(m_layers.size() - 2);
     for (auto layer = start; layer > 0; --layer) {
         m_constants.layerIndex = static_cast<uint>(layer);
-        const auto gx = m_layers[m_constants.layerIndex];
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("back_propagation"));
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("back_propagation"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
-        vkCmdPushConstants(commandBuffer, layout("back_propagation"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
-        vkCmdDispatch(commandBuffer, gx, m_constants.batchSize, 1);
-        Barrier::computeWriteToRead(commandBuffer);
+        computeHiddenDelta(commandBuffer);
+        computeHiddenNablaBiases(commandBuffer);
+        computeHiddenNablaWeights(commandBuffer);
     }
 }
 
@@ -269,6 +301,10 @@ void dev::NeuralNetwork::printClassificationRate(VkCommandBuffer commandBuffer) 
 }
 
 void dev::NeuralNetwork::evaluate(VkCommandBuffer commandBuffer, VulkanBuffer input) {
+    evaluate(commandBuffer, input.region(0));
+}
+
+void dev::NeuralNetwork::evaluate(VkCommandBuffer commandBuffer, BufferRegion input) {
     const auto numInputs = input.sizeAs<float>() / m_layers[0];
     loadInputLayer(commandBuffer, input);
     feedForward(commandBuffer, numInputs);
@@ -319,16 +355,27 @@ void dev::NeuralNetwork::createDescriptorSetLayout() {
             .createLayout();
 }
 
+
+
 void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer) {
     for (auto j = 0; j < m_params.epochs; ++j) {
-        m_constants.epoch = j;
-        shuffleTrainingData(commandBuffer);
+        train(commandBuffer, j);
+    }
+}
 
+void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer, uint epoch) {
+    m_constants.epoch = epoch;
+
+    device->group([&] {
+        shuffleTrainingData(commandBuffer);
         for (auto k = 0; k < m_params.numBatches; ++k) {
             updateBatch(commandBuffer, k);
         }
+    }, commandBuffer, "gradient_descent", {1, 0, 0, 1});
+
+    device->group([&] {
         evaluateClassificationRate(commandBuffer);
-    }
+    }, commandBuffer, "classification_rate", {0, 0, 1, 1});
 }
 
 void dev::NeuralNetwork::updateBatch(VkCommandBuffer commandBuffer, uint batchIndex) {
@@ -450,9 +497,21 @@ std::vector<PipelineMetaData> dev::NeuralNetwork::pipelineMetaData() {
             { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
         },
         {
-            "back_propagation",
-            resource("back_propagation.comp.spv"),
-            { &m_neuralNetworkDescriptorSetLayout, &m_datasetDescriptorSetLayout },
+            "compute_hidden_delta",
+            resource("compute_hidden_delta.comp.spv"),
+            { &m_neuralNetworkDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
+        },
+        {
+            "compute_hidden_nabla_biases",
+            resource("compute_hidden_nabla_biases.comp.spv"),
+            { &m_neuralNetworkDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
+        },
+        {
+            "compute_hidden_nabla_weights",
+            resource("compute_hidden_nabla_weights.comp.spv"),
+            { &m_neuralNetworkDescriptorSetLayout },
             { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
         },
         {

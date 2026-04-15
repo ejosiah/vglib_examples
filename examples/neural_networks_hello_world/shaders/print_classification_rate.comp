@@ -6,7 +6,7 @@
 
 layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
 
-layout(set = 1, binding = 2) readonly buffer TestResults {
+layout(set = 1, binding = 3) readonly buffer TestResults {
     int results[];
 };
 
@@ -45,7 +45,7 @@ void main() {
 
         if (subgroupElect()) {
             const float classificationRate = (float(subgroupSum) / float(batchSize)) * 100.0;
-            debugPrintfEXT("Epoch %u classification rate: %.2f%%\n", epoch, classificationRate);
+            debugPrintfEXT("Epoch %u classification rate: %.2f \n", epoch, classificationRate);
         }
     }
 }
