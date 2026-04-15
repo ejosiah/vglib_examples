@@ -1,13 +1,11 @@
 #version 460
 
-layout(local_size_x = 1, local_size_y = 1024) in;
-
 #extension GL_KHR_shader_subgroup_arithmetic : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_debug_printf : enable
 
-layout(local_size_x = 1, local_size_y = 1024) in;
+layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) buffer WeightsBUffer {
     float values[];
@@ -54,11 +52,14 @@ float sigmoid(float z) {
 }
 
 void main() {
+    uint imageOffset = gl_GlobalInvocationID.z;
 
     uint l = layers[layer];
-    uint row = gl_WorkGroupID.x * l;
-    uint k =  gl_LocalInvocationID.y;
-    float a = k < l ? activation[layer].values[k] : 0.0;
+    uint l1 = layers[layer + 1];
+    uint row = gl_WorkGroupID.y * l;
+    uint k = gl_LocalInvocationID.x;
+    uint aIndex = imageOffset * l + k;
+    float a = k < l ? activation[layer].values[aIndex] : 0.0;
     float w = k < l ? weight[layer].values[row + k] : 0.0;
 
     float sum = subgroupAdd(w * a);
@@ -74,8 +75,8 @@ void main() {
         sum = subgroupAdd(sum);
 
         if(subgroupElect()) {
-            uint j = gl_WorkGroupID.x;
-            float z = sum + bias[layer].values[j];
+            uint j = imageOffset * l1 + gl_WorkGroupID.y;
+            float z = sum + bias[layer].values[gl_WorkGroupID.y];
             intermediate_weights[layer].values[j] = z;
             activation[layer+1].values[j] = sigmoid(z);
         }

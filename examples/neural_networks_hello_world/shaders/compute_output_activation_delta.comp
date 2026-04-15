@@ -1,13 +1,11 @@
 #version 460
 
-layout(local_size_x = 1, local_size_y = 1024) in;
-
 #extension GL_KHR_shader_subgroup_arithmetic : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_debug_printf : enable
 
-layout(local_size_x = 1, local_size_y = 1024) in;
+layout(local_size_x = 1024, local_size_y = 1) in;
 
 layout(set = 0, binding = 0) buffer WeightsBUffer {
     float values[];
@@ -73,24 +71,28 @@ void main() {
     const uint l = layers[layer];
     const uint l1 = layers[layer + 1];
     const uint j = gl_WorkGroupID.x;
-    const uint k = gl_LocalInvocationID.y;
+    const uint imageOffset = gl_WorkGroupID.y;
+    const uint k = gl_LocalInvocationID.x;
 
     if (j >= l1) {
         return;
     }
 
-    const int y = trainingLabels[batch];
-    const float a = activation[layer + 1].values[j];
-    const float z = intermediate_weights[layer].values[j];
+    const uint sampleIndex = batch * batchSize + imageOffset;
+    const uint outputIndex = imageOffset * l1 + j;
+    const int y = trainingLabels[sampleIndex];
+    const float a = activation[layer + 1].values[outputIndex];
+    const float z = intermediate_weights[layer].values[outputIndex];
     const float d = cost_derivative(a, float(y == int(j))) * sigmoid_prime(z);
 
     if (k == 0) {
-        delta[layer + 1].values[j] = d;
-        nablaBias[layer].values[j] = d;
+        delta[layer + 1].values[outputIndex] = d;
+        nablaBias[layer].values[outputIndex] = d;
     }
 
     if (k < l) {
-        const uint row = j * l;
-        nablaWeights[layer].values[row + k] = d * activation[layer].values[k];
+        const uint row = imageOffset * (l * l1) + j * l;
+        const uint inputIndex = imageOffset * l + k;
+        nablaWeights[layer].values[row + k] = d * activation[layer].values[inputIndex];
     }
 }

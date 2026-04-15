@@ -10,15 +10,16 @@
 namespace dev {
     class NeuralNetwork final : public ComputePipelines {
     public:
+        struct Dataset final { VulkanBuffer images, labels; };
         friend class NeuralNetworkFixture;
         struct Params {
-            std::tuple<VkDescriptorSet, VulkanBuffer> trainingData{};
+            std::tuple<VkDescriptorSet, Dataset> trainingData{};
             uint epochs{1};
             uint numBatches{1};
             uint datasetSize{1};
             float eta{1.0};
-            std::optional<std::tuple<VkDescriptorSet, VulkanBuffer>> testData{};
-            bool hostVisible{};
+            std::optional<std::tuple<VkDescriptorSet, Dataset>> testData{};
+            bool testMode{};
         };
 
         NeuralNetwork() = default;
@@ -48,7 +49,11 @@ namespace dev {
 
         void updateWeightsAndBiases(VkCommandBuffer commandBuffer);
 
-        void train(VkCommandBuffer commandBuffer, const Params& params);
+        void train(VkCommandBuffer commandBuffer);
+
+        void updateBatch(VkCommandBuffer commandBuffer, uint batchIndex);
+
+        void refreshConstants();
 
     protected:
         void createDescriptorPool();
@@ -61,14 +66,14 @@ namespace dev {
 
         template<typename T>
         VulkanBuffer createBuffer(const std::vector<T>& source, VkBufferUsageFlags usage) {
-            if (m_params.hostVisible) {
+            if (m_params.testMode) {
                 return device->createCpuVisibleBuffer(source.data(), BYTE_SIZE(source), usage);
             }
             return device->createDeviceLocalBuffer(source.data(), BYTE_SIZE(source), usage);
         }
 
         VulkanBuffer createBuffer(const VkDeviceSize size, const VkBufferUsageFlags usage) {
-            auto memoryUsage = m_params.hostVisible ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_GPU_ONLY;
+            auto memoryUsage = m_params.testMode ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_GPU_ONLY;
             return device->createBuffer(usage, memoryUsage, size);
         }
 
@@ -91,8 +96,8 @@ namespace dev {
         VkDescriptorSet m_testDatasetDescriptorSet{VK_NULL_HANDLE};
         VkDescriptorSet m_neuralNetworkDescriptorSet{VK_NULL_HANDLE};
 
-        VulkanBuffer m_trainingDataSet;
-        VulkanBuffer m_testDataset;
+        Dataset m_trainingDataSet;
+        Dataset m_testDataset;
 
         struct Constants {
             std::array<uint, 8> layers{};
