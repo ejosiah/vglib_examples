@@ -693,8 +693,8 @@ TEST_F(NeuralNetworkFixture, feedForwardFunction) {
     feedForward();
 
     execute([&](auto commandBuffer) {
-        network.loadInputLayer(commandBuffer);
-        network.feedForward(commandBuffer);
+        network.loadTrainingInputLayer(commandBuffer);
+        network.feedForward(commandBuffer, constants.batchSize);
     });
     
     const auto numLayers = host.layers.size();
@@ -724,8 +724,8 @@ TEST_F(NeuralNetworkFixture, outputActivationDelta) {
     //     Barrier::computeWriteToRead(commandBuffer);
     // });
     execute([&](auto commandBuffer) {
-        network.loadInputLayer(commandBuffer);
-        network.feedForward(commandBuffer);
+        network.loadTrainingInputLayer(commandBuffer);
+        network.feedForward(commandBuffer, constants.batchSize);
         network.computeOutputActivationDelta(commandBuffer);
     });
 
@@ -753,23 +753,9 @@ TEST_F(NeuralNetworkFixture, backPropagation) {
     outputActivationDelta();
     backPropagate();
 
-    // execute([&](auto commandBuffer) {
-    //     loadTrainingInput(commandBuffer);
-    //     feedForwardAll(commandBuffer);
-    //     constants.layerIndex = static_cast<uint>(host.layers.size() - 2);
-    //     computeOutputActivationDelta(commandBuffer);
-    //     Barrier::computeWriteToRead(commandBuffer);
-    //
-    //     for (auto layer = static_cast<int>(host.layers.size() - 2); layer > 0; --layer) {
-    //         constants.layerIndex = static_cast<uint>(layer);
-    //         computeBackPropagation(commandBuffer);
-    //         Barrier::computeWriteToRead(commandBuffer);
-    //     }
-    // });
-
     execute([&](auto commandBuffer) {
-        network.loadInputLayer(commandBuffer);
-        network.feedForward(commandBuffer);
+        network.loadTrainingInputLayer(commandBuffer);
+        network.feedForward(commandBuffer, constants.batchSize);
         network.computeOutputActivationDelta(commandBuffer);
         network.computeBackPropagation(commandBuffer);
     });
@@ -807,12 +793,11 @@ TEST_F(NeuralNetworkFixture, weightsAndBiasesUpdate) {
     updateWeightsAndBiases();
 
     execute([&](auto commandBuffer) {
-        // network.loadInputLayer(commandBuffer);
-        // network.feedForward(commandBuffer);
-        // network.computeOutputActivationDelta(commandBuffer);
-        // network.computeBackPropagation(commandBuffer);
-        // network.updateWeightsAndBiases(commandBuffer);
-        network.train(commandBuffer);
+        network.loadTrainingInputLayer(commandBuffer);
+        network.feedForward(commandBuffer, constants.batchSize);
+        network.computeOutputActivationDelta(commandBuffer);
+        network.computeBackPropagation(commandBuffer);
+        network.updateWeightsAndBiases(commandBuffer);
     });
 
     for (size_t layer = 0; layer < host.weights.size(); ++layer) {

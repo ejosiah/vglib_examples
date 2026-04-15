@@ -32,6 +32,11 @@ dev::NeuralNetwork::NeuralNetwork(
     m_trainingDatasetDescriptorSet = std::get<0>(params.trainingData);
     m_trainingDataSet = std::get<1>(params.trainingData);
 
+    if (params.testData.has_value()) {
+        m_testDatasetDescriptorSet = std::get<0>(params.testData.value());
+        m_testDataset = std::get<1>(params.testData.value());
+    }
+
 }
 
 void dev::NeuralNetwork::init() {
@@ -94,7 +99,7 @@ void dev::NeuralNetwork::shuffleTrainingData(VkCommandBuffer commandBuffer) cons
     Barrier::computeWriteToRead(commandBuffer);
 }
 
-void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) const {
+void dev::NeuralNetwork::loadTrainingInputLayer(VkCommandBuffer commandBuffer) const {
     assert(m_trainingDataSet.images);
     assert(m_activations[0]);
 
@@ -106,6 +111,17 @@ void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer) const {
         .size = m_activations[0].size
     };
     vkCmdCopyBuffer(commandBuffer, m_trainingDataSet.images, m_activations[0], 1, &region);
+    Barrier::transferWriteToComputeRead(commandBuffer);
+}
+
+void dev::NeuralNetwork::loadInputLayer(VkCommandBuffer commandBuffer, VulkanBuffer input) const {
+    assert(m_trainingDataSet.images);
+    assert(m_activations[0]);
+
+    const VkBufferCopy region{
+        .size = std::min(m_activations[0].size, input.size)
+    };
+    vkCmdCopyBuffer(commandBuffer, input, m_activations[0], 1, &region);
     Barrier::transferWriteToComputeRead(commandBuffer);
 }
 
@@ -121,7 +137,7 @@ void dev::NeuralNetwork::clearNablaBuffers(VkCommandBuffer commandBuffer) const 
     Barrier::transferWriteToComputeWrite(commandBuffer);
 }
 
-void dev::NeuralNetwork::feedForward(VkCommandBuffer commandBuffer) {
+void dev::NeuralNetwork::feedForward(VkCommandBuffer commandBuffer, uint numImages) {
     auto numLayers = m_layers.size();
 
     for (auto layer = 0; layer < numLayers - 1; ++layer) {
@@ -131,7 +147,7 @@ void dev::NeuralNetwork::feedForward(VkCommandBuffer commandBuffer) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("feed_forward"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("feed_forward"), 1, 1, &m_trainingDatasetDescriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, layout("feed_forward"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
-        vkCmdDispatch(commandBuffer, 1, gy, m_constants.batchSize);
+        vkCmdDispatch(commandBuffer, 1, gy, numImages);
         Barrier::computeWriteToRead(commandBuffer);
     }
 }
@@ -217,7 +233,45 @@ void dev::NeuralNetwork::updateWeightsAndBiases(VkCommandBuffer commandBuffer) {
     updateWeights(commandBuffer);
     updateBiases(commandBuffer);
     Barrier::computeWriteToRead(commandBuffer);
+}
 
+void dev::NeuralNetwork::evaluateClassificationRate(VkCommandBuffer commandBuffer) {
+    if (!m_testDatasetDescriptorSet) return;
+
+    const auto trainingBatchSize = m_constants.batchSize;
+    const auto trainingBatchIndex = m_constants.batchIndex;
+    m_constants.batchSize = static_cast<uint>(m_testDataset.images.sizeAs<float>() / m_layers[0]);
+    m_constants.batchIndex = 0;
+
+    evaluate(commandBuffer, m_testDataset.images);
+    assertTestOutput(commandBuffer);
+    printClassificationRate(commandBuffer);
+
+    m_constants.batchSize = trainingBatchSize;
+    m_constants.batchIndex = trainingBatchIndex;
+}
+
+void dev::NeuralNetwork::assertTestOutput(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("assert_test_output"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("assert_test_output"), 0, 1, &m_neuralNetworkDescriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("assert_test_output"), 1, 1, &m_testDatasetDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("assert_test_output"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, nearestMultiple(m_constants.batchSize, 1024u) / 1024u, 1, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void dev::NeuralNetwork::printClassificationRate(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline("print_classification_rate"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout("print_classification_rate"), 1, 1, &m_testDatasetDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, layout("print_classification_rate"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void dev::NeuralNetwork::evaluate(VkCommandBuffer commandBuffer, VulkanBuffer input) {
+    const auto numInputs = input.sizeAs<float>() / m_layers[0];
+    loadInputLayer(commandBuffer, input);
+    feedForward(commandBuffer, numInputs);
 }
 
 
@@ -267,11 +321,13 @@ void dev::NeuralNetwork::createDescriptorSetLayout() {
 
 void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer) {
     for (auto j = 0; j < m_params.epochs; ++j) {
+        m_constants.epoch = j;
         shuffleTrainingData(commandBuffer);
 
         for (auto k = 0; k < m_params.numBatches; ++k) {
             updateBatch(commandBuffer, k);
         }
+        evaluateClassificationRate(commandBuffer);
     }
 }
 
@@ -283,8 +339,8 @@ void dev::NeuralNetwork::updateBatch(VkCommandBuffer commandBuffer, uint batchIn
         m_constants.batchIndex = batchIndex;
     }
     clearNablaBuffers(commandBuffer);
-    loadInputLayer(commandBuffer);
-    feedForward(commandBuffer);
+    loadTrainingInputLayer(commandBuffer);
+    feedForward(commandBuffer, m_constants.batchSize);
     computeOutputActivationDelta(commandBuffer);
     computeBackPropagation(commandBuffer);
     updateWeightsAndBiases(commandBuffer);
@@ -415,6 +471,18 @@ std::vector<PipelineMetaData> dev::NeuralNetwork::pipelineMetaData() {
             "reduce_nabla_biases",
             resource("reduce_nabla_biases.comp.spv"),
             { &m_neuralNetworkDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
+        },
+        {
+            "assert_test_output",
+            resource("assert_test_output.comp.spv"),
+            { &m_neuralNetworkDescriptorSetLayout, &m_datasetDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
+        },
+        {
+            "print_classification_rate",
+            resource("print_classification_rate.comp.spv"),
+            { &m_neuralNetworkDescriptorSetLayout, &m_datasetDescriptorSetLayout },
             { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Constants) } }
         },
         {

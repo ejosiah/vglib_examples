@@ -35,11 +35,13 @@ namespace dev {
 
         void shuffleTrainingData(VkCommandBuffer commandBuffer) const;
 
-        void loadInputLayer(VkCommandBuffer commandBuffer) const;
+        void loadTrainingInputLayer(VkCommandBuffer commandBuffer) const;
+
+        void loadInputLayer(VkCommandBuffer commandBuffer, VulkanBuffer input) const;
 
         void clearNablaBuffers(VkCommandBuffer commandBuffer) const;
 
-        void feedForward(VkCommandBuffer commandBuffer);
+        void feedForward(VkCommandBuffer commandBuffer, uint numImages);
 
         void computeOutputActivationDelta(VkCommandBuffer commandBuffer);
 
@@ -58,6 +60,14 @@ namespace dev {
         void train(VkCommandBuffer commandBuffer);
 
         void updateBatch(VkCommandBuffer commandBuffer, uint batchIndex);
+
+        void evaluate(VkCommandBuffer commandBuffer, VulkanBuffer input);
+
+        void evaluateClassificationRate(VkCommandBuffer commandBuffer);
+
+        void assertTestOutput(VkCommandBuffer commandBuffer);
+
+        void printClassificationRate(VkCommandBuffer commandBuffer);
 
         void refreshConstants();
 

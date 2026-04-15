@@ -1,0 +1,58 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1024) in;
+
+layout(set = 0, binding = 2) buffer ActivationUffer {
+    float values[];
+} activation[];
+
+layout(set = 1, binding = 1, std430) readonly buffer TestLabels {
+    int testLabels[];
+};
+
+layout(set = 1, binding = 2) buffer TestResults {
+    int results[];
+};
+
+layout(push_constant) uniform Constants {
+    uint layers[8];
+    uint epoch;
+    uint layerIndex;
+    uint batch;
+    uint batchSize;
+    uint numLayers;
+    float eta;
+};
+
+
+int argmax() {
+    uint outputLayer = numLayers - 1;
+    uint numActivations = layers[outputLayer];
+    uint start = gl_GlobalInvocationID.x * numActivations;
+
+    float maxVal = 1e-20;
+    int maxIndex = -1;
+    for(int i = 0; i < numActivations; ++i) {
+        uint j = start + i;
+        float al = activation[outputLayer].values[j];
+        if(maxVal < al) {
+            maxVal = al;
+            maxIndex = i;
+        }
+    }
+    return maxIndex;
+}
+
+void main() {
+    if (gl_GlobalInvocationID.x >= batchSize) {
+        return;
+    }
+
+    int label = testLabels[gl_GlobalInvocationID.x];
+    results[gl_GlobalInvocationID.x] = int(argmax() == label);
+}
