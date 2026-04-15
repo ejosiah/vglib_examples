@@ -11,9 +11,7 @@ NeuralNetwork::NeuralNetwork(std::initializer_list<uint> layers, bool testMode)
     ,m_numLayers {static_cast<int>(layers.size())}
     , m_testMode{testMode} {
 
-    std::normal_distribution<float> distribution{0.0f, 1.0f};
-    std::default_random_engine generator{ testMode ? 1 << 20 : std::random_device{}()};
-    auto rng = [distribution, generator] mutable { return distribution(generator); };
+    auto rng = rngFn(testMode ? 1 << 20 : std::random_device{}());
 
     for (auto l = 0; l < m_numLayers - 1; l++) {
         auto L = static_cast<int>(m_layers[l]);
@@ -174,9 +172,8 @@ NeuralNetwork::WeightsAndBiases NeuralNetwork::backpropagate(const Image& x, con
 }
 
 void NeuralNetwork::shuffle(Dataset &dataset) const {
-    if (m_testMode) return;
-    static std::default_random_engine generator{ 1 << 20 };
-
-    std::shuffle(std::begin(dataset), std::end(dataset), generator);
+    static auto gen = std::default_random_engine(m_testMode ? 1 << 20 : std::random_device{}());
+    std::shuffle(std::begin(dataset), std::end(dataset), gen);
 }
+
 }

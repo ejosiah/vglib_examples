@@ -87,9 +87,7 @@ protected:
         host.nablaWeights.clear();
         constants = {};
 
-        std::normal_distribution<float> distribution{0.0f, 1.0f};
-        std::default_random_engine generator{ 1 << 20 };
-        auto rng = std::bind(distribution, generator);
+        auto rng = rngFn(1 << 20);
 
         for (size_t i = 0; i < host.layers.size(); ++i) {
             const auto layerSize = host.layers[i];
@@ -123,12 +121,12 @@ protected:
 
     void initDeviceNetwork() {
         network = dev::NeuralNetwork{ &context->device, datasetDescriptorSetLayout, {784, 30, 10},  {
-            .trainingData = std::make_tuple(trainingDatasetDescriptorSet, trainingImages),
+            .trainingData = std::make_tuple(trainingDatasetDescriptorSet, dev::NeuralNetwork::Dataset{trainingImages, trainingLabels }),
             .epochs = 1,
             .numBatches = 1,
             .datasetSize = 1,
             .eta = 3.0f,
-            .hostVisible = true
+            .testMode = true
         }};
         network.init();
     }
@@ -645,12 +643,12 @@ protected:
     }
 
     void feedForward(VkCommandBuffer commandBuffer) const {
-        const auto gx = host.layers[constants.layerIndex + 1];
+        const auto gy = host.layers[constants.layerIndex + 1];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("feed_forward"));
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("feed_forward"), 0, 1, &neuralNetworkDescriptorSet, 0, nullptr);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("feed_forward"), 1, 1, &trainingDatasetDescriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, compute.layout("feed_forward"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commandBuffer, gx, 1, 1);
+        vkCmdDispatch(commandBuffer, 1, gy, 1);
     }
 
     void loadTrainingInput(VkCommandBuffer commandBuffer) const {
@@ -690,52 +688,9 @@ protected:
 
 // Demonstrate some basic assertions.
 
-TEST_F(NeuralNetworkFixture, computeIntermediateWeight) {
-
-    std::copy_n(host.trainingDataset.images.begin(), 784, host.activations[0].begin());
-
-    const auto numLayers = host.layers.size();
-    constexpr auto layer = 0;
-    auto& a = host.activations[layer];
-    auto& b = host.biases[layer];
-    auto& w = host.weights[layer];
-    auto z = dot(w, a);
-    z =  plus(z, b);
-    host.intermediateWeights[layer] = z;
-    host.activations[layer+1] = sigmoid(z);
-
-    execute([&](auto commandBuffer) {
-        std::copy_n(host.layers.begin(), numLayers, constants.layers.begin());
-        constants.layerIndex = layer;
-
-        loadTrainingInput(commandBuffer);
-        feedForward(commandBuffer);
-    });
-
-    const auto dev_z = device.intermediateWeights[layer].span<float>();
-    const auto host_z = host.intermediateWeights[layer];
-
-    constexpr auto nextLayer = layer + 1;
-    for (auto i = 0; i < host.layers[nextLayer]; ++i) {
-        EXPECT_NEAR(host_z[i], dev_z[i], 1e-3) << "neuron " << i << " => " << dev_z[i] << " != " << host_z[i];
-    }
-
-    const auto dev_a1 = device.activations[nextLayer].span<float>();
-    const auto host_a1 = host.activations[nextLayer];
-
-    for (auto i = 0; i < host.layers[nextLayer]; ++i) {
-        EXPECT_NEAR(host_a1[i], dev_a1[i], 1e-3);
-    }
-
-}
-
 TEST_F(NeuralNetworkFixture, feedForwardFunction) {
 
     feedForward();
-    // execute([&](auto commandBuffer) {
-    //     loadTrainingInput(commandBuffer);
-    //     feedForwardAll(commandBuffer);
-    // });
 
     execute([&](auto commandBuffer) {
         network.loadInputLayer(commandBuffer);
@@ -852,11 +807,12 @@ TEST_F(NeuralNetworkFixture, weightsAndBiasesUpdate) {
     updateWeightsAndBiases();
 
     execute([&](auto commandBuffer) {
-        network.loadInputLayer(commandBuffer);
-        network.feedForward(commandBuffer);
-        network.computeOutputActivationDelta(commandBuffer);
-        network.computeBackPropagation(commandBuffer);
-        network.updateWeightsAndBiases(commandBuffer);
+        // network.loadInputLayer(commandBuffer);
+        // network.feedForward(commandBuffer);
+        // network.computeOutputActivationDelta(commandBuffer);
+        // network.computeBackPropagation(commandBuffer);
+        // network.updateWeightsAndBiases(commandBuffer);
+        network.train(commandBuffer);
     });
 
     for (size_t layer = 0; layer < host.weights.size(); ++layer) {
@@ -921,9 +877,6 @@ TEST_F(NeuralNetworkFixture, playground) {
                << fmt::format("biases layer {} [{}] mismatch {} != {}, diff = {}", layer, i, host_biases[index], dev_biases(i, j), std::abs(host_biases[index] - dev_biases(i, j)));
         });
     }
-
-    ASSERT_TRUE(true);
-
 }
 
 TEST_F(NeuralNetworkFixture, DISABLED_cppNetTest) {
@@ -949,6 +902,59 @@ TEST_F(NeuralNetworkFixture, DISABLED_cppNetTest) {
     auto tData = to_matrix(testdata);
     cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
     cpuNetwork.train(data, 30, 10, 3.0, tData);
+}
+
+TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
+    auto numImages = 2;
+    mnist::Dataset trainingData{};
+    trainingData.header = host.trainingDataset.header;
+    trainingData.header.num_images = numImages;
+    trainingData.images.resize(784 * numImages);
+    trainingData.labels.resize(1 * numImages);
+    std::copy_n(host.trainingDataset.images.begin(), 784 * numImages, trainingData.images.begin());
+    std::copy_n(host.trainingDataset.labels.begin(), 1 * numImages, trainingData.labels.begin());
+
+    auto data = to_matrix(trainingData);
+
+    const auto eta = 3.0f;
+    const auto batchSize = numImages;
+    const auto epochs = 1;
+
+    network.m_params.numBatches = numImages/batchSize;
+    network.m_params.epochs = epochs;
+    network.m_params.eta = eta;
+    network.m_params.datasetSize = numImages;
+    network.refreshConstants();
+
+    cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
+    cpuNetwork.train(data, epochs, batchSize, eta);
+
+    execute([&](auto commandBuffer) {
+        network.train(commandBuffer);
+    });
+
+
+    for (size_t layer = 0; layer < host.weights.size(); ++layer) {
+        const auto dev_weights = network.m_weights[layer].span<float>();
+        const auto& host_weights = cpuNetwork.m_weights[layer];
+
+        nda::for_all_indices(host_weights.shape(), [&](auto i, auto j) {
+            auto index = i * host_weights.j().extent() + j;
+            EXPECT_NEAR(dev_weights[index], host_weights(i, j), 1E-3)
+                << fmt::format("weights layer {} [{}] mismatch {} != {}, diff = {}", layer, i, dev_weights[index], host_weights(i, j), std::abs(dev_weights[index] - host_weights(i, j)));
+        });
+    }
+
+    for (size_t layer = 0; layer < host.biases.size(); ++layer) {
+        const auto dev_biases = network.m_biases[layer].span<float>();
+        const auto& host_biases = cpuNetwork.m_biases[layer];
+
+        nda:;nda::for_all_indices(host_biases.shape(), [&](auto i, auto j) {
+            auto index = i * host_biases.j().extent() + j;
+            EXPECT_NEAR(dev_biases[index], host_biases(i, j), 1E-3)
+               << fmt::format("biases layer {} [{}] mismatch {} != {}, diff = {}", layer, i, dev_biases[index], host_biases(i, j), std::abs(dev_biases[index] - host_biases(i, j)));
+        });
+    }
 }
 
 mnist::Dataset NeuralNetworkFixture::s_trainingDataset{};

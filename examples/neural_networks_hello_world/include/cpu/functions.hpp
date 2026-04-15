@@ -173,3 +173,10 @@ inline auto to_matrix(const mnist::Dataset& dataset) {
     }
     return res;
 }
+
+inline auto rngFn(std::default_random_engine::result_type seed) {
+    return [dist=std::normal_distribution<float>{0.f, 1.f}, gen=std::default_random_engine{seed}] mutable {
+        return dist(gen);
+    };
+}
+
