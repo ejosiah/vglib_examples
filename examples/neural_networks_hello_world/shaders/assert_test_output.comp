@@ -11,7 +11,7 @@ layout(set = 0, binding = 2) buffer ActivationUffer {
     float values[];
 } activation[];
 
-layout(set = 1, binding = 1, std430) readonly buffer TestLabels {
+layout(set = 1, binding = 1) readonly buffer TestLabels {
     int testLabels[];
 };
 
@@ -37,7 +37,9 @@ int argmax() {
     uint numActivations = layers[outputLayer];
     uint start = gl_GlobalInvocationID.x * numActivations;
 
-//    debugPrintfEXT("gid: %u, start: %u, size: %u, L: %u\n", gl_GlobalInvocationID.x, start, numActivations, outputLayer);
+//    if(gl_GlobalInvocationID.x  < 10) {
+//        debugPrintfEXT("gid: %u, start: %u, size: %u, L: %u\n", gl_GlobalInvocationID.x, start, numActivations, outputLayer);
+//    }
 
     float maxVal = 1e-20;
     int maxIndex = -1;
@@ -53,6 +55,10 @@ int argmax() {
     return maxIndex;
 }
 
+int s(float neuron) {
+    return int(neuron > 0.5);
+}
+
 void main() {
     if (gl_GlobalInvocationID.x >= batchSize) {
         return;
@@ -61,6 +67,8 @@ void main() {
     int label = testLabels[gl_GlobalInvocationID.x];
     results[gl_GlobalInvocationID.x] = int(argmax() == label);
 
-//    debugPrintfEXT("y: %d, x: %d, a: [%f, %f, %f, %f, %f, %f, %f, %f, %f, %f] \n"
-//    , label, argmax(), a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9]);
+//    if(gl_GlobalInvocationID.x < 10) {
+//        debugPrintfEXT("gid: %d y: %d, x: %d, a: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", gl_GlobalInvocationID.x
+//        , label, argmax(), s(a[0]), s(a[1]), s(a[2]), s(a[3]), s(a[4]), s(a[5]), s(a[6]), s(a[7]), s(a[8]), s(a[9]));
+//    }
 }

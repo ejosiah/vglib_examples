@@ -1,0 +1,82 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1024, local_size_y = 1) in;
+
+layout(set = 0, binding = 0) readonly buffer ABuffer {
+    float aBuffer[];
+};
+
+layout(set = 0, binding = 1) readonly buffer Bbuffer {
+    float bBuffer[];
+};
+
+layout(set = 0, binding = 2) writeonly buffer CBuffer {
+    float c[];
+};
+
+layout(push_constant) uniform Constants {
+    uvec2 shapeA;
+    uvec2 shapeB;
+    uvec2 shapeC;
+};
+
+shared float localSum[32];
+shared float localStore;
+
+void main() {
+    uint wgSize = gl_WorkGroupSize.x;
+    uint lane   = gl_LocalInvocationIndex;
+    uint row    = gl_WorkGroupID.y;
+    uint col    = gl_WorkGroupID.z;
+
+    if (row >= shapeC.x || col >= shapeC.y) {
+        return;
+    }
+
+    if (lane == 0) {
+        localStore = 0.0;
+    }
+    barrier();
+
+    for (uint base = 0; base < shapeA.y; base += wgSize) {
+        uint i = base + lane;
+
+        if (subgroupElect()) {
+            localSum[gl_SubgroupID] = 0.0;
+        }
+        barrier();
+
+        float a = (i < shapeA.y) ? aBuffer[row * shapeA.y + i] : 0.0;
+        float b = (i < shapeB.x) ? bBuffer[i * shapeB.y + col] : 0.0;
+
+        float partial = subgroupAdd(a * b);
+
+        if (subgroupElect()) {
+            localSum[gl_SubgroupID] = partial;
+        }
+        barrier();
+
+        if (gl_SubgroupID == 0) {
+            float v = (gl_SubgroupInvocationID < gl_NumSubgroups)
+            ? localSum[gl_SubgroupInvocationID]
+            : 0.0;
+
+            v = subgroupAdd(v);
+
+            if (subgroupElect()) {
+                localStore += v;
+            }
+        }
+        barrier();
+    }
+
+    if (lane == 0) {
+        uint index = row * shapeC.y + col;
+        c[index] = localStore;
+    }
+}

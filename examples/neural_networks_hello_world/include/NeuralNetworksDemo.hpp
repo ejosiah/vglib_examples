@@ -2,6 +2,7 @@
 
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
+#include "Profiler.hpp"
 #include "mnist/mnist_loader.hpp"
 #include "device/NeuralNetwork.hpp"
 
@@ -77,6 +78,7 @@ protected:
     mnist::Header trainingSetHeader;
     mnist::Header testSetHeader;
     dev::NeuralNetwork network;
+    Profiler profiler;
 
     struct {
         uint32_t width{};

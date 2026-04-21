@@ -65,15 +65,12 @@ void NeuralNetwork::train(Dataset &trainingData, uint epochs, uint batchSize, fl
 
 NeuralNetwork::Activation NeuralNetwork::feedForward(const Activation& a) const {
     auto activation = a;
-    m_activations[0] = a;
     for (auto l = 0; l < m_numLayers - 1; l++) {
         auto& w = m_weights[l];
         auto& b = m_biases[l];
         auto z = dot(w, activation);
         z = add(z, b);
         activation = sigmoid(z);
-        m_activations[l+1] = activation;
-        m_z[l] = z;
     }
     return activation;
 }
@@ -92,8 +89,15 @@ void NeuralNetwork::update(std::span<Entry> batch, float eta) {
     auto nabla_bs = map_range(m_biases, [](auto& b){ return nda::matrix<float>(b.shape(), 0.0f); });
 
 
+    auto j = 42;
+    auto img = 0;
     for (auto& [x, y] : batch) {
         auto [d_nabla_w, d_nabla_b]  = backpropagate(x, y);
+
+        // if (img == 0) {
+        //     spdlog::info("nw: {}, nb: {}", d_nabla_w[0](0, j), d_nabla_b[0](j, 0));
+        // }
+        img++;
 
         for (auto l = 0; l < m_numLayers - 1; l++) {
             auto& nabla_w = nabla_ws[l];
@@ -156,6 +160,14 @@ NeuralNetwork::WeightsAndBiases NeuralNetwork::backpropagate(const Image& x, con
     auto aT = transpose(as[L-1]);
     nabla_w[L-1] = dot(delta, aT);
 
+    // static int img = 0;
+    // std::stringstream ss;
+    // ss << "CD[" << img << "," << std::get<0>(argmax(y)) << "]:" << "=> ";
+    // for (auto i = 0; i < 10; ++i) {
+    //     ss << delta(i, 0) <<  (i + 1 < 10 ? "," : "");
+    // }
+    // spdlog::info(ss.str());
+    // img++;
 
     for (auto l = m_numLayers - 2; l > 0; l--) {
         const auto& deltaL = deltas[l+1];
@@ -170,22 +182,24 @@ NeuralNetwork::WeightsAndBiases NeuralNetwork::backpropagate(const Image& x, con
         nabla_w[l-1] = dot(delta, aT);
     }
 
-
+    m_deltas.push_back(deltas);
+    m_activations.push_back(as);
+    m_z.push_back(zs);
     return std::make_tuple(nabla_w, nabla_b);
 }
 
 void NeuralNetwork::shuffle(Dataset &dataset, uint batchSize) const {
-    if (m_testMode) {
-        const auto shift = std::min<size_t>(batchSize, dataset.size());
-        if (shift == 0 || shift == dataset.size()) {
-            return;
-        }
-        std::rotate(dataset.begin(), dataset.begin() + static_cast<std::ptrdiff_t>(shift), dataset.end());
-        return;
-    }
-
-    static auto gen = std::default_random_engine(m_testMode ? 1 << 20 : std::random_device{}());
-    std::shuffle(std::begin(dataset), std::end(dataset), gen);
+    // if (m_testMode) {
+    //     const auto shift = std::min<size_t>(batchSize, dataset.size());
+    //     if (shift == 0 || shift == dataset.size()) {
+    //         return;
+    //     }
+    //     std::rotate(dataset.begin(), dataset.begin() + static_cast<std::ptrdiff_t>(shift), dataset.end());
+    //     return;
+    // }
+    //
+    // static auto gen = std::default_random_engine(std::random_device{}());
+    // std::shuffle(std::begin(dataset), std::end(dataset), gen);
 }
 
 }

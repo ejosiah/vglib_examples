@@ -49,8 +49,9 @@ namespace cpu {
         int m_numLayers{};
         Weights m_weights;
         Biases m_biases;
-        mutable std::array<Activation, 8> m_activations;
-        mutable std::array<Activation, 8> m_z;
+        std::vector<std::vector<nda::matrix<float>>> m_deltas;
+        mutable std::vector<std::vector<Activation>> m_activations;
+        mutable std::vector<std::vector<Activation>> m_z;
         bool m_testMode{};
     };
 }

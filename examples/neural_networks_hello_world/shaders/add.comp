@@ -1,0 +1,31 @@
+#version 460
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) readonly buffer ABuffer {
+    float a[];
+};
+
+layout(set = 0, binding = 1) readonly buffer BBuffer {
+    float b[];
+};
+
+layout(set = 0, binding = 2) writeonly buffer ResultBuffer {
+    float result[];
+};
+
+layout(push_constant) uniform Constants {
+    uvec2 shapeA;
+    uvec2 shapeB;
+    uvec2 shapeResult;
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    uint size = shapeResult.x * shapeResult.y;
+    if (index >= size) {
+        return;
+    }
+
+    result[index] = a[index] + b[index];
+}

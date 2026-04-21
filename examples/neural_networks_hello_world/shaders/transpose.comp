@@ -1,0 +1,31 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) readonly buffer ABuffer {
+    float a[];
+};
+
+layout(set = 0, binding = 1) writeonly buffer Bbuffer {
+    float b[];
+};
+
+layout(push_constant) uniform Constants {
+    uvec2 shapeA;
+    uvec2 shapeB;
+};
+
+uint row = gl_GlobalInvocationID.y;
+uint col = gl_GlobalInvocationID.x;
+
+void main() {
+    if(row >= shapeA.x || col >= shapeA.y) {
+        return;
+    }
+
+    uint index = row * shapeA.y + col;
+    uint oIndex = col * shapeA.x + row;
+
+    b[oIndex] = a[index];
+
+}

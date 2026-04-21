@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <random>
 #include <type_traits>
 
@@ -14,6 +16,9 @@
 
 class NeuralNetworkFixture : public ::testing::Test {
 protected:
+    static constexpr uint32_t kWeightsBiasesMagic = 0x4E4E5742;
+    static constexpr uint32_t kWeightsBiasesVersion = 1;
+
     static mnist::Dataset s_trainingDataset;
     static mnist::Dataset s_testDataset;
     static bool s_datasetLoaded;
@@ -58,6 +63,7 @@ protected:
     std::array<VulkanBuffer, 2> trainingLocks;
     VulkanBuffer testImages;
     VulkanBuffer testLabels;
+    VulkanBuffer results;
 
     void SetUp() override {
         spdlog::set_level(spdlog::level::info);
@@ -119,14 +125,56 @@ protected:
         constants.eta = 3.0f;
     }
 
-    void initDeviceNetwork(const uint epochs = 1, const uint numBatches = 1, const uint datasetSize = 1, const float eta = 3.0f) {
+    static void writeMatrix(std::ofstream& out, const nda::matrix<float>& matrix) {
+        const auto rows = static_cast<uint32_t>(matrix.i().extent());
+        const auto cols = static_cast<uint32_t>(matrix.j().extent());
+        out.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+        out.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+
+        nda::for_all_indices(matrix.shape(), [&](auto i, auto j) {
+            const auto value = matrix(i, j);
+            out.write(reinterpret_cast<const char*>(&value), sizeof(value));
+        });
+    }
+
+    static void writeWeightsAndBiases(const cpu::NeuralNetwork& network, const std::filesystem::path& path) {
+        std::filesystem::create_directories(path.parent_path());
+
+        std::ofstream out{path, std::ios::binary};
+        ASSERT_TRUE(out.is_open()) << "failed to open " << path.string();
+
+        out.write(reinterpret_cast<const char*>(&kWeightsBiasesMagic), sizeof(kWeightsBiasesMagic));
+        out.write(reinterpret_cast<const char*>(&kWeightsBiasesVersion), sizeof(kWeightsBiasesVersion));
+
+        const auto weightsCount = static_cast<uint32_t>(network.m_weights.size());
+        out.write(reinterpret_cast<const char*>(&weightsCount), sizeof(weightsCount));
+        for (const auto& weights : network.m_weights) {
+            writeMatrix(out, weights);
+        }
+
+        const auto biasesCount = static_cast<uint32_t>(network.m_biases.size());
+        out.write(reinterpret_cast<const char*>(&biasesCount), sizeof(biasesCount));
+        for (const auto& biases : network.m_biases) {
+            writeMatrix(out, biases);
+        }
+    }
+
+    void initDeviceNetwork(const uint epochs = 1, const uint numBatches = 1, const uint datasetSize = 1, const float eta = 3.0f, bool evaluate = false) {
         network = dev::NeuralNetwork{ &context->device, datasetDescriptorSetLayout, {784, 30, 10},  {
             .trainingData = std::make_tuple(trainingDatasetDescriptorSet, dev::NeuralNetwork::Dataset{trainingImages, trainingLabels }),
             .epochs = epochs,
             .numBatches = numBatches,
             .datasetSize = datasetSize,
             .eta = eta,
-            .testMode = true
+            .testData = evaluate
+                ? std::optional<std::tuple<VkDescriptorSet, dev::NeuralNetwork::Dataset>>{
+                    std::make_tuple(
+                        testDatasetDescriptorSet,
+                        dev::NeuralNetwork::Dataset{testImages, testLabels}
+                    )
+                }
+            : std::nullopt,
+            .testMode = true,
         }};
         network.init();
     }
@@ -136,24 +184,26 @@ protected:
             s_trainingDataset = mnist::load(resource("mnist_dataset/train-images.idx3-ubyte"),
                                             resource("mnist_dataset/train-labels.idx1-ubyte"));
 
-            s_testDataset.header = s_trainingDataset.header;
+            s_testDataset = mnist::load(resource("mnist_dataset/t10k-images.idx3-ubyte"),
+                                            resource("mnist_dataset/t10k-labels.idx1-ubyte"));;
+            // s_testDataset.header = s_trainingDataset.header;
 
-            const auto imageSize = static_cast<size_t>(s_trainingDataset.header.rows) * s_trainingDataset.header.cols;
-            const auto totalImages = static_cast<size_t>(s_trainingDataset.header.num_images);
-            const auto testImageCount = std::max<size_t>(1, totalImages / 10);
-            const auto trainImageCount = totalImages - testImageCount;
-            const auto splitOffset = trainImageCount * imageSize;
-
-            s_testDataset.images.assign(s_trainingDataset.images.begin() + static_cast<std::ptrdiff_t>(splitOffset),
-                                        s_trainingDataset.images.end());
-            s_testDataset.labels.assign(s_trainingDataset.labels.begin() + static_cast<std::ptrdiff_t>(trainImageCount),
-                                        s_trainingDataset.labels.end());
-
-            s_trainingDataset.images.resize(splitOffset);
-            s_trainingDataset.labels.resize(trainImageCount);
-
-            s_trainingDataset.header.num_images = static_cast<uint32_t>(trainImageCount);
-            s_testDataset.header.num_images = static_cast<uint32_t>(testImageCount);
+            // const auto imageSize = static_cast<size_t>(s_trainingDataset.header.rows) * s_trainingDataset.header.cols;
+            // const auto totalImages = static_cast<size_t>(s_trainingDataset.header.num_images);
+            // const auto testImageCount = std::max<size_t>(1, totalImages / 10);
+            // const auto trainImageCount = totalImages - testImageCount;
+            // const auto splitOffset = trainImageCount * imageSize;
+            //
+            // s_testDataset.images.assign(s_trainingDataset.images.begin() + static_cast<std::ptrdiff_t>(splitOffset),
+            //                             s_trainingDataset.images.end());
+            // s_testDataset.labels.assign(s_trainingDataset.labels.begin() + static_cast<std::ptrdiff_t>(trainImageCount),
+            //                             s_trainingDataset.labels.end());
+            //
+            // s_trainingDataset.images.resize(splitOffset);
+            // s_trainingDataset.labels.resize(trainImageCount);
+            //
+            // s_trainingDataset.header.num_images = static_cast<uint32_t>(trainImageCount);
+            // s_testDataset.header.num_images = static_cast<uint32_t>(testImageCount);
             s_datasetLoaded = true;
         }
 
@@ -233,6 +283,13 @@ protected:
             BYTE_SIZE(host.testDataset.labels),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
         );
+
+        std::vector<int> resAlloc(host.testDataset.labels.size(), 0);
+        results = context->device.createCpuVisibleBuffer(
+            resAlloc.data(),
+            BYTE_SIZE(resAlloc),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+        );
     }
 
     void createDescriptorSetLayouts() {
@@ -249,6 +306,10 @@ protected:
                 .binding(2)
                     .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .descriptorCount(COUNT(trainingLocks))
+                    .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .binding(3)
+                    .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1)
                     .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
                 .createLayout();
 
@@ -291,12 +352,13 @@ protected:
         testDatasetDescriptorSet = sets[1];
         neuralNetworkDescriptorSet = sets[2];
 
-        auto writes = initializers::writeDescriptorSets<12>();
+        auto writes = initializers::writeDescriptorSets<13>();
 
         VkDescriptorBufferInfo trainingImagesInfo{ trainingImages, 0, VK_WHOLE_SIZE };
         VkDescriptorBufferInfo trainingLabelsInfo{ trainingLabels, 0, VK_WHOLE_SIZE };
         VkDescriptorBufferInfo testImagesInfo{ testImages, 0, VK_WHOLE_SIZE };
         VkDescriptorBufferInfo testLabelsInfo{ testLabels, 0, VK_WHOLE_SIZE };
+        VkDescriptorBufferInfo resultsInfo{ results, 0, VK_WHOLE_SIZE };
         auto descriptorInfo = [](const auto& buffer) {
             return VkDescriptorBufferInfo{ buffer, 0, VK_WHOLE_SIZE };
         };
@@ -340,47 +402,53 @@ protected:
         writes[4].descriptorCount = 1;
         writes[4].pBufferInfo = &testLabelsInfo;
 
-        writes[5].dstSet = neuralNetworkDescriptorSet;
-        writes[5].dstBinding = 0;
+        writes[5].dstSet = testDatasetDescriptorSet;
+        writes[5].dstBinding = 3;
         writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[5].descriptorCount = COUNT(weightsInfo);
-        writes[5].pBufferInfo = weightsInfo.data();
+        writes[5].descriptorCount = 1;
+        writes[5].pBufferInfo = &resultsInfo;
 
         writes[6].dstSet = neuralNetworkDescriptorSet;
-        writes[6].dstBinding = 1;
+        writes[6].dstBinding = 0;
         writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[6].descriptorCount = COUNT(biasesInfo);
-        writes[6].pBufferInfo = biasesInfo.data();
+        writes[6].descriptorCount = COUNT(weightsInfo);
+        writes[6].pBufferInfo = weightsInfo.data();
 
         writes[7].dstSet = neuralNetworkDescriptorSet;
-        writes[7].dstBinding = 2;
+        writes[7].dstBinding = 1;
         writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[7].descriptorCount = COUNT(activationsInfo);
-        writes[7].pBufferInfo = activationsInfo.data();
+        writes[7].descriptorCount = COUNT(biasesInfo);
+        writes[7].pBufferInfo = biasesInfo.data();
 
         writes[8].dstSet = neuralNetworkDescriptorSet;
-        writes[8].dstBinding = 3;
+        writes[8].dstBinding = 2;
         writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[8].descriptorCount = COUNT(intermediateWeightsInfo);
-        writes[8].pBufferInfo = intermediateWeightsInfo.data();
+        writes[8].descriptorCount = COUNT(activationsInfo);
+        writes[8].pBufferInfo = activationsInfo.data();
 
         writes[9].dstSet = neuralNetworkDescriptorSet;
-        writes[9].dstBinding = 4;
+        writes[9].dstBinding = 3;
         writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[9].descriptorCount = COUNT(deltaInfo);
-        writes[9].pBufferInfo = deltaInfo.data();
+        writes[9].descriptorCount = COUNT(intermediateWeightsInfo);
+        writes[9].pBufferInfo = intermediateWeightsInfo.data();
 
         writes[10].dstSet = neuralNetworkDescriptorSet;
-        writes[10].dstBinding = 5;
+        writes[10].dstBinding = 4;
         writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[10].descriptorCount = COUNT(nablaWeightsInfo);
-        writes[10].pBufferInfo = nablaWeightsInfo.data();
+        writes[10].descriptorCount = COUNT(deltaInfo);
+        writes[10].pBufferInfo = deltaInfo.data();
 
         writes[11].dstSet = neuralNetworkDescriptorSet;
-        writes[11].dstBinding = 6;
+        writes[11].dstBinding = 5;
         writes[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[11].descriptorCount = COUNT(nablaBiasesInfo);
-        writes[11].pBufferInfo = nablaBiasesInfo.data();
+        writes[11].descriptorCount = COUNT(nablaWeightsInfo);
+        writes[11].pBufferInfo = nablaWeightsInfo.data();
+
+        writes[12].dstSet = neuralNetworkDescriptorSet;
+        writes[12].dstBinding = 6;
+        writes[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[12].descriptorCount = COUNT(nablaBiasesInfo);
+        writes[12].pBufferInfo = nablaBiasesInfo.data();
 
         context->device.updateDescriptorSets(writes);
     }
@@ -441,7 +509,9 @@ protected:
 
     template<typename Func>
     void execute(Func&& func){
-        context->device.computeCommandPool().oneTimeCommand(func);
+        static Synchronization sync{ ._fence =  context->device.createFence() };
+        context->device.computeCommandPool().oneTimeCommand(func, sync);
+        sync._fence.wait();
     }
 
     static std::vector<float> dot(const std::span<float> m, const std::span<float> v) {
@@ -865,29 +935,11 @@ TEST_F(NeuralNetworkFixture, playground) {
 }
 
 TEST_F(NeuralNetworkFixture, cppNetTest) {
-    // auto numImages = host.trainingDataset.header.num_images;
-    auto numImages = 8000;
-    mnist::Dataset trainingData{};
-    trainingData.header = host.trainingDataset.header;
-    trainingData.header.num_images = numImages;
-    trainingData.images.resize(784 * numImages);
-    trainingData.labels.resize(1 * numImages);
-    std::copy_n(host.trainingDataset.images.begin(), 784 * numImages, trainingData.images.begin());
-    std::copy_n(host.trainingDataset.labels.begin(), 1 * numImages, trainingData.labels.begin());
-
-    auto numTestImages = host.testDataset.header.num_images;
-    mnist::Dataset testData{};
-    testData.header = host.testDataset.header;
-    testData.header.num_images = numTestImages;
-    testData.images.resize(784 * numTestImages);
-    testData.labels.resize(1 * numTestImages);
-    std::copy_n(host.trainingDataset.images.begin(), 784 * numTestImages, testData.images.begin());
-    std::copy_n(host.trainingDataset.labels.begin(), 1 * numTestImages, testData.labels.begin());
-
-    auto data = to_matrix(trainingData);
-    auto tData = to_matrix(testData);
+    auto data = to_matrix(host.trainingDataset);
+    auto tData = to_matrix(host.testDataset);
     cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
     cpuNetwork.train(data, 5, 10, 3.0, tData);
+    writeWeightsAndBiases(cpuNetwork, "neural_networks_hello_world/data/cpu_weights_biases.bin");
 }
 
 TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
@@ -901,6 +953,13 @@ TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
     std::copy_n(host.trainingDataset.labels.begin(), 1 * numImages, trainingData.labels.begin());
 
     auto data = to_matrix(trainingData);
+    auto testdata = to_matrix(trainingData);
+
+
+    for (auto i = 0; i < numImages; i++) {
+        auto [img, label] = data.at(i);
+        ASSERT_EQ(std::get<0>(argmax(label)), trainingData.labels[i]);
+    }
 
     const auto eta = 3.0f;
     const auto batchSize = 10;
@@ -910,105 +969,105 @@ TEST_F(NeuralNetworkFixture, trainDeviceNetwork) {
     initDeviceNetwork(epochs, numBatches, numImages, eta);
 
     cpu::NeuralNetwork cpuNetwork{{784, 30, 10}, true};
-    cpuNetwork.train(data, epochs, batchSize, eta);
+    cpuNetwork.train(data, epochs, batchSize, eta, testdata);
 
     execute([&](auto commandBuffer) {
         network.train(commandBuffer);
     });
 
+    const auto  numLayers = network.m_layers.size();
 
-    for (size_t layer = 0; layer < host.weights.size(); ++layer) {
-        const auto dev_weights = network.m_weights[layer].span<float>();
-        const auto& host_weights = cpuNetwork.m_weights[layer];
+    const auto imageSize = 784;
+    // for (auto img = 0; img < numImages; ++img) {
+    //     // check activation 0 matches imput image
+    //
+    //     const auto cpuActivation = cpuNetwork.m_activations[img][0];
+    //     const auto gpuActivation = network.m_activations[0].span<float>();
+    //
+    //     nda::for_all_indices(cpuActivation.shape(), [&](auto i, auto j) {
+    //         const auto imd = img * imageSize + i;
+    //        ASSERT_NEAR(cpuActivation(i, j), host.trainingDataset.images[imd], 1E-3)  << fmt::format("mismatch for cpu img {} at pixel {}", img, i);
+    //        ASSERT_NEAR(gpuActivation[imd], host.trainingDataset.images[imd], 1E-3)  << fmt::format("mismatch for img gpu {} at pixel {}", img, i);
+    //     });
+    //
+    //     // Check z
+    //     for (auto layer = 0; layer < numLayers - 1; ++layer) {
+    //         const auto layerSize = host.layers[layer+1];
+    //         const auto cpuZ = cpuNetwork.m_z[img][layer];
+    //         const auto gpuZ = network.m_intermediateWeights[layer].span<float>();
+    //         nda::for_all_indices(cpuZ.shape(), [&](auto i, auto j) {
+    //             const auto imd = img * layerSize + i;
+    //             ASSERT_NEAR(cpuZ(i, j), gpuZ[imd], 1E-3) << fmt::format("mismatch for img {} at layer {}, index [{}, {}]", img, layer, i, j);
+    //         });
+    //     }
+    //
+    //     // Check activations
+    //     for (auto layer = 1; layer < 2; ++layer) {
+    //         const auto layerSize = host.layers[layer];
+    //         const auto cpuActivation = cpuNetwork.m_activations[img][layer];
+    //         const auto gpuActivation = network.m_activations[layer].span<float>();
+    //         nda::for_all_indices(cpuActivation.shape(), [&](auto i, auto j) {
+    //             const auto imd = img * layerSize + i;
+    //             ASSERT_NEAR(cpuActivation(i, j), gpuActivation[imd], 1E-3) << fmt::format("mismatch for img {} at layer {}, index [{}, {}]", img, layer, i, j);
+    //         });
+    //     }
+    //
+    //    // check deltas
+    //      for (auto layer = numLayers - 1; layer < numLayers; ++layer) {
+    //          const auto cpuDelta = cpuNetwork.m_deltas[img][2];
+    //
+    //          const auto layerSize = host.layers[2];
+    //
+    //          const auto gpuDelta = network.m_delta[2].span<float>();
+    //
+    //          nda::for_all_indices(cpuDelta.shape(), [&](auto i, auto j) {
+    //              const auto I = img * layerSize + i;
+    //              ASSERT_NEAR(cpuDelta(i, j), gpuDelta[I], 1E-3) << "mismatch on image: " << img << " " << i << " " << j;
+    //          });
+    //      }
+    // }
 
-        nda::for_all_indices(host_weights.shape(), [&](auto i, auto j) {
-            auto index = i * host_weights.j().extent() + j;
-            EXPECT_NEAR(dev_weights[index], host_weights(i, j), 1E-3)
-                << fmt::format("weights layer {} [{}] mismatch {} != {}, diff = {}", layer, i, dev_weights[index], host_weights(i, j), std::abs(dev_weights[index] - host_weights(i, j)));
+    for (size_t layer = 0; layer < network.m_weights.size(); ++layer) {
+        spdlog::info("layer {}", layer);
+        const auto gpuWeights = network.m_weights[layer].span<float>();
+        const auto& cpuWeights = cpuNetwork.m_weights[layer];
+
+        nda::for_all_indices(cpuWeights.shape(), [&](auto i, auto j) {
+            const auto index = i * cpuWeights.j().extent() + j;
+            ASSERT_NEAR(gpuWeights[index], cpuWeights(i, j), 1E-3)
+                << fmt::format("weights layer {} [{}] mismatch {} != {}", layer, index, gpuWeights[index], cpuWeights(i, j));
         });
     }
 
-    for (size_t layer = 0; layer < host.biases.size(); ++layer) {
-        const auto dev_biases = network.m_biases[layer].span<float>();
-        const auto& host_biases = cpuNetwork.m_biases[layer];
+    for (size_t layer = 0; layer < network.m_biases.size(); ++layer) {
+        const auto gpuBiases = network.m_biases[layer].span<float>();
+        const auto& cpuBiases = cpuNetwork.m_biases[layer];
 
-        nda:;nda::for_all_indices(host_biases.shape(), [&](auto i, auto j) {
-            auto index = i * host_biases.j().extent() + j;
-            EXPECT_NEAR(dev_biases[index], host_biases(i, j), 1E-3)
-               << fmt::format("biases layer {} [{}] mismatch {} != {}, diff = {}", layer, i, dev_biases[index], host_biases(i, j), std::abs(dev_biases[index] - host_biases(i, j)));
+        nda::for_all_indices(cpuBiases.shape(), [&](auto i, auto j) {
+            const auto index = i * cpuBiases.j().extent() + j;
+            ASSERT_NEAR(gpuBiases[index], cpuBiases(i, j), 1E-3)
+                << fmt::format("biases layer {} [{}] mismatch {} != {}", layer, index, gpuBiases[index], cpuBiases(i, j));
         });
     }
 
-    auto testdata = to_matrix(host.testDataset);
-    const auto imagePixels = 784u;
-    const auto imageSize = imagePixels * sizeof(float);
 
-   uint evalCount = network.m_constants.batchSize;
-    VulkanBuffer testBuffer =
-        context->device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, testdata.size() * imageSize);
-    testBuffer.copy(host.testDataset.images.data(), BYTE_SIZE(host.testDataset.images));
-
-    execute([&](auto commandBuffer) {
-        auto start = 0;
-        auto end = start + imageSize * evalCount;
-        auto input = testBuffer.region(start, end);
-        network.evaluate(commandBuffer, input);
-    });
-
-    for (auto k = 0; k < evalCount; ++k) {
-        spdlog::info("assert image: {}", k);
-        auto [image, label] = testdata[k];
-
-        auto start = k * imageSize;
-        auto end = start + imageSize;
-        auto input = testBuffer.region(start, end);
-
-        auto cpuImage = input.span<float>();
-        for_all_indices(image.shape(), [&](auto i, auto j) {
-            ASSERT_NEAR(image(i, j), cpuImage[i], 1E-3) << "images don't match";
-        });
-
-        auto expected = cpuNetwork.feedForward(image);
-        start = k * host.layers[2] * sizeof(float);
-        end = start + host.layers[2] * sizeof(float);
-        auto outputActivation = network.m_activations[2].region(start, end);
-        auto actual = outputActivation.span<float>();
-
-        // spdlog::info("actual:   [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]"
-        //     , actual[0], actual[1], actual[2], actual[3], actual[4]
-        //     , actual[5], actual[6], actual[7], actual[8], actual[9]);
-        //
-        // spdlog::info("expected: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]"
-        //     , expected(0, 0), expected(1, 0), expected(2, 0), expected(3, 0), expected(4, 0)
-        //     , expected(5, 0), expected(6, 0), expected(7, 0), expected(8, 0), expected(9, 0));
-        //
-        // spdlog::info("label: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]"
-        //     , label(0, 0), label(1, 0), label(2, 0), label(3, 0), label(4, 0)
-        //     , label(5, 0), label(6, 0), label(7, 0), label(8, 0), label(9, 0));
-
-        // auto ignore = cpuNetwork.feedForward(image);
-        //
-        // expected = cpuNetwork.m_activations[2];
-        // actual = network.m_activations[2].span<float>();
-        for_all_indices(expected.shape(), [&](auto i, auto j) {
-            ASSERT_NEAR(expected(i, j), actual[i], 1E-3) << "no match at index: " << i << " for input " << k;
-        });
-    }
 }
 
 TEST_F(NeuralNetworkFixture, gpuClassificationRate) {
-    auto numImages = 8000;
+    auto numImages = host.trainingDataset.header.num_images;
 
     const auto eta = 3.0f;
     const auto batchSize = 10;
     const auto numBatches = numImages / batchSize;
     const auto epochs = 1;
 
-    initDeviceNetwork(epochs, numBatches, numImages, eta);
+    initDeviceNetwork(epochs, numBatches, numImages, eta, true);
 
     execute([&](auto commandBuffer) {
+        spdlog::info("training stared");
         network.train(commandBuffer);
     });
+    spdlog::info("training done");
 
 
     auto testdata = to_matrix(host.testDataset);
@@ -1019,28 +1078,54 @@ TEST_F(NeuralNetworkFixture, gpuClassificationRate) {
         context->device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, testdata.size() * imageSize);
     testBuffer.copy(host.testDataset.images.data(), BYTE_SIZE(host.testDataset.images));
 
-    uint evalCount = network.m_constants.batchSize;
-    execute([&](auto commandBuffer) {
-        auto start = 0;
-        auto end = start + imageSize * evalCount;
-        auto input = testBuffer.region(start, end);
-        network.evaluate(commandBuffer, input);
-    });
+    // uint evalCount = std::min(host.testDataset.images.size(), 10000ull);
+    uint evalCount = 10000;
+    // execute([&](auto commandBuffer) {
+    //     auto start = 0;
+    //     auto end = start + imageSize * evalCount;
+    //     auto input = testBuffer.region(start, end);
+    //
+    //     network.m_constants.batchSize = evalCount;
+    //     network.m_constants.batchIndex = 0;
+    //
+    //     network.evaluate(commandBuffer, input);
+    //     network.assertTestOutput(commandBuffer);
+    //     network.printClassificationRate(commandBuffer);
+    // });
 
+    std::stringstream ss;
     std::vector<int> totals;
+    auto gpuLabels = testLabels.span<int>();
+
+    auto numNeurons = host.layers[2];
+    auto activationBytes = numNeurons * sizeof(float);
+    spdlog::info("num Neurons: {}", numNeurons);
+
+
     for (auto k = 0; k < evalCount; ++k) {
-        auto start = k * host.layers[2] * sizeof(float);
-        auto end = start + host.layers[2] * sizeof(float);
+        auto start = k * activationBytes;
+        auto end = start + activationBytes;
         auto outputActivation = network.m_activations[2].region(start, end);
         auto oSpan = outputActivation.span<float>();
 
+        auto gLabel = gpuLabels[k];
         auto expected = host.testDataset.labels[k];
         auto actual = argmax(oSpan);
+
+        ASSERT_EQ(expected, gLabel);
+
+        auto s = map_range(oSpan, [](auto neuron){ return to<int>(neuron > 0.5); });
+
+        if (k < 10) {
+            ss << fmt::format("gid: {}, gy: {}, y: {}, x: {}, a: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}]\n", k, gLabel, expected, actual,
+                s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9]);
+        }
         totals.push_back(expected == actual);
     }
 
     auto rate = 100 * std::accumulate(totals.begin(), totals.end(), 0.0f)/evalCount;
     spdlog::info("classification rate {}%", rate);
+    spdlog::info("\n\ncpu cr\n{}\n\n", ss.str());
 }
 
 mnist::Dataset NeuralNetworkFixture::s_trainingDataset{};
