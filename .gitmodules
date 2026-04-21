@@ -4,3 +4,6 @@
 [submodule "dependencies/glTF-Sample-Assets"]
 	path = dependencies/glTF-Sample-Assets
 	url = https://github.com/KhronosGroup/glTF-Sample-Assets.git
+[submodule "dependencies/ShaderToHuman"]
+	path = dependencies/ShaderToHuman
+	url = https://github.com/electronicarts/ShaderToHuman.git

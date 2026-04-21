@@ -39,6 +39,19 @@ dev::NeuralNetwork::NeuralNetwork(
 
 }
 
+dev::NeuralNetwork::NeuralNetwork(
+    VulkanDevice *device,
+    VulkanDescriptorSetLayout datasetDescriptorSetLayout,
+    std::initializer_list<uint> layers,
+    const Params& params,
+    std::vector<std::vector<float>> weights,
+    std::vector<std::vector<float>> biases
+    )
+    : NeuralNetwork{device, std::move(datasetDescriptorSetLayout), layers, params} {
+    m_initialWeights = std::move(weights);
+    m_initialBiases = std::move(biases);
+}
+
 void dev::NeuralNetwork::init() {
     initNetwork();
     createDescriptorPool();
@@ -51,7 +64,10 @@ void dev::NeuralNetwork::init() {
 void dev::NeuralNetwork::initNetwork() {
     auto rng = rngFn(m_params.testMode ? 1 << 20 : std::random_device{}());
 
-    const auto bs = m_testDatasetDescriptorSet ? m_testDataset.labels.sizeAs<float>() : m_constants.batchSize;
+    auto bs = m_constants.batchSize;
+    if (m_testDatasetDescriptorSet) {
+        bs = std::max(to<uint>(m_testDataset.labels.sizeAs<float>()), bs);
+    }
     for (auto i = 0; i < m_layers.size(); ++i) {
         const auto L = m_layers[i];
         std::vector<float> activations(L * bs, 0.0f);
@@ -64,7 +80,13 @@ void dev::NeuralNetwork::initNetwork() {
 
         if (i > 0) {
             std::vector<float> biases(L);
-            std::ranges::generate(biases, [&]{ return rng(); });
+            if (!m_initialBiases.empty()) {
+                assert((i - 1) < m_initialBiases.size());
+                assert(m_initialBiases[i - 1].size() == L);
+                biases = m_initialBiases[i - 1];
+            } else {
+                std::ranges::generate(biases, [&]{ return rng(); });
+            }
             auto biasBuffer = createBuffer(biases, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             auto nablaBiasBuffer = createBuffer(L * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
             m_biases.push_back(biasBuffer);
@@ -75,7 +97,13 @@ void dev::NeuralNetwork::initNetwork() {
         if (i+1 < m_layers.size()) {
             const auto L1 = m_layers[i + 1];
             std::vector<float> weights(L * L1);
-            std::ranges::generate(weights, [&]{ return rng(); });
+            if (!m_initialWeights.empty()) {
+                assert(i < m_initialWeights.size());
+                assert(m_initialWeights[i].size() == weights.size());
+                weights = m_initialWeights[i];
+            } else {
+                std::ranges::generate(weights, [&]{ return rng(); });
+            }
             auto weightsBuffer = createBuffer(weights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             auto intermediateWeights = createBuffer(L1 * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             auto nablaWeightsBuffer = createBuffer(L * L1 * bs * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
@@ -88,8 +116,8 @@ void dev::NeuralNetwork::initNetwork() {
 
 void dev::NeuralNetwork::shuffleTrainingData(VkCommandBuffer commandBuffer) const {
     if (m_params.testMode) {
-        const auto numBatches = std::max(1u, m_params.numBatches);
-        m_testModeBatchOffset = (m_testModeBatchOffset + 1) % numBatches;
+        // const auto numBatches = std::max(1u, m_params.numBatches);
+        // m_testModeBatchOffset = (m_testModeBatchOffset + 1) % numBatches;
         return;
     }
 
@@ -107,11 +135,14 @@ void dev::NeuralNetwork::loadTrainingInputLayer(VkCommandBuffer commandBuffer) c
 
     const auto& c = m_constants;
     const auto imageSize = m_layers[0];
+    const auto batchSize = c.batchSize * imageSize * sizeof(float);
     const VkBufferCopy region{
-        .srcOffset = c.batchIndex * c.batchSize * imageSize * sizeof(float),
+        .srcOffset = c.batchIndex * batchSize,
         .dstOffset = 0,
-        .size = m_activations[0].size
+        .size = batchSize
     };
+
+    Barrier::computeReadToTransferWrite(commandBuffer);
     vkCmdCopyBuffer(commandBuffer, m_trainingDataSet.images, m_activations[0], 1, &region);
     Barrier::transferWriteToComputeRead(commandBuffer);
 }
@@ -364,6 +395,8 @@ void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer) {
 }
 
 void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer, uint epoch) {
+    if (epoch >= m_params.epochs) return;
+    spdlog::info("epoch {}", epoch);
     m_constants.epoch = epoch;
 
     device->group([&] {

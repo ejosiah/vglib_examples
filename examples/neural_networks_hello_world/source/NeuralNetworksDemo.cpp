@@ -9,6 +9,61 @@
 
 #include "mnist/mnist_loader.hpp"
 #include "cpu/NeuralNetwork.hpp"
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+
+namespace {
+    constexpr uint32_t kWeightsBiasesMagic = 0x4E4E5742;
+    constexpr uint32_t kWeightsBiasesVersion = 1;
+
+    std::vector<float> readMatrix(std::ifstream& in) {
+        uint32_t rows{};
+        uint32_t cols{};
+        in.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+        in.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+
+        std::vector<float> values(static_cast<size_t>(rows) * cols);
+        in.read(reinterpret_cast<char*>(values.data()), BYTE_SIZE(values));
+        return values;
+    }
+
+    std::tuple<std::vector<std::vector<float>>, std::vector<std::vector<float>>> loadWeightsAndBiases(const std::filesystem::path& path) {
+        std::ifstream in{path, std::ios::binary};
+        if (!in.is_open()) {
+            spdlog::warn("weights/biases file not found: {}", path.string());
+            return {};
+        }
+
+        uint32_t magic{};
+        uint32_t version{};
+        in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+        in.read(reinterpret_cast<char*>(&version), sizeof(version));
+        if (magic != kWeightsBiasesMagic || version != kWeightsBiasesVersion) {
+            spdlog::warn("ignoring invalid weights/biases file: {}", path.string());
+            return {};
+        }
+
+        uint32_t weightsCount{};
+        in.read(reinterpret_cast<char*>(&weightsCount), sizeof(weightsCount));
+        std::vector<std::vector<float>> weights;
+        weights.reserve(weightsCount);
+        for (uint32_t i = 0; i < weightsCount; ++i) {
+            weights.push_back(readMatrix(in));
+        }
+
+        uint32_t biasesCount{};
+        in.read(reinterpret_cast<char*>(&biasesCount), sizeof(biasesCount));
+        std::vector<std::vector<float>> biases;
+        biases.reserve(biasesCount);
+        for (uint32_t i = 0; i < biasesCount; ++i) {
+            biases.push_back(readMatrix(in));
+        }
+
+        spdlog::info("loaded {} weight layers and {} bias layers from {}", weights.size(), biases.size(), path.string());
+        return {std::move(weights), std::move(biases)};
+    }
+}
 
 
 NeuralNetworksDemo::NeuralNetworksDemo(const Settings& settings) : VulkanBaseApp("Neural Networks Hello World", settings) {
@@ -71,18 +126,19 @@ void NeuralNetworksDemo::loadDataset() {
 }
 
 void NeuralNetworksDemo::initNetwork() {
+    auto [weights, biases] = loadWeightsAndBiases("neural_networks_hello_world/data/cpu_weights_biases.bin");
     network = dev::NeuralNetwork{ &device, datasetDescriptorSetLayout, {784, 30, 10},  {
         .trainingData = std::make_tuple(trainingDatasetDescriptorSet, dev::NeuralNetwork::Dataset{ trainingImages, trainingLabels }),
         .epochs = 5,
-        .numBatches = 10,
-        .datasetSize = 8000,
+        .numBatches = 6000,
+        .datasetSize = 60000,
         .eta = 3.0f,
         .testData = std::make_tuple(testDatasetDescriptorSet, dev::NeuralNetwork::Dataset{ testImages, testLabels }),
-    }};
+    }, std::move(weights), std::move(biases)};
     network.init();
-    // device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
-    //     network.train(commandBuffer);
-    // });
+     // device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+     //     network.train(commandBuffer);
+     // });
 }
 
 void NeuralNetworksDemo::initCamera() {
@@ -149,7 +205,7 @@ void NeuralNetworksDemo::createDescriptorSetLayouts() {
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .binding(3)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(COUNT(trainingLocks))
+                .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
 }
@@ -294,10 +350,6 @@ VkCommandBuffer *NeuralNetworksDemo::buildCommandBuffers(uint32_t imageIndex, ui
         vkCmdDraw(commandBuffer, 4, 1, 0, 0);
         plugin(IM_GUI_PLUGIN).draw(commandBuffer);
     }, commandBuffer);
-
-    static uint epoch = 0;
-    network.train(commandBuffer, epoch);
-    epoch++;
 
     vkEndCommandBuffer(commandBuffer);
 

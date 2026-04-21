@@ -14,6 +14,9 @@ inline nda::matrix<T> dot(const nda::matrix<T>& A, const nda::matrix<T>& B) {
 
     enum { i = 0, j = 1, k = 2 };
 
+    auto a = A.base();
+    auto b = B.base();
+
     nda::matrix<T> C({A.i().extent(), B.j().extent()}, T{});
     ein_reduce(ein<i, j>(C) += ein<i, k>(A) * ein<k, j>(B));
     return C;
@@ -153,24 +156,26 @@ inline auto scalar_multiply(nda::matrix<T> A, S scalar) {
 }
 
 inline auto to_matrix(const mnist::Dataset& dataset) {
-    std::vector<nda::matrix<float>> images;
-    std::vector<nda::matrix<float>> labels;
+    std::vector<nda::matrix<float>> images(dataset.header.num_images);
+    std::vector<nda::matrix<float>> labels(dataset.header.num_images);
 
     auto imageSize = dataset.header.cols * dataset.header.rows;
+    auto pos = 0;
     for (auto offset = 0u; offset < dataset.images.size(); offset += imageSize) {
         nda::matrix<float> image{{imageSize, 1}, 0};
         nda::for_all_indices(image.shape(), [&](auto i, auto j) {
             image(i, j) = dataset.images[offset + i];
         });
-        images.push_back(image);
+        images[pos++] = image;
     }
 
+    pos = 0;
     for (auto l = 0; l < dataset.labels.size(); l++) {
         nda::matrix<float> label {{10, 1}};
         nda::for_all_indices<>(label.shape(), [&](auto i, auto j) {
             label(i, j) = static_cast<float>(dataset.labels[l] == i);
         });
-        labels.push_back(label);
+        labels[pos++] = label;
     }
 
 

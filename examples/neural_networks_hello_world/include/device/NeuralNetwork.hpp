@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <optional>
 #include <array>
+#include <vector>
 
 namespace dev {
     class NeuralNetwork final : public ComputePipelines {
@@ -28,6 +29,13 @@ namespace dev {
                       VulkanDescriptorSetLayout datasetDescriptorSetLayout,
                       std::initializer_list<uint> layers,
                       const Params& params);
+
+        NeuralNetwork(VulkanDevice* device,
+                      VulkanDescriptorSetLayout datasetDescriptorSetLayout,
+                      std::initializer_list<uint> layers,
+                      const Params& params,
+                      std::vector<std::vector<float>> weights,
+                      std::vector<std::vector<float>> biases);
 
         void init();
 
@@ -113,6 +121,8 @@ namespace dev {
         std::vector<VulkanBuffer> m_delta;
         std::vector<VulkanBuffer> m_nablaBiases;
         std::vector<VulkanBuffer> m_nablaWeights;
+        std::vector<std::vector<float>> m_initialWeights;
+        std::vector<std::vector<float>> m_initialBiases;
         Params m_params{};
 
         VulkanDescriptorPool m_descriptorPool;
