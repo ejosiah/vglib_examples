@@ -97,6 +97,7 @@ void NeuralNetworksDemo::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+    createComputePipelines();
     initNetwork();
 }
 
@@ -122,6 +123,12 @@ void NeuralNetworksDemo::loadDataset() {
     testLabels = device.createDeviceLocalBuffer(testDataset.labels.data(), BYTE_SIZE(testDataset.labels), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT );
     results = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, BYTE_SIZE(testDataset.labels), "result_buffer");
 
+    inputBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 28 * 28 * sizeof(float), "input_buffer");
+    canvasBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 280 * 280 * sizeof(float), "canvas_buffer");
+
+    textures::createNoTransition(device, inputTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R8_UNORM, {28, 28, 1});
+    inputTexture.image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    inputTextureID = plugin<ImGuiPlugin>(IM_GUI_PLUGIN).addTexture(inputTexture.imageView);
     spdlog::info("MNIST dataset loaded");
 }
 
@@ -129,13 +136,15 @@ void NeuralNetworksDemo::initNetwork() {
     auto [weights, biases] = loadWeightsAndBiases("neural_networks_hello_world/data/cpu_weights_biases.bin");
     network = dev::NeuralNetwork{ &device, datasetDescriptorSetLayout, {784, 30, 10},  {
         .trainingData = std::make_tuple(trainingDatasetDescriptorSet, dev::NeuralNetwork::Dataset{ trainingImages, trainingLabels }),
-        .epochs = 5,
+        .epochs = 10,
         .numBatches = 6000,
         .datasetSize = 60000,
         .eta = 3.0f,
         .testData = std::make_tuple(testDatasetDescriptorSet, dev::NeuralNetwork::Dataset{ testImages, testLabels }),
+    // }};
     }, std::move(weights), std::move(biases)};
     network.init();
+    output = network.m_activations[2].span<float>(10);
      // device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
      //     network.train(commandBuffer);
      // });
@@ -208,20 +217,54 @@ void NeuralNetworksDemo::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
+
+    canvasDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
+            .createLayout();
+
+    canvasToInputDescriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .createLayout();
 }
 
 void NeuralNetworksDemo::updateDescriptorSets(){
-    auto sets = descriptorPool.allocate({ datasetDescriptorSetLayout, datasetDescriptorSetLayout });
+    auto sets = descriptorPool.allocate({
+        datasetDescriptorSetLayout,
+        datasetDescriptorSetLayout,
+        canvasDescriptorSetLayout,
+        canvasToInputDescriptorSetLayout
+    });
     trainingDatasetDescriptorSet = sets[0];
     testDatasetDescriptorSet = sets[1];
+    canvasDescriptorSet = sets[2];
+    canvasToInputDescriptorSet = sets[3];
 
-    auto writes = initializers::writeDescriptorSets<6>();
+    auto writes = initializers::writeDescriptorSets<10>();
 
     VkDescriptorBufferInfo trainingImagesInfo{ trainingImages, 0, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo trainingLabelsInfo{ trainingLabels, 0, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo testImagesInfo{ testImages, 0, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo testLabelsInfo{ testLabels, 0, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo resultsInfo{ results, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo canvasInfo{ canvasBuffer, 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo inputInfo{ inputBuffer, 0, VK_WHOLE_SIZE };
+    VkDescriptorImageInfo inputImageInfo{ nullptr, inputTexture.imageView.handle, VK_IMAGE_LAYOUT_GENERAL };
     auto descriptorInfo = [](const auto& buffer) {
         return VkDescriptorBufferInfo{ buffer, 0, VK_WHOLE_SIZE };
     };
@@ -263,6 +306,30 @@ void NeuralNetworksDemo::updateDescriptorSets(){
     writes[5].descriptorCount = 1;
     writes[5].pBufferInfo = &resultsInfo;
 
+    writes[6].dstSet = canvasDescriptorSet;
+    writes[6].dstBinding = 0;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[6].descriptorCount = 1;
+    writes[6].pBufferInfo = &canvasInfo;
+
+    writes[7].dstSet = canvasToInputDescriptorSet;
+    writes[7].dstBinding = 0;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[7].descriptorCount = 1;
+    writes[7].pBufferInfo = &canvasInfo;
+
+    writes[8].dstSet = canvasToInputDescriptorSet;
+    writes[8].dstBinding = 1;
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[8].descriptorCount = 1;
+    writes[8].pBufferInfo = &inputInfo;
+
+    writes[9].dstSet = canvasToInputDescriptorSet;
+    writes[9].dstBinding = 2;
+    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[9].descriptorCount = 1;
+    writes[9].pImageInfo = &inputImageInfo;
+
     device.updateDescriptorSets(writes);
 }
 
@@ -286,6 +353,7 @@ void NeuralNetworksDemo::createRenderPipeline() {
                     .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants))
                     .addDescriptorSetLayout(datasetDescriptorSetLayout)
                     .addDescriptorSetLayout(datasetDescriptorSetLayout)
+                    .addDescriptorSetLayout(canvasToInputDescriptorSetLayout)
                 .vertexInputState()
                     .clear()
                     .addVertexBindingDescriptions(ClipSpace::bindingDescription())
@@ -303,12 +371,49 @@ void NeuralNetworksDemo::createRenderPipeline() {
                     .fragmentShader(resource("fullscreen_uv.frag.spv"))
                 .name("render")
                 .build(render.layout);
+
+        canvas.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .layout()
+                    .clear()
+                    .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(CanvasConstants))
+                    .addDescriptorSetLayout(canvasDescriptorSetLayout)
+                .vertexInputState()
+                    .clear()
+                    .addVertexBindingDescriptions(ClipSpace::bindingDescription())
+                    .addVertexAttributeDescriptions(ClipSpace::attributeDescriptions())
+                .inputAssemblyState()
+                    .triangleStrip()
+                .rasterizationState()
+                    .cullNone()
+                    .frontFaceCounterClockwise()
+                .depthStencilState()
+                    .disableDepthTest()
+                    .disableDepthWrite()
+                .shaderStage()
+                    .vertexShader(resource("fullscreen_uv.vert.spv"))
+                    .fragmentShader(resource("canvas.frag.spv"))
+                .name("canvas")
+                .build(canvas.layout);
     //    @formatter:on
+}
+
+void NeuralNetworksDemo::createComputePipelines() {
+    computePipelines = ComputePipelines{&device, {
+        {
+            "canvas_to_input",
+            resource("canvas_to_input.comp.spv"),
+            { &canvasToInputDescriptorSetLayout },
+            { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CanvasToInputConstants) } }
+        }
+    }};
+    computePipelines.createPipelines();
 }
 
 
 void NeuralNetworksDemo::onSwapChainDispose() {
     dispose(render.pipeline);
+    dispose(canvas.pipeline);
 }
 
 void NeuralNetworksDemo::onSwapChainRecreation() {
@@ -326,43 +431,125 @@ VkCommandBuffer *NeuralNetworksDemo::buildCommandBuffers(uint32_t imageIndex, ui
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        std::array<VkDescriptorSet, 2> sets{ trainingDatasetDescriptorSet, testDatasetDescriptorSet };
-        int imageOffset = static_cast<int>(constants.offset);
-        const int maxOffset = constants.imageCount > 100 ? static_cast<int>(constants.imageCount - 100) : 0;
-
-        ImGui::Begin("Dataset");
-        ImGui::SetWindowSize({300, 140});
-        if (ImGui::SliderInt("Offset", &imageOffset, 0, maxOffset)) {
-            constants.offset = static_cast<uint32_t>(imageOffset);
-        }
-        if (ImGui::Button("Shuffle")) {
-            network.shuffleTrainingData(commandBuffer);
-            Barrier::computeWriteToFragmentRead(commandBuffer);
-        }
-        ImGui::Text("Showing images %u - %u", constants.offset, std::min(constants.offset + 99u, constants.imageCount ? constants.imageCount - 1 : 0u));
-        ImGui::End();
-
-        VkDeviceSize vertexOffset = 0;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-        vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, fullscreenQuad, &vertexOffset);
-        vkCmdDraw(commandBuffer, 4, 1, 0, 0);
-        plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+        // renderCanvas(commandBuffer);
+        renderTrainingData(commandBuffer);
+        renderUI(commandBuffer);
     }, commandBuffer);
+
+    canvasToInput(commandBuffer);
+    if (shouldEvaluate) {
+        network.evaluate(commandBuffer, inputBuffer);
+    }
 
     vkEndCommandBuffer(commandBuffer);
 
     return &commandBuffer;
 }
 
+void NeuralNetworksDemo::renderCanvas(VkCommandBuffer commandBuffer) {
+    VkDeviceSize vertexOffset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, canvas.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, canvas.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(canvasConstants), &canvasConstants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, canvas.layout.handle, 0, 1, &canvasDescriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, fullscreenQuad, &vertexOffset);
+    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+    canvasConstants.clear = 0;
+}
+
+void NeuralNetworksDemo::renderTrainingData(VkCommandBuffer commandBuffer) {
+    std::array<VkDescriptorSet, 3> sets{ trainingDatasetDescriptorSet, testDatasetDescriptorSet, canvasToInputDescriptorSet };
+    VkDeviceSize vertexOffset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, fullscreenQuad, &vertexOffset);
+    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+    constants.mouseClicked = 0;
+}
+
+void NeuralNetworksDemo::canvasToInput(VkCommandBuffer commandBuffer) {
+    constexpr uint32_t localSize = 32;
+    Barrier::fragmentWriteToComputeRead(commandBuffer);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelines.pipeline("canvas_to_input"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelines.layout("canvas_to_input"), 0, 1, &canvasToInputDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, computePipelines.layout("canvas_to_input"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(canvasToInputConstants), &canvasToInputConstants);
+    vkCmdDispatch(
+        commandBuffer,
+        nearestMultiple(canvasToInputConstants.inputSize.x, localSize) / localSize,
+        nearestMultiple(canvasToInputConstants.inputSize.y, localSize) / localSize,
+        1
+    );
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void NeuralNetworksDemo::renderUI(VkCommandBuffer commandBuffer) {
+    int imageOffset = static_cast<int>(constants.offset);
+    const int maxOffset = constants.imageCount > 100 ? static_cast<int>(constants.imageCount - 100) : 0;
+
+    ImGui::Begin("Dataset");
+    ImGui::SetWindowSize({0, 0});
+    ImGui::Image(inputTextureID, {128, 128});
+    if (ImGui::SliderInt("Offset", &imageOffset, 0, maxOffset)) {
+        constants.offset = static_cast<uint32_t>(imageOffset);
+    }
+    if (ImGui::Button("Shuffle")) {
+        network.shuffleTrainingData(commandBuffer);
+        Barrier::computeWriteToFragmentRead(commandBuffer);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("evaluate")) {
+        shouldEvaluate = true;
+    }
+    ImGui::Text("Showing images %u - %u", constants.offset, std::min(constants.offset + 99u, constants.imageCount ? constants.imageCount - 1 : 0u));
+    ImGui::End();
+
+    // ImGui::Begin("Brush");
+    // ImGui::SetWindowSize({0, 0});
+    // ImGui::Image(inputTextureID, {128, 128});
+    // ImGui::SliderFloat("radius", &canvasConstants.radius, 0.001f, 0.1f);
+    //
+    // if (ImGui::Button("clear")) {
+    //     canvasConstants.clear = true;
+    // }
+    // if (ImGui::Button("evaluate")) {
+    //     shouldEvaluate = true;
+    // }
+    // ImGui::End();
+
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+}
+
 void NeuralNetworksDemo::update(float time) {
     camera->update(time);
     auto cam = camera->cam();
+
 }
 
 void NeuralNetworksDemo::checkAppInputs() {
     camera->processInput();
+
+    const auto& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) {
+        canvasConstants.active = 0;
+        return;
+    }
+
+
+    if (mouse.left.held){
+        canvasConstants.active = 1;
+        constants.mouseClicked = 1;
+    }else {
+       canvasConstants.active = 0;
+    }
+
+    if (canvasConstants.active) {
+        canvasConstants.center = mouse.position/glm::vec2(width, height);
+    }
+
+    if (constants.mouseClicked == 1) {
+        constants.mousePos = mouse.position/glm::vec2(width, height);
+    }
+
 }
 
 void NeuralNetworksDemo::cleanup() {
@@ -372,6 +559,15 @@ void NeuralNetworksDemo::cleanup() {
 
 void NeuralNetworksDemo::onPause() {
     VulkanBaseApp::onPause();
+}
+
+void NeuralNetworksDemo::newFrame() {
+    if (shouldEvaluate) {
+        auto result = argmax(output);
+        auto neurons = map_range(output, [](auto n){ return int(n > 0.5); });
+        spdlog::info("Network result: {}, {}", result, neurons);
+        shouldEvaluate = false;
+    }
 }
 
 

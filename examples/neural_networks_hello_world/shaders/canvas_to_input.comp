@@ -1,0 +1,33 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) buffer CanvasBuffer {
+    float canvas[];
+};
+
+layout(set = 0, binding = 1) buffer InputBuffer {
+    float inputB[];
+};
+
+layout(set = 0, binding = 2) writeonly uniform image2D inputImage;
+
+layout(push_constant) uniform Constants {
+    uvec2 canvasSize;
+    uvec2 inputSize;
+};
+
+void main() {
+    uvec2 gid = gl_GlobalInvocationID.xy;
+
+    if(gid.x >= inputSize.x || gid.y >= inputSize.y) return;
+
+    uvec2 scale = canvasSize / inputSize;
+    uvec2 canvasCoord = gid * scale;
+    uint canvasIndex = canvasCoord.y * canvasSize.x + canvasCoord.x;
+    uint inputIndex = gid.y * inputSize.x + gid.x;
+
+//    float v = canvas[canvasIndex];
+    float v = inputB[inputIndex];
+    imageStore(inputImage, ivec2(gid), vec4(v));
+}
