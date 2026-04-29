@@ -1,11 +1,6 @@
 #version 460 core
 
-layout(push_constant) uniform Constants {
-    uint width;
-    uint height;
-    uint imageCount;
-    uint offset;
-} constants;
+#extension GL_EXT_debug_printf : enable
 
 layout(set = 0, binding = 0, std430) readonly buffer TrainingImages {
     float trainingImages[];
@@ -22,6 +17,19 @@ layout(set = 1, binding = 0, std430) readonly buffer TestImages {
 layout(set = 1, binding = 1, std430) readonly buffer TestLabels {
     int testLabels[];
 };
+
+layout(set = 2, binding = 1) buffer OutputImage {
+    float output_image[];    // 28 * 28 pixel image
+};
+
+layout(push_constant) uniform Constants {
+    vec2 mousePos;
+    int mouseClicked;
+    uint width;
+    uint height;
+    uint imageCount;
+    uint offset;
+} constants;
 
 layout(location = 0) in vec2 inUv;
 
@@ -42,7 +50,18 @@ void main() {
 
     uvec2 pixel = min(uvec2(localUv * vec2(constants.width, constants.height)), uvec2(constants.width - 1u, constants.height - 1u));
     uint pixelIndex = imageIndex * (constants.width * constants.height) + pixel.y * constants.width + pixel.x;
-    float value = trainingImages[pixelIndex];
+    float value = testImages[pixelIndex];
+
+    if(constants.mouseClicked == 1) {
+        const vec2 p = constants.mousePos;
+        uvec2 mCell = uvec2(clamp(constants.mousePos, vec2(0.0), vec2(0.99999994)) * float(gridSize));
+        if(mCell.x == cell.x && mCell.y == cell.y) {
+            uint outputIndex = pixel.y * constants.width + pixel.x;
+            output_image[outputIndex] = value;
+        }
+    }
+
+
 
     fragColor = vec4(vec3(value), 1.0);
 }
