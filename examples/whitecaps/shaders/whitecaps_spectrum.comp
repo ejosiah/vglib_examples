@@ -1,0 +1,102 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "whitecaps_common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+const float cm = 0.23;
+const float km = 370.0;
+
+float spectrum(float kx, float ky, bool omnispectrum) {
+    float U10 = pc.WIND;
+    float Omega = pc.OMEGA;
+
+    float k = sqrt(kx * kx + ky * ky);
+    if (k == 0.0) {
+        return 0.0;
+    }
+    float c = omega(k) / k;
+
+    float kp = 9.81 * sqr(Omega / U10);
+    float cp = omega(kp) / kp;
+
+    float z0 = 3.7e-5 * sqr(U10) / 9.81 * pow(U10 / cp, 0.9);
+    float u_star = 0.41 * U10 / log(10.0 / z0);
+
+    float Lpm = exp(- 5.0 / 4.0 * sqr(kp / k));
+    float gamma = Omega < 1.0 ? 1.7 : 1.7 + 6.0 * log(Omega);
+    float sigma = 0.08 * (1.0 + 4.0 / pow(Omega, 3.0));
+    float Gamma = exp(-1.0 / (2.0 * sqr(sigma)) * sqr(sqrt(k / kp) - 1.0));
+    float Jp = pow(gamma, Gamma);
+    float Fp = Lpm * Jp * exp(- Omega / sqrt(10.0) * (sqrt(k / kp) - 1.0));
+    float alphap = 0.006 * sqrt(Omega);
+    float Bl = 0.5 * alphap * cp / c * Fp;
+
+    float alpham = 0.01 * (u_star < cm ? 1.0 + log(max(u_star / cm, 1e-6)) : 1.0 + 3.0 * log(u_star / cm));
+    float Fm = exp(-0.25 * sqr(k / km - 1.0));
+    float Bh = 0.5 * alpham * cm / c * Fm;
+    Bh *= Lpm;
+
+    if (omnispectrum) {
+        return pc.amplitude * (Bl + Bh) / (k * sqr(k));
+    }
+
+    float a0 = log(2.0) / 4.0;
+    float ap = 4.0;
+    float am = 0.13 * u_star / cm;
+    float Delta = tanh(a0 + ap * pow(c / cp, 2.5) + am * pow(cm / c, 2.5));
+    float phi = atan(ky, kx);
+
+    if (kx < 0.0) {
+        return 0.0;
+    }
+    Bl *= 2.0;
+    Bh *= 2.0;
+
+    return pc.amplitude * (Bl + Bh) * (1.0 + Delta * cos(2.0 * phi)) / (2.0 * PI * sqr(sqr(k)));
+}
+
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+vec2 gaussian(vec2 id, float salt) {
+    float u1 = max(hash(id + salt), 1e-6);
+    float u2 = hash(id + salt + 17.0);
+    float r = sqrt(-2.0 * log(u1));
+    float a = TWO_PI * u2;
+    return vec2(r * cos(a), r * sin(a));
+}
+
+vec2 h0(vec2 k, float L, vec2 g) {
+    float ph = max(spectrum(k.x, k.y, false), 0.0);
+    return g * sqrt(ph) / sqrt(2.0);
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (gid.x >= FFT_SIZE || gid.y >= FFT_SIZE) {
+        return;
+    }
+
+    vec2 x = vec2(gid) - vec2(FFT_SIZE / 2);
+    vec4 invGrid = TWO_PI / pc.GRID_SIZES;
+    vec2 g0 = gaussian(vec2(gid), 0.0);
+    vec2 g1 = gaussian(vec2(gid), 10.0);
+    vec2 g2 = gaussian(vec2(gid), 20.0);
+    vec2 g3 = gaussian(vec2(gid), 30.0);
+
+    vec4 s12 = vec4(
+        h0(x * invGrid.x, pc.GRID_SIZES.x, g0),
+        h0(x * invGrid.y, pc.GRID_SIZES.y, g1)
+    );
+    vec4 s34 = vec4(
+        h0(x * invGrid.z, pc.GRID_SIZES.z, g2),
+        h0(x * invGrid.w, pc.GRID_SIZES.w, g3)
+    );
+
+    imageStore(spectrum_1_2_Image, gid, s12);
+    imageStore(spectrum_3_4_Image, gid, s34);
+}

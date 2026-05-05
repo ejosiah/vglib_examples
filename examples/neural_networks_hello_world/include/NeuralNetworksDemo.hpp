@@ -122,7 +122,7 @@ protected:
 
     struct CanvasConstants {
         glm::vec2 center{0.5};
-        float radius{0.01};
+        float radius{0.0001};
         int active{0};
         int clear{0};
     } canvasConstants;

@@ -1,0 +1,22 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "whitecaps_common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (gid.x >= FFT_SIZE || gid.y >= FFT_SIZE) {
+        return;
+    }
+    vec2 uv = (vec2(gid) + 0.5) / float(FFT_SIZE);
+    vec4 heights = textureLod(fftWavesSampler, vec3(uv, 0.0), 0.0);
+    vec4 jxx = pc.choppy_factor * textureLod(fftWavesSampler, vec3(uv, 5.0), 0.0);
+    vec4 jyy = pc.choppy_factor * textureLod(fftWavesSampler, vec3(uv, 6.0), 0.0);
+    vec4 jxy = pc.choppy_factor * textureLod(fftWavesSampler, vec3(uv, 7.0), 0.0);
+    vec4 determinant = 0.25 + jxx + jyy + jxx * jyy - jxy * jxy;
+    float foam = smoothstep(pc.jacobian_scale + 0.15, pc.jacobian_scale - 0.15, min(min(determinant.x, determinant.y), min(determinant.z, determinant.w)));
+    imageStore(whitecapImage, gid, vec4(foam, heights.x, determinant.x, 1.0));
+}

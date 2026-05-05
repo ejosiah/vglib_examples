@@ -431,8 +431,8 @@ VkCommandBuffer *NeuralNetworksDemo::buildCommandBuffers(uint32_t imageIndex, ui
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        // renderCanvas(commandBuffer);
-        renderTrainingData(commandBuffer);
+        renderCanvas(commandBuffer);
+        // renderTrainingData(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
@@ -486,35 +486,35 @@ void NeuralNetworksDemo::renderUI(VkCommandBuffer commandBuffer) {
     int imageOffset = static_cast<int>(constants.offset);
     const int maxOffset = constants.imageCount > 100 ? static_cast<int>(constants.imageCount - 100) : 0;
 
-    ImGui::Begin("Dataset");
-    ImGui::SetWindowSize({0, 0});
-    ImGui::Image(inputTextureID, {128, 128});
-    if (ImGui::SliderInt("Offset", &imageOffset, 0, maxOffset)) {
-        constants.offset = static_cast<uint32_t>(imageOffset);
-    }
-    if (ImGui::Button("Shuffle")) {
-        network.shuffleTrainingData(commandBuffer);
-        Barrier::computeWriteToFragmentRead(commandBuffer);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("evaluate")) {
-        shouldEvaluate = true;
-    }
-    ImGui::Text("Showing images %u - %u", constants.offset, std::min(constants.offset + 99u, constants.imageCount ? constants.imageCount - 1 : 0u));
-    ImGui::End();
-
-    // ImGui::Begin("Brush");
+    // ImGui::Begin("Dataset");
     // ImGui::SetWindowSize({0, 0});
     // ImGui::Image(inputTextureID, {128, 128});
-    // ImGui::SliderFloat("radius", &canvasConstants.radius, 0.001f, 0.1f);
-    //
-    // if (ImGui::Button("clear")) {
-    //     canvasConstants.clear = true;
+    // if (ImGui::SliderInt("Offset", &imageOffset, 0, maxOffset)) {
+    //     constants.offset = static_cast<uint32_t>(imageOffset);
     // }
+    // if (ImGui::Button("Shuffle")) {
+    //     network.shuffleTrainingData(commandBuffer);
+    //     Barrier::computeWriteToFragmentRead(commandBuffer);
+    // }
+    // ImGui::SameLine();
     // if (ImGui::Button("evaluate")) {
     //     shouldEvaluate = true;
     // }
+    // ImGui::Text("Showing images %u - %u", constants.offset, std::min(constants.offset + 99u, constants.imageCount ? constants.imageCount - 1 : 0u));
     // ImGui::End();
+
+    ImGui::Begin("Brush");
+    ImGui::SetWindowSize({0, 0});
+    ImGui::Image(inputTextureID, {128, 128});
+    ImGui::SliderFloat("radius", &canvasConstants.radius, 0.0001f, 0.1f);
+
+    if (ImGui::Button("clear")) {
+        canvasConstants.clear = true;
+    }
+    if (ImGui::Button("evaluate")) {
+        shouldEvaluate = true;
+    }
+    ImGui::End();
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
@@ -545,10 +545,10 @@ void NeuralNetworksDemo::checkAppInputs() {
     if (canvasConstants.active) {
         canvasConstants.center = mouse.position/glm::vec2(width, height);
     }
-
-    if (constants.mouseClicked == 1) {
-        constants.mousePos = mouse.position/glm::vec2(width, height);
-    }
+    //
+    // if (constants.mouseClicked == 1) {
+    //     constants.mousePos = mouse.position/glm::vec2(width, height);
+    // }
 
 }
 

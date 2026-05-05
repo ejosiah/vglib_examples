@@ -22,6 +22,9 @@
 #include <stb_image_write.h>
 #endif // STBI_MSC_SECURE_CRT
 
+#include "mnist/mnist_loader.hpp"
+#include <fmt/format.h>
+
 auto GSeris(auto a, auto r, auto n) {
     return a * std::pow(r, n - 1);
 }
@@ -30,7 +33,7 @@ struct char4 {
     int8_t a, b, c, d;
 };
 
-int main() {
+void random_image() {
     auto rngX = rng(0.f, 1.f);
     auto rngY = rng(0.f, 1.f);
     auto rngZ = rng(0.f, 1.f);
@@ -47,4 +50,9 @@ int main() {
     auto w = 1024;
     auto c = 4;
     stbi_write_png("random4.png", w, w, c, randoms.data(), w * c);
+}
+
+int main() {
+    auto h = mnist::load_header(R"(C:\Users\joebh\CLionProjects\vglib\data\mnist_dataset\train-images.idx3-ubyte)");
+    fmt::print("mnist dataset:\n\tnum images: {}\n\tdim: [{}, {}]\n", h.num_images, h.rows, h.cols);
 }
