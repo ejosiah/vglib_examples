@@ -1,0 +1,49 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "whitecaps_common.glsl"
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+vec2 getSlopeVariances(vec2 k, float A, float B, float C, vec2 spectrumSample) {
+    float w = 1.0 - exp(A * k.x * k.x + B * k.x * k.y + C * k.y * k.y);
+    vec2 kw = k * w;
+    return kw * kw * dot(spectrumSample, spectrumSample) * 2.0;
+}
+
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID.xyz);
+    if (any(greaterThanEqual(gid, ivec3(4)))) {
+        return;
+    }
+
+    const float N_SLOPE_VARIANCE = 4.0;
+    const float SCALE = 10.0;
+    float a = float(gid.x);
+    float b = float(gid.y);
+    float c = float(gid.z);
+    float A = pow(a / (N_SLOPE_VARIANCE - 1.0), 4.0) * SCALE;
+    float C = pow(c / (N_SLOPE_VARIANCE - 1.0), 4.0) * SCALE;
+    float B = (2.0 * b / (N_SLOPE_VARIANCE - 1.0) - 1.0) * sqrt(A * C);
+    A = -0.5 * A;
+    B = -B;
+    C = -0.5 * C;
+
+    vec2 slopeVariances = vec2(0.0);
+    for (int y = 0; y < FFT_SIZE; ++y) {
+        for (int x = 0; x < FFT_SIZE; ++x) {
+            int i = x >= FFT_SIZE / 2 ? x - FFT_SIZE : x;
+            int j = y >= FFT_SIZE / 2 ? y - FFT_SIZE : y;
+            vec2 k = TWO_PI * vec2(i, j);
+            vec2 uv = (vec2(x, y) + 0.5) / float(FFT_SIZE);
+            vec4 spectrum12 = textureLod(spectrum_1_2_Sampler, uv, 0.0);
+            vec4 spectrum34 = textureLod(spectrum_3_4_Sampler, uv, 0.0);
+            slopeVariances += getSlopeVariances(k / pc.GRID_SIZES.x, A, B, C, spectrum12.xy);
+            slopeVariances += getSlopeVariances(k / pc.GRID_SIZES.y, A, B, C, spectrum12.zw);
+            slopeVariances += getSlopeVariances(k / pc.GRID_SIZES.z, A, B, C, spectrum34.xy);
+            slopeVariances += getSlopeVariances(k / pc.GRID_SIZES.w, A, B, C, spectrum34.zw);
+        }
+    }
+    imageStore(slopeVarianceImage, gid, slopeVariances.xxxy);
+}

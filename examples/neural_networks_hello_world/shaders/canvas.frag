@@ -1,7 +1,7 @@
 #version 460
 
 layout(set = 0, binding = 0) buffer OutputImage {
-  float image[];    // 28 * 28 pixel image
+  float image[];
 };
 
 layout(push_constant) uniform Constants {

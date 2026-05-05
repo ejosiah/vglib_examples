@@ -1,0 +1,26 @@
+#version 460
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+#include "sim.glsl"
+
+layout(set = 1, binding = 5, r32f) uniform writeonly image3D outImage;
+
+void main() {
+    ivec3 id = ivec3(gl_GlobalInvocationID.xyz);
+    if (outOfBounds(id)) {
+        return;
+    }
+
+    vec3 uvw = uvwFromId(id);
+    float wall = 0.0;
+    wall = max(wall, step(uvw.x, sim.invGridSizeDt.x * 1.5));
+    wall = max(wall, step(1.0 - sim.invGridSizeDt.x * 1.5, uvw.x));
+    wall = max(wall, step(uvw.z, sim.invGridSizeDt.z * 1.5));
+    wall = max(wall, step(1.0 - sim.invGridSizeDt.z * 1.5, uvw.z));
+    wall = max(wall, step(uvw.y, sim.invGridSizeDt.y * 1.5));
+
+    vec3 toSphere = uvw - sim.spherePosRadius.xyz;
+    float sphere = step(length(toSphere), sim.spherePosRadius.w);
+    imageStore(outImage, id, vec4(max(wall, sphere)));
+}

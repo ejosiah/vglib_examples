@@ -27,7 +27,8 @@ void main() {
     uint canvasIndex = canvasCoord.y * canvasSize.x + canvasCoord.x;
     uint inputIndex = gid.y * inputSize.x + gid.x;
 
-//    float v = canvas[canvasIndex];
-    float v = inputB[inputIndex];
+    float v = canvas[canvasIndex];
+//    float v = inputB[inputIndex];
+    inputB[inputIndex] = v;
     imageStore(inputImage, ivec2(gid), vec4(v));
 }

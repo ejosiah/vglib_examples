@@ -1,0 +1,31 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "whitecaps_common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+vec4 fft2(int layer, vec2 indexes, vec2 w) {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    int iy0 = clamp(int(indexes.x * float(FFT_SIZE)), 0, FFT_SIZE - 1);
+    int iy1 = clamp(int(indexes.y * float(FFT_SIZE)), 0, FFT_SIZE - 1);
+    vec4 input1 = imageLoad(fftTempImage, ivec3(gid.x, iy0, layer));
+    vec4 input2 = imageLoad(fftTempImage, ivec3(gid.x, iy1, layer));
+    float res1x = w.x * input2.x - w.y * input2.y;
+    float res1y = w.y * input2.x + w.x * input2.y;
+    float res2x = w.x * input2.z - w.y * input2.w;
+    float res2y = w.y * input2.z + w.x * input2.w;
+    return input1 + vec4(res1x, res1y, res2x, res2y);
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    int layer = int(gl_GlobalInvocationID.z);
+    if (gid.x >= FFT_SIZE || gid.y >= FFT_SIZE || layer >= WAVE_LAYERS) {
+        return;
+    }
+    vec2 uv = (vec2(gid) + 0.5) / float(FFT_SIZE);
+    vec4 data = textureLod(butterflySampler, vec2(uv.y, (float(pc.pass) + 0.5) / float(PASSES)), 0.0);
+    imageStore(fftWavesImage, ivec3(gid, layer), fft2(layer, data.xy, data.zw));
+}
