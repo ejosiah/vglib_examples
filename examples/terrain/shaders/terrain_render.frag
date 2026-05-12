@@ -162,7 +162,7 @@ void main() {
     vec3 L = normalize(globals.lightDirection);
     vec3 N = -1 + 2 * texture(u_NormalSampler, f.uv).xzy;
 //    vec3 N = normalize(f.normal);
-    vec3 V = normalize(f.viewDirection);
+    vec3 V = normalize(atm.cameraPosition - f.worldPos);
 
     vec2 gv = (f.uv * 52660)/globals.tileSize;
     vec2 tileId = floor(gv);

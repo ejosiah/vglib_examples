@@ -126,6 +126,7 @@ vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, v
 
     float NdotL = max(dot(N, L), 0.0);
     float NdotV = max(dot(N, V), 0.0);
+    float specularVisibility = smoothstep(0.0, 0.05, NdotV);
     vec3  H     = normalize(V + L);
 
     // Sun color/intensity at top of atmosphere (your scale)
@@ -141,13 +142,13 @@ vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, v
     vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
 
     vec3  numerator = NDF * G * F;
-    vec3  specular  = numerator / (4.0 * NdotV * NdotL + 1e-4);
+    vec3  specular  = specularVisibility * numerator / (4.0 * NdotV * NdotL + 1e-4);
 
     vec3  kS = F;
     vec3  kD = (vec3(1.0) - kS) * (1.0 - metalness);
     vec3 diffuse = kD * albedo / PI;
 
-    specular = vec3(0);
+//    specular = vec3(0);
 
     // Direct lighting (sun); AO is NOT applied to direct by default
     vec3 Lo = (diffuse + specular) * radiance * NdotL;

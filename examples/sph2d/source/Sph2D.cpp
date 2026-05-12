@@ -506,7 +506,7 @@ void Sph2D::renderUI(VkCommandBuffer commandBuffer) {
 void Sph2D::runSph(VkCommandBuffer commandBuffer) {
     if(options.start) {
         fixedUpdate([&]{
-            prepareForCompute(commandBuffer);
+            Barrier::fragmentReadToComputeWrite(commandBuffer);
             if(options.accelerate) {
                 updateHashGrid(commandBuffer);
             }
@@ -514,7 +514,7 @@ void Sph2D::runSph(VkCommandBuffer commandBuffer) {
             computeDensity(commandBuffer);
             computeForces(commandBuffer);
             integrate(commandBuffer);
-            prepareForRender(commandBuffer);
+            Barrier::computeWriteToFragmentRead(commandBuffer);
         });
     }
 }
@@ -601,7 +601,7 @@ void Sph2D::collisionCheck(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collision.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.collision.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
-    addComputeBarrier(commandBuffer, { particles.position, particles.velocity });
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void Sph2D::computeDensity(VkCommandBuffer commandBuffer) {
@@ -614,7 +614,7 @@ void Sph2D::computeDensity(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.density.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.density.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
-    addComputeBarrier(commandBuffer, { particles.density[0] });
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void Sph2D::computeForces(VkCommandBuffer commandBuffer) {
@@ -627,7 +627,7 @@ void Sph2D::computeForces(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.force.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.force.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
-    addComputeBarrier(commandBuffer, { particles.forces });
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void Sph2D::integrate(VkCommandBuffer commandBuffer) {
@@ -639,34 +639,7 @@ void Sph2D::integrate(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.integrate.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.integrate.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
-    addComputeBarrier(commandBuffer, { particles.position, particles.velocity });
-}
-
-void Sph2D::prepareForCompute(VkCommandBuffer commandBuffer) {
-    addBufferMemoryBarriers(commandBuffer, { particles.position }, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-                            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
-}
-
-void Sph2D::addComputeBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer> &buffers) {
-    addBufferMemoryBarriers(commandBuffer, buffers, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
-}
-
-void Sph2D::addShaderWriteToTransferReadBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer> &buffers) {
-    addBufferMemoryBarriers(commandBuffer, buffers,
-                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-}
-
-void Sph2D::addTransferWriteToShaderReadBarrierBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers){
-    addBufferMemoryBarriers(commandBuffer, buffers,
-                            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                            VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-}
-
-void Sph2D::prepareForRender(VkCommandBuffer commandBuffer) {
-    addBufferMemoryBarriers(commandBuffer, { particles.position }, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void Sph2D::computeHistogram(VkCommandBuffer commandBuffer) {
@@ -676,10 +649,11 @@ void Sph2D::computeHistogram(VkCommandBuffer commandBuffer) {
     const auto gx = (globals.cpu->numParticles + workGroupSize)/workGroupSize;
 
     vkCmdFillBuffer(commandBuffer, spatialHash.counts, 0, VK_WHOLE_SIZE, 0);
+    Barrier::transferWriteToComputeRead(commandBuffer);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.histogram.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.histogram.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
-    addComputeBarrier(commandBuffer, { spatialHash.counts });
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void Sph2D::computePartialSum(VkCommandBuffer commandBuffer) {
@@ -688,7 +662,8 @@ void Sph2D::computePartialSum(VkCommandBuffer commandBuffer) {
 
 
 void Sph2D::reorder(VkCommandBuffer commandBuffer) {
-    static std::array<VkDescriptorSet, 2> sets;    sets[0] = globalSet;
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = globalSet;
     sets[1] = particles.descriptorSet;
     const auto gx = (globals.cpu->numParticles + workGroupSize)/workGroupSize;
 
@@ -696,13 +671,13 @@ void Sph2D::reorder(VkCommandBuffer commandBuffer) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.reorder.layout.handle, 0, sets.size(), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gx, 1, 1);
 
-    addShaderWriteToTransferReadBarrier(commandBuffer, { particles.positionReordered, particles.velocityReordered });
+    Barrier::computeWriteToTransferRead(commandBuffer);
     VkBufferCopy copyRegion{0, 0, particles.positionReordered.size};
     vkCmdCopyBuffer(commandBuffer, particles.positionReordered, particles.position, 1, &copyRegion);
 
     copyRegion.size = particles.velocityReordered.size;
     vkCmdCopyBuffer(commandBuffer, particles.velocityReordered, particles.velocity, 1, &copyRegion);
-    addTransferWriteToShaderReadBarrierBarrier(commandBuffer, { particles.position, particles.velocity });
+    Barrier::transferWriteToComputeRead(commandBuffer);
 }
 
 void Sph2D::endFrame() {

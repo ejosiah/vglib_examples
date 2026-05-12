@@ -92,16 +92,6 @@ protected:
 
     void integrate(VkCommandBuffer commandBuffer);
 
-    void prepareForCompute(VkCommandBuffer commandBuffer);
-
-    void addComputeBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
-
-    void addShaderWriteToTransferReadBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
-
-    void addTransferWriteToShaderReadBarrierBarrier(VkCommandBuffer commandBuffer, const std::vector<VulkanBuffer>& buffers);
-
-    void prepareForRender(VkCommandBuffer commandBuffer);
-
     void update(float time) override;
 
     void checkAppInputs() override;
