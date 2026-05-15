@@ -141,7 +141,7 @@ struct SingleScatteringResult
 };
 
 SingleScatteringResult SingleScatteringResult_init() {
-    return SingleScatteringResult(vec3(0), vec3(0), vec3(0), vec3(0), vec3(0), vec3(0));
+    return SingleScatteringResult(vec3(0), vec3(0), vec3(1), vec3(0), vec3(0), vec3(0));
 }
 
 float interspectAtmosphere(AtmosphereParameters Atmosphere, vec3 WorldPos, vec3 WorldDir) {
@@ -219,6 +219,10 @@ in bool MieRayPhase, in float tMaxMax)
 
     // Sample count
     float SampleCount = SampleCountIni;
+    if (tMax <= 0.0f || SampleCount <= 0.0f) {
+        return result;
+    }
+
     float SampleCountFloor = SampleCountIni;
     float tMaxFloor = tMax;
     //    if (VariableSampleCount)
@@ -283,6 +287,7 @@ in bool MieRayPhase, in float tMaxMax)
         vec3 P = WorldPos + t * WorldDir;
 
         MediumSampleRGB medium = sampleMediumRGB(P, Atmosphere);
+        vec3 safeExtinction = max(medium.extinction, vec3(1e-9));
         const vec3 SampleOpticalDepth = medium.extinction * dt;
         const vec3 SampleTransmittance = exp(-SampleOpticalDepth);
         OpticalDepth += SampleOpticalDepth;
@@ -333,7 +338,7 @@ in bool MieRayPhase, in float tMaxMax)
         result.MultiScatAs1 += throughput * medium.scattering * 1 * dt;
         #else
         vec3 MS = medium.scattering * 1;
-        vec3 MSint = (MS - MS * SampleTransmittance) / medium.extinction;
+        vec3 MSint = (MS - MS * SampleTransmittance) / safeExtinction;
         result.MultiScatAs1 += throughput * MSint;
         #endif
 
@@ -342,11 +347,11 @@ in bool MieRayPhase, in float tMaxMax)
             vec3 newMS;
 
             newMS = earthShadow * TransmittanceToSun * medium.scattering * uniformPhase * 1;
-            result.NewMultiScatStep0Out += throughput * (newMS - newMS * SampleTransmittance) / medium.extinction;
+            result.NewMultiScatStep0Out += throughput * (newMS - newMS * SampleTransmittance) / safeExtinction;
             //	result.NewMultiScatStep0Out += SampleTransmittance * throughput * newMS * dt;
 
             newMS = medium.scattering * uniformPhase * multiScatteredLuminance;
-            result.NewMultiScatStep1Out += throughput * (newMS - newMS * SampleTransmittance) / medium.extinction;
+            result.NewMultiScatStep1Out += throughput * (newMS - newMS * SampleTransmittance) / safeExtinction;
             //	result.NewMultiScatStep1Out += SampleTransmittance * throughput * newMS * dt;
         }
 
@@ -355,7 +360,7 @@ in bool MieRayPhase, in float tMaxMax)
         throughput *= SampleTransmittance;
         #else
         // See slide 28 at http://www.frostbite.com/2015/08/physically-based-unified-volumetric-rendering-in-frostbite/
-        vec3 Sint = (S - S * SampleTransmittance) / medium.extinction;// integrate along the current step segment
+        vec3 Sint = (S - S * SampleTransmittance) / safeExtinction;// integrate along the current step segment
         L += throughput * Sint;// accumulate and also take into account the transmittance from previous steps
         throughput *= SampleTransmittance;
         #endif

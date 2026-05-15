@@ -66,14 +66,14 @@ void main() {
         if (!MoveToTopAtmosphere(WorldPos, WorldDir, Atmosphere.top_radius))
         {
             // Ray is not intersecting the atmosphere
-            imageStore(arealPerspectiveImage, gid, vec4(0));
+            imageStore(arealPerspectiveImage, gid, vec4(0, 0, 0, 1));
             return;
         }
         float LengthToAtmosphere = length(prevWorlPos - WorldPos);
         if (tMaxMax < LengthToAtmosphere)
         {
             // tMaxMax for this voxel is not within earth atmosphere
-            imageStore(arealPerspectiveImage, gid, vec4(0));
+            imageStore(arealPerspectiveImage, gid, vec4(0, 0, 0, 1));
             return;
         }
         // Now world position has been moved to the atmosphere boundary: we need to reduce tMaxMax accordingly.

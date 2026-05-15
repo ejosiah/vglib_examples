@@ -41,9 +41,14 @@ void main() {
         weight = saturate(slice * 2.0);
         slice = 0.5;
     }
-    float w = sqrt(slice / AP_SLICE_COUNT);	// squared distribution
+    float w = clamp(sqrt(slice / AP_SLICE_COUNT), 0.0, 1.0);	// squared distribution
 
     vec3 loc = vec3(uv, w);
     scatterTransmission = texture(ArealPerspectiveLUT, loc);
+    if (all(equal(scatterTransmission, vec4(0.0))) || any(isnan(scatterTransmission)) || any(isinf(scatterTransmission))) {
+        scatterTransmission = vec4(0, 0, 0, 1);
+    }
+    scatterTransmission.rgb = max(scatterTransmission.rgb, vec3(0));
+    scatterTransmission.a = clamp(scatterTransmission.a, 0.0, 1.0);
 
 }
