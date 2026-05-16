@@ -61,6 +61,8 @@ public:
 
     TerrainInfo getInfo() const;
 
+    float displacementScale() const;
+
     float printPerfStats();
 
 protected:

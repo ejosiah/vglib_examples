@@ -336,6 +336,10 @@ TerrainInfo Terrain::getInfo() const {
     return { m_dmap.width, m_dmap.height, m_dmap.zMin, m_dmap.zMax };
 }
 
+float Terrain::displacementScale() const {
+    return m_options.dmapScale;
+}
+
 float Terrain::printPerfStats() {
     const auto toMillis = 1e-6f;
     auto total = 0.0f;

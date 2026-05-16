@@ -12,6 +12,8 @@ public:
 
     void exec(VkCommandBuffer commandBuffer);
 
+    void setDisplacementScale(float scale);
+
     void controls();
 
     float printPerfStats();
@@ -46,6 +48,7 @@ private:
         int maxSteps{256};
         float slopeBias{0.001};
         float softness{0.002};
+        float displacementScale{1.0f};
         uint enabled{1};
         uint dmap_tex_index{~0u};
         uint shadow_image_index{~0u};

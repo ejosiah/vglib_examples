@@ -1,5 +1,7 @@
 #include "vista/DisplacementShadowMap.hpp"
 #include <imgui.h>
+#include <algorithm>
+#include <cmath>
 
 DisplacementShadowMap::DisplacementShadowMap(Context &context, const DisplacementMapInfo &displacement, const TerrainInfo& terrain)
 : m_context{&context}
@@ -51,6 +53,10 @@ void DisplacementShadowMap::exec(VkCommandBuffer commandBuffer) {
     });
 }
 
+void DisplacementShadowMap::setDisplacementScale(float scale) {
+    m_Constants.displacementScale = std::max(scale, 0.0f);
+}
+
 void DisplacementShadowMap::createShadowMapTexture() {
     textures::create(device(), m_shadowMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, { m_displacementMap.width/m_scale, m_displacementMap.height/m_scale, 1 });
     bindlessDescriptor().update({ &m_shadowMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context().dmap_shadow_tex_index });
@@ -69,11 +75,12 @@ void DisplacementShadowMap::initConstants() {
     pc.heightRange = {m_terrain.zMin, m_terrain.zMax };
 
     const int targetMaxSteps = 512;
-    using namespace std;
-    pc.stepStride = max(1.0f, ceil(max(m_shadowMap.width, m_shadowMap.height)/float(targetMaxSteps)));
-    pc.maxSteps   = int(ceil(float(max(m_shadowMap.width, m_shadowMap.height)) / pc.stepStride));
+    const auto shadowMapDiagonal = std::hypot(float(m_shadowMap.width), float(m_shadowMap.height));
+    pc.stepStride = std::max(1.0f, std::ceil(shadowMapDiagonal / float(targetMaxSteps)));
+    pc.maxSteps   = int(std::ceil(shadowMapDiagonal / pc.stepStride));
     pc.slopeBias  = 0.001f;
     pc.softness   = 0.002f;
+    pc.displacementScale = 1.0f;
     pc.shadow_image_index = m_shadowMapImageIndex;
     pc.dmap_tex_index = context().dmap_tex_index;
 
@@ -99,8 +106,8 @@ Context& DisplacementShadowMap::context()  {
 
 void DisplacementShadowMap::controls() {
     if(ImGui::CollapsingHeader("Shadow", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::SliderFloat("slope bias", &m_options.slopeBias, 0.001, 0.1);
-        ImGui::SliderFloat("softness", &m_options.softness, 0, 0.0006);
+        ImGui::SliderFloat("slope bias", &m_options.slopeBias, 0.001f, 0.1f, "%.4f");
+        ImGui::SliderFloat("softness", &m_options.softness, 0.0f, 0.01f, "%.5f");
         ImGui::Checkbox("enabled", &m_options.enabled);
     }
 }

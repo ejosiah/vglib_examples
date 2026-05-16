@@ -229,6 +229,7 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 
     profiler.resetAll(commandBuffer);
 
+    displacementShadowMap->setDisplacementScale(terrain->displacementScale());
     displacementShadowMap->exec(commandBuffer);
     atmosphere->preProcess(commandBuffer);
     terrain->preProcess(commandBuffer);
