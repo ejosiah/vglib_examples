@@ -1,6 +1,6 @@
 #version 460
 
-#include "shared.glsl"  // TODO move uniform out of shared
+#include "../shared.glsl"  // TODO move uniform out of shared
 
 layout(triangles) in;
 layout(triangle_strip, max_vertices = 3) out;

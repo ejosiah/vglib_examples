@@ -1,18 +1,18 @@
 #version 460
 
-#include "shared.glsl"
+#include "../shared.glsl"
 
 #define ATMOSPHERE_UNIFORM_SET 3
-#include "atmosphere/atm_uniforms.glsl"
+#include "../atmosphere/atm_uniforms.glsl"
 #include "triplaner_mapping.glsl"
-#include "tiling_support.glsl"
+#include "../tiling_support.glsl"
 
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 layout(set = 1, binding = 11) uniform writeonly image2D global_images[];
 layout(set = 1, binding = 11) uniform writeonly image3D global_images_3d[];
 
-#include "atmosphere/common.glsl"
+#include "../atmosphere/common.glsl"
 
 float heightScale = 1601;
 float terrainSize = 52660;

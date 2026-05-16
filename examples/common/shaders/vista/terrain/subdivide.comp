@@ -2,7 +2,7 @@
 
 #extension GL_EXT_debug_printf : enable
 
-#include "shared.glsl"
+#include "../shared.glsl"
 
 #define UPDATE_FLAG_SPLIT 0
 #define UPDATE_FLAG_MERGE 1

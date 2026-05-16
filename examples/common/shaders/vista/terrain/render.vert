@@ -1,10 +1,10 @@
 #version 460
 
 #include "hash.glsl"
-#include "shared.glsl"
+#include "../shared.glsl"
 
 #define ATMOSPHERE_UNIFORM_SET 3
-#include "atmosphere/atm_uniforms.glsl"
+#include "../atmosphere/atm_uniforms.glsl"
 
 layout(location = 0) in vec2 pos;
 
