@@ -86,6 +86,18 @@ bool useTriplanerMapping() {
     return globals.useTriplanerMapping == 1;
 }
 
+float getHeightScale() {
+    return globals.modelMatrix[1][1];
+}
+
+vec2 getTerrainSize() {
+    vec2 size;
+    size.x = globals.modelMatrix[0][0];
+    size.y = globals.modelMatrix[2][2];
+
+    return size;
+}
+
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 
@@ -355,7 +367,7 @@ VertexAttribute TessellateTriangle(in const vec2 texCoords[3], in vec2 tessCoord
     return VertexAttribute(position, uv);
 }
 
-vec3 depthToNormal(sampler2D depth_map, vec2 uv) {
+vec3 getGradient(sampler2D depth_map, vec2 uv, vec2 terrainScale, float bumpStrength) {
     float bump_strength = 2;
     float heightL = texture(depth_map, uv + vec2(-1.0, 0.0) / textureSize(depth_map, 0)).r;
     float heightR = texture(depth_map, uv + vec2(1.0, 0.0) / textureSize(depth_map, 0)).r;
@@ -363,10 +375,13 @@ vec3 depthToNormal(sampler2D depth_map, vec2 uv) {
     float heightU = texture(depth_map, uv + vec2(0.0, 1.0) / textureSize(depth_map, 0)).r;
 
     // Calculate the gradients (dx, dy) with added bump strength factor
-    float dx = (heightR - heightL) * bump_strength;
-    float dy = (heightU - heightD) * bump_strength;
+    float dx = (heightR - heightL) * bumpStrength;
+    float dy = (heightU - heightD) * bumpStrength;
 
-    vec3 normal = normalize(vec3(-dx, -dy, 1.0));
+//    dx *= terrainScale.x;
+//    dy *= terrainScale.y;
+
+    vec3 normal = vec3(-dx, -dy, 1.0);
 
     return 0.5 + 0.5 * normal;
 }
@@ -383,6 +398,16 @@ vec3 depthToNormal1(sampler2D depth_map, vec2 uv) {
     return vec3(globals.dmapFactor * 0.03 / filterSize * 0.5f * vec2(-sx, -sy), 1);
 }
 
+// viewPos must be fragment position in view space.
+// OpenGL camera looks down -Z, so positive camera depth is -viewPos.z.
+
+const float DEFAULT_FADE_LENGTH = 512;
+const float DEFAULT_FADE_OFFSET = 24;
+
+float cameraDepthFade(vec3 viewPos, float fadeLength, float fadeOffset) {
+    float cameraDepth = -viewPos.z;
+    return clamp((cameraDepth - fadeOffset) / max(fadeLength, 1e-6), 0, 1);
+}
 
 
 #endif // TERRAIN_SHARED_GLSL

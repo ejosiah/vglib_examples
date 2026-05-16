@@ -381,7 +381,7 @@ VulkanDevice &CascadeShadowMap::device() {
     return *_device;
 }
 
-uint32_t CascadeShadowMap::cascadeCount() const {
+uint32_t CascadeShadowMap:: cascadeCount() const {
     return _numCascades;
 }
 

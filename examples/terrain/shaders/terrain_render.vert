@@ -10,13 +10,14 @@ layout(location = 0) in vec2 pos;
 
 layout(location = 0) out struct {
     vec3 worldPos;
+    vec3 viewSpacePos;
     vec3 viewDirection;
     vec3 color;
     vec2 uv;
 } v;
 
-layout(location = 4) flat out int isVisible;
-layout(location = 5) noperspective out vec3 distance;
+layout(location = 5) flat out int isVisible;
+layout(location = 6) noperspective out vec3 distance;
 
 void main() {
     const int cbtID = 0;
@@ -39,6 +40,7 @@ void main() {
 
     v.worldPos = (globals.modelMatrix * attrib.position).xyz;
     v.viewDirection = atm.cameraPosition - v.worldPos;
+    v.viewSpacePos = (globals.viewMatrix * vec4(v.worldPos, 1)).xyz;
     v.color = vec3(252, 197, 150) / 255.0f;
     v.uv = attrib.texCoord;
 

@@ -10,6 +10,7 @@ OpenWorldDemo::OpenWorldDemo(const Settings& settings) : VulkanBaseApp("Open Wor
     fileManager().addSearchPathFront("../data/atmosphere");
     fileManager().addSearchPathFront("../data/textures");
     fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/textures/fast_noise/128_128");
     fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("open_world_demo");
     fileManager().addSearchPathFront("open_world_demo/data");

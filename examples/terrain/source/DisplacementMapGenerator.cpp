@@ -209,7 +209,7 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
     const auto gx = (info.width + 15)/16;
     const auto gy = (info.height + 15)/16;
 
-    NormalGenConstants constants { 20.f, 1.5f, 4,  info.values_tex_id, normalMapImageId } ;
+    NormalGenConstants constants { 1000.f, 1.5f, 4,  info.values_tex_id, normalMapImageId } ;
 
     auto descriptorSet = bindlessDescriptorSet();
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("generate_normals"));

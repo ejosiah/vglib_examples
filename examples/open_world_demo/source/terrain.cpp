@@ -45,7 +45,7 @@ void Terrain::loadHeightMap() {
     textures::fromFile(device(), heightMap.displacement, resource(fmt::format("terrain/{}.png", terrainPath)));
     textures::fromFile(device(), heightMap.normal, resource(fmt::format("terrain/{}_normal.png", terrainPath)));
 
-    textures::fromFile(device(), randomTexture, resource("random4.jpg"));
+    textures::fromFile(device(), randomTexture, resource("uniform/RGBA_0.png"));
 }
 
 void Terrain::loadShadingTextures() {

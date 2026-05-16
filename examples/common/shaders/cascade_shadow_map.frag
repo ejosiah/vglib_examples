@@ -2,5 +2,5 @@
 
 
 void main() {
-    // TODO discard shaodow fragment based on mesh alpha
+    // TODO discard shadow fragment based on mesh alpha
 }
