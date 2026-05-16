@@ -13,6 +13,7 @@ TerrainDemo::TerrainDemo(const Settings& settings) : VulkanBaseApp("Terrain", se
     fileManager().addSearchPathFront("../data/textures/height_map");
     fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("common/spv");
     fileManager().addSearchPathFront("terrain");
     fileManager().addSearchPathFront("terrain/data");
     fileManager().addSearchPathFront("terrain/spv");
@@ -423,7 +424,7 @@ void TerrainDemo::newFrame() {
 void TerrainDemo::createComputePipelines() {
 //    compute = ComputePipelines(&device, {{
 //         .name = "generate_normals",
-//         .shadePath = resource("generate_normal_map.comp.spv"),
+//         .shadePath = resource("vista_generate_normal_map.comp.spv"),
 //         .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
 //         .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
 //     }});

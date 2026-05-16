@@ -1,4 +1,4 @@
-#include "AtmosphereModel.hpp"
+#include "vista/AtmosphereModel.hpp"
 #include "Barrier.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
@@ -229,8 +229,8 @@ void AtmosphereModel::createRenderPipelines() {
     m_render.skyView.pipeline =
         clipSpacePipelineBuilder()
             .shaderStage()
-                .vertexShader(resource("atmosphere_render_sky_view.vert.spv"))
-                .fragmentShader(resource("atmosphere_render_sky_view.frag.spv"))
+                .vertexShader(resource("vista_atmosphere_render_sky_view.vert.spv"))
+                .fragmentShader(resource("vista_atmosphere_render_sky_view.frag.spv"))
             .depthStencilState()
                 .compareOpLessOrEqual()
             .dynamicRenderPass()
@@ -259,7 +259,7 @@ void AtmosphereModel::createRenderPipelines() {
         builder
             .shaderStage()
                 .vertexShader(resource("quad.vert.spv"))
-                .fragmentShader(resource("atmosphere_areal_perspective.frag.spv"))
+                .fragmentShader(resource("vista_atmosphere_areal_perspective.frag.spv"))
             .depthStencilState()
                 .disableDepthTest()
                 .disableDepthWrite()
@@ -390,22 +390,22 @@ std::vector<PipelineMetaData> AtmosphereModel::metadata() {
     return {
         {
             .name = "compute_transmittance",
-            .shadePath = FileManager::resource("atmosphere_transmission_lut.comp.spv"),
+            .shadePath = FileManager::resource("vista_atmosphere_transmission_lut.comp.spv"),
             .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
         {
             .name = "compute_multiscattering",
-            .shadePath = FileManager::resource("atmosphere_multiscattering_lut.comp.spv"),
+            .shadePath = FileManager::resource("vista_atmosphere_multiscattering_lut.comp.spv"),
             .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
         {
             .name = "compute_skyview",
-            .shadePath = FileManager::resource("atmosphere_sky_view_lut.comp.spv"),
+            .shadePath = FileManager::resource("vista_atmosphere_sky_view_lut.comp.spv"),
             .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
         {
             .name = "compute_areal_perspective",
-            .shadePath = FileManager::resource("atmosphere_areal_perspective_lut.comp.spv"),
+            .shadePath = FileManager::resource("vista_atmosphere_areal_perspective_lut.comp.spv"),
             .layouts = { &m_descriptor.setLayout, &bindlessDescriptorSetLayout() },
         },
     };

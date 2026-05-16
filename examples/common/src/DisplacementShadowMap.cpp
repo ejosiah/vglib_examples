@@ -1,4 +1,4 @@
-#include "DisplacementShadowMap.hpp"
+#include "vista/DisplacementShadowMap.hpp"
 #include <imgui.h>
 
 DisplacementShadowMap::DisplacementShadowMap(Context &context, const DisplacementMapInfo &displacement, const TerrainInfo& terrain)
@@ -86,7 +86,7 @@ std::vector<PipelineMetaData> DisplacementShadowMap::metadata() {
     return {
         {
             .name = "terrain_shadow_map",
-            .shadePath = FileManager::resource("terrain_shadow_map.comp.spv"),
+            .shadePath = FileManager::resource("vista_terrain_shadow_map.comp.spv"),
             .layouts = { &bindlessDescriptorSetLayout()  },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_Constants)} }
         }

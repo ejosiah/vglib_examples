@@ -1,14 +1,14 @@
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 #include "Offscreen.hpp"
-#include "Shared.hpp"
-#include "Terrain.hpp"
-#include "DisplacementMapGenerator.hpp"
-#include "DisplacementShadowMap.hpp"
+#include "vista/Shared.hpp"
+#include "vista/Terrain.hpp"
+#include "vista/DisplacementMapGenerator.hpp"
+#include "vista/DisplacementShadowMap.hpp"
 #include "ComputePipelins.hpp"
-#include "AtmosphereModel.hpp"
+#include "vista/AtmosphereModel.hpp"
 #include "Profiler.hpp"
-#include "Clouds.hpp"
+#include "vista/Clouds.hpp"
 
 class TerrainDemo : public VulkanBaseApp{
 public:

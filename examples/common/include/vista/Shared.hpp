@@ -7,7 +7,6 @@
 #include "plugins/BindLessDescriptorPlugin.hpp"
 #include "camera_base.h"
 #include "Prototypes.hpp"
-#include "DisplacementMap.hpp"
 #include "Barrier.hpp"
 
 #include <memory>

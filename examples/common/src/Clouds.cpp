@@ -1,4 +1,4 @@
-#include "Clouds.hpp"
+#include "vista/Clouds.hpp"
 #include "Barrier.hpp"
 #include "AppContext.hpp"
 #include <imgui.h>
@@ -107,7 +107,7 @@ void Clouds::createCloudShape() {
 
     ComputePipelines compute{ &device(), {{
        .name = "cloud_shape",
-       .shadePath = FileManager::resource("cloud_shape.comp.spv"),
+       .shadePath = FileManager::resource("vista_cloud_shape.comp.spv"),
        .layouts = { &bindlessDescriptorSetLayout() },
        .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants)} }
     }}};
@@ -189,8 +189,8 @@ void Clouds::createRenderPipelines() {
     m_render.pipeline =
         clipSpacePipelineBuilder()
             .shaderStage()
-                .vertexShader(resource("cloud_render.vert.spv"))
-                .fragmentShader(resource("cloud_render.frag.spv"))
+                .vertexShader(resource("vista_cloud_render.vert.spv"))
+                .fragmentShader(resource("vista_cloud_render.frag.spv"))
             .depthStencilState()
                 .disableDepthTest()
                 .disableDepthWrite()

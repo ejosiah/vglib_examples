@@ -1,4 +1,4 @@
-#include "DisplacementMapGenerator.hpp"
+#include "vista/DisplacementMapGenerator.hpp"
 #include "Barrier.hpp"
 
 DisplacementMapGenerator::DisplacementMapGenerator(Context &context, DisplacementMethod method, uint width, uint height, std::string path)
@@ -148,19 +148,19 @@ std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
     return {
             {
                 .name = "generate_normals",
-                .shadePath = FileManager::resource("generate_normal_map.comp.spv"),
+                .shadePath = FileManager::resource("vista_generate_normal_map.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NormalGenConstants)} }
             },
             {
                 .name = "fault_formation",
-                .shadePath = FileManager::resource("fault_formation.comp.spv"),
+                .shadePath = FileManager::resource("vista_fault_formation.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ff_constants)} }
             },
             {
                 .name = "blur",
-                .shadePath = FileManager::resource("blur.comp.spv"),
+                .shadePath = FileManager::resource("vista_blur.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint) * 3} }
             },

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Texture.h"
+
 struct DisplacementMap {
     Texture values;
     Texture normals;

@@ -1,4 +1,4 @@
-#include "Terrain.hpp"
+#include "vista/Terrain.hpp"
 #include "Barrier.hpp"
 
 #include <glm/glm.hpp>
@@ -38,7 +38,7 @@ void Terrain::init() {
     createRenderPipelines();
     m_compute.add({
       .name = "histogram",
-      .shadePath = resource("normal_histogram.comp.spv"),
+      .shadePath = resource("vista_normal_histogram.comp.spv"),
       .layouts = {m_layouts[0], m_layouts[1], &m_descriptorSetLayout, &m_triangleDescriptorSetLayout, &m_normals.descriptorSetLayout},
       .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_normals.constants)} },
       .specializationConstants = specializationConstants});
@@ -154,14 +154,14 @@ void Terrain::createRenderPipelines() {
     m_render.pipeline =
         renderBuilder
             .shaderStage()
-                .vertexShader(FileManager::resource("terrain_render.vert.spv"))
+                .vertexShader(FileManager::resource("vista_terrain_render.vert.spv"))
                     .addSpecialization(0u, 0)
                     .addSpecialization(256u, 1)
                     .addSpecialization(should_displace, 2)
                     .addSpecialization(0u, 3)
                     .addSpecialization(1u, 4)
-                .geometryShader(FileManager::resource("terrain_render.geom.spv"))
-                .fragmentShader(FileManager::resource("terrain_render.frag.spv"))
+                .geometryShader(FileManager::resource("vista_terrain_render.geom.spv"))
+                .fragmentShader(FileManager::resource("vista_terrain_render.frag.spv"))
             .vertexInputState().clear()
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
@@ -403,7 +403,7 @@ PipelineMetaData Terrain::subdivisionMetadata() {
     layouts.push_back(&m_descriptorSetLayout);
     return {
             .name = "terrain_subdivide",
-            .shadePath = FileManager::resource("terrain_subdivide.comp.spv"),
+            .shadePath = FileManager::resource("vista_terrain_subdivide.comp.spv"),
             .layouts = layouts,
             .ranges = {{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int)}},
             .specializationConstants = specializationConstants

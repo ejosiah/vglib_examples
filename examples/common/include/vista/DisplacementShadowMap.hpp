@@ -2,6 +2,7 @@
 
 #include "ContextAware.hpp"
 #include "ComputePipelins.hpp"
+#include "DisplacementMap.hpp"
 
 class DisplacementShadowMap : public ContextAware {
 public:
