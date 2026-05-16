@@ -5,12 +5,15 @@
 #include <imgui.h>
 #include "AppContext.hpp"
 
-Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor)
+Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor, glm::ivec2 terrainSize, glm::vec2 heightScale)
 : SubdivisionGrid(*context.device, *context.descriptorPool, *context.bindlessDescriptor,
                   "terrain", {context.screenWidth, context.screenHeight}, 1, context.profiler)
 , m_context{&context}
+, m_dmap{.terrainSize = terrainSize, .heightScale = heightScale}
 , m_atmosphereDescriptor(atmDescriptor)
 {
+    m_normals.constants.boundsMin = {-float(terrainSize.x) * 0.5f, heightScale.x, -float(terrainSize.y) * 0.5f};
+
     static uint WorkGroupSize = 256;
     static uint cbtID = 0;
     static uint projection_method = 0;
@@ -131,14 +134,14 @@ void Terrain::initUniforms() {
     defaultValues.whitePoint = AppContext::atmosphere().info.cpu->whitePoint;
     defaultValues.exposure = AppContext::atmosphere().info.cpu->exposure;
 
-    const float width = m_dmap.width;
-    const float height = m_dmap.height;
-    const float zMin = m_dmap.zMin;
-    const float zMax = m_dmap.zMax;
+    const glm::vec2 terrainSize = m_dmap.terrainSize;
+    const auto heightScale = m_dmap.heightScale;
+    const float zMin = heightScale.x;
+    const float zMax = heightScale.y;
 
     glm::mat4 model = glm::mat4{1};
     model = glm::translate(model, {0, -zMin, 0});
-    model = glm::scale(model, {width, zMax - zMin, height});
+    model = glm::scale(model, {terrainSize.x, zMax - zMin, terrainSize.y});
     model = glm::rotate(model, -glm::half_pi<float>(), {1, 0, 0});
     model = glm::translate(model, {-0.5f, -0.5f, 0.0f});
     defaultValues.modelMatrix = model;
@@ -333,7 +336,7 @@ void Terrain::lightingControls() {
 }
 
 TerrainInfo Terrain::getInfo() const {
-    return { m_dmap.width, m_dmap.height, m_dmap.zMin, m_dmap.zMax };
+    return { m_dmap.terrainSize, m_dmap.heightScale };
 }
 
 float Terrain::displacementScale() const {

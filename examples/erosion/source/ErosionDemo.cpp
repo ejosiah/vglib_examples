@@ -1,11 +1,11 @@
-#include "TerrainDemo.hpp"
+#include "ErosionDemo.hpp"
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
 
-TerrainDemo::TerrainDemo(const Settings& settings) : VulkanBaseApp("Terrain", settings) {
+ErosionDemo::ErosionDemo(const Settings& settings) : VulkanBaseApp("Erosion", settings) {
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
     fileManager().addSearchPathFront("../data");
@@ -14,14 +14,14 @@ TerrainDemo::TerrainDemo(const Settings& settings) : VulkanBaseApp("Terrain", se
     fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("common/spv");
-    fileManager().addSearchPathFront("terrain");
-    fileManager().addSearchPathFront("terrain/data");
-    fileManager().addSearchPathFront("terrain/spv");
-    fileManager().addSearchPathFront("terrain/models");
-    fileManager().addSearchPathFront("terrain/textures");
+    fileManager().addSearchPathFront("erosion");
+    fileManager().addSearchPathFront("erosion/data");
+    fileManager().addSearchPathFront("erosion/spv");
+    fileManager().addSearchPathFront("erosion/models");
+    fileManager().addSearchPathFront("erosion/textures");
 }
 
-void TerrainDemo::initApp() {
+void ErosionDemo::initApp() {
     initProfiler();
     createSamplers();
     initCamera();
@@ -45,7 +45,7 @@ void TerrainDemo::initApp() {
     clearColor(0, 0, 1);
 }
 
-void TerrainDemo::initCamera() {
+void ErosionDemo::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.zFar = 10000 * km;
@@ -59,13 +59,13 @@ void TerrainDemo::initCamera() {
      camera->lookAt({-1014, 127.6, 12620}, {0.299, -0.16, -0.939}, {0, 1, 0});
 }
 
-void TerrainDemo::initBindlessDescriptor() {
+void ErosionDemo::initBindlessDescriptor() {
     bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0);
     bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
 }
 
-void TerrainDemo::beforeDeviceCreation() {
+void ErosionDemo::beforeDeviceCreation() {
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
     devFeatures13->synchronization2 = VK_TRUE;
     devFeatures13->dynamicRendering = VK_TRUE;
@@ -80,7 +80,7 @@ void TerrainDemo::beforeDeviceCreation() {
     AppContext::addExtensions(deviceCreateNextChain);
 }
 
-void TerrainDemo::createDescriptorPool() {
+void ErosionDemo::createDescriptorPool() {
     constexpr uint32_t maxSets = 200;
     std::array<VkDescriptorPoolSize, 5> poolSizes{
             {
@@ -95,12 +95,12 @@ void TerrainDemo::createDescriptorPool() {
 }
 
 
-void TerrainDemo::initLoader() {
+void ErosionDemo::initLoader() {
     loader = std::make_unique<gltf::Loader>(&device, &descriptorPool, &bindlessDescriptor);
     loader->start();
 }
 
-void TerrainDemo::createDescriptorSetLayouts() {
+void ErosionDemo::createDescriptorSetLayouts() {
     displayDescriptorSetLayout =
         device.descriptorSetLayoutBuilder()
             .name("display_descriptor_set_layout")
@@ -129,7 +129,7 @@ void TerrainDemo::createDescriptorSetLayouts() {
 
 }
 
-void TerrainDemo::updateDescriptorSets(){
+void ErosionDemo::updateDescriptorSets(){
     auto sets = descriptorPool.allocate({ displayDescriptorSetLayout, context.subpassInputDescriptorSetLayout });
     displayDescriptorSet = sets[0];
     context.subpassInputDescriptorSet = sets[1];
@@ -167,17 +167,17 @@ void TerrainDemo::updateDescriptorSets(){
     device.updateDescriptorSets(writes);
 }
 
-void TerrainDemo::createCommandPool() {
+void ErosionDemo::createCommandPool() {
     commandPool = device.createCommandPool(*device.queueFamilyIndex.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     commandBuffers = commandPool.allocateCommandBuffers(swapChainImageCount);
 }
 
-void TerrainDemo::createPipelineCache() {
+void ErosionDemo::createPipelineCache() {
     pipelineCache = device.createPipelineCache();
 }
 
 
-void TerrainDemo::createRenderPipeline() {
+void ErosionDemo::createRenderPipeline() {
     //    @formatter:off
     render.pipeline =
         prototypes->cloneScreenSpaceGraphicsPipeline()
@@ -211,16 +211,16 @@ void TerrainDemo::createRenderPipeline() {
 }
 
 
-void TerrainDemo::onSwapChainDispose() {
+void ErosionDemo::onSwapChainDispose() {
     dispose(render.pipeline);
 }
 
-void TerrainDemo::onSwapChainRecreation() {
+void ErosionDemo::onSwapChainRecreation() {
     updateDescriptorSets();
     createRenderPipeline();
 }
 
-VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
+VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
     numCommandBuffers = 1;
     auto& commandBuffer = commandBuffers[imageIndex];
 
@@ -248,7 +248,7 @@ VkCommandBuffer *TerrainDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 }
 
 
-void TerrainDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
+void ErosionDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
         terrain->render(commandBuffer);
@@ -263,13 +263,13 @@ void TerrainDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-void TerrainDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
+void ErosionDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, 1, &displayDescriptorSet, 0,nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
-void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
+void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
 
     static bool terrainOpen = false;
     static bool atmosphereOpen = false;
@@ -324,7 +324,7 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
-void TerrainDemo::update(float time) {
+void ErosionDemo::update(float time) {
     if(!ImGui::IsAnyItemActive()){
         camera->update(time);
     }
@@ -337,7 +337,7 @@ void TerrainDemo::update(float time) {
 //    camera->position(camera->position() + v * time);
 }
 
-void TerrainDemo::checkAppInputs() {
+void ErosionDemo::checkAppInputs() {
     camera->processInput();
     if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         context.mouse = glm::ivec4{mouse.position, 1, 0};
@@ -346,16 +346,16 @@ void TerrainDemo::checkAppInputs() {
     }
 }
 
-void TerrainDemo::cleanup() {
+void ErosionDemo::cleanup() {
     loader->stop();
     AppContext::shutdown();
 }
 
-void TerrainDemo::onPause() {
+void ErosionDemo::onPause() {
     VulkanBaseApp::onPause();
 }
 
-void TerrainDemo::initContext() {
+void ErosionDemo::initContext() {
     context.screenWidth = swapChain.width();
     context.screenHeight = swapChain.height();
     context.mouseInput = &mouse;
@@ -382,29 +382,29 @@ void TerrainDemo::initContext() {
     context.profiler = &profiler;
 }
 
-void TerrainDemo::initTerrain() {
+void ErosionDemo::initTerrain() {
     terrain = std::make_unique<Terrain>(context, atmosphere->descriptor(), glm::ivec2{52660, 52660}, glm::vec2{-14.0f, 1587.0f});
     terrain->init();
 }
 
-void TerrainDemo::initDisplacementMapGenerator() {
-    auto path = "kauai.png";
+void ErosionDemo::initDisplacementMapGenerator() {
+    auto path = "black.png";
     displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::File, 3601, 3601, resource(path));
     displacementMapGenerator->init();
 }
 
-void TerrainDemo::initAtmosphere() {
+void ErosionDemo::initAtmosphere() {
     atmosphere = std::make_unique<AtmosphereModel>(context);
     atmosphere->init();
 }
 
-void TerrainDemo::endFrame() {
+void ErosionDemo::endFrame() {
     terrain->endFrame();
     clouds->endFrame();
     profiler.endFrame();
 }
 
-void TerrainDemo::newFrame() {
+void ErosionDemo::newFrame() {
     camera->newFrame();
     auto& cam = camera->cam();
 
@@ -425,7 +425,7 @@ void TerrainDemo::newFrame() {
     clouds->newFrame();
 }
 
-void TerrainDemo::createComputePipelines() {
+void ErosionDemo::createComputePipelines() {
 //    compute = ComputePipelines(&device, {{
 //         .name = "generate_normals",
 //         .shadePath = resource("vista_generate_normal_map.comp.spv"),
@@ -435,7 +435,7 @@ void TerrainDemo::createComputePipelines() {
 //    compute.createPipelines();
 }
 
-void TerrainDemo::initDisplacementShadowMap() {
+void ErosionDemo::initDisplacementShadowMap() {
     auto dmapInfo = displacementMapGenerator->displacementMapInfo();
     auto terrainInfo = terrain->getInfo();
 
@@ -443,7 +443,7 @@ void TerrainDemo::initDisplacementShadowMap() {
     displacementShadowMap->init();
 }
 
-void TerrainDemo::initGBuffer() {
+void ErosionDemo::initGBuffer() {
     const auto width = swapChain.width();
     const auto height = swapChain.height();
 
@@ -475,7 +475,7 @@ void TerrainDemo::initGBuffer() {
 }
 
 
-void TerrainDemo::localReadBarrier(VkCommandBuffer commandBuffer) {
+void ErosionDemo::localReadBarrier(VkCommandBuffer commandBuffer) {
     Barriers::push(
                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -485,14 +485,14 @@ void TerrainDemo::localReadBarrier(VkCommandBuffer commandBuffer) {
 
 }
 
-void TerrainDemo::toneMap(VkCommandBuffer commandBuffer) {
+void ErosionDemo::toneMap(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, toneMapper.pipeline.handle);
     vkCmdPushConstants(commandBuffer, toneMapper.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(toneMapper.constants), &toneMapper.constants);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, toneMapper.layout.handle, 0, 1, &context.subpassInputDescriptorSet, 0,nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
-void TerrainDemo::createSamplers() {
+void ErosionDemo::createSamplers() {
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -507,12 +507,12 @@ void TerrainDemo::createSamplers() {
     edgeClampSampler = device.createSampler(samplerInfo);
 }
 
-void TerrainDemo::initProfiler() {
+void ErosionDemo::initProfiler() {
     profiler = Profiler{ &device };
     profiler.externalReset = true;
 }
 
-void TerrainDemo::initClouds() {
+void ErosionDemo::initClouds() {
     clouds = std::make_unique<Clouds>(context, atmosphere->descriptor());
     clouds->init();
 }
@@ -540,7 +540,7 @@ int main(){
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
 
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
-        auto app = TerrainDemo{ settings };
+        auto app = ErosionDemo{ settings };
         app.addPlugin(imGui);
         app.run();
     }catch(std::runtime_error& err){

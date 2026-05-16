@@ -12,7 +12,7 @@
 
 class Terrain : public SubdivisionGrid, public ContextAware {
 public:
-    explicit Terrain(Context& context, AtmosphereModel::Descriptor atmDescriptor);
+    Terrain(Context& context, AtmosphereModel::Descriptor atmDescriptor, glm::ivec2 terrainSize, glm::vec2 heightScale);
 
     void init() override;
 
@@ -139,15 +139,10 @@ private:
     } m_uniforms;
 
 
-    static constexpr float gridSize{52660};
-    static constexpr float halfGridSize{gridSize * 0.5f};
-
     struct {
         std::string path;
-        float width{gridSize};
-        float height{gridSize};
-        float zMin{-14};
-        float zMax{1587.0f};
+        glm::ivec2 terrainSize{};
+        glm::vec2 heightScale{};
         float scale{1};
     } m_dmap;
 
@@ -209,7 +204,7 @@ private:
         VkDescriptorSet descriptorSet{};
 
         struct {
-            glm::vec3 boundsMin{-halfGridSize, -14, -halfGridSize};
+            glm::vec3 boundsMin{0};
             float threshold{0.3};
             uint tableSize{1 << 20};
         } constants;

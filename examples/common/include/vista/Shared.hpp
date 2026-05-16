@@ -9,6 +9,7 @@
 #include "Prototypes.hpp"
 #include "Barrier.hpp"
 
+#include <glm/glm.hpp>
 #include <memory>
 
 struct RenderGraphInputs {
@@ -19,8 +20,6 @@ struct RenderGraphInputs {
 };
 
 struct TerrainInfo {
-    float width{};
-    float height{};
-    float zMin{};
-    float zMax{};
+    glm::ivec2 terrainSize{};
+    glm::vec2 heightScale{};
 };

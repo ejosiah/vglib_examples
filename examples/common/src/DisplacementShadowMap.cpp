@@ -71,8 +71,8 @@ void DisplacementShadowMap::createComputePipelines() {
 void DisplacementShadowMap::initConstants() {
     auto& pc = m_Constants;
     pc.lightDir = glm::normalize(context().lightDirection);
-    pc.xzScale = { m_terrain.width/m_shadowMap.width, m_terrain.height/m_shadowMap.height };
-    pc.heightRange = {m_terrain.zMin, m_terrain.zMax };
+    pc.xzScale = { float(m_terrain.terrainSize.x)/m_shadowMap.width, float(m_terrain.terrainSize.y)/m_shadowMap.height };
+    pc.heightRange = m_terrain.heightScale;
 
     const int targetMaxSteps = 512;
     const auto shadowMapDiagonal = std::hypot(float(m_shadowMap.width), float(m_shadowMap.height));
