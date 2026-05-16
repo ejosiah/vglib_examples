@@ -8,6 +8,8 @@ DisplacementMapGenerator::DisplacementMapGenerator(Context &context, Displacemen
      m_info{
         .values_tex_id = context.dmap_tex_index,
         .normal_tex_id = context.dmap_normal_tex_index,
+        .slope_moments0_tex_id = context.dmap_slope_moments0_tex_index,
+        .slope_moments1_tex_id = context.dmap_slope_moments1_tex_index,
         .width = width,
         .height = height
     },
@@ -34,6 +36,10 @@ void DisplacementMapGenerator::exec(VkCommandBuffer commandBuffer) {
             assert(false && "method not not yet implemented!");
     }
     bindlessDescriptor().update({ &m_displacementMap.values, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_info.values_tex_id });
+
+    generateSlopeMomentMaps(commandBuffer);
+    bindlessDescriptor().update({ &m_displacementMap.slopeMoments0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_info.slope_moments0_tex_id });
+    bindlessDescriptor().update({ &m_displacementMap.slopeMoments1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_info.slope_moments1_tex_id });
 
     generateNormalMap(commandBuffer);
     bindlessDescriptor().update({ &m_displacementMap.normals, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_info.normal_tex_id });
@@ -153,6 +159,12 @@ std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NormalGenConstants)} }
             },
             {
+                .name = "generate_slope_moments",
+                .shadePath = FileManager::resource("vista_slope_moments.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SlopeMomentConstants)} }
+            },
+            {
                 .name = "fault_formation",
                 .shadePath = FileManager::resource("vista_fault_formation.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
@@ -221,6 +233,80 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
                            VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     textures::generateLOD(commandBuffer, m_displacementMap.normals.image, info.width, info.height, levels);
+}
+
+void DisplacementMapGenerator::generateSlopeMomentMaps(VkCommandBuffer commandBuffer) {
+    auto info = displacementMapInfo();
+    auto& moments0 = m_displacementMap.slopeMoments0;
+    auto& moments1 = m_displacementMap.slopeMoments1;
+
+    VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    VkAccessFlagBits srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    VkImageLayout srcLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    const auto levels = to<uint>(std::log2(std::max(info.width, info.height))) + 1u;
+    const bool recreate = moments0.width != info.width || moments0.height != info.height
+        || moments1.width != info.width || moments1.height != info.height;
+    if(recreate) {
+        srcStageMask = VK_PIPELINE_STAGE_NONE;
+        srcLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        srcAccessMask = VK_ACCESS_NONE;
+        moments0.levels = levels;
+        moments1.levels = levels;
+        textures::createNoTransition(device(), moments0, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R32G32B32A32_SFLOAT, {info.width, info.height, 1});
+        textures::createNoTransition(device(), moments1, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R32G32B32A32_SFLOAT, {info.width, info.height, 1});
+    }
+
+    if(m_slopeMoments0ImageId == ~0u) {
+        m_slopeMoments0ImageId = bindlessDescriptor().reserveImageSlots(1);
+    }
+    if(m_slopeMoments1ImageId == ~0u) {
+        m_slopeMoments1ImageId = bindlessDescriptor().reserveImageSlots(1);
+    }
+
+    bindlessDescriptor().update({ &moments0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_slopeMoments0ImageId, VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &moments1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_slopeMoments1ImageId, VK_IMAGE_LAYOUT_GENERAL });
+
+    auto subresource = DEFAULT_SUB_RANGE;
+    subresource.levelCount = levels;
+    Barriers::push(moments0.image, subresource, srcStageMask, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   srcAccessMask, VK_ACCESS_SHADER_WRITE_BIT, srcLayout, VK_IMAGE_LAYOUT_GENERAL);
+    Barriers::push(moments1.image, subresource, srcStageMask, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   srcAccessMask, VK_ACCESS_SHADER_WRITE_BIT, srcLayout, VK_IMAGE_LAYOUT_GENERAL);
+    Barriers::flush(commandBuffer);
+
+    const auto gx = (info.width + 15)/16;
+    const auto gy = (info.height + 15)/16;
+
+    constexpr auto heightRange = 1601.0f;
+    constexpr auto terrainSize = 52660.0f;
+    SlopeMomentConstants constants {
+        .heightScale = heightRange / terrainSize,
+        .dmap_tex_id = m_info.values_tex_id,
+        .moments0_image_id = m_slopeMoments0ImageId,
+        .moments1_image_id = m_slopeMoments1ImageId
+    };
+
+    auto descriptorSet = bindlessDescriptorSet();
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("generate_slope_moments"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("generate_slope_moments"), 0, 1, &descriptorSet, 0, 0);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("generate_slope_moments"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+    vkCmdDispatch(commandBuffer, gx, gy, 1);
+
+    Barriers::push(moments0.image, subresource, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+                   VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Barriers::push(moments1.image, subresource, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+                   VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Barriers::flush(commandBuffer);
+
+    textures::generateLOD(commandBuffer, moments0.image, info.width, info.height, levels);
+    textures::generateLOD(commandBuffer, moments1.image, info.width, info.height, levels);
 }
 
 

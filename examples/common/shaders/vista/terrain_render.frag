@@ -226,5 +226,12 @@ void main() {
 
     float vis = sampleShadowPCF(f.uv);
     float ambient = 0.3;
-    radiance = mixWireFrame(shadeFragment(material, N, V, L, vis, trans, vec3(ambient)));
+    vec3 lit = vec3(0.0);
+    if(globals.useLeadrLighting == 1) {
+        float momentsLod = max(textureQueryLod(u_SlopeMoments0Sampler, f.uv).x, 0.0);
+        lit = shadeFragment_LEADR(material, N, V, L, f.uv, momentsLod, vis, trans, vec3(ambient));
+    } else {
+        lit = shadeFragment(material, N, V, L, vis, trans, vec3(ambient));
+    }
+    radiance = mixWireFrame(lit);
 }

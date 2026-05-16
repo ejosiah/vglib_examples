@@ -31,6 +31,8 @@ protected:
 
     void generateNormalMap(VkCommandBuffer commandBuffer);
 
+    void generateSlopeMomentMaps(VkCommandBuffer commandBuffer);
+
     std::vector<PipelineMetaData> metadata();
 
     VkDescriptorSet bindlessDescriptorSet();
@@ -71,6 +73,13 @@ private:
         uint normal_image_id{};
     };
 
+    struct SlopeMomentConstants {
+        float heightScale{1.0f};
+        uint dmap_tex_id{};
+        uint moments0_image_id{};
+        uint moments1_image_id{};
+    };
+
     Context* m_context;
     std::string m_path;
     DisplacementMap m_displacementMap;
@@ -78,4 +87,6 @@ private:
     DisplacementMethod m_method{DisplacementMethod::File};
     ComputePipelines m_compute;
     FileInfo m_fileInfo;
+    uint m_slopeMoments0ImageId{~0u};
+    uint m_slopeMoments1ImageId{~0u};
 };

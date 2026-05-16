@@ -64,6 +64,7 @@ void Terrain::newFrame() {
     m_uniforms.cpu->tileColor = uint(m_options.tileColor);
     m_uniforms.cpu->wireframeOn = uint(m_options.wire);
     m_uniforms.cpu->useTriplanerMapping = uint(m_options.triplanerMapping);
+    m_uniforms.cpu->useLeadrLighting = uint(m_options.useLeadrLighting);
     m_uniforms.cpu->blendMin = m_options.blendMin;
     m_uniforms.cpu->blendMax = m_options.blendMax;
     static Frustum frustum;
@@ -123,6 +124,8 @@ void Terrain::inspect(VkCommandBuffer commandBuffer) {
 void Terrain::initUniforms() {
     defaultValues.damp_tex_index = context().dmap_tex_index;
     defaultValues.dmap_normal_tex_index = context().dmap_normal_tex_index;
+    defaultValues.dmap_slope_moments0_tex_index = context().dmap_slope_moments0_tex_index;
+    defaultValues.dmap_slope_moments1_tex_index = context().dmap_slope_moments1_tex_index;
     defaultValues.shadow_tex_index = context().dmap_shadow_tex_index;
     defaultValues.sunSize = AppContext::atmosphere().info.cpu->sunSize;
     defaultValues.whitePoint = AppContext::atmosphere().info.cpu->whitePoint;
@@ -323,6 +326,10 @@ void Terrain::controls(bool show) {
     ImGui::Text("Triangle count: %d", m_triangleCount);
 
     ImGui::End();
+}
+
+void Terrain::lightingControls() {
+    ImGui::Checkbox("LEADR lighting", &m_options.useLeadrLighting);
 }
 
 TerrainInfo Terrain::getInfo() const {

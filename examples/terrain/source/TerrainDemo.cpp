@@ -294,6 +294,7 @@ void TerrainDemo::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::SetWindowSize({0, 0});
         ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
         ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
+        terrain->lightingControls();
         displacementShadowMap->controls();
 
         if (ImGui::CollapsingHeader("ToneMapping", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -367,6 +368,8 @@ void TerrainDemo::initContext() {
     context.lightDirection = glm::normalize(glm::vec3{1});
     context.dmap_tex_index = bindlessDescriptor.reserveTextureSlots(1);
     context.dmap_normal_tex_index = bindlessDescriptor.reserveTextureSlots(1);
+    context.dmap_slope_moments0_tex_index = bindlessDescriptor.reserveTextureSlots(1);
+    context.dmap_slope_moments1_tex_index = bindlessDescriptor.reserveTextureSlots(1);
     context.dmap_shadow_tex_index = bindlessDescriptor.reserveTextureSlots(1);
     context.transmittanceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.multiScatteringTextureIndex = bindlessDescriptor.reserveTextureSlots(1);

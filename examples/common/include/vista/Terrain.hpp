@@ -43,6 +43,8 @@ public:
 
     void controls(bool show = true);
 
+    void lightingControls();
+
     void endFrame();
 
     uint nodeCount() const;
@@ -108,8 +110,11 @@ private:
         uint tileColor{0};
         uint wireframeOn{0};
         uint useTriplanerMapping{0};
+        uint useLeadrLighting{1};
         uint damp_tex_index{~0u};
         uint dmap_normal_tex_index{~0u};
+        uint dmap_slope_moments0_tex_index{~0u};
+        uint dmap_slope_moments1_tex_index{~0u};
         uint shadow_tex_index{~0u};
         uint noiseTextureIndex{~0u};
         uint dirtyAlbedoMapIndex{~0u};
@@ -159,6 +164,7 @@ private:
         bool topView{false};
         bool wire{false};
         bool triplanerMapping{false};
+        bool useLeadrLighting{true};
         bool showTiles{false};
         bool inspect{false};
         int tileColor{0};

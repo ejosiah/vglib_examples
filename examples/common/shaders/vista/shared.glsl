@@ -60,8 +60,11 @@ layout(set = 2, binding = 0, scalar) buffer Constants {
     uint tileColor;
     uint wireframeOn;
     uint useTriplanerMapping;
+    uint useLeadrLighting;
     uint damp_tex_index;
     uint dmap_normal_tex_index;
+    uint dmap_slope_moments0_tex_index;
+    uint dmap_slope_moments1_tex_index;
     uint shadow_tex_index;
     uint noiseTextureIndex;
     uint dirtAlbedoMapIndex;
@@ -101,9 +104,10 @@ vec2 getTerrainSize() {
 layout(set = 1, binding = 10) uniform sampler2D global_textures[];
 layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 
-// TODO add damp_tex_index to uniforms
 #define u_DmapSampler global_textures[nonuniformEXT(globals.damp_tex_index)]
 #define u_NormalSampler global_textures[nonuniformEXT(globals.dmap_normal_tex_index)]
+#define u_SlopeMoments0Sampler global_textures[nonuniformEXT(globals.dmap_slope_moments0_tex_index)]
+#define u_SlopeMoments1Sampler global_textures[nonuniformEXT(globals.dmap_slope_moments1_tex_index)]
 #define u_DmapShadowSampler global_textures[nonuniformEXT(globals.shadow_tex_index)]
 
 #define dirtAlbedoMap global_textures[nonuniformEXT(globals.dirtAlbedoMapIndex)]
@@ -172,6 +176,7 @@ vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, v
 //    return diffuse * radiance * NdotL + ambient;
 }
 
+#include "leadr.glsl"
 
 /*******************************************************************************
  * FrustumCullingTest -- Checks if the triangle lies inside the view frutsum

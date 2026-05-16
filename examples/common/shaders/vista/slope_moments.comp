@@ -1,0 +1,52 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
+
+layout(push_constant) uniform Constants {
+    float heightScale;
+    uint dmap_tex_id;
+    uint moments0_image_id;
+    uint moments1_image_id;
+} pc;
+
+#define displacement_map global_textures[nonuniformEXT(pc.dmap_tex_id)]
+#define slope_moments0 global_images[nonuniformEXT(pc.moments0_image_id)]
+#define slope_moments1 global_images[nonuniformEXT(pc.moments1_image_id)]
+
+float heightAt(ivec2 p, ivec2 size) {
+    ivec2 coord = clamp(p, ivec2(0), size - ivec2(1));
+    return pc.heightScale * texelFetch(displacement_map, coord, 0).r;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(displacement_map, 0);
+    if(any(greaterThanEqual(gid, size))) {
+        return;
+    }
+
+    int left = max(gid.x - 1, 0);
+    int right = min(gid.x + 1, size.x - 1);
+    int down = max(gid.y - 1, 0);
+    int up = min(gid.y + 1, size.y - 1);
+
+    float duSpan = max(float(right - left), 1.0);
+    float dvSpan = max(float(up - down), 1.0);
+
+    float hL = heightAt(ivec2(left, gid.y), size);
+    float hR = heightAt(ivec2(right, gid.y), size);
+    float hD = heightAt(ivec2(gid.x, down), size);
+    float hU = heightAt(ivec2(gid.x, up), size);
+
+    float du = (hR - hL) * float(size.x) / duSpan;
+    float dv = (hU - hD) * float(size.y) / dvSpan;
+
+    // LEADR stores the linear moments E[du], E[dv], E[du^2], E[dv^2], and E[du*dv].
+    imageStore(slope_moments0, gid, vec4(du, dv, du * du, dv * dv));
+    imageStore(slope_moments1, gid, vec4(du * dv, 0.0, 0.0, 0.0));
+}
