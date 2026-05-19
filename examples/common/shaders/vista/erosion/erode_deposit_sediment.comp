@@ -1,0 +1,62 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+Equations implemented:
+- (12) dissolve terrain into suspended sediment.
+- (13) deposit suspended sediment back into terrain.
+- (14) sediment and hardness updates after erosion/deposition.
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    const float dt = timeStep;
+    const float Ks = soilSuspensionRate;
+    const float Kd = sedimentDepositionRate;
+    const float Kh = sedimentSofteningRate;
+    const float Rmin = minimumHardness;
+
+    float b = getTerrainHeight(gid);
+    float d2 = getWaterHeight(gid);
+    float st = getSedimentAmount(gid);
+    float Rt = getLocalHardnessCoef(gid);
+    float C = getCarryingCapacity(gid);
+
+    float b_next = b;
+    float d3 = d2;
+    float s1 = st;
+    float DeltaS = 0.0;
+    float mode = 0.0;
+    float Rt_dt = Rt;
+
+    if(st < C) {
+        DeltaS = dt * Rt * Ks * (C - st);
+        b_next = b - DeltaS;
+        s1 = st + DeltaS;
+        d3 = d2 + DeltaS;
+        mode = 1.0;
+    }else if(C < st) {
+        DeltaS = min(dt * Kd * (st - C), min(st, d2));
+        b_next = b + DeltaS;
+        s1 = st - DeltaS;
+        d3 = d2 - DeltaS;
+        mode = -1.0;
+        Rt_dt = max(Rmin, Rt - dt * Kh * Ks * (st - C));
+    }
+
+    setTerrainHeight(gid, b_next);
+    setWaterHeight(gid, d3);
+    setSedimentAmount(gid, s1);
+    setLocalHardnessCoef(gid, Rt_dt);
+    setSedimentExchange(gid, DeltaS, mode);
+}

@@ -1,0 +1,31 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+Equations implemented:
+- (15) commit the advected sediment result from the previous pass.
+- (16) evaporate water.
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    const float dt = timeStep;
+    const float Ke = evaporationRate;
+
+    float d3 = getWaterHeight(gid);
+    float st_dt = getAdvectedSediment(gid); // Read equation 15 result from worksheet scratch.
+    float d_t_dt = max(0.0, d3 * (1.0 - Ke * dt));
+
+    setSedimentAmount(gid, st_dt); // Commit advected sediment back to the sediment texture.
+    setWaterHeight(gid, d_t_dt);
+}

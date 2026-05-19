@@ -28,6 +28,8 @@ public:
 
     void controls(bool show = true);
 
+    bool arealPerspectiveEnabled() const;
+
     Descriptor descriptor() const;
 
     float printPerfStats();
@@ -141,6 +143,7 @@ private:
     } m_lut;
 
     Atmosphere::Params params{};
+    bool m_arealPerspectiveEnabled{true};
 
     Descriptor m_descriptor;
     std::array<VkDescriptorSet, 2> m_sets;

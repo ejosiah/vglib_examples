@@ -1,0 +1,79 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+Equations implemented:
+- (2) terrain plus water height difference.
+- (3) virtual-pipe outflow flux update.
+- (4)-(5) outflow limiting factor.
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+float getHeightDiff(ivec2 thisId, int x, int y) {
+    float thisTerrainHeight = getTerrainHeight(thisId);
+    float thisHeight = thisTerrainHeight + getWaterHeight(thisId);
+
+    if(x < 0 || y < 0 || x >= terrainSize.x || y >= terrainSize.y) {
+        return thisHeight - thisTerrainHeight;
+    }
+
+    ivec2 neighbour = ivec2(x, y);
+    float neighbourHeight = getTerrainHeight(neighbour) + getWaterHeight(neighbour);
+
+    return thisHeight - neighbourHeight;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    const float A = pipeArea;
+    const float dt = timeStep;
+    const float g = gravity;
+    const float inv_l = inversePipeLength;
+
+    const vec4 outflow = getOutflow(gid);
+
+    float hT = getHeightDiff(gid, gid.x, gid.y + 1);
+    float fT = outflow.x;
+
+    fT = max(0.0, fT + dt * A * (g * hT) * inv_l);
+
+    float hR = getHeightDiff(gid, gid.x + 1, gid.y);
+    float fR = outflow.y;
+
+    fR = max(0.0, fR + dt * A * (g * hR) * inv_l);
+
+    float hB = getHeightDiff(gid, gid.x, gid.y - 1);
+    float fB = outflow.z;
+
+    fB = max(0.0, fB + dt * A * (g * hB) * inv_l);
+
+    float hL = getHeightDiff(gid, gid.x - 1, gid.y);
+    float fL = outflow.w;
+
+    fL = max(0.0, fL + dt * A * (g * hL) * inv_l);
+
+    float d1 = getWaterHeight(gid);
+    vec2 cellSize = 1.0/vec2(terrainSize);
+    float lx = cellSize.x;
+    float ly = cellSize.y;
+    float num = d1 * lx * ly;
+    float denum = (fT + fR + fB + fL) * dt;
+
+    float K = max(1.0, num/denum);
+
+    fT *= (fT > d1) ? K : 1.0;
+    fR *= (fR > d1) ? K : 1.0;
+    fB *= (fB > d1) ? K : 1.0;
+    fL *= (fL > d1) ? K : 1.0;
+
+    setOutflow(gid, vec4(fT, fR, fB, fL));
+}

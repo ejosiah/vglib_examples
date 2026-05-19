@@ -1,0 +1,25 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+Equations implemented:
+- (1) add rainfall to water height.
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    float rainRate = timeStep * rainScale * texelFetch(rain_texture, gid, 0).r;
+    float waterHeight = texelFetch(water_height_texture, gid, 0).r + rainRate;
+
+    imageStore(water_height_image, gid, vec4(waterHeight));
+}

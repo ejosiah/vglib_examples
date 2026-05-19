@@ -1,0 +1,48 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+Equations implemented:
+- (10) lmax water-depth limiter.
+- (11) sediment carrying capacity.
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+float lmax(float x) {
+    return clamp(x / max(maximalErosionDepth, 0.000001), 0.0, 1.0);
+}
+
+vec3 getV(ivec2 loc, vec2 v) {
+    float velocityLength = length(v);
+    if(velocityLength <= 0.000001) {
+        return vec3(0.0);
+    }
+
+    vec2 velocityDirection = v / velocityLength;
+    ivec2 upstreamLoc = clamp(loc - ivec2(round(velocityDirection)), ivec2(0), terrainSize - ivec2(1));
+    float b = getTerrainHeight(loc);
+    float upstreamB = getTerrainHeight(upstreamLoc);
+
+    return normalize(vec3(velocityDirection.x, b - upstreamB, velocityDirection.y));
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    const float Kc = sedimentCapacity;
+    float d1 = getWaterHeight(gid);
+    vec2 v = getVelocityField(gid);
+    vec3 N = getNormal(gid);
+    vec3 V = getV(gid, v);
+    float C = Kc * max(0.0, -dot(N, V)) * length(v) * lmax(d1);
+
+    setCarryingCapacity(gid, C);
+}

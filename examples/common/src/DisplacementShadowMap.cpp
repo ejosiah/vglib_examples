@@ -58,7 +58,9 @@ void DisplacementShadowMap::setDisplacementScale(float scale) {
 }
 
 void DisplacementShadowMap::createShadowMapTexture() {
-    textures::create(device(), m_shadowMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, { m_displacementMap.width/m_scale, m_displacementMap.height/m_scale, 1 });
+    textures::create(device(), m_shadowMap, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+                     { m_displacementMap.width/m_scale, m_displacementMap.height/m_scale, 1 },
+                     VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
     bindlessDescriptor().update({ &m_shadowMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context().dmap_shadow_tex_index });
     bindlessDescriptor().update({ &m_shadowMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_shadowMapImageIndex, VK_IMAGE_LAYOUT_GENERAL });
 }

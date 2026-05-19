@@ -131,6 +131,7 @@ void AtmosphereModel::controls(bool show) {
 
     ImGui::Begin("Atmosphere");
     ImGui::SetWindowSize({0, 0});
+    ImGui::Checkbox("Areal perspective", &m_arealPerspectiveEnabled);
     ImGui::SliderFloat("Mie phase", &params.mie.anisotropicFactor, 0, 0.999);
     ImGui::SliderInt("Scatt Order", &params.numScatteringOrder, 2, 10);
 
@@ -413,6 +414,10 @@ std::vector<PipelineMetaData> AtmosphereModel::metadata() {
 
 AtmosphereModel::Descriptor AtmosphereModel::descriptor() const {
     return m_descriptor;
+}
+
+bool AtmosphereModel::arealPerspectiveEnabled() const {
+    return m_arealPerspectiveEnabled;
 }
 
 void AtmosphereModel::initQueries() {

@@ -175,20 +175,14 @@ Material getMaterial(vec2 uv, vec2 tileId, vec2 tileUV) {
     return material;
 }
 
-Material mix(Material a, Material b, float t) {
-    Material res;
-    res.metalness = mix(a.metalness, b.metalness, t);
-    res.albedo = mix(a.albedo, b.albedo, t);
-    res.normal = mix(a.normal, b.normal, t);
-    res.roughness = mix(a.roughness, b.roughness, t);
-    res.ao = mix(a.ao, b.ao, t);
-    res.blend = mix(a.blend, b.blend, t);
-    return res;
-}
-
 void main() {
     worldPos = vec4(f.worldPos, gl_FragCoord.z);
     radiance = vec3(0);
+
+    if(visualizeDepthFade()) {
+        radiance = vec3(fade);
+        return;
+    }
 
     vec3 L = normalize(globals.lightDirection);
 

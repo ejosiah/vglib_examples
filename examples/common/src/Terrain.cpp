@@ -4,15 +4,16 @@
 #include <glm/glm.hpp>
 #include <imgui.h>
 #include "AppContext.hpp"
+#include <algorithm>
 
 Terrain::Terrain(Context &context, AtmosphereModel::Descriptor atmDescriptor, glm::ivec2 terrainSize, glm::vec2 heightScale)
 : SubdivisionGrid(*context.device, *context.descriptorPool, *context.bindlessDescriptor,
                   "terrain", {context.screenWidth, context.screenHeight}, 1, context.profiler)
 , m_context{&context}
-, m_dmap{.terrainSize = terrainSize, .heightScale = heightScale}
+, m_dmap{.terrainSize = terrainSize, .heightScale = {std::min(heightScale.x, heightScale.y), std::max(heightScale.x, heightScale.y)}}
 , m_atmosphereDescriptor(atmDescriptor)
 {
-    m_normals.constants.boundsMin = {-float(terrainSize.x) * 0.5f, heightScale.x, -float(terrainSize.y) * 0.5f};
+    m_normals.constants.boundsMin = {-float(terrainSize.x) * 0.5f, m_dmap.heightScale.x, -float(terrainSize.y) * 0.5f};
 
     static uint WorkGroupSize = 256;
     static uint cbtID = 0;
@@ -68,8 +69,10 @@ void Terrain::newFrame() {
     m_uniforms.cpu->wireframeOn = uint(m_options.wire);
     m_uniforms.cpu->useTriplanerMapping = uint(m_options.triplanerMapping);
     m_uniforms.cpu->useLeadrLighting = uint(m_options.useLeadrLighting);
+    m_uniforms.cpu->visualizeDepthFade = uint(m_options.visualizeDepthFade);
     m_uniforms.cpu->blendMin = m_options.blendMin;
     m_uniforms.cpu->blendMax = m_options.blendMax;
+    m_uniforms.cpu->shadowDarkness = m_options.shadowDarkness;
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
@@ -156,9 +159,8 @@ void Terrain::createRenderPipelines() {
     const auto w = m_context->screenWidth;
     const auto h = m_context->screenHeight;
 
-    auto renderBuilder = graphicsPipelineBuilder();
     m_render.pipeline =
-        renderBuilder
+        graphicsPipelineBuilder()
             .shaderStage()
                 .vertexShader(FileManager::resource("vista_terrain_render.vert.spv"))
                     .addSpecialization(0u, 0)
@@ -167,7 +169,7 @@ void Terrain::createRenderPipelines() {
                     .addSpecialization(0u, 3)
                     .addSpecialization(1u, 4)
                 .geometryShader(FileManager::resource("vista_terrain_render.geom.spv"))
-                .fragmentShader(FileManager::resource("vista_terrain_render.frag.spv"))
+                .fragmentShader(FileManager::resource(renderFragmentShaderPath()))
             .vertexInputState().clear()
                 .addVertexBindingDescription(0, sizeof(glm::vec2), VK_VERTEX_INPUT_RATE_VERTEX)
                 .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, 0)
@@ -184,6 +186,28 @@ void Terrain::createRenderPipelines() {
                 .addDescriptorSetLayout(m_atmosphereDescriptor.setLayout)
             .name("terrain_render")
         .build(m_render.layout);
+}
+
+std::string Terrain::renderFragmentShaderPath() const {
+    return "vista_terrain_render.frag.spv";
+}
+
+bool Terrain::usesMaterialTextures() const {
+    return true;
+}
+
+Terrain::MaterialTexturePaths Terrain::materialTexturePaths() const {
+    return {
+        .dirtAlbedo = "GroundDirtRocky015/GroundDirtRocky015_COL_4K.jpg",
+        .dirtAo = "GroundDirtRocky015/GroundDirtRocky015_AO_4K.jpg",
+        .dirtRoughness = "GroundDirtRocky015/GroundDirtRocky015_GLOSS_4K.jpg",
+        .dirtNormal = "GroundDirtRocky015/GroundDirtRocky015_NRM_4K.jpg",
+        .grassAlbedo = "GrassShort001/GrassShort001_COL_VAR1_4K.jpg",
+        .grassAo = "GrassShort001/GrassShort001_AO_4K.jpg",
+        .grassRoughness = "GrassShort001/GrassShort001_GLOSS_4K.jpg",
+        .grassNormal = "GrassShort001/GrassShort001_NRM_4K.jpg",
+        .noise = "BlueNoiseTextures/1024_1024/LDR_RGBA_0.png",
+    };
 }
 
 Context &Terrain::context() {
@@ -319,6 +343,7 @@ void Terrain::controls(bool show) {
     ImGui::Checkbox("topView", &m_options.topView);
 
     ImGui::Checkbox("Show tiles", &m_options.showTiles);
+    ImGui::Checkbox("Visualize depth fade", &m_options.visualizeDepthFade);
     if(m_options.showTiles) {
         ImGui::RadioButton("uv", &m_options.tileColor, 0); ImGui::SameLine();
         ImGui::RadioButton("checkerboard", &m_options.tileColor, 1); ImGui::SameLine();
@@ -333,6 +358,7 @@ void Terrain::controls(bool show) {
 
 void Terrain::lightingControls() {
     ImGui::Checkbox("LEADR lighting", &m_options.useLeadrLighting);
+    ImGui::SliderFloat("Shadow darkness", &m_options.shadowDarkness, 0.0f, 1.0f);
 }
 
 TerrainInfo Terrain::getInfo() const {
@@ -362,17 +388,22 @@ float Terrain::printPerfStats() {
 }
 
 void Terrain::loadTerrainTextures() {
-    const auto levels = 11u;
-    textures::fromFile(device(), dirt.albedoMap, resource("GroundDirtRocky015/GroundDirtRocky015_COL_4K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), dirt.aoMap, resource("GroundDirtRocky015/GroundDirtRocky015_AO_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), dirt.roughnessMap, resource("GroundDirtRocky015/GroundDirtRocky015_GLOSS_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), dirt.normalMap, resource("GroundDirtRocky015/GroundDirtRocky015_NRM_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    if(!usesMaterialTextures()) {
+        return;
+    }
 
-    textures::fromFile(device(), grass.albedoMap, resource("GrassShort001/GrassShort001_COL_VAR1_4K.jpg"), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), grass.aoMap, resource("GrassShort001/GrassShort001_AO_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), grass.roughnessMap, resource("GrassShort001/GrassShort001_GLOSS_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), grass.normalMap, resource("GrassShort001/GrassShort001_NRM_4K.jpg"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    textures::fromFile(device(), m_noise, resource("BlueNoiseTextures/1024_1024/LDR_RGBA_0.png"), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    const auto levels = 11u;
+    const auto paths = materialTexturePaths();
+    textures::fromFile(device(), dirt.albedoMap, resource(paths.dirtAlbedo), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.aoMap, resource(paths.dirtAo), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.roughnessMap, resource(paths.dirtRoughness), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), dirt.normalMap, resource(paths.dirtNormal), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+    textures::fromFile(device(), grass.albedoMap, resource(paths.grassAlbedo), false, VK_FORMAT_R8G8B8A8_SRGB, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.aoMap, resource(paths.grassAo), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.roughnessMap, resource(paths.grassRoughness), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), grass.normalMap, resource(paths.grassNormal), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    textures::fromFile(device(), m_noise, resource(paths.noise), false, VK_FORMAT_R8G8B8A8_UNORM, levels, VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
 
     textures::generateLOD(device(), dirt.albedoMap, levels);

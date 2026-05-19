@@ -55,12 +55,14 @@ layout(set = 2, binding = 0, scalar) buffer Constants {
     float dmapFactor;
     float blendMin;
     float blendMax;
+    float shadowDarkness;
     uint minArea;
     uint showTiles;
     uint tileColor;
     uint wireframeOn;
     uint useTriplanerMapping;
     uint useLeadrLighting;
+    uint visualizeDepthFade;
     uint damp_tex_index;
     uint dmap_normal_tex_index;
     uint dmap_slope_moments0_tex_index;
@@ -87,6 +89,10 @@ bool showTiles() {
 
 bool useTriplanerMapping() {
     return globals.useTriplanerMapping == 1;
+}
+
+bool visualizeDepthFade() {
+    return globals.visualizeDepthFade == 1;
 }
 
 float getHeightScale() {
@@ -129,6 +135,17 @@ struct Material {
     float ao;
     float blend;
 };
+
+Material mix(Material a, Material b, float t) {
+    Material res;
+    res.metalness = mix(a.metalness, b.metalness, t);
+    res.albedo = mix(a.albedo, b.albedo, t);
+    res.normal = mix(a.normal, b.normal, t);
+    res.roughness = mix(a.roughness, b.roughness, t);
+    res.ao = mix(a.ao, b.ao, t);
+    res.blend = mix(a.blend, b.blend, t);
+    return res;
+}
 
 vec3 shadeFragment(Material material, vec3 N, vec3 V, vec3 L, float visiblity, vec3 sunTransmittance, vec3 ambientIrradiance)
 {

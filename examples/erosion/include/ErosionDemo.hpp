@@ -8,7 +8,7 @@
 #include "ComputePipelins.hpp"
 #include "vista/AtmosphereModel.hpp"
 #include "Profiler.hpp"
-#include "vista/Clouds.hpp"
+#include "vista/ErosionSimulator.hpp"
 
 class ErosionDemo : public VulkanBaseApp{
 public:
@@ -18,8 +18,6 @@ protected:
     void initApp() override;
 
     void createSamplers();
-
-    void initProfiler();
 
     void initCamera();
 
@@ -35,7 +33,7 @@ protected:
 
     void initAtmosphere();
 
-    void initClouds();
+    void initSim();
 
     void initBindlessDescriptor();
 
@@ -66,6 +64,8 @@ protected:
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
     void runRenderGraph(VkCommandBuffer commandBuffer);
+
+    void runSim(VkCommandBuffer commandBuffer);
 
     void renderToDisplay(VkCommandBuffer commandBuffer);
 
@@ -115,7 +115,7 @@ protected:
     std::unique_ptr<Terrain> terrain;
     std::unique_ptr<DisplacementShadowMap> displacementShadowMap;
     std::unique_ptr<AtmosphereModel> atmosphere;
-    std::unique_ptr<Clouds> clouds;
+    std::unique_ptr<ErosionSimulator> erosionSim;
     Texture heightMap;
     Texture normalMap;
     ComputePipelines compute;
@@ -133,5 +133,5 @@ protected:
         bool debug{true};
     } options;
     VulkanSampler edgeClampSampler;
-    Profiler profiler;
+    NullProfiler nullProfiler;
 };

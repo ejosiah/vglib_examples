@@ -1,4 +1,5 @@
 #include "ErosionDemo.hpp"
+#include "ErodedTerrain.hpp"
 #include "GraphicsPipelineBuilder.hpp"
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
@@ -22,7 +23,6 @@ ErosionDemo::ErosionDemo(const Settings& settings) : VulkanBaseApp("Erosion", se
 }
 
 void ErosionDemo::initApp() {
-    initProfiler();
     createSamplers();
     initCamera();
     createDescriptorPool();
@@ -38,10 +38,10 @@ void ErosionDemo::initApp() {
     createPipelineCache();
     createRenderPipeline();
     initDisplacementMapGenerator();
+    initSim();
     initAtmosphere();
     initTerrain();
     initDisplacementShadowMap();
-    initClouds();
     clearColor(0, 0, 1);
 }
 
@@ -55,8 +55,9 @@ void ErosionDemo::initCamera() {
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-//    camera->lookAt({3732, 33.5, 16265}, {-0.69, 0.02, -0.7}, {0, 1, 0});
-     camera->lookAt({-1014, 127.6, 12620}, {0.299, -0.16, -0.939}, {0, 1, 0});
+    auto pos = glm::vec3{-2272, 25, -517};
+    auto target = pos + glm::vec3{-0.5, 0.13, 0.8};
+     camera->lookAt(pos, target, {0, 1, 0});
 }
 
 void ErosionDemo::initBindlessDescriptor() {
@@ -227,8 +228,10 @@ VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    profiler.resetAll(commandBuffer);
-
+    if(displacementMapGenerator->regenerateIfNeeded(commandBuffer)) {
+        erosionSim->update(commandBuffer, displacementMapGenerator->displacementTexture());
+    }
+    runSim(commandBuffer);
     displacementShadowMap->setDisplacementScale(terrain->displacementScale());
     displacementShadowMap->exec(commandBuffer);
     atmosphere->preProcess(commandBuffer);
@@ -242,6 +245,7 @@ VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
         renderUI(commandBuffer);
     }, commandBuffer);
 
+
     vkEndCommandBuffer(commandBuffer);
 
     return &commandBuffer;
@@ -254,13 +258,20 @@ void ErosionDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
         terrain->render(commandBuffer);
         atmosphere->renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
-        clouds->render(commandBuffer);
-        localReadBarrier(commandBuffer);
-        atmosphere->renderArealPerspective(commandBuffer);
-        localReadBarrier(commandBuffer);
+        if(atmosphere->arealPerspectiveEnabled()) {
+            atmosphere->renderArealPerspective(commandBuffer);
+            localReadBarrier(commandBuffer);
+        }
         toneMap(commandBuffer);
     });
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+void ErosionDemo::runSim(VkCommandBuffer commandBuffer) {
+    auto& displacementTexture = displacementMapGenerator->displacementTexture();
+    if(erosionSim->step(commandBuffer, displacementTexture) == ErosionSimulator::StepResult::Finished) {
+        displacementMapGenerator->refreshDerivedMaps(commandBuffer);
+    }
 }
 
 void ErosionDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
@@ -273,22 +284,25 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
 
     static bool terrainOpen = false;
     static bool atmosphereOpen = false;
+    static bool erosionOpen = false;
     static bool lightOpen = false;
     static bool perfOpen = false;
-    static bool cloudsOpen = false;
+    static bool displacementOpen = false;
 
     ImGui::Begin("Controls");
     ImGui::SetWindowSize({0, 0});
     ImGui::Checkbox("Terrain", &terrainOpen);
+    ImGui::Checkbox("Displacement", &displacementOpen);
+    ImGui::Checkbox("erosion", &erosionOpen);
     ImGui::Checkbox("Atmosphere", &atmosphereOpen);
     ImGui::Checkbox("Lighting", &lightOpen);
-    ImGui::Checkbox("clouds", &cloudsOpen);
     ImGui::Checkbox("Performance", &perfOpen);
     ImGui::End();
 
     terrain->controls(terrainOpen);
+    displacementMapGenerator->controls(displacementOpen);
     atmosphere->controls(atmosphereOpen);
-    clouds->controls(cloudsOpen);
+    erosionSim->controls(erosionOpen);
 
     if(lightOpen) {
         ImGui::Begin("Lighting");
@@ -315,7 +329,6 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
         total += displacementShadowMap->printPerfStats();
         total += terrain->printPerfStats();
         total += atmosphere->printPerfStats();
-        total += clouds->printPerfStats();
 
         ImGui::Text("total frame time: %f ms", total);
         ImGui::End();
@@ -329,7 +342,8 @@ void ErosionDemo::update(float time) {
         camera->update(time);
     }
     context.elapsedTime = time;
-    setTitle(fmt::format("{}, camera - {}, direction - {}, lightDirection - {}, nodes - {}, FPS - {}", title, camera->position(), camera->viewDir, lightDirection, terrain->nodeCount(), framePerSecond));
+    // setTitle(fmt::format("{}, camera - {}, direction - {}, lightDirection - {}, nodes - {}, FPS - {}", title, camera->position(), camera->viewDir, lightDirection, terrain->nodeCount(), framePerSecond));
+    setTitle(fmt::format("{}, nodes - {}, FPS - {}", title, terrain->nodeCount(), framePerSecond));
 
 //    static auto g = glm::vec3{0, -9.8 * m, 0};
 //    static auto v = glm::vec3{0};;
@@ -379,18 +393,26 @@ void ErosionDemo::initContext() {
     context.radianceTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.positionTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
     context.depthTextureIndex = bindlessDescriptor.reserveTextureSlots(1);
-    context.profiler = &profiler;
+    context.profiler = &nullProfiler;
 }
 
 void ErosionDemo::initTerrain() {
-    terrain = std::make_unique<Terrain>(context, atmosphere->descriptor(), glm::ivec2{52660, 52660}, glm::vec2{-14.0f, 1587.0f});
+    terrain = std::make_unique<ErodedTerrain>(context, atmosphere->descriptor(), glm::ivec2{10000}, glm::vec2{-1, 1059});
     terrain->init();
 }
 
 void ErosionDemo::initDisplacementMapGenerator() {
-    auto path = "black.png";
-    displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::File, 3601, 3601, resource(path));
+    auto path = "generated_displacement.png";
+    displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::Noise, 4096, 4096, resource(path));
     displacementMapGenerator->init();
+}
+
+void ErosionDemo::initDisplacementShadowMap() {
+    auto dmapInfo = displacementMapGenerator->displacementMapInfo();
+    auto terrainInfo = terrain->getInfo();
+
+    displacementShadowMap = std::make_unique<DisplacementShadowMap>(context, dmapInfo, terrainInfo);
+    displacementShadowMap->init();
 }
 
 void ErosionDemo::initAtmosphere() {
@@ -398,10 +420,15 @@ void ErosionDemo::initAtmosphere() {
     atmosphere->init();
 }
 
+void ErosionDemo::initSim() {
+    auto dmapInfo = displacementMapGenerator->displacementMapInfo();
+    erosionSim = std::make_unique<ErosionSimulator>(context, glm::ivec2{dmapInfo.width, dmapInfo.height});
+    erosionSim->init();
+}
+
+
 void ErosionDemo::endFrame() {
     terrain->endFrame();
-    clouds->endFrame();
-    profiler.endFrame();
 }
 
 void ErosionDemo::newFrame() {
@@ -422,7 +449,6 @@ void ErosionDemo::newFrame() {
 
     atmosphere->newFrame();
     terrain->newFrame();
-    clouds->newFrame();
 }
 
 void ErosionDemo::createComputePipelines() {
@@ -433,14 +459,6 @@ void ErosionDemo::createComputePipelines() {
 //         .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
 //     }});
 //    compute.createPipelines();
-}
-
-void ErosionDemo::initDisplacementShadowMap() {
-    auto dmapInfo = displacementMapGenerator->displacementMapInfo();
-    auto terrainInfo = terrain->getInfo();
-
-    displacementShadowMap = std::make_unique<DisplacementShadowMap>(context, dmapInfo, terrainInfo);
-    displacementShadowMap->init();
 }
 
 void ErosionDemo::initGBuffer() {
@@ -507,22 +525,12 @@ void ErosionDemo::createSamplers() {
     edgeClampSampler = device.createSampler(samplerInfo);
 }
 
-void ErosionDemo::initProfiler() {
-    profiler = Profiler{ &device };
-    profiler.externalReset = true;
-}
-
-void ErosionDemo::initClouds() {
-    clouds = std::make_unique<Clouds>(context, atmosphere->descriptor());
-    clouds->init();
-}
-
 int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 1920;
-        settings.height = 1080;
+        settings.width = 1080;
+        settings.height = 720;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;
@@ -531,6 +539,8 @@ int main(){
         settings.enabledFeatures.independentBlend = true;
         settings.enabledFeatures.pipelineStatisticsQuery = true;
         settings.enabledFeatures.occlusionQueryPrecise = true;
+        settings.enabledFeatures.shaderStorageImageExtendedFormats = VK_TRUE;
+        settings.enabledFeatures.shaderStorageImageWriteWithoutFormat = VK_TRUE;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);

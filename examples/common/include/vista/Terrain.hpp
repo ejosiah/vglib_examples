@@ -8,17 +8,31 @@
 #include "PrefixSum.hpp"
 #include <glm/glm.hpp>
 #include <array>
+#include <string>
 #include <vector>
 
 class Terrain : public SubdivisionGrid, public ContextAware {
 public:
     Terrain(Context& context, AtmosphereModel::Descriptor atmDescriptor, glm::ivec2 terrainSize, glm::vec2 heightScale);
+    virtual ~Terrain() = default;
 
     void init() override;
 
     void newFrame();
 
 protected:
+    struct MaterialTexturePaths {
+        std::string dirtAlbedo;
+        std::string dirtAo;
+        std::string dirtRoughness;
+        std::string dirtNormal;
+        std::string grassAlbedo;
+        std::string grassAo;
+        std::string grassRoughness;
+        std::string grassNormal;
+        std::string noise;
+    };
+
     PipelineMetaData subdivisionMetadata() final;
 
     void subdivide(VkCommandBuffer commandBuffer, int pingPong) final;
@@ -86,6 +100,12 @@ protected:
 
     void initNormalData();
 
+    virtual std::string renderFragmentShaderPath() const;
+
+    virtual bool usesMaterialTextures() const;
+
+    virtual MaterialTexturePaths materialTexturePaths() const;
+
 private:
     struct UniformData {
         glm::mat4 modelMatrix{1};
@@ -107,12 +127,14 @@ private:
         float dmapFactor{1};
         float blendMin{0};
         float blendMax{1};
+        float shadowDarkness{0.65f};
         uint minArea{*reinterpret_cast<const uint*>(&MAX_FLOAT)};
         uint showTiles{0};
         uint tileColor{0};
         uint wireframeOn{0};
         uint useTriplanerMapping{0};
         uint useLeadrLighting{1};
+        uint visualizeDepthFade{0};
         uint damp_tex_index{~0u};
         uint dmap_normal_tex_index{~0u};
         uint dmap_slope_moments0_tex_index{~0u};
@@ -162,6 +184,8 @@ private:
         bool wire{false};
         bool triplanerMapping{false};
         bool useLeadrLighting{true};
+        bool visualizeDepthFade{false};
+        float shadowDarkness{0.65f};
         bool showTiles{false};
         bool inspect{false};
         int tileColor{0};

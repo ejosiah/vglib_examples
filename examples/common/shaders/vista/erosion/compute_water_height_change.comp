@@ -1,0 +1,57 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+Equations implemented:
+- (6) water volume change from in/out flux.
+- (7) water height update.
+- (8) velocity field from flux.
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+float getOutflowOrZero(ivec3 loc) {
+    return inTerrain(loc.xy) ? getOutflow(loc) : 0.0;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    const float dt = timeStep;
+    vec2 cellSize = 1.0 / vec2(terrainSize);
+    float lx = cellSize.x;
+    float ly = cellSize.y;
+
+    float d1 = getWaterHeight(gid);
+
+    vec4 outflow = getOutflow(gid);
+    float fT = outflow.x;
+    float fR = outflow.y;
+    float fB = outflow.z;
+    float fL = outflow.w;
+
+    float nfR = getOutflowOrZero(ivec3(gid + ivec2(-1, 0), 1));
+    float nfL = getOutflowOrZero(ivec3(gid + ivec2(1, 0), 3));
+    float nfT = getOutflowOrZero(ivec3(gid + ivec2(0, 1), 0));
+    float nfB = getOutflowOrZero(ivec3(gid + ivec2(0, -1), 2));
+
+    float DeltaV = dt * (nfR + nfT + nfL + nfB - fL - fR - fT - fB);
+    float d2 = max(0.0, d1 + DeltaV / (lx * ly));
+
+    vec2 v = vec2(0.0);
+    if(d2 > 0.0) {
+        v.x = (nfR - fL + fR - nfL) / (2.0 * d2 * ly);
+        v.y = (nfT - fB + fT - nfB) / (2.0 * d2 * lx);
+    }
+
+    setWaterHeight(gid, d2);
+    imageStore(velocity_field_image, gid, vec4(v, 0.0, 0.0));
+    setWaterVolumeChange(gid, DeltaV);
+}

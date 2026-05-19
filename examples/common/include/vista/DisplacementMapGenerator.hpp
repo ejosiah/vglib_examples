@@ -6,7 +6,7 @@
 #include <string>
 #include "ContextAware.hpp"
 
-enum class DisplacementMethod { File, FaultFormation };
+enum class DisplacementMethod { None, File, FaultFormation, Noise };
 
 class DisplacementMapGenerator {
 public:
@@ -16,7 +16,15 @@ public:
 
     void exec(VkCommandBuffer commandBuffer);
 
+    bool regenerateIfNeeded(VkCommandBuffer commandBuffer);
+
+    bool controls(bool show);
+
     DisplacementMapInfo displacementMapInfo() const;
+
+    Texture& displacementTexture();
+
+    void refreshDerivedMaps(VkCommandBuffer commandBuffer);
 
 protected:
     void createComputePipelines();
@@ -25,7 +33,11 @@ protected:
 
     void computeFileDisplacementMap(VkCommandBuffer commandBuffer);
 
+    void noneDisplacementMap(VkCommandBuffer commandBuffer);
+
     void faultFormation(VkCommandBuffer commandBuffer);
+
+    void noiseHeightMap(VkCommandBuffer commandBuffer);
 
     void blur(VkCommandBuffer commandBuffer);
 
@@ -46,9 +58,9 @@ protected:
 private:
     struct FileInfo {
         VulkanBuffer pixels;
-        int width;
-        int height;
-        int channels;
+        int width{};
+        int height{};
+        int channels{};
     };
 
     struct {
@@ -80,6 +92,16 @@ private:
         uint moments1_image_id{};
     };
 
+    struct NoiseConstants {
+        glm::vec2 seed{137.0f, 941.0f};
+        float baseFrequency{2.5};
+        float lacunarity{2.0f};
+        float gain{0.5f};
+        uint octaves{6};
+        uint dmap_image_index{~0u};
+        uint enableRidges{1};
+    } noise_constants;
+
     Context* m_context;
     std::string m_path;
     DisplacementMap m_displacementMap;
@@ -87,6 +109,9 @@ private:
     DisplacementMethod m_method{DisplacementMethod::File};
     ComputePipelines m_compute;
     FileInfo m_fileInfo;
+    bool m_dirty{false};
+    uint m_faultFormationImageId{~0u};
+    uint m_noiseImageId{~0u};
     uint m_slopeMoments0ImageId{~0u};
     uint m_slopeMoments1ImageId{~0u};
 };
