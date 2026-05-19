@@ -278,9 +278,11 @@ VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     if(displacementMapGenerator->regenerateIfNeeded(commandBuffer)) {
+        backupOriginalTerrain(commandBuffer);
         erosionSim->update(commandBuffer, displacementMapGenerator->displacementTexture());
     }
     runSim(commandBuffer);
+    applyTerrainMapBinding();
     displacementShadowMap->setDisplacementScale(terrain->displacementScale());
     displacementShadowMap->exec(commandBuffer);
     atmosphere->preProcess(commandBuffer);
@@ -322,6 +324,55 @@ void ErosionDemo::runSim(VkCommandBuffer commandBuffer) {
     if(erosionSim->step(commandBuffer, displacementTexture) != ErosionSimulator::StepResult::Idle) {
         displacementMapGenerator->refreshDerivedMaps(commandBuffer);
     }
+}
+
+void ErosionDemo::backupOriginalTerrain(VkCommandBuffer commandBuffer) {
+    auto backupTexture = [&](Texture& destination, Texture& source) {
+        source.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        const bool recreate = !destination.isValid()
+            || destination.format != source.format
+            || destination.width != source.width
+            || destination.height != source.height
+            || destination.depth != source.depth
+            || destination.levels != source.levels;
+
+        if(recreate) {
+            textureViewer.imguiTextureIds.erase(&destination);
+            dispose(destination);
+            destination.levels = source.levels;
+            destination.layers = source.layers;
+            textures::create(device, destination, VK_IMAGE_TYPE_2D, source.format, {source.width, source.height, source.depth}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        }
+
+        textures::copy(commandBuffer, source, destination);
+        if(destination.levels > 1) {
+            textures::generateLOD(commandBuffer, destination.image, destination.width, destination.height, destination.levels, destination.layers);
+        }
+        destination.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    };
+
+    backupTexture(originalTerrain.displacement, displacementMapGenerator->displacementTexture());
+    backupTexture(originalTerrain.normals, displacementMapGenerator->normalTexture());
+    backupTexture(originalTerrain.slopeMoments0, displacementMapGenerator->slopeMoments0Texture());
+    backupTexture(originalTerrain.slopeMoments1, displacementMapGenerator->slopeMoments1Texture());
+    originalTerrain.ready = true;
+}
+
+void ErosionDemo::applyTerrainMapBinding() {
+    if(options.showOriginalTerrain && !originalTerrain.ready) {
+        options.showOriginalTerrain = false;
+    }
+
+    const bool useOriginal = options.showOriginalTerrain && originalTerrain.ready;
+    auto& displacement = useOriginal ? originalTerrain.displacement : displacementMapGenerator->displacementTexture();
+    auto& normals = useOriginal ? originalTerrain.normals : displacementMapGenerator->normalTexture();
+    auto& slopeMoments0 = useOriginal ? originalTerrain.slopeMoments0 : displacementMapGenerator->slopeMoments0Texture();
+    auto& slopeMoments1 = useOriginal ? originalTerrain.slopeMoments1 : displacementMapGenerator->slopeMoments1Texture();
+
+    bindlessDescriptor.update({&displacement, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.dmap_tex_index});
+    bindlessDescriptor.update({&normals, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.dmap_normal_tex_index});
+    bindlessDescriptor.update({&slopeMoments0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.dmap_slope_moments0_tex_index});
+    bindlessDescriptor.update({&slopeMoments1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, context.dmap_slope_moments1_tex_index});
 }
 
 glm::uvec2 ErosionDemo::sceneExtent() const {
@@ -373,6 +424,8 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Begin("Controls", nullptr, flags);
     if(ImGui::BeginTabBar("ErosionDemoTabs")) {
         if(ImGui::BeginTabItem("Terrain")) {
+            ImGui::Checkbox("Show original terrain", &options.showOriginalTerrain);
+            ImGui::Separator();
             terrain->controlsContent();
             ImGui::EndTabItem();
         }
@@ -575,6 +628,9 @@ void ErosionDemo::initDisplacementMapGenerator() {
     displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::Noise, 4096, 4096, resource(path));
     displacementMapGenerator->setTerrainMetrics(glm::vec2{static_cast<float>(TerrainWorldSize.x), static_cast<float>(TerrainWorldSize.y)}, TerrainHeightScale);
     displacementMapGenerator->init();
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        backupOriginalTerrain(commandBuffer);
+    });
 }
 
 void ErosionDemo::initDisplacementShadowMap() {

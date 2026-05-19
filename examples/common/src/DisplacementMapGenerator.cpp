@@ -74,6 +74,18 @@ Texture& DisplacementMapGenerator::displacementTexture() {
     return m_displacementMap.values;
 }
 
+Texture& DisplacementMapGenerator::normalTexture() {
+    return m_displacementMap.normals;
+}
+
+Texture& DisplacementMapGenerator::slopeMoments0Texture() {
+    return m_displacementMap.slopeMoments0;
+}
+
+Texture& DisplacementMapGenerator::slopeMoments1Texture() {
+    return m_displacementMap.slopeMoments1;
+}
+
 void DisplacementMapGenerator::refreshDerivedMaps(VkCommandBuffer commandBuffer) {
     generateSlopeMomentMaps(commandBuffer);
     bindlessDescriptor().update({ &m_displacementMap.slopeMoments0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_info.slope_moments0_tex_id });

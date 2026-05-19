@@ -72,6 +72,10 @@ protected:
 
     void textureViewerControls();
 
+    void backupOriginalTerrain(VkCommandBuffer commandBuffer);
+
+    void applyTerrainMapBinding();
+
     glm::uvec2 sceneExtent() const;
 
     void setSceneViewport(VkCommandBuffer commandBuffer) const;
@@ -123,6 +127,13 @@ protected:
     std::unique_ptr<DisplacementShadowMap> displacementShadowMap;
     std::unique_ptr<AtmosphereModel> atmosphere;
     std::unique_ptr<ErosionSimulator> erosionSim;
+    struct {
+        Texture displacement;
+        Texture normals;
+        Texture slopeMoments0;
+        Texture slopeMoments1;
+        bool ready{};
+    } originalTerrain;
     Texture heightMap;
     Texture normalMap;
     ComputePipelines compute;
@@ -143,6 +154,7 @@ protected:
         float lightZenith{15};
         float lightAzimuth{223};
         bool debug{true};
+        bool showOriginalTerrain{};
     } options;
     VulkanSampler edgeClampSampler;
     NullProfiler nullProfiler;

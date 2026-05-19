@@ -28,6 +28,12 @@ public:
 
     Texture& displacementTexture();
 
+    Texture& normalTexture();
+
+    Texture& slopeMoments0Texture();
+
+    Texture& slopeMoments1Texture();
+
     void refreshDerivedMaps(VkCommandBuffer commandBuffer);
 
 protected:
