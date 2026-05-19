@@ -20,7 +20,8 @@ void main() {
 
     const float dt = timeStep;
     vec2 velocity = getVelocityField(gid);
-    float st_dt = getSedimentAmountBiLinear(vec2(gid) - velocity * dt);
+    vec2 texelVelocity = velocity / max(erosionCellSize(), vec2(0.000001));
+    float st_dt = getSedimentAmountBiLinear(vec2(gid) - texelVelocity * dt);
 
     setAdvectedSediment(gid, st_dt);
 }

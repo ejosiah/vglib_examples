@@ -8,13 +8,13 @@ Shared constants, bindings, and accessors for erosion passes implementing equati
 #define EROSION_CONSTANTS_GLSL
 
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
 
 layout(push_constant) uniform Constants {
     ivec2 terrainSize;
     float timeStep; // dt
     float rainScale; // Kr
     float pipeArea; // A
-    float inversePipeLength; // 1/l
     float gravity; // g
     float sedimentCapacity; // Kc
     float thermalErosionRate; // Kt
@@ -26,6 +26,9 @@ layout(push_constant) uniform Constants {
     float maximalErosionDepth; // Kd_max
     float talusAngleTangentCoeff; // Ka
     float talusAngleTangentBias; // Ki
+    float terrainTexelSizeX;
+    float terrainTexelSizeY;
+    float terrainHeightScale;
     uint iteration;
     uint maxIterations;
     uint terrainHeightTextureIndex;
@@ -81,13 +84,26 @@ float getWaterHeight(ivec2 loc) {
     return texelFetch(water_height_texture, loc, 0).r;
 }
 
+vec2 erosionCellSize() {
+    return vec2(terrainTexelSizeX, terrainTexelSizeY) / max(terrainHeightScale, 0.000001);
+}
+
 float getSedimentAmount(ivec2 loc) {
     return texelFetch(sediment_amount_texture, loc, 0).r;
 }
 
 float getSedimentAmountBiLinear(vec2 loc) {
-    vec2 uv = (clamp(loc, vec2(0.0), vec2(terrainSize - ivec2(1))) + 0.5) / vec2(terrainSize);
-    return texture(sediment_amount_texture, uv).r;
+    vec2 clampedLoc = clamp(loc, vec2(0.0), vec2(terrainSize - ivec2(1)));
+    ivec2 locMin = ivec2(floor(clampedLoc));
+    ivec2 locMax = min(locMin + ivec2(1), terrainSize - ivec2(1));
+    vec2 weight = fract(clampedLoc);
+
+    float s00 = getSedimentAmount(locMin);
+    float s10 = getSedimentAmount(ivec2(locMax.x, locMin.y));
+    float s01 = getSedimentAmount(ivec2(locMin.x, locMax.y));
+    float s11 = getSedimentAmount(locMax);
+
+    return mix(mix(s00, s10, weight.x), mix(s01, s11, weight.x), weight.y);
 }
 
 float getLocalHardnessCoef(ivec2 loc) {
@@ -98,14 +114,19 @@ vec2 getVelocityField(ivec2 loc) {
     return texelFetch(velocity_field_texture, loc, 0).rg;
 }
 
-vec3 getNormal(ivec2 loc) {
+vec2 getTerrainGradient(ivec2 loc) {
     ivec2 maxLoc = terrainSize - ivec2(1);
     float heightLeft = getTerrainHeight(clamp(loc + ivec2(-1, 0), ivec2(0), maxLoc));
     float heightRight = getTerrainHeight(clamp(loc + ivec2(1, 0), ivec2(0), maxLoc));
     float heightDown = getTerrainHeight(clamp(loc + ivec2(0, -1), ivec2(0), maxLoc));
     float heightUp = getTerrainHeight(clamp(loc + ivec2(0, 1), ivec2(0), maxLoc));
 
-    return normalize(vec3(heightLeft - heightRight, 2.0, heightDown - heightUp));
+    return vec2(heightRight - heightLeft, heightUp - heightDown) / (2.0 * erosionCellSize());
+}
+
+vec3 getNormal(ivec2 loc) {
+    vec2 slope = getTerrainGradient(loc);
+    return normalize(vec3(-slope.x, 1.0, -slope.y));
 }
 
 float getCarryingCapacity(ivec2 loc) {

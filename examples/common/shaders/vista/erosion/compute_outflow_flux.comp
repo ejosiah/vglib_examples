@@ -37,43 +37,52 @@ void main() {
     const float A = pipeArea;
     const float dt = timeStep;
     const float g = gravity;
-    const float inv_l = inversePipeLength;
+    vec2 cellSize = erosionCellSize();
+    const float inv_lx = 1.0 / max(cellSize.x, 0.000001);
+    const float inv_ly = 1.0 / max(cellSize.y, 0.000001);
 
     const vec4 outflow = getOutflow(gid);
 
     float hT = getHeightDiff(gid, gid.x, gid.y + 1);
     float fT = outflow.x;
 
-    fT = max(0.0, fT + dt * A * (g * hT) * inv_l);
+    fT = max(0.0, fT + dt * A * (g * hT) * inv_ly);
 
     float hR = getHeightDiff(gid, gid.x + 1, gid.y);
     float fR = outflow.y;
 
-    fR = max(0.0, fR + dt * A * (g * hR) * inv_l);
+    fR = max(0.0, fR + dt * A * (g * hR) * inv_lx);
 
     float hB = getHeightDiff(gid, gid.x, gid.y - 1);
     float fB = outflow.z;
 
-    fB = max(0.0, fB + dt * A * (g * hB) * inv_l);
+    fB = max(0.0, fB + dt * A * (g * hB) * inv_ly);
 
     float hL = getHeightDiff(gid, gid.x - 1, gid.y);
     float fL = outflow.w;
 
-    fL = max(0.0, fL + dt * A * (g * hL) * inv_l);
+    fL = max(0.0, fL + dt * A * (g * hL) * inv_lx);
 
+    vec4 unscaledOutflow = vec4(fT, fR, fB, fL);
     float d1 = getWaterHeight(gid);
-    vec2 cellSize = 1.0/vec2(terrainSize);
     float lx = cellSize.x;
     float ly = cellSize.y;
-    float num = d1 * lx * ly;
-    float denum = (fT + fR + fB + fL) * dt;
+    float waterVolume = d1 * lx * ly;
+    float outflowVolume = (fT + fR + fB + fL) * dt;
+    float K = outflowVolume > 0.0 ? min(1.0, waterVolume / outflowVolume) : 1.0;
 
-    float K = max(1.0, num/denum);
+    fT *= K;
+    fR *= K;
+    fB *= K;
+    fL *= K;
 
-    fT *= (fT > d1) ? K : 1.0;
-    fR *= (fR > d1) ? K : 1.0;
-    fB *= (fB > d1) ? K : 1.0;
-    fL *= (fL > d1) ? K : 1.0;
+    int id = gid.y * terrainSize.x + gid.x;
+    if(id == 4) {
+        debugPrintfEXT("compute_outflow_flux\n");
+        debugPrintfEXT("\toutflow raw: [%.20f, %.20f, %.20f, %.20f]\n", unscaledOutflow.x, unscaledOutflow.y, unscaledOutflow.z, unscaledOutflow.w);
+        debugPrintfEXT("\toutflow scaled: [%.20f, %.20f, %.20f, %.20f]\n", fT, fR, fB, fL);
+        debugPrintfEXT("\twaterVolume: %.20f, outflowVolume: %.20f, K: %.12f\n", waterVolume, outflowVolume, K);
+    }
 
     setOutflow(gid, vec4(fT, fR, fB, fL));
 }

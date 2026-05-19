@@ -92,11 +92,14 @@ namespace {
     }
 }
 
-ErosionSimulator::ErosionSimulator(Context &context, glm::uvec2 size)
+ErosionSimulator::ErosionSimulator(Context &context, glm::uvec2 size, glm::vec2 terrainWorldSize, float terrainHeightScale)
     : m_context{context}
     , m_size{size}
     , m_constants{
-        .terrainSize = size
+        .terrainSize = size,
+        .terrainTexelSizeX = terrainWorldSize.x / static_cast<float>(std::max(size.x, 1u)),
+        .terrainTexelSizeY = terrainWorldSize.y / static_cast<float>(std::max(size.y, 1u)),
+        .terrainHeightScale = terrainHeightScale
     }{}
 
 void ErosionSimulator::init() {
@@ -113,6 +116,11 @@ void ErosionSimulator::controls(bool show) {
     ImGui::SetWindowSize({0, 0});
 
     inputUint("Iterations", m_constants.maxIterations);
+    if(m_iteration >= m_constants.maxIterations) {
+        m_iteration = m_constants.maxIterations;
+        m_running = false;
+        m_stepRequested = false;
+    }
 
     if(ImGui::CollapsingHeader("Water", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::SliderFloat("Time increment (dt)", &m_constants.timeStep, 0.0f, 0.05f, "%.4f");
@@ -123,11 +131,11 @@ void ErosionSimulator::controls(bool show) {
     }
 
     if(ImGui::CollapsingHeader("Sediment", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::SliderFloat("Sediment capacity (Kc)", &m_constants.sedimentCapacity, 0.1f, 3.0f, "%.3f");
-        ImGui::SliderFloat("Soil suspension (Ks)", &m_constants.soilSuspensionRate, 0.1f, 2.0f, "%.3f");
+        ImGui::SliderFloat("Sediment capacity (Kc)", &m_constants.sedimentCapacity, 0.1f, 20.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Soil suspension (Ks)", &m_constants.soilSuspensionRate, 0.1f, 10.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Sediment deposition (Kd)", &m_constants.sedimentDepositionRate, 0.1f, 3.0f, "%.3f");
         ImGui::SliderFloat("Sediment softening (Kh)", &m_constants.sedimentSofteningRate, 0.0f, 10.0f, "%.3f");
-        ImGui::SliderFloat("Max erosion depth (Kdmax)", &m_constants.maximalErosionDepth, 0.0f, 40.0f, "%.3f");
+        ImGui::SliderFloat("Max erosion depth (Kdmax)", &m_constants.maximalErosionDepth, 0.00001f, 0.01f, "%.6f", ImGuiSliderFlags_Logarithmic);
     }
 
     if(ImGui::CollapsingHeader("Hardness", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -142,15 +150,28 @@ void ErosionSimulator::controls(bool show) {
     }
 
     ImGui::Text("Iteration: %u / %u", m_iteration, m_constants.maxIterations);
+    ImGui::Checkbox("Debug stepping", &m_manualStepping);
 
     if (ImGui::Button(m_running ? "Restart" : "Run")) {
         m_running = true;
         m_restartRequested = true;
+        m_stepRequested = !m_manualStepping;
+    }
+    if(m_manualStepping) {
+        ImGui::SameLine();
+        if(ImGui::Button("Step")) {
+            if(!m_running && m_iteration >= m_constants.maxIterations) {
+                m_restartRequested = true;
+            }
+            m_running = true;
+            m_stepRequested = true;
+        }
     }
     if(m_running) {
         ImGui::SameLine();
         if(ImGui::Button("Stop")) {
             m_running = false;
+            m_stepRequested = false;
         }
     }
 
@@ -199,12 +220,19 @@ ErosionSimulator::StepResult ErosionSimulator::step(VkCommandBuffer commandBuffe
         return StepResult::Idle;
     }
 
+    if(m_manualStepping && !m_stepRequested) {
+        return StepResult::Idle;
+    }
+
     if(m_restartRequested || m_displacementMap != &displacementMap) {
         update(commandBuffer, displacementMap);
     }
+    m_stepRequested = false;
 
     if(m_iteration >= m_constants.maxIterations) {
+        m_iteration = m_constants.maxIterations;
         m_running = false;
+        m_stepRequested = false;
         return StepResult::Finished;
     }
 
@@ -217,6 +245,10 @@ ErosionSimulator::StepResult ErosionSimulator::step(VkCommandBuffer commandBuffe
 
     ++m_iteration;
     m_running = m_iteration < m_constants.maxIterations;
+    if(!m_running) {
+        m_iteration = m_constants.maxIterations;
+        m_stepRequested = false;
+    }
     return m_running ? StepResult::Running : StepResult::Finished;
 }
 

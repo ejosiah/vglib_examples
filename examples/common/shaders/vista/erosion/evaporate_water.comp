@@ -23,9 +23,15 @@ void main() {
     const float Ke = evaporationRate;
 
     float d3 = getWaterHeight(gid);
-    float st_dt = getAdvectedSediment(gid); // Read equation 15 result from worksheet scratch.
+    float st_dt = getAdvectedSediment(gid);
     float d_t_dt = max(0.0, d3 * (1.0 - Ke * dt));
 
-    setSedimentAmount(gid, st_dt); // Commit advected sediment back to the sediment texture.
+    int id = gid.y * terrainSize.x + gid.x;
+    if(id == 4) {
+        debugPrintfEXT("evaporate_water\n");
+        debugPrintfEXT("\tst_dt: %.10f, d3: %f, d_t_dt: %f\n", st_dt, d3, d_t_dt);
+    }
+
+    setSedimentAmount(gid, st_dt);
     setWaterHeight(gid, d_t_dt);
 }

@@ -9,6 +9,9 @@
 #include "vista/AtmosphereModel.hpp"
 #include "Profiler.hpp"
 #include "vista/ErosionSimulator.hpp"
+#include "imgui.h"
+
+#include <map>
 
 class ErosionDemo : public VulkanBaseApp{
 public:
@@ -53,8 +56,6 @@ protected:
 
     void createRenderPipeline();
 
-    void createComputePipelines();
-
     void onSwapChainDispose() override;
 
     void onSwapChainRecreation() override;
@@ -68,6 +69,8 @@ protected:
     void runSim(VkCommandBuffer commandBuffer);
 
     void renderToDisplay(VkCommandBuffer commandBuffer);
+
+    void textureViewerControls(bool show);
 
     void toneMap(VkCommandBuffer commandBuffer);
 
@@ -119,6 +122,11 @@ protected:
     Texture heightMap;
     Texture normalMap;
     ComputePipelines compute;
+
+    struct {
+        int textureSlot{};
+        std::map<const Texture*, ImTextureID> imguiTextureIds;
+    } textureViewer;
 
     glm::vec3 lightDirection;
 

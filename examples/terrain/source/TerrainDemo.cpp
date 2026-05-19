@@ -5,6 +5,11 @@
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
 
+namespace {
+    constexpr glm::ivec2 TerrainWorldSize{52660};
+    constexpr glm::vec2 TerrainHeightScale{-14.0f, 1587.0f};
+}
+
 TerrainDemo::TerrainDemo(const Settings& settings) : VulkanBaseApp("Terrain", settings) {
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
@@ -383,13 +388,14 @@ void TerrainDemo::initContext() {
 }
 
 void TerrainDemo::initTerrain() {
-    terrain = std::make_unique<Terrain>(context, atmosphere->descriptor(), glm::ivec2{52660, 52660}, glm::vec2{-14.0f, 1587.0f});
+    terrain = std::make_unique<Terrain>(context, atmosphere->descriptor(), TerrainWorldSize, TerrainHeightScale);
     terrain->init();
 }
 
 void TerrainDemo::initDisplacementMapGenerator() {
     auto path = "kauai.png";
     displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::File, 3601, 3601, resource(path));
+    displacementMapGenerator->setTerrainMetrics(glm::vec2{static_cast<float>(TerrainWorldSize.x), static_cast<float>(TerrainWorldSize.y)}, TerrainHeightScale);
     displacementMapGenerator->init();
 }
 

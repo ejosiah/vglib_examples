@@ -25,7 +25,7 @@ void main() {
     }
 
     const float dt = timeStep;
-    vec2 cellSize = 1.0 / vec2(terrainSize);
+    vec2 cellSize = erosionCellSize();
     float lx = cellSize.x;
     float ly = cellSize.y;
 
@@ -39,8 +39,8 @@ void main() {
 
     float nfR = getOutflowOrZero(ivec3(gid + ivec2(-1, 0), 1));
     float nfL = getOutflowOrZero(ivec3(gid + ivec2(1, 0), 3));
-    float nfT = getOutflowOrZero(ivec3(gid + ivec2(0, 1), 0));
-    float nfB = getOutflowOrZero(ivec3(gid + ivec2(0, -1), 2));
+    float nfT = getOutflowOrZero(ivec3(gid + ivec2(0, -1), 0));
+    float nfB = getOutflowOrZero(ivec3(gid + ivec2(0, 1), 2));
 
     float DeltaV = dt * (nfR + nfT + nfL + nfB - fL - fR - fT - fB);
     float d2 = max(0.0, d1 + DeltaV / (lx * ly));
@@ -49,6 +49,15 @@ void main() {
     if(d2 > 0.0) {
         v.x = (nfR - fL + fR - nfL) / (2.0 * d2 * ly);
         v.y = (nfT - fB + fT - nfB) / (2.0 * d2 * lx);
+    }
+
+    int id = gid.y * terrainSize.x + gid.x;
+    if(id == 4) {
+        debugPrintfEXT("compute_water_height_change\n");
+        debugPrintfEXT("\toutflow local: [%.20f, %.20f, %.20f, %.20f]\n", fT, fR, fB, fL);
+        debugPrintfEXT("\toutflow neighbor: [%.20f, %.20f, %.20f, %.20f]\n", nfT, nfR, nfB, nfL);
+        debugPrintfEXT("\td2: %f, lx: %f, ly: %f\n", d2, lx, ly);
+        debugPrintfEXT("\tDeltaV: %.20f, v: [%.20f, %.20f]\n", DeltaV, v.x, v.y);
     }
 
     setWaterHeight(gid, d2);

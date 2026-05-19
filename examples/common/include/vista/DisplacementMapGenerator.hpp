@@ -22,6 +22,8 @@ public:
 
     DisplacementMapInfo displacementMapInfo() const;
 
+    void setTerrainMetrics(glm::vec2 terrainWorldSize, glm::vec2 heightScale);
+
     Texture& displacementTexture();
 
     void refreshDerivedMaps(VkCommandBuffer commandBuffer);
@@ -81,12 +83,15 @@ private:
         float bump_strength{};
         float sigma{};
         int sampleRadius{};
+        float heightScaleX{1.0f};
+        float heightScaleY{1.0f};
         uint dmap_tex_id{};
         uint normal_image_id{};
     };
 
     struct SlopeMomentConstants {
-        float heightScale{1.0f};
+        float heightScaleX{1.0f};
+        float heightScaleY{1.0f};
         uint dmap_tex_id{};
         uint moments0_image_id{};
         uint moments1_image_id{};
@@ -106,6 +111,7 @@ private:
     std::string m_path;
     DisplacementMap m_displacementMap;
     DisplacementMapInfo m_info;
+    glm::vec2 m_derivedMapHeightScale{1601.0f / 52660.0f};
     DisplacementMethod m_method{DisplacementMethod::File};
     ComputePipelines m_compute;
     FileInfo m_fileInfo;

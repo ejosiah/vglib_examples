@@ -21,5 +21,11 @@ void main() {
     float rainRate = timeStep * rainScale * texelFetch(rain_texture, gid, 0).r;
     float waterHeight = texelFetch(water_height_texture, gid, 0).r + rainRate;
 
+    int id = gid.y * terrainSize.x + gid.x;
+    if(id == 4) {
+        debugPrintfEXT("apply_rain\n");
+        debugPrintfEXT("\twaterHeight: %f\n", waterHeight);
+    }
+
     imageStore(water_height_image, gid, vec4(waterHeight));
 }

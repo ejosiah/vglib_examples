@@ -12,7 +12,7 @@ public:
         Finished
     };
 
-    ErosionSimulator(Context& context, glm::uvec2 size);
+    ErosionSimulator(Context& context, glm::uvec2 size, glm::vec2 terrainWorldSize = glm::vec2{1.0f}, float terrainHeightScale = 1.0f);
 
     void init();
 
@@ -69,6 +69,8 @@ private:
     float m_localHardness{0.8f};
     bool m_running{};
     bool m_restartRequested{};
+    bool m_manualStepping{};
+    bool m_stepRequested{};
     uint m_iteration{};
 
     struct Constants {
@@ -76,18 +78,20 @@ private:
         float timeStep{0.02}; // dt
         float rainScale{0.012}; // Kr
         float pipeArea{20}; // A
-        float inversePipeLength{1}; // l
         float gravity{9.81}; // g
         float sedimentCapacity{1}; // Kc
         float thermalErosionRate{0.15}; // Kt
         float soilSuspensionRate{0.5}; // Ks
         float sedimentDepositionRate{1}; // Kd
-        float evaporationRate{0.001}; // Ke
         float sedimentSofteningRate{5}; // Kh
-        float minimumHardness{0.1}; // Rmin
         float maximalErosionDepth{10}; // Kd_max
+        float evaporationRate{0.001}; // Ke
+        float minimumHardness{0.1}; // Rmin
         float talusAngleTangentCoeff{0.8}; // Ka
         float talusAngleTangentBias{0.1}; // Ki
+        float terrainTexelSizeX{1.0f};
+        float terrainTexelSizeY{1.0f};
+        float terrainHeightScale{1.0f};
         uint iteration{0};
         uint maxIterations{1000};
         uint terrainHeightTextureIndex{~0u};

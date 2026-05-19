@@ -6,6 +6,13 @@
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
 
+#include <algorithm>
+
+namespace {
+    constexpr glm::ivec2 TerrainWorldSize{10000};
+    constexpr glm::vec2 TerrainHeightScale{-1.0f, 1059.0f};
+}
+
 ErosionDemo::ErosionDemo(const Settings& settings) : VulkanBaseApp("Erosion", settings) {
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
@@ -30,7 +37,6 @@ void ErosionDemo::initApp() {
     AppContext::init(device, descriptorPool, swapChain, renderPass);
     initLoader();
     createDescriptorSetLayouts();
-    createComputePipelines();
     initContext();
     initGBuffer();
     updateDescriptorSets();
@@ -288,12 +294,14 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
     static bool lightOpen = false;
     static bool perfOpen = false;
     static bool displacementOpen = false;
+    static bool textureViewerOpen = false;
 
     ImGui::Begin("Controls");
     ImGui::SetWindowSize({0, 0});
     ImGui::Checkbox("Terrain", &terrainOpen);
     ImGui::Checkbox("Displacement", &displacementOpen);
     ImGui::Checkbox("erosion", &erosionOpen);
+    ImGui::Checkbox("Textures", &textureViewerOpen);
     ImGui::Checkbox("Atmosphere", &atmosphereOpen);
     ImGui::Checkbox("Lighting", &lightOpen);
     ImGui::Checkbox("Performance", &perfOpen);
@@ -303,6 +311,7 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
     displacementMapGenerator->controls(displacementOpen);
     atmosphere->controls(atmosphereOpen);
     erosionSim->controls(erosionOpen);
+    textureViewerControls(textureViewerOpen);
 
     if(lightOpen) {
         ImGui::Begin("Lighting");
@@ -335,6 +344,98 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
     }
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+}
+
+void ErosionDemo::textureViewerControls(bool show) {
+    if(!show) {
+        return;
+    }
+
+    std::vector<BindlessTexture> textures;
+    for(const auto& texture : bindlessDescriptor.boundedTextures) {
+        if(texture.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && texture.texture && texture.texture->isValid()) {
+            textures.push_back(texture);
+        }
+    }
+
+    std::sort(textures.begin(), textures.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.index < rhs.index;
+    });
+
+    ImGui::Begin("Textures");
+    ImGui::SetWindowSize({0, 0});
+
+    if(textures.empty()) {
+        ImGui::Text("No bound sampled textures");
+        ImGui::End();
+        return;
+    }
+
+    auto slotForPosition = [&](int position) {
+        const auto clampedPosition = std::clamp(position, 0, static_cast<int>(textures.size()) - 1);
+        return static_cast<int>(textures[clampedPosition].index);
+    };
+
+    auto current = std::find_if(textures.begin(), textures.end(), [&](const auto& texture) {
+        return static_cast<int>(texture.index) == textureViewer.textureSlot;
+    });
+
+    if(current == textures.end()) {
+        textureViewer.textureSlot = slotForPosition(0);
+        current = textures.begin();
+    }
+
+    const auto currentPosition = static_cast<int>(std::distance(textures.begin(), current));
+
+    if(ImGui::Button("-")) {
+        textureViewer.textureSlot = slotForPosition(currentPosition - 1);
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    if(ImGui::InputInt("Slot", &textureViewer.textureSlot, 1, 8)) {
+        const auto nearest = std::lower_bound(textures.begin(), textures.end(), textureViewer.textureSlot, [](const auto& texture, int slot) {
+            return static_cast<int>(texture.index) < slot;
+        });
+        if(nearest == textures.end()) {
+            textureViewer.textureSlot = slotForPosition(static_cast<int>(textures.size()) - 1);
+        }else {
+            textureViewer.textureSlot = static_cast<int>(nearest->index);
+        }
+    }
+    ImGui::SameLine();
+    if(ImGui::Button("+")) {
+        textureViewer.textureSlot = slotForPosition(currentPosition + 1);
+    }
+
+    current = std::find_if(textures.begin(), textures.end(), [&](const auto& texture) {
+        return static_cast<int>(texture.index) == textureViewer.textureSlot;
+    });
+    if(current == textures.end()) {
+        current = textures.begin();
+        textureViewer.textureSlot = static_cast<int>(current->index);
+    }
+
+    const auto* texture = current->texture;
+    ImGui::Text("Binding %u  %ux%u", current->index, texture->width, texture->height);
+
+    auto id = textureViewer.imguiTextureIds.find(texture);
+    if(id == textureViewer.imguiTextureIds.end()) {
+        id = textureViewer.imguiTextureIds
+            .emplace(texture, plugin<ImGuiPlugin>(IM_GUI_PLUGIN).addTexture(*const_cast<Texture*>(texture), current->imageLayout))
+            .first;
+    }
+
+    const auto available = ImGui::GetContentRegionAvail();
+    const auto maxSide = std::max(available.x, 64.0f);
+    const auto aspect = texture->height > 0 ? static_cast<float>(texture->width) / static_cast<float>(texture->height) : 1.0f;
+    ImVec2 imageSize{maxSide, maxSide / std::max(aspect, 0.0001f)};
+    if(imageSize.y > 512.0f) {
+        imageSize.y = 512.0f;
+        imageSize.x = imageSize.y * aspect;
+    }
+    ImGui::Image(id->second, imageSize);
+
+    ImGui::End();
 }
 
 void ErosionDemo::update(float time) {
@@ -397,13 +498,14 @@ void ErosionDemo::initContext() {
 }
 
 void ErosionDemo::initTerrain() {
-    terrain = std::make_unique<ErodedTerrain>(context, atmosphere->descriptor(), glm::ivec2{10000}, glm::vec2{-1, 1059});
+    terrain = std::make_unique<ErodedTerrain>(context, atmosphere->descriptor(), TerrainWorldSize, TerrainHeightScale);
     terrain->init();
 }
 
 void ErosionDemo::initDisplacementMapGenerator() {
     auto path = "generated_displacement.png";
     displacementMapGenerator = std::make_unique<DisplacementMapGenerator>(context, DisplacementMethod::Noise, 4096, 4096, resource(path));
+    displacementMapGenerator->setTerrainMetrics(glm::vec2{static_cast<float>(TerrainWorldSize.x), static_cast<float>(TerrainWorldSize.y)}, TerrainHeightScale);
     displacementMapGenerator->init();
 }
 
@@ -422,7 +524,12 @@ void ErosionDemo::initAtmosphere() {
 
 void ErosionDemo::initSim() {
     auto dmapInfo = displacementMapGenerator->displacementMapInfo();
-    erosionSim = std::make_unique<ErosionSimulator>(context, glm::ivec2{dmapInfo.width, dmapInfo.height});
+    erosionSim = std::make_unique<ErosionSimulator>(
+        context,
+        glm::ivec2{dmapInfo.width, dmapInfo.height},
+        glm::vec2{static_cast<float>(TerrainWorldSize.x), static_cast<float>(TerrainWorldSize.y)},
+        TerrainHeightScale.y - TerrainHeightScale.x
+    );
     erosionSim->init();
 }
 
@@ -449,16 +556,6 @@ void ErosionDemo::newFrame() {
 
     atmosphere->newFrame();
     terrain->newFrame();
-}
-
-void ErosionDemo::createComputePipelines() {
-//    compute = ComputePipelines(&device, {{
-//         .name = "generate_normals",
-//         .shadePath = resource("vista_generate_normal_map.comp.spv"),
-//         .layouts = { const_cast<VulkanDescriptorSetLayout*>(bindlessDescriptor.descriptorSetLayout)},
-//         .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int) * 3} }
-//     }});
-//    compute.createPipelines();
 }
 
 void ErosionDemo::initGBuffer() {

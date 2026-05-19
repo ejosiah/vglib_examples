@@ -8,7 +8,8 @@ layout(set = 0, binding = 10) uniform sampler2D global_textures[];
 layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
 
 layout(push_constant) uniform Constants {
-    float heightScale;
+    float heightScaleX;
+    float heightScaleY;
     uint dmap_tex_id;
     uint moments0_image_id;
     uint moments1_image_id;
@@ -20,7 +21,7 @@ layout(push_constant) uniform Constants {
 
 float heightAt(ivec2 p, ivec2 size) {
     ivec2 coord = clamp(p, ivec2(0), size - ivec2(1));
-    return pc.heightScale * texelFetch(displacement_map, coord, 0).r;
+    return texelFetch(displacement_map, coord, 0).r;
 }
 
 void main() {
@@ -43,8 +44,8 @@ void main() {
     float hD = heightAt(ivec2(gid.x, down), size);
     float hU = heightAt(ivec2(gid.x, up), size);
 
-    float du = (hR - hL) * float(size.x) / duSpan;
-    float dv = (hU - hD) * float(size.y) / dvSpan;
+    float du = (hR - hL) * pc.heightScaleX * float(size.x) / duSpan;
+    float dv = (hU - hD) * pc.heightScaleY * float(size.y) / dvSpan;
 
     // LEADR stores the linear moments E[du], E[dv], E[du^2], E[dv^2], and E[du*dv].
     imageStore(slope_moments0, gid, vec4(du, dv, du * du, dv * dv));

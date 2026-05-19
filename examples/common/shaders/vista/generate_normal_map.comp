@@ -9,15 +9,14 @@ layout(local_size_x = 16, local_size_y = 16) in;
 layout(set = 0, binding = 10) uniform sampler2D global_textures[];
 layout(set = 0, binding = 11) uniform writeonly image2D global_images[];
 
-float heightScale = 1601;
-float terrainSize = 52660;
-
 #define depth_map global_textures[pc.dmap_tex_id]
 
 layout(push_constant) uniform Contanst {
     float bumpStrength;
     float sigma;
     int sampleRadius;
+    float heightScaleX;
+    float heightScaleY;
     uint dmap_tex_id;
     uint nornal_image_id;
 } pc;
@@ -63,8 +62,8 @@ vec3 depthToNormalGaussian(vec2 uv) {
     if (normX > 0.0) dx /= normX;
     if (normY > 0.0) dy /= normY;
 
-    dx *= heightScale/terrainSize;
-    dy *= heightScale/terrainSize;
+    dx *= pc.heightScaleX;
+    dy *= pc.heightScaleY;
 
     dx *= pc.bumpStrength;
     dy *= pc.bumpStrength;
@@ -83,8 +82,8 @@ vec3 depthToNormal(vec2 uv) {
     float dx = (heightR - heightL) * pc.bumpStrength;
     float dy = (heightU - heightD) * pc.bumpStrength;
 
-    dx *= heightScale/terrainSize;
-    dy *= heightScale/terrainSize;
+    dx *= pc.heightScaleX;
+    dy *= pc.heightScaleY;
 
     vec3 normal = normalize(vec3(-dx, -dy, 1.0));
 

@@ -54,6 +54,13 @@ void main() {
         Rt_dt = max(Rmin, Rt - dt * Kh * Ks * (st - C));
     }
 
+    int id = gid.y * terrainSize.x + gid.x;
+    if(id == 4) {
+        debugPrintfEXT("erode_deposit_sediment\n");
+        debugPrintfEXT("\tst: %.10f, C: %.10f, DeltaS: %.10f, s1: %.10f, d2: %f, bt: %f\n", st, C, DeltaS, s1, d2, b_next);
+    }
+
+
     setTerrainHeight(gid, b_next);
     setWaterHeight(gid, d3);
     setSedimentAmount(gid, s1);

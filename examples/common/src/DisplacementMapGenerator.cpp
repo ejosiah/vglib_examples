@@ -2,6 +2,7 @@
 #include "Barrier.hpp"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <imgui.h>
 
 namespace {
@@ -383,6 +384,14 @@ DisplacementMapInfo DisplacementMapGenerator::displacementMapInfo() const {
     return rtVal;
 }
 
+void DisplacementMapGenerator::setTerrainMetrics(glm::vec2 terrainWorldSize, glm::vec2 heightScale) {
+    const float heightRange = std::abs(heightScale.y - heightScale.x);
+    m_derivedMapHeightScale = {
+        heightRange / std::max(std::abs(terrainWorldSize.x), 0.000001f),
+        heightRange / std::max(std::abs(terrainWorldSize.y), 0.000001f)
+    };
+}
+
 void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) {
     auto info = displacementMapInfo();
     auto& normalMap = m_displacementMap.normals;
@@ -412,7 +421,15 @@ void DisplacementMapGenerator::generateNormalMap(VkCommandBuffer commandBuffer) 
     const auto gx = (info.width + 15)/16;
     const auto gy = (info.height + 15)/16;
 
-    NormalGenConstants constants { 1000.f, 1.5f, 4,  info.values_tex_id, normalMapImageId } ;
+    NormalGenConstants constants {
+        .bump_strength = 1000.0f,
+        .sigma = 1.5f,
+        .sampleRadius = 4,
+        .heightScaleX = m_derivedMapHeightScale.x,
+        .heightScaleY = m_derivedMapHeightScale.y,
+        .dmap_tex_id = info.values_tex_id,
+        .normal_image_id = normalMapImageId
+    };
 
     auto descriptorSet = bindlessDescriptorSet();
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("generate_normals"));
@@ -471,10 +488,9 @@ void DisplacementMapGenerator::generateSlopeMomentMaps(VkCommandBuffer commandBu
     const auto gx = (info.width + 15)/16;
     const auto gy = (info.height + 15)/16;
 
-    constexpr auto heightRange = 1601.0f;
-    constexpr auto terrainSize = 52660.0f;
     SlopeMomentConstants constants {
-        .heightScale = heightRange / terrainSize,
+        .heightScaleX = m_derivedMapHeightScale.x,
+        .heightScaleY = m_derivedMapHeightScale.y,
         .dmap_tex_id = m_info.values_tex_id,
         .moments0_image_id = m_slopeMoments0ImageId,
         .moments1_image_id = m_slopeMoments1ImageId
