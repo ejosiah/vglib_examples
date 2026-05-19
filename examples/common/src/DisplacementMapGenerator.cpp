@@ -102,11 +102,15 @@ bool DisplacementMapGenerator::controls(bool show) {
         return false;
     }
 
-    bool dirty = false;
-
     ImGui::Begin("Displacement");
     ImGui::SetWindowSize({0, 0});
+    const bool dirty = controlsContent();
+    ImGui::End();
+    return dirty;
+}
 
+bool DisplacementMapGenerator::controlsContent() {
+    bool dirty = false;
     static constexpr std::array<const char*, 4> methods{ "None", "File", "Fault formation", "Noise" };
     int method = static_cast<int>(m_method);
     if(ImGui::Combo("Type", &method, methods.data(), static_cast<int>(methods.size()))) {
@@ -151,8 +155,6 @@ bool DisplacementMapGenerator::controls(bool show) {
     if(m_method != DisplacementMethod::File && ImGui::Button("Regenerate")) {
         dirty = true;
     }
-
-    ImGui::End();
 
     m_dirty |= dirty;
     return dirty;

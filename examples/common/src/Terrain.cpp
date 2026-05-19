@@ -63,6 +63,7 @@ void Terrain::newFrame() {
     m_uniforms.cpu->minLodVariance = std::sqrt(m_options.minLodStdev / 64.f / m_options.dmapScale);
     m_uniforms.cpu->lightDirection = context().lightDirection;
     m_uniforms.cpu->mouse = context().mouse;
+    m_uniforms.cpu->resolution = { m_context->screenWidth, m_context->screenHeight };
     m_uniforms.cpu->tileSize = glm::vec2{m_options.tileSize};
     m_uniforms.cpu->showTiles = uint(m_options.showTiles);
     m_uniforms.cpu->tileColor = uint(m_options.tileColor);
@@ -158,6 +159,8 @@ void Terrain::initUniforms() {
 void Terrain::createRenderPipelines() {
     const auto w = m_context->screenWidth;
     const auto h = m_context->screenHeight;
+    const auto scissorWidth = static_cast<int32_t>(w);
+    const auto scissorHeight = static_cast<int32_t>(h);
 
     m_render.pipeline =
         graphicsPipelineBuilder()
@@ -177,6 +180,17 @@ void Terrain::createRenderPipelines() {
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
                 .depthAttachment(VK_FORMAT_D16_UNORM)
+            .viewportState().clear()
+                .viewport()
+                    .origin(0, 0)
+                    .dimension(w, h)
+                .scissor()
+                    .offset(0, 0)
+                    .extent(scissorWidth, scissorHeight)
+                .add()
+            .dynamicState()
+                .viewport()
+                .scissor()
             .colorBlendState()
                 .attachments(2)
             .layout().clear()
@@ -329,7 +343,11 @@ void Terrain::controls(bool show) {
 
     ImGui::Begin("terrain");
     ImGui::SetWindowSize({});
+    controlsContent();
+    ImGui::End();
+}
 
+void Terrain::controlsContent() {
     ImGui::SliderFloat("Pixels/Edge", &m_options.primitivePixelLengthTarget, 1, 32);
     ImGui::SliderFloat("Dmap scale", &m_options.dmapScale, 0, 1);
     ImGui::SliderFloat("Lod Std", &m_options.minLodStdev, 0, 1);
@@ -352,8 +370,6 @@ void Terrain::controls(bool show) {
     ImGui::Text("Cbt info:\n\tNode Count: %d\n\tMax depth: %d", m_cbtInfo.cpu->nodeCount, m_cbtInfo.cpu->maxDepth);
     ImGui::Text("Minimum triangle area %f",  *as<float>(&m_uniforms.cpu->minArea));
     ImGui::Text("Triangle count: %d", m_triangleCount);
-
-    ImGui::End();
 }
 
 void Terrain::lightingControls() {

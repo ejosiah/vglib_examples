@@ -122,6 +122,13 @@ void AtmosphereModel::renderArealPerspective(VkCommandBuffer commandBuffer) {
 void AtmosphereModel::controls(bool show) {
     if(!show) return;
 
+    ImGui::Begin("Atmosphere");
+    ImGui::SetWindowSize({0, 0});
+    controlsContent();
+    ImGui::End();
+}
+
+void AtmosphereModel::controlsContent() {
     auto defaultParams = Atmosphere::Params{};
     static auto mieAbsorption = glm::max(glm::vec3(0), params.mie.extinction - params.mie.scattering);
     static auto mieScatteringLength = glm::length(defaultParams.mie.scattering) * km;
@@ -129,8 +136,6 @@ void AtmosphereModel::controls(bool show) {
     static auto rayleighScattingLength = glm::length(defaultParams.rayleigh.scattering) * km;
     static auto ozoneAbsorptionLength = glm::length(defaultParams.ozone.absorptionExtinction) * km;
 
-    ImGui::Begin("Atmosphere");
-    ImGui::SetWindowSize({0, 0});
     ImGui::Checkbox("Areal perspective", &m_arealPerspectiveEnabled);
     ImGui::SliderFloat("Mie phase", &params.mie.anisotropicFactor, 0, 0.999);
     ImGui::SliderInt("Scatt Order", &params.numScatteringOrder, 2, 10);
@@ -180,8 +185,6 @@ void AtmosphereModel::controls(bool show) {
         rayleighHeight = defaultParams.rayleigh.height / defaultParams.lengthUnitInMeters;
     }
 
-    ImGui::End();
-
     params.mie.scattering = mieScattering * mieScatteringLength/km;
     mieAbsorption = mieAbsorptionColor * mieAbsorptionLength/km;
     params.mie.extinction = params.mie.scattering + mieAbsorption;
@@ -191,8 +194,6 @@ void AtmosphereModel::controls(bool show) {
     params.radius.top = (planetRadius + atmosphereHeight) * km;
     params.mie.height = mieScaleHeight * km;
     params.rayleigh.height = rayleighHeight * km;
-
-
 }
 
 Context &AtmosphereModel::context() {
@@ -227,6 +228,11 @@ void AtmosphereModel::createComputePipelines() {
 }
 
 void AtmosphereModel::createRenderPipelines() {
+    const auto w = context().screenWidth;
+    const auto h = context().screenHeight;
+    const auto scissorWidth = static_cast<int32_t>(w);
+    const auto scissorHeight = static_cast<int32_t>(h);
+
     m_render.skyView.pipeline =
         clipSpacePipelineBuilder()
             .shaderStage()
@@ -234,6 +240,17 @@ void AtmosphereModel::createRenderPipelines() {
                 .fragmentShader(resource("vista_atmosphere_render_sky_view.frag.spv"))
             .depthStencilState()
                 .compareOpLessOrEqual()
+            .viewportState().clear()
+                .viewport()
+                    .origin(0, 0)
+                    .dimension(w, h)
+                .scissor()
+                    .offset(0, 0)
+                    .extent(scissorWidth, scissorHeight)
+                .add()
+            .dynamicState()
+                .viewport()
+                .scissor()
             .dynamicRenderPass()
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
@@ -264,6 +281,17 @@ void AtmosphereModel::createRenderPipelines() {
             .depthStencilState()
                 .disableDepthTest()
                 .disableDepthWrite()
+            .viewportState().clear()
+                .viewport()
+                    .origin(0, 0)
+                    .dimension(w, h)
+                .scissor()
+                    .offset(0, 0)
+                    .extent(scissorWidth, scissorHeight)
+                .add()
+            .dynamicState()
+                .viewport()
+                .scissor()
             .dynamicRenderPass()
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)
                 .addColorAttachment(VK_FORMAT_R32G32B32A32_SFLOAT)

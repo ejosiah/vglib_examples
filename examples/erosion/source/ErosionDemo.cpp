@@ -11,6 +11,8 @@
 namespace {
     constexpr glm::ivec2 TerrainWorldSize{10000};
     constexpr glm::vec2 TerrainHeightScale{-1.0f, 1059.0f};
+    constexpr uint32_t ControlPanelWidth = 380;
+    constexpr uint32_t MinSceneWidth = 320;
 }
 
 ErosionDemo::ErosionDemo(const Settings& settings) : VulkanBaseApp("Erosion", settings) {
@@ -58,7 +60,8 @@ void ErosionDemo::initCamera() {
     cameraSettings.zNear = 1;
     cameraSettings.acceleration = glm::vec3(1 * km);
     cameraSettings.velocity = glm::vec3(10 * km);
-    cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
+    const auto extent = sceneExtent();
+    cameraSettings.aspectRatio = static_cast<float>(extent.x) / static_cast<float>(extent.y);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     auto pos = glm::vec3{-2272, 25, -517};
@@ -185,12 +188,27 @@ void ErosionDemo::createPipelineCache() {
 
 
 void ErosionDemo::createRenderPipeline() {
+    const auto extent = sceneExtent();
+    const auto scissorWidth = static_cast<int32_t>(extent.x);
+    const auto scissorHeight = static_cast<int32_t>(extent.y);
+
     //    @formatter:off
     render.pipeline =
         prototypes->cloneScreenSpaceGraphicsPipeline()
             .shaderStage()
                 .vertexShader(resource("quad.vert.spv"))
                 .fragmentShader(resource("quad.frag.spv"))
+            .viewportState().clear()
+                .viewport()
+                    .origin(0, 0)
+                    .dimension(extent.x, extent.y)
+                .scissor()
+                    .offset(0, 0)
+                    .extent(scissorWidth, scissorHeight)
+                .add()
+            .dynamicState()
+                .viewport()
+                .scissor()
             .layout()
                 .addDescriptorSetLayout(displayDescriptorSetLayout)
             .name("lighting")
@@ -207,6 +225,17 @@ void ErosionDemo::createRenderPipeline() {
                 .depthAttachment(VK_FORMAT_D16_UNORM)
             .depthStencilState()
                 .compareOpAlways()
+            .viewportState().clear()
+                .viewport()
+                    .origin(0, 0)
+                    .dimension(extent.x, extent.y)
+                .scissor()
+                    .offset(0, 0)
+                    .extent(scissorWidth, scissorHeight)
+                .add()
+            .dynamicState()
+                .viewport()
+                .scissor()
             .colorBlendState()
                 .attachments(2)
             .layout()
@@ -220,9 +249,23 @@ void ErosionDemo::createRenderPipeline() {
 
 void ErosionDemo::onSwapChainDispose() {
     dispose(render.pipeline);
+    dispose(toneMapper.pipeline);
+    dispose(renderGraphInputs.color.imageView);
+    dispose(renderGraphInputs.color.image);
+    dispose(renderGraphInputs.position.imageView);
+    dispose(renderGraphInputs.position.image);
+    dispose(renderGraphInputs.depth.imageView);
+    dispose(renderGraphInputs.depth.image);
+    dispose(renderGraphInputs.depth1.imageView);
+    dispose(renderGraphInputs.depth1.image);
 }
 
 void ErosionDemo::onSwapChainRecreation() {
+    const auto extent = sceneExtent();
+    context.screenWidth = extent.x;
+    context.screenHeight = extent.y;
+    camera->perspective(static_cast<float>(extent.x) / static_cast<float>(extent.y));
+    initGBuffer();
     updateDescriptorSets();
     createRenderPipeline();
 }
@@ -261,6 +304,7 @@ VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
 void ErosionDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
     Barriers::pushAndFlush(commandBuffer, renderGraphInputs.color.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
     Offscreen::render(commandBuffer, renderInfo, [&]{
+        setSceneViewport(commandBuffer);
         terrain->render(commandBuffer);
         atmosphere->renderSkyView(commandBuffer);
         localReadBarrier(commandBuffer);
@@ -275,82 +319,111 @@ void ErosionDemo::runRenderGraph(VkCommandBuffer commandBuffer) {
 
 void ErosionDemo::runSim(VkCommandBuffer commandBuffer) {
     auto& displacementTexture = displacementMapGenerator->displacementTexture();
-    if(erosionSim->step(commandBuffer, displacementTexture) == ErosionSimulator::StepResult::Finished) {
+    if(erosionSim->step(commandBuffer, displacementTexture) != ErosionSimulator::StepResult::Idle) {
         displacementMapGenerator->refreshDerivedMaps(commandBuffer);
     }
 }
 
+glm::uvec2 ErosionDemo::sceneExtent() const {
+    const auto swapchainWidth = swapChain.width();
+    const auto swapchainHeight = swapChain.height();
+    const auto sceneWidth = swapchainWidth > ControlPanelWidth + MinSceneWidth
+        ? swapchainWidth - ControlPanelWidth
+        : std::max(1u, swapchainWidth);
+    return {sceneWidth, std::max(1u, swapchainHeight)};
+}
+
+void ErosionDemo::setSceneViewport(VkCommandBuffer commandBuffer) const {
+    const auto extent = sceneExtent();
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(extent.x);
+    viewport.height = static_cast<float>(extent.y);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent.width = extent.x;
+    scissor.extent.height = extent.y;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+}
+
 void ErosionDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
+    setSceneViewport(commandBuffer);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle, 0, 1, &displayDescriptorSet, 0,nullptr);
     AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
 void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
+    const auto& io = ImGui::GetIO();
+    const auto panelWidth = static_cast<float>(ControlPanelWidth);
+    ImGui::SetNextWindowPos({std::max(0.0f, io.DisplaySize.x - panelWidth), 0.0f}, ImGuiCond_Always);
+    ImGui::SetNextWindowSize({std::min(panelWidth, io.DisplaySize.x), io.DisplaySize.y}, ImGuiCond_Always);
 
-    static bool terrainOpen = false;
-    static bool atmosphereOpen = false;
-    static bool erosionOpen = false;
-    static bool lightOpen = false;
-    static bool perfOpen = false;
-    static bool displacementOpen = false;
-    static bool textureViewerOpen = false;
+    constexpr ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings;
 
-    ImGui::Begin("Controls");
-    ImGui::SetWindowSize({0, 0});
-    ImGui::Checkbox("Terrain", &terrainOpen);
-    ImGui::Checkbox("Displacement", &displacementOpen);
-    ImGui::Checkbox("erosion", &erosionOpen);
-    ImGui::Checkbox("Textures", &textureViewerOpen);
-    ImGui::Checkbox("Atmosphere", &atmosphereOpen);
-    ImGui::Checkbox("Lighting", &lightOpen);
-    ImGui::Checkbox("Performance", &perfOpen);
-    ImGui::End();
-
-    terrain->controls(terrainOpen);
-    displacementMapGenerator->controls(displacementOpen);
-    atmosphere->controls(atmosphereOpen);
-    erosionSim->controls(erosionOpen);
-    textureViewerControls(textureViewerOpen);
-
-    if(lightOpen) {
-        ImGui::Begin("Lighting");
-        ImGui::SetWindowSize({0, 0});
-        ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
-        ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
-        terrain->lightingControls();
-        displacementShadowMap->controls();
-
-        if (ImGui::CollapsingHeader("ToneMapping", ImGuiTreeNodeFlags_DefaultOpen)) {
-            static std::array<const char *, 5> labels{"Clamp", "Reinhard", "Uncharted 2", "ACES",
-                                                      "Hejl-Burgess-Dawson"};
-            ImGui::Combo("Tone mapper", &toneMapper.constants.method, labels.data(), labels.size());
-            ImGui::SliderFloat("Exposure Value", &toneMapper.constants.exposureValue, -3, 3);
+    ImGui::Begin("Controls", nullptr, flags);
+    if(ImGui::BeginTabBar("ErosionDemoTabs")) {
+        if(ImGui::BeginTabItem("Terrain")) {
+            terrain->controlsContent();
+            ImGui::EndTabItem();
         }
-        ImGui::Checkbox("Debug", &options.debug);
-        ImGui::End();   // End lighting
-    }
+        if(ImGui::BeginTabItem("Displacement")) {
+            displacementMapGenerator->controlsContent();
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Erosion")) {
+            erosionSim->controlsContent();
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Textures")) {
+            textureViewerControls();
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Atmosphere")) {
+            atmosphere->controlsContent();
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Lighting")) {
+            ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
+            ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
+            terrain->lightingControls();
+            displacementShadowMap->controls();
 
-    if(perfOpen) {
-        ImGui::Begin("performance");
-        ImGui::SetWindowSize({0, 0});
-        auto total = 0.0f;
-        total += displacementShadowMap->printPerfStats();
-        total += terrain->printPerfStats();
-        total += atmosphere->printPerfStats();
+            if (ImGui::CollapsingHeader("ToneMapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+                static std::array<const char *, 5> labels{"Clamp", "Reinhard", "Uncharted 2", "ACES",
+                                                          "Hejl-Burgess-Dawson"};
+                ImGui::Combo("Tone mapper", &toneMapper.constants.method, labels.data(), labels.size());
+                ImGui::SliderFloat("Exposure Value", &toneMapper.constants.exposureValue, -3, 3);
+            }
+            ImGui::Checkbox("Debug", &options.debug);
+            ImGui::EndTabItem();
+        }
+        if(ImGui::BeginTabItem("Performance")) {
+            auto total = 0.0f;
+            total += displacementShadowMap->printPerfStats();
+            total += terrain->printPerfStats();
+            total += atmosphere->printPerfStats();
 
-        ImGui::Text("total frame time: %f ms", total);
-        ImGui::End();
+            ImGui::Text("total frame time: %f ms", total);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
+    ImGui::End();
 
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
-void ErosionDemo::textureViewerControls(bool show) {
-    if(!show) {
-        return;
-    }
-
+void ErosionDemo::textureViewerControls() {
     std::vector<BindlessTexture> textures;
     for(const auto& texture : bindlessDescriptor.boundedTextures) {
         if(texture.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && texture.texture && texture.texture->isValid()) {
@@ -362,12 +435,8 @@ void ErosionDemo::textureViewerControls(bool show) {
         return lhs.index < rhs.index;
     });
 
-    ImGui::Begin("Textures");
-    ImGui::SetWindowSize({0, 0});
-
     if(textures.empty()) {
         ImGui::Text("No bound sampled textures");
-        ImGui::End();
         return;
     }
 
@@ -434,8 +503,6 @@ void ErosionDemo::textureViewerControls(bool show) {
         imageSize.x = imageSize.y * aspect;
     }
     ImGui::Image(id->second, imageSize);
-
-    ImGui::End();
 }
 
 void ErosionDemo::update(float time) {
@@ -471,8 +538,9 @@ void ErosionDemo::onPause() {
 }
 
 void ErosionDemo::initContext() {
-    context.screenWidth = swapChain.width();
-    context.screenHeight = swapChain.height();
+    const auto extent = sceneExtent();
+    context.screenWidth = extent.x;
+    context.screenHeight = extent.y;
     context.mouseInput = &mouse;
     context.device = &device;
     context.descriptorPool = &descriptorPool;
@@ -559,8 +627,9 @@ void ErosionDemo::newFrame() {
 }
 
 void ErosionDemo::initGBuffer() {
-    const auto width = swapChain.width();
-    const auto height = swapChain.height();
+    const auto extent = sceneExtent();
+    const auto width = extent.x;
+    const auto height = extent.y;
 
     textures::create(device, renderGraphInputs.color, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
     textures::create(device, renderGraphInputs.position, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, {width, height, 1});
@@ -626,7 +695,7 @@ int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 1080;
+        settings.width = 1080 + ControlPanelWidth;
         settings.height = 720;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;

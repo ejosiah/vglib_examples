@@ -114,7 +114,11 @@ void ErosionSimulator::controls(bool show) {
 
     ImGui::Begin("Erosion");
     ImGui::SetWindowSize({0, 0});
+    controlsContent();
+    ImGui::End();
+}
 
+void ErosionSimulator::controlsContent() {
     inputUint("Iterations", m_constants.maxIterations);
     if(m_iteration >= m_constants.maxIterations) {
         m_iteration = m_constants.maxIterations;
@@ -174,8 +178,6 @@ void ErosionSimulator::controls(bool show) {
             m_stepRequested = false;
         }
     }
-
-    ImGui::End();
 }
 
 void ErosionSimulator::clear(VkCommandBuffer commandBuffer) {

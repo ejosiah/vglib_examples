@@ -70,7 +70,11 @@ protected:
 
     void renderToDisplay(VkCommandBuffer commandBuffer);
 
-    void textureViewerControls(bool show);
+    void textureViewerControls();
+
+    glm::uvec2 sceneExtent() const;
+
+    void setSceneViewport(VkCommandBuffer commandBuffer) const;
 
     void toneMap(VkCommandBuffer commandBuffer);
 

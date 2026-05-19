@@ -28,6 +28,8 @@ public:
 
     void controls(bool show = true);
 
+    void controlsContent();
+
     bool arealPerspectiveEnabled() const;
 
     Descriptor descriptor() const;

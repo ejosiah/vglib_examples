@@ -57,6 +57,8 @@ public:
 
     void controls(bool show = true);
 
+    void controlsContent();
+
     void lightingControls();
 
     void endFrame();

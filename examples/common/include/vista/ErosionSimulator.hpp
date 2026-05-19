@@ -18,6 +18,8 @@ public:
 
     void controls(bool show = true);
 
+    void controlsContent();
+
     void update(VkCommandBuffer commandBuffer, Texture& displacementMap);
 
     StepResult step(VkCommandBuffer commandBuffer, Texture& displacementMap);

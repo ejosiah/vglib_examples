@@ -20,6 +20,8 @@ public:
 
     bool controls(bool show);
 
+    bool controlsContent();
+
     DisplacementMapInfo displacementMapInfo() const;
 
     void setTerrainMetrics(glm::vec2 terrainWorldSize, glm::vec2 heightScale);
