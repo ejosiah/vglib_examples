@@ -266,6 +266,10 @@ void ErosionSimulator::run(VkCommandBuffer commandBuffer, Texture& displacementM
     m_running = false;
 }
 
+uint ErosionSimulator::velocityFieldTextureIndex() const {
+    return m_constants.velocityFieldTextureIndex;
+}
+
 void ErosionSimulator::runIteration(VkCommandBuffer commandBuffer, uint iteration) {
     m_constants.iteration = iteration;
 

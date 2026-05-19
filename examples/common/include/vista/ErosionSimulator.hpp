@@ -26,6 +26,8 @@ public:
 
     void run(VkCommandBuffer commandBuffer, Texture& displacementMap);
 
+    uint velocityFieldTextureIndex() const;
+
 protected:
 
     void clear(VkCommandBuffer commandBuffer);

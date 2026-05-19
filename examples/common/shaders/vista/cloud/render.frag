@@ -85,6 +85,20 @@ bool intersectsCloudShell(vec3 origin, vec3 direction, out float tMin, out float
     return true;
 }
 
+bool clampToPlanetHorizon(vec3 origin, vec3 direction, inout float tMin, inout float tMax) {
+    float tGround = raySphereIntersectNearest(origin, direction, vec3(0), atmosphere.bottom_radius);
+    if(tGround < 0.0) {
+        return true;
+    }
+
+    if(tGround <= tMin) {
+        return false;
+    }
+
+    tMax = min(tMax, tGround);
+    return tMax > tMin;
+}
+
 layout(location = 0) in struct {
     vec3 viewDirection;
     vec2 uv;
@@ -259,9 +273,12 @@ void main() {
     float tMin, tMax;
     bool hit = intersectsCloudShell(cameraPos, direction, tMin, tMax, color);
     if(!hit) return;
+    if(!clampToPlanetHorizon(cameraPos, direction, tMin, tMax)) return;
 
     float depth = getWorldDepth(fs_in.uv);
     if(depth < tMin) return;
+    tMax = min(tMax, depth);
+    if(tMax <= tMin) return;
 
     const float minSteps = 64;
     const float maxSteps = float(u.maxSteps);

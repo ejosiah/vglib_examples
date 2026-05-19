@@ -116,6 +116,26 @@ vec3 applyMaterialNormal(vec3 baseNormal, vec3 mapNormal) {
     return normalize(tangent * mapNormal.x + bitangent * mapNormal.y + baseNormal * mapNormal.z);
 }
 
+vec3 hsvToRgb(vec3 hsv) {
+    vec3 p = abs(fract(hsv.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return hsv.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), hsv.y);
+}
+
+vec3 waterFlowColor(vec2 uv) {
+    vec2 velocity = texture(u_WaterFlowSampler, uv).rg;
+    float speed = length(velocity);
+    if(speed <= 1e-8) {
+        return vec3(0.01, 0.03, 0.06);
+    }
+
+    float angle = atan(velocity.y, velocity.x);
+    float hue = fract(angle / (2.0 * PI) + 1.0);
+    float strength = clamp(log2(1.0 + speed * max(globals.waterFlowScale, 0.0)), 0.0, 1.0);
+    vec3 directionColor = hsvToRgb(vec3(hue, 0.85, 1.0));
+
+    return mix(vec3(0.01, 0.03, 0.06), directionColor, strength);
+}
+
 Material samplePatchyDirtMaterial(vec2 uv) {
     Material material;
     material.metalness = 0.0;
@@ -209,6 +229,11 @@ void main() {
     float cameraDepth = max(-f.viewSpacePos.z, 0.0);
     if(visualizeDepthFade()) {
         radiance = vec3(clamp(cameraDepth / materialFarDistance, 0.0, 1.0));
+        return;
+    }
+
+    if(visualizeWaterFlow()) {
+        radiance = mixWireFrame(waterFlowColor(f.uv));
         return;
     }
 

@@ -61,6 +61,8 @@ public:
 
     void lightingControls();
 
+    void setWaterFlowVisualization(bool enabled, uint textureIndex, float scale);
+
     void endFrame();
 
     uint nodeCount() const;
@@ -151,6 +153,9 @@ private:
         uint grassAoMapIndex{~0u};
         uint grassRoughnessMapIndex{~0u};
         uint grassNormalMapIndex{~0u};
+        uint visualizeWaterFlow{0};
+        uint waterFlowTextureIndex{~0u};
+        float waterFlowScale{32.0f};
     } defaultValues{};
 
     Context* m_context{};
@@ -188,6 +193,9 @@ private:
         bool useLeadrLighting{true};
         bool visualizeDepthFade{false};
         float shadowDarkness{0.65f};
+        bool visualizeWaterFlow{false};
+        uint waterFlowTextureIndex{~0u};
+        float waterFlowScale{32.0f};
         bool showTiles{false};
         bool inspect{false};
         int tileColor{0};

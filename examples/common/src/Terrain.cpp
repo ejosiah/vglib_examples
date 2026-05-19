@@ -74,6 +74,9 @@ void Terrain::newFrame() {
     m_uniforms.cpu->blendMin = m_options.blendMin;
     m_uniforms.cpu->blendMax = m_options.blendMax;
     m_uniforms.cpu->shadowDarkness = m_options.shadowDarkness;
+    m_uniforms.cpu->visualizeWaterFlow = uint(m_options.visualizeWaterFlow);
+    m_uniforms.cpu->waterFlowTextureIndex = m_options.waterFlowTextureIndex;
+    m_uniforms.cpu->waterFlowScale = m_options.waterFlowScale;
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
@@ -375,6 +378,18 @@ void Terrain::controlsContent() {
 void Terrain::lightingControls() {
     ImGui::Checkbox("LEADR lighting", &m_options.useLeadrLighting);
     ImGui::SliderFloat("Shadow darkness", &m_options.shadowDarkness, 0.0f, 1.0f);
+}
+
+void Terrain::setWaterFlowVisualization(bool enabled, uint textureIndex, float scale) {
+    m_options.visualizeWaterFlow = enabled;
+    m_options.waterFlowTextureIndex = textureIndex;
+    m_options.waterFlowScale = scale;
+
+    if(m_uniforms.cpu) {
+        m_uniforms.cpu->visualizeWaterFlow = uint(enabled);
+        m_uniforms.cpu->waterFlowTextureIndex = textureIndex;
+        m_uniforms.cpu->waterFlowScale = scale;
+    }
 }
 
 TerrainInfo Terrain::getInfo() const {

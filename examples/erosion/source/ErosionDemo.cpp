@@ -323,6 +323,9 @@ void ErosionDemo::runSim(VkCommandBuffer commandBuffer) {
     auto& displacementTexture = displacementMapGenerator->displacementTexture();
     if(erosionSim->step(commandBuffer, displacementTexture) != ErosionSimulator::StepResult::Idle) {
         displacementMapGenerator->refreshDerivedMaps(commandBuffer);
+        if(options.visualizeWaterFlow) {
+            Barrier::computeWriteToFragmentRead(commandBuffer);
+        }
     }
 }
 
@@ -435,6 +438,9 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
         }
         if(ImGui::BeginTabItem("Erosion")) {
             erosionSim->controlsContent();
+            ImGui::Separator();
+            ImGui::Checkbox("Visualize water flow", &options.visualizeWaterFlow);
+            ImGui::SliderFloat("Flow color scale", &options.waterFlowScale, 0.1f, 512.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Textures")) {
@@ -680,6 +686,7 @@ void ErosionDemo::newFrame() {
 
     atmosphere->newFrame();
     terrain->newFrame();
+    terrain->setWaterFlowVisualization(options.visualizeWaterFlow, erosionSim->velocityFieldTextureIndex(), options.waterFlowScale);
 }
 
 void ErosionDemo::initGBuffer() {

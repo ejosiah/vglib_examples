@@ -77,6 +77,9 @@ layout(set = 2, binding = 0, scalar) buffer Constants {
     uint grassAoMapIndex;
     uint grassRoughnessMapIndex;
     uint grassNormalMapIndex;
+    uint visualizeWaterFlow;
+    uint waterFlowTextureIndex;
+    float waterFlowScale;
 } globals;
 
 bool wireframeEnabled() {
@@ -93,6 +96,10 @@ bool useTriplanerMapping() {
 
 bool visualizeDepthFade() {
     return globals.visualizeDepthFade == 1;
+}
+
+bool visualizeWaterFlow() {
+    return globals.visualizeWaterFlow == 1;
 }
 
 float getHeightScale() {
@@ -115,6 +122,7 @@ layout(set = 1, binding = 10) uniform sampler3D global_textures_3d[];
 #define u_SlopeMoments0Sampler global_textures[nonuniformEXT(globals.dmap_slope_moments0_tex_index)]
 #define u_SlopeMoments1Sampler global_textures[nonuniformEXT(globals.dmap_slope_moments1_tex_index)]
 #define u_DmapShadowSampler global_textures[nonuniformEXT(globals.shadow_tex_index)]
+#define u_WaterFlowSampler global_textures[nonuniformEXT(globals.waterFlowTextureIndex)]
 
 #define dirtAlbedoMap global_textures[nonuniformEXT(globals.dirtAlbedoMapIndex)]
 #define dirtAoMap global_textures[nonuniformEXT(globals.dirtAoMapIndex)]

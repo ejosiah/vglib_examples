@@ -155,6 +155,8 @@ protected:
         float lightAzimuth{223};
         bool debug{true};
         bool showOriginalTerrain{};
+        bool visualizeWaterFlow{};
+        float waterFlowScale{32.0f};
     } options;
     VulkanSampler edgeClampSampler;
     NullProfiler nullProfiler;
