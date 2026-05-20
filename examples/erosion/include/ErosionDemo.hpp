@@ -96,6 +96,8 @@ protected:
 
     void endFrame() override;
 
+    void updateSunPosition();
+
 protected:
     struct {
         VulkanPipelineLayout layout;
@@ -160,4 +162,5 @@ protected:
     } options;
     VulkanSampler edgeClampSampler;
     NullProfiler nullProfiler;
+    glm::vec2 currentPosition;
 };

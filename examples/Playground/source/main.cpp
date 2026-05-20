@@ -24,6 +24,10 @@
 
 #include "mnist/mnist_loader.hpp"
 #include <fmt/format.h>
+#include <cpr/cpr.h>
+#include "sun_calc.hpp"
+#include <nlohmann/json.hpp>
+#include <cstdlib>
 
 auto GSeris(auto a, auto r, auto n) {
     return a * std::pow(r, n - 1);
@@ -53,6 +57,13 @@ void random_image() {
 }
 
 int main() {
-    auto h = mnist::load_header(R"(C:\Users\joebh\CLionProjects\vglib\data\mnist_dataset\train-images.idx3-ubyte)");
-    fmt::print("mnist dataset:\n\tnum images: {}\n\tdim: [{}, {}]\n", h.num_images, h.rows, h.cols);
+    fs::current_path("../../../../examples/");
+    FileManager::instance().addSearchPathFront("../data");
+    auto now = std::chrono::system_clock::now();
+    auto sunPos = sun_calc::get_sun_position_from_current_location(now);
+    fmt::print("sun: [azimuth: {}, altitude: {}]\n", glm::degrees(sunPos.azimuth), glm::degrees(sunPos.altitude));
+
+    auto moonPos = sun_calc::get_moon_position_from_current_location(now);
+    fmt::print("moon: [azimuth: {}, altitude: {}]\n", glm::degrees(moonPos.azimuth), glm::degrees(moonPos.altitude));
+
 }

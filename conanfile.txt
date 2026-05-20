@@ -17,6 +17,8 @@ zlib/1.2.13
 tinygltf/2.8.19
 gsl-lite/0.42.0
 array/0.1
+cpr/1.10.0
+nlohmann_json/3.11.3
 
 [generators]
 CMakeDeps

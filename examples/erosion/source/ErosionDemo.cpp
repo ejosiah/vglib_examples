@@ -8,10 +8,12 @@
 
 #include <algorithm>
 
+#include "sun_calc.hpp"
+
 namespace {
     constexpr glm::ivec2 TerrainWorldSize{10000};
     constexpr glm::vec2 TerrainHeightScale{-1.0f, 1059.0f};
-    constexpr uint32_t ControlPanelWidth = 380;
+    constexpr uint32_t ControlPanelWidth = 450;
     constexpr uint32_t MinSceneWidth = 320;
 }
 
@@ -32,6 +34,9 @@ ErosionDemo::ErosionDemo(const Settings& settings) : VulkanBaseApp("Erosion", se
 }
 
 void ErosionDemo::initApp() {
+    const auto [lat, lng] = geo_location::get();
+    currentPosition = {lat, lng};
+    updateSunPosition();
     createSamplers();
     initCamera();
     createDescriptorPool();
@@ -666,6 +671,14 @@ void ErosionDemo::initSim() {
 
 void ErosionDemo::endFrame() {
     terrain->endFrame();
+    updateSunPosition();
+}
+
+void ErosionDemo::updateSunPosition()  {
+    auto now = std::chrono::system_clock::now();
+    auto pos = sun_calc::get_position(now, currentPosition.x, currentPosition.y);
+    options.lightZenith = glm::degrees(pos.altitude);
+    options.lightAzimuth = glm::radians(pos.azimuth);
 }
 
 void ErosionDemo::newFrame() {
