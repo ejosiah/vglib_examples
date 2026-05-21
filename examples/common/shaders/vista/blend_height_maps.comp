@@ -1,0 +1,131 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_GOOGLE_include_directive : enable
+
+#include "hash.glsl"
+
+#define base_map global_textures[nonuniformEXT(pc.base_tex_id)]
+#define layer_map global_textures[nonuniformEXT(pc.layer_tex_id)]
+#define output_map global_images[nonuniformEXT(pc.output_image_index)]
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11, r16f) writeonly uniform image2D global_images[];
+
+layout(push_constant) uniform Constants {
+    uint base_tex_id;
+    uint layer_tex_id;
+    uint output_image_index;
+    uint blendMode;
+    float opacity;
+    float dissolveSeed;
+    vec2 padding;
+} pc;
+
+const uint BLEND_NORMAL = 0u;
+const uint BLEND_DISSOLVE = 1u;
+const uint BLEND_DARKEN = 2u;
+const uint BLEND_MULTIPLY = 3u;
+const uint BLEND_COLOR_BURN = 4u;
+const uint BLEND_LINEAR_BURN = 5u;
+const uint BLEND_DARKER_COLOR = 6u;
+const uint BLEND_LIGHTEN = 7u;
+const uint BLEND_SCREEN = 8u;
+const uint BLEND_COLOR_DODGE = 9u;
+const uint BLEND_LINEAR_DODGE = 10u;
+const uint BLEND_LIGHTER_COLOR = 11u;
+const uint BLEND_OVERLAY = 12u;
+const uint BLEND_SOFT_LIGHT = 13u;
+const uint BLEND_HARD_LIGHT = 14u;
+const uint BLEND_VIVID_LIGHT = 15u;
+const uint BLEND_LINEAR_LIGHT = 16u;
+const uint BLEND_PIN_LIGHT = 17u;
+const uint BLEND_HARD_MIX = 18u;
+const uint BLEND_DIFFERENCE = 19u;
+const uint BLEND_EXCLUSION = 20u;
+const uint BLEND_SUBTRACT = 21u;
+const uint BLEND_DIVIDE = 22u;
+const uint BLEND_MAX_NEGATIVE_LAYER = 23u;
+
+float colorBurn(float base, float blend) {
+    return blend <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - base) / blend);
+}
+
+float colorDodge(float base, float blend) {
+    return blend >= 1.0 ? 1.0 : min(1.0, base / max(1.0 - blend, 0.000001));
+}
+
+float overlay(float base, float blend) {
+    return base <= 0.5 ? 2.0 * base * blend : 1.0 - 2.0 * (1.0 - base) * (1.0 - blend);
+}
+
+float softLight(float base, float blend) {
+    if(blend <= 0.5) {
+        return base - (1.0 - 2.0 * blend) * base * (1.0 - base);
+    }
+
+    float d = base <= 0.25 ? ((16.0 * base - 12.0) * base + 4.0) * base : sqrt(base);
+    return base + (2.0 * blend - 1.0) * (d - base);
+}
+
+float hardLight(float base, float blend) {
+    return blend <= 0.5 ? 2.0 * base * blend : 1.0 - 2.0 * (1.0 - base) * (1.0 - blend);
+}
+
+float vividLight(float base, float blend) {
+    return blend <= 0.5 ? colorBurn(base, 2.0 * blend) : colorDodge(base, 2.0 * blend - 1.0);
+}
+
+float pinLight(float base, float blend) {
+    return blend <= 0.5 ? min(base, 2.0 * blend) : max(base, 2.0 * blend - 1.0);
+}
+
+float blendValue(float base, float blend, uint mode) {
+    if(mode == BLEND_NORMAL) return blend;
+    if(mode == BLEND_DARKEN || mode == BLEND_DARKER_COLOR) return min(base, blend);
+    if(mode == BLEND_MULTIPLY) return base * blend;
+    if(mode == BLEND_COLOR_BURN) return colorBurn(base, blend);
+    if(mode == BLEND_LINEAR_BURN) return base + blend - 1.0;
+    if(mode == BLEND_LIGHTEN || mode == BLEND_LIGHTER_COLOR) return max(base, blend);
+    if(mode == BLEND_SCREEN) return 1.0 - (1.0 - base) * (1.0 - blend);
+    if(mode == BLEND_COLOR_DODGE) return colorDodge(base, blend);
+    if(mode == BLEND_LINEAR_DODGE) return base + blend;
+    if(mode == BLEND_OVERLAY) return overlay(base, blend);
+    if(mode == BLEND_SOFT_LIGHT) return softLight(base, blend);
+    if(mode == BLEND_HARD_LIGHT) return hardLight(base, blend);
+    if(mode == BLEND_VIVID_LIGHT) return vividLight(base, blend);
+    if(mode == BLEND_LINEAR_LIGHT) return base + 2.0 * blend - 1.0;
+    if(mode == BLEND_PIN_LIGHT) return pinLight(base, blend);
+    if(mode == BLEND_HARD_MIX) return vividLight(base, blend) < 0.5 ? 0.0 : 1.0;
+    if(mode == BLEND_DIFFERENCE) return abs(base - blend);
+    if(mode == BLEND_EXCLUSION) return base + blend - 2.0 * base * blend;
+    if(mode == BLEND_SUBTRACT) return base - blend;
+    if(mode == BLEND_DIVIDE) return blend <= 0.0 ? 1.0 : base / blend;
+    if(mode == BLEND_MAX_NEGATIVE_LAYER) return max(base, -blend);
+    return blend;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(output_map);
+    if(any(greaterThanEqual(gid, size))) {
+        return;
+    }
+
+    vec2 uv = (vec2(gid) + 0.5) / vec2(size);
+    float base = texture(base_map, uv).r;
+    float layer = texture(layer_map, uv).r;
+    float opacity = clamp(pc.opacity, 0.0, 1.0);
+
+    float result;
+    if(pc.blendMode == BLEND_DISSOLVE) {
+        float threshold = hash12(vec2(gid) + vec2(pc.dissolveSeed, pc.dissolveSeed * 17.0));
+        result = threshold < opacity ? layer : base;
+    }else {
+        result = mix(base, blendValue(base, layer, pc.blendMode), opacity);
+    }
+
+    imageStore(output_map, gid, vec4(clamp(result, 0.0, 1.0)));
+}

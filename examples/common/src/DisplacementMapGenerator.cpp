@@ -46,6 +46,35 @@ namespace {
         }
         return result;
     }
+
+    static constexpr std::array<const char*, 2> BlendLayerSources{ "Noise", "FFT" };
+
+    static constexpr std::array<const char*, 24> BlendModes{
+        "Normal",
+        "Dissolve",
+        "Darken",
+        "Multiply",
+        "Color Burn",
+        "Linear Burn",
+        "Darker Color (Min)",
+        "Lighten",
+        "Screen",
+        "Color Dodge",
+        "Linear Dodge (Add)",
+        "Lighter Color (Max)",
+        "Overlay",
+        "Soft Light",
+        "Hard Light",
+        "Vivid Light",
+        "Linear Light",
+        "Pin Light",
+        "Hard Mix",
+        "Difference",
+        "Exclusion",
+        "Subtract",
+        "Divide",
+        "Max (B, -L)"
+    };
 }
 
 DisplacementMapGenerator::DisplacementMapGenerator(Context &context, DisplacementMethod method, uint width, uint height, std::string path)
@@ -61,7 +90,26 @@ DisplacementMapGenerator::DisplacementMapGenerator(Context &context, Displacemen
         .height = height
     },
     m_path{path}
-    {}
+    {
+        m_blendLayers.resize(2);
+        m_blendLayers[0].blendMode = BlendMode::Normal;
+        m_blendLayers[0].opacity = 1.0f;
+        m_blendLayers[0].noise.seed = {137.0f, 941.0f};
+        m_blendLayers[0].noise.baseFrequency = 2.5f;
+        m_blendLayers[0].noise.octaves = 6;
+
+        m_blendLayers[1].blendMode = BlendMode::Overlay;
+        m_blendLayers[1].opacity = 0.45f;
+        m_blendLayers[1].noise.seed = {719.0f, 113.0f};
+        m_blendLayers[1].noise.baseFrequency = 9.0f;
+        m_blendLayers[1].noise.gain = 0.42f;
+        m_blendLayers[1].noise.octaves = 5;
+        m_blendLayers[1].fft.seed = {491.0f, 223.0f};
+        m_blendLayers[1].fft.amplitude = 0.16f;
+        m_blendLayers[1].fft.spectralPower = 2.4f;
+        m_blendLayers[1].fft.frequencies = {2.0f, 12.0f, 48.0f, 192.0f, 256.0f, 384.0f};
+        m_blendLayers[1].fft.frequencyCount = 4;
+    }
 
 void DisplacementMapGenerator::init() {
     createComputePipelines();
@@ -87,6 +135,9 @@ void DisplacementMapGenerator::exec(VkCommandBuffer commandBuffer) {
             break;
         case DisplacementMethod::FFT:
             fftDisplacementMap(commandBuffer);
+            break;
+        case DisplacementMethod::Blend:
+            blendDisplacementMap(commandBuffer);
             break;
         default:
             assert(false && "method not not yet implemented!");
@@ -149,7 +200,7 @@ bool DisplacementMapGenerator::controls(bool show) {
 
 bool DisplacementMapGenerator::controlsContent() {
     bool dirty = false;
-    static constexpr std::array<const char*, 5> methods{ "None", "File", "Fault formation", "Noise", "FFT" };
+    static constexpr std::array<const char*, 6> methods{ "None", "File", "Fault formation", "Noise", "FFT", "Blend" };
     int method = static_cast<int>(m_method);
     if(ImGui::Combo("Type", &method, methods.data(), static_cast<int>(methods.size()))) {
         m_method = static_cast<DisplacementMethod>(method);
@@ -191,11 +242,9 @@ bool DisplacementMapGenerator::controlsContent() {
     }else if(m_method == DisplacementMethod::FFT) {
         const auto fftSize = nextPowerOfTwo(std::max(m_info.width, m_info.height));
         ImGui::Text("FFT: %u x %u", fftSize, fftSize);
-        dirty |= ImGui::DragFloat2("Seed", &fft_spectrum_constants.seed.x, 1.0f);
-        dirty |= ImGui::DragFloat("Amplitude", &fft_spectrum_constants.amplitude, 0.005f, 0.0f, 4.0f, "%.3f");
-        dirty |= ImGui::DragFloat("Spectral falloff", &fft_spectrum_constants.spectralPower, 0.02f, 0.25f, 6.0f, "%.2f");
-        dirty |= ImGui::DragFloat("Low frequency", &fft_spectrum_constants.lowFrequency, 0.1f, 0.001f, fftSize * 0.5f, "%.2f");
-        dirty |= ImGui::DragFloat("High frequency", &fft_spectrum_constants.highFrequency, 1.0f, 0.001f, fftSize * 0.5f, "%.2f");
+        dirty |= fftControls(fft_spectrum_constants, fftSize);
+    }else if(m_method == DisplacementMethod::Blend) {
+        dirty |= blendControls();
     }
 
     if(m_method != DisplacementMethod::File && ImGui::Button("Regenerate")) {
@@ -204,6 +253,118 @@ bool DisplacementMapGenerator::controlsContent() {
 
     m_dirty |= dirty;
     return dirty;
+}
+
+bool DisplacementMapGenerator::blendControls() {
+    bool dirty = false;
+
+    if(ImGui::Button("Add layer")) {
+        auto layer = m_blendLayers.empty() ? BlendLayer{} : m_blendLayers.back();
+        layer.noise.seed += glm::vec2{137.0f, 263.0f};
+        layer.fft.seed += glm::vec2{211.0f, 97.0f};
+        layer.blendMode = BlendMode::Overlay;
+        layer.opacity = 0.5f;
+        m_blendLayers.push_back(layer);
+        dirty = true;
+    }
+    ImGui::SameLine();
+    if(ImGui::Button("Remove layer") && m_blendLayers.size() > 1) {
+        m_blendLayers.pop_back();
+        dirty = true;
+    }
+
+    const auto fftSize = nextPowerOfTwo(std::max(m_info.width, m_info.height));
+    ImGui::Text("Layers: %zu   FFT: %u x %u", m_blendLayers.size(), fftSize, fftSize);
+
+    for(int i = static_cast<int>(m_blendLayers.size()) - 1; i >= 0; --i) {
+        dirty |= blendLayerControls(m_blendLayers[i], i);
+    }
+
+    return dirty;
+}
+
+bool DisplacementMapGenerator::blendLayerControls(BlendLayer& layer, int layerIndex) {
+    bool dirty = false;
+
+    ImGui::PushID(layerIndex);
+    ImGui::Separator();
+    ImGui::Text("Layer %d%s", layerIndex, layerIndex == 0 ? " (bottom)" : "");
+
+    dirty |= ImGui::Checkbox("Enabled", &layer.enabled);
+
+    int source = static_cast<int>(layer.source);
+    if(ImGui::Combo("Source", &source, BlendLayerSources.data(), static_cast<int>(BlendLayerSources.size()))) {
+        layer.source = static_cast<BlendLayerSource>(source);
+        dirty = true;
+    }
+
+    if(layerIndex > 0) {
+        int blendMode = static_cast<int>(layer.blendMode);
+        if(ImGui::Combo("Blend mode", &blendMode, BlendModes.data(), static_cast<int>(BlendModes.size()))) {
+            layer.blendMode = static_cast<BlendMode>(blendMode);
+            dirty = true;
+        }
+        dirty |= ImGui::SliderFloat("Opacity", &layer.opacity, 0.0f, 1.0f);
+    }
+
+    if(layer.source == BlendLayerSource::Noise) {
+        dirty |= ImGui::DragFloat2("Seed", &layer.noise.seed.x, 1.0f);
+        dirty |= ImGui::DragFloat("Base frequency", &layer.noise.baseFrequency, 0.05f, 0.001f, 64.0f, "%.3f");
+        dirty |= ImGui::DragFloat("Lacunarity", &layer.noise.lacunarity, 0.01f, 1.001f, 8.0f, "%.3f");
+        dirty |= ImGui::SliderFloat("Gain", &layer.noise.gain, 0.0f, 1.0f);
+        dirty |= sliderUint("Octaves", layer.noise.octaves, 1, 12);
+        bool enableRidges = layer.noise.enableRidges == 1;
+        if(ImGui::Checkbox("Ridges", &enableRidges)) {
+            layer.noise.enableRidges = enableRidges ? 1u : 0u;
+            dirty = true;
+        }
+    }else {
+        const auto fftSize = nextPowerOfTwo(std::max(m_info.width, m_info.height));
+        dirty |= fftControls(layer.fft, fftSize);
+    }
+
+    ImGui::PopID();
+    return dirty;
+}
+
+bool DisplacementMapGenerator::fftControls(FftSpectrumConstants& constants, uint fftSize) {
+    bool dirty = false;
+    normalizeFftFrequencies(constants, fftSize);
+
+    dirty |= ImGui::DragFloat2("Seed", &constants.seed.x, 1.0f);
+    dirty |= ImGui::DragFloat("Amplitude", &constants.amplitude, 0.005f, 0.0f, 4.0f, "%.3f");
+    dirty |= ImGui::DragFloat("Spectral falloff", &constants.spectralPower, 0.02f, 0.25f, 6.0f, "%.2f");
+
+    int frequencyCount = static_cast<int>(constants.frequencyCount);
+    if(ImGui::SliderInt("Frequency count", &frequencyCount, 1, 6)) {
+        constants.frequencyCount = static_cast<uint>(std::clamp(frequencyCount, 1, 6));
+        dirty = true;
+    }
+
+    const float maxFrequency = std::max(float(fftSize) * 0.5f, 0.001f);
+    for(int i = 0; i < static_cast<int>(constants.frequencyCount); ++i) {
+        ImGui::PushID(i);
+        ImGui::Text("Frequency %d", i + 1);
+        ImGui::SameLine();
+        dirty |= ImGui::DragFloat("##frequency", &constants.frequencies[i], 0.25f, 0.001f, maxFrequency, "%.2f");
+        ImGui::PopID();
+    }
+
+    if(dirty) {
+        normalizeFftFrequencies(constants, fftSize);
+    }
+
+    return dirty;
+}
+
+void DisplacementMapGenerator::normalizeFftFrequencies(FftSpectrumConstants& constants, uint fftSize) {
+    constants.frequencyCount = std::clamp(constants.frequencyCount, 1u, 6u);
+    const float maxFrequency = std::max(float(fftSize) * 0.5f, 0.001f);
+    for(auto& frequency : constants.frequencies) {
+        frequency = std::clamp(frequency, 0.001f, maxFrequency);
+    }
+
+    std::sort(constants.frequencies.begin(), constants.frequencies.begin() + constants.frequencyCount);
 }
 
 void DisplacementMapGenerator::loadDisplacementMap() {
@@ -453,8 +614,7 @@ void DisplacementMapGenerator::fftDisplacementMap(VkCommandBuffer commandBuffer)
     const auto gx = (fftSize + 31) / 32;
     const auto gy = (fftSize + 31) / 32;
 
-    fft_spectrum_constants.lowFrequency = std::max(fft_spectrum_constants.lowFrequency, 0.001f);
-    fft_spectrum_constants.highFrequency = std::max(fft_spectrum_constants.highFrequency, fft_spectrum_constants.lowFrequency + 0.001f);
+    normalizeFftFrequencies(fft_spectrum_constants, fftSize);
     fft_spectrum_constants.output_image_index = fftImageIds[0];
     fft_spectrum_constants.size = fftSize;
 
@@ -500,6 +660,7 @@ void DisplacementMapGenerator::fftDisplacementMap(VkCommandBuffer commandBuffer)
     }
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_reorder"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fft_reorder"), 0, 1, &descriptorSet, 0, 0);
     fft_reorder_constants = {
         .input_tex_id = fftTextureIds[readIndex],
         .output_image_index = fftImageIds[writeIndex],
@@ -512,6 +673,7 @@ void DisplacementMapGenerator::fftDisplacementMap(VkCommandBuffer commandBuffer)
     std::swap(readIndex, writeIndex);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_pass"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fft_pass"), 0, 1, &descriptorSet, 0, 0);
     for(uint pass = 0; pass < numPasses; ++pass) {
         fft_pass_constants = {
             .input_tex_id = fftTextureIds[readIndex],
@@ -540,6 +702,159 @@ void DisplacementMapGenerator::fftDisplacementMap(VkCommandBuffer commandBuffer)
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fft_to_displacement"), 0, 1, &descriptorSet, 0, 0);
     vkCmdPushConstants(commandBuffer, m_compute.layout("fft_to_displacement"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(fft_displacement_constants), &fft_displacement_constants);
     vkCmdDispatch(commandBuffer, dmapGx, dmapGy, 1);
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    dispMap.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+void DisplacementMapGenerator::createBlendTextures(VkCommandBuffer commandBuffer) {
+    auto info = displacementMapInfo();
+    bool queuedBarriers = false;
+
+    auto createBlendTexture = [&](Texture& texture) {
+        const bool recreate = texture.format != VK_FORMAT_R16_SFLOAT || texture.width != info.width || texture.height != info.height;
+        if(!recreate) {
+            return;
+        }
+
+        textures::createNoTransition(device(), texture, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R16_SFLOAT, {info.width, info.height, 1},
+                                     DepthMapAddressMode);
+
+        Barriers::push(texture.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                       VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        texture.image.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+        queuedBarriers = true;
+    };
+
+    createBlendTexture(m_blendLayer);
+    createBlendTexture(m_blendAccumulator[0]);
+    createBlendTexture(m_blendAccumulator[1]);
+
+    if(queuedBarriers) {
+        Barriers::flush(commandBuffer);
+    }
+}
+
+void DisplacementMapGenerator::generateBlendLayer(VkCommandBuffer commandBuffer, BlendLayer& layer) {
+    if(layer.source == BlendLayerSource::Noise) {
+        auto previousNoiseConstants = noise_constants;
+        noise_constants = layer.noise;
+        noiseHeightMap(commandBuffer);
+        noise_constants = previousNoiseConstants;
+    }else {
+        auto previousFftConstants = fft_spectrum_constants;
+        fft_spectrum_constants = layer.fft;
+        fftDisplacementMap(commandBuffer);
+        fft_spectrum_constants = previousFftConstants;
+    }
+
+    textures::copy(commandBuffer, m_displacementMap.values, m_blendLayer);
+}
+
+void DisplacementMapGenerator::dispatchBlend(VkCommandBuffer commandBuffer, uint baseTextureId, uint layerTextureId,
+                                             uint outputImageId, BlendMode blendMode, float opacity, float dissolveSeed) {
+    auto info = displacementMapInfo();
+    blend_constants = {
+        .base_tex_id = baseTextureId,
+        .layer_tex_id = layerTextureId,
+        .output_image_index = outputImageId,
+        .blendMode = static_cast<uint>(blendMode),
+        .opacity = std::clamp(opacity, 0.0f, 1.0f),
+        .dissolveSeed = dissolveSeed,
+        ._padding = {}
+    };
+
+    auto descriptorSet = bindlessDescriptorSet();
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("blend_height_maps"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("blend_height_maps"), 0, 1, &descriptorSet, 0, 0);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("blend_height_maps"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(blend_constants), &blend_constants);
+    vkCmdDispatch(commandBuffer, (info.width + 31) / 32, (info.height + 31) / 32, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void DisplacementMapGenerator::blendDisplacementMap(VkCommandBuffer commandBuffer) {
+    if(m_blendLayers.empty()) {
+        m_blendLayers.emplace_back();
+    }
+
+    createBlendTextures(commandBuffer);
+
+    if(m_blendTextureOffset == ~0u) {
+        m_blendTextureOffset = bindlessDescriptor().reserveTextureSlots(3);
+    }
+    if(m_blendImageOffset == ~0u) {
+        m_blendImageOffset = bindlessDescriptor().reserveImageSlots(3);
+    }
+    if(m_blendDisplacementImageId == ~0u) {
+        m_blendDisplacementImageId = bindlessDescriptor().reserveImageSlots(1);
+    }
+
+    const std::array<uint, 3> textureIds{m_blendTextureOffset, m_blendTextureOffset + 1, m_blendTextureOffset + 2};
+    const std::array<uint, 3> imageIds{m_blendImageOffset, m_blendImageOffset + 1, m_blendImageOffset + 2};
+
+    bindlessDescriptor().update({ &m_blendLayer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureIds[0], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_blendAccumulator[0], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureIds[1], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_blendAccumulator[1], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureIds[2], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_blendLayer, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, imageIds[0], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_blendAccumulator[0], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, imageIds[1], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_blendAccumulator[1], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, imageIds[2], VK_IMAGE_LAYOUT_GENERAL });
+
+    bool initialized = false;
+    int readIndex = 0;
+    int writeIndex = 1;
+
+    for(auto layerIndex = 0; layerIndex < static_cast<int>(m_blendLayers.size()); ++layerIndex) {
+        auto& layer = m_blendLayers[layerIndex];
+        if(!layer.enabled) {
+            continue;
+        }
+
+        generateBlendLayer(commandBuffer, layer);
+        bindlessDescriptor().update({ &m_blendLayer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureIds[0], VK_IMAGE_LAYOUT_GENERAL });
+
+        if(!initialized) {
+            dispatchBlend(commandBuffer, textureIds[0], textureIds[0], imageIds[readIndex + 1],
+                          BlendMode::Normal, 1.0f, float(layerIndex));
+            initialized = true;
+        }else {
+            dispatchBlend(commandBuffer, textureIds[readIndex + 1], textureIds[0], imageIds[writeIndex + 1],
+                          layer.blendMode, layer.opacity, float(layerIndex));
+            std::swap(readIndex, writeIndex);
+        }
+    }
+
+    if(!initialized) {
+        noneDisplacementMap(commandBuffer);
+        return;
+    }
+
+    auto info = displacementMapInfo();
+    auto& dispMap = m_displacementMap.values;
+    bool finalRecreated = false;
+    if(dispMap.format != VK_FORMAT_R16_SFLOAT || dispMap.width != info.width || dispMap.height != info.height) {
+        textures::createNoTransition(device(), dispMap, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R16_SFLOAT, {info.width, info.height, 1},
+                                     DepthMapAddressMode);
+        finalRecreated = true;
+    }
+
+    const auto oldLayout = finalRecreated || dispMap.image.currentLayout == VK_IMAGE_LAYOUT_UNDEFINED
+        ? VK_IMAGE_LAYOUT_UNDEFINED
+        : dispMap.image.currentLayout;
+    const auto srcStage = oldLayout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_PIPELINE_STAGE_NONE : GeneratedTextureReadStages;
+    const auto srcAccess = oldLayout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_ACCESS_NONE : GeneratedTextureReadAccess;
+
+    bindlessDescriptor().update({ &dispMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_blendDisplacementImageId, VK_IMAGE_LAYOUT_GENERAL });
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, srcStage, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           srcAccess, VK_ACCESS_SHADER_WRITE_BIT, oldLayout, VK_IMAGE_LAYOUT_GENERAL);
+
+    dispatchBlend(commandBuffer, textureIds[readIndex + 1], textureIds[readIndex + 1],
+                  m_blendDisplacementImageId, BlendMode::Normal, 1.0f, 0.0f);
 
     Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -597,6 +912,12 @@ std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
                 .shadePath = FileManager::resource("vista_fft_to_displacement.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(FftDisplacementConstants)} }
+            },
+            {
+                .name = "blend_height_maps",
+                .shadePath = FileManager::resource("vista_blend_height_maps.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BlendConstants)} }
             },
             {
                 .name = "blur",

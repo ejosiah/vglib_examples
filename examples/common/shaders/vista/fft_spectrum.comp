@@ -15,8 +15,8 @@ layout(push_constant) uniform Constants {
     vec2 seed;
     float amplitude;
     float spectralPower;
-    float lowFrequency;
-    float highFrequency;
+    float frequencies[6];
+    uint frequencyCount;
     uint output_image_index;
     uint size;
 } pc;
@@ -43,6 +43,28 @@ ivec2 signedFrequency(ivec2 coord, int size) {
     return k;
 }
 
+float frequencyBand(float k) {
+    float logK = log(max(k, 0.001));
+    uint frequencyCount = clamp(pc.frequencyCount, 1u, 6u);
+    float band = 0.0;
+
+    for(uint i = 0u; i < 6u; ++i) {
+        if(i >= frequencyCount) {
+            break;
+        }
+
+        float frequency = max(pc.frequencies[i], 0.001);
+        float center = log(frequency);
+        float lowerEdge = i == 0u ? center - log(2.0) : 0.5 * (log(max(pc.frequencies[i - 1u], 0.001)) + center);
+        float upperEdge = i + 1u >= frequencyCount ? center + log(2.0) : 0.5 * (center + log(max(pc.frequencies[i + 1u], 0.001)));
+        float width = max(min(center - lowerEdge, upperEdge - center), 0.001);
+        float normalizedDistance = (logK - center) / width;
+        band = max(band, exp(-0.5 * normalizedDistance * normalizedDistance));
+    }
+
+    return clamp(band, 0.0, 1.0);
+}
+
 void main() {
     ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
     int size = int(pc.size);
@@ -58,11 +80,7 @@ void main() {
 
     vec2 value = vec2(0.0);
     if(k > 0.0) {
-        float low = max(pc.lowFrequency, 0.001);
-        float high = min(max(pc.highFrequency, low + 0.001), float(size) * 0.5);
-        float lowTaper = smoothstep(low * 0.5, low, k);
-        float highTaper = 1.0 - smoothstep(high, high * 1.15, k);
-        float band = lowTaper * highTaper;
+        float band = frequencyBand(k);
 
         vec4 randomValues = hash42(vec2(source) + pc.seed);
         float phase = randomValues.x * TWO_PI;

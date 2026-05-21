@@ -105,7 +105,7 @@ private:
         float terrainTexelSizeY{1.0f};
         float terrainHeightScale{1.0f};
         uint iteration{0};
-        uint maxIterations{1000};
+        uint maxIterations{10000};
         uint terrainHeightTextureIndex{~0u};
         uint waterHeightTextureIndex{~0u};
         uint sedimentAmountTextureIndex{~0u};

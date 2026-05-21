@@ -3,10 +3,12 @@
 #include "Shared.hpp"
 #include "DisplacementMap.hpp"
 #include "ComputePipelins.hpp"
+#include <array>
 #include <string>
+#include <vector>
 #include "ContextAware.hpp"
 
-enum class DisplacementMethod { None, File, FaultFormation, Noise, FFT };
+enum class DisplacementMethod { None, File, FaultFormation, Noise, FFT, Blend };
 
 class DisplacementMapGenerator {
 public:
@@ -52,6 +54,10 @@ protected:
     void fftDisplacementMap(VkCommandBuffer commandBuffer);
 
     void createFftTextures(VkCommandBuffer commandBuffer, uint fftSize);
+
+    void blendDisplacementMap(VkCommandBuffer commandBuffer);
+
+    void createBlendTextures(VkCommandBuffer commandBuffer);
 
     void blur(VkCommandBuffer commandBuffer);
 
@@ -123,8 +129,8 @@ private:
         glm::vec2 seed{271.0f, 619.0f};
         float amplitude{0.28f};
         float spectralPower{2.0f};
-        float lowFrequency{1.0f};
-        float highFrequency{384.0f};
+        std::array<float, 6> frequencies{1.0f, 8.0f, 32.0f, 128.0f, 256.0f, 384.0f};
+        uint frequencyCount{4};
         uint output_image_index{~0u};
         uint size{0};
     } fft_spectrum_constants;
@@ -151,6 +157,67 @@ private:
         uint _padding{0};
     } fft_displacement_constants;
 
+    enum class BlendLayerSource : uint { Noise, FFT };
+
+    enum class BlendMode : uint {
+        Normal,
+        Dissolve,
+        Darken,
+        Multiply,
+        ColorBurn,
+        LinearBurn,
+        DarkerColor,
+        Lighten,
+        Screen,
+        ColorDodge,
+        LinearDodge,
+        LighterColor,
+        Overlay,
+        SoftLight,
+        HardLight,
+        VividLight,
+        LinearLight,
+        PinLight,
+        HardMix,
+        Difference,
+        Exclusion,
+        Subtract,
+        Divide,
+        MaxNegativeLayer
+    };
+
+    struct BlendLayer {
+        bool enabled{true};
+        BlendLayerSource source{BlendLayerSource::Noise};
+        BlendMode blendMode{BlendMode::Overlay};
+        float opacity{0.5f};
+        NoiseConstants noise{};
+        FftSpectrumConstants fft{};
+    };
+
+    struct BlendConstants {
+        uint base_tex_id{~0u};
+        uint layer_tex_id{~0u};
+        uint output_image_index{~0u};
+        uint blendMode{0};
+        float opacity{1.0f};
+        float dissolveSeed{0.0f};
+        glm::vec2 _padding{};
+    } blend_constants;
+
+    bool blendControls();
+
+    bool blendLayerControls(BlendLayer& layer, int layerIndex);
+
+    bool fftControls(FftSpectrumConstants& constants, uint fftSize);
+
+    void normalizeFftFrequencies(FftSpectrumConstants& constants, uint fftSize);
+
+    void generateBlendLayer(VkCommandBuffer commandBuffer, BlendLayer& layer);
+
+    void dispatchBlend(VkCommandBuffer commandBuffer, uint baseTextureId, uint layerTextureId, uint outputImageId,
+                       BlendMode blendMode, float opacity, float dissolveSeed);
+
     Context* m_context;
     std::string m_path;
     DisplacementMap m_displacementMap;
@@ -167,6 +234,12 @@ private:
     uint m_fftTextureOffset{~0u};
     uint m_fftImageOffset{~0u};
     uint m_fftDisplacementImageId{~0u};
+    Texture m_blendLayer;
+    std::array<Texture, 2> m_blendAccumulator;
+    std::vector<BlendLayer> m_blendLayers;
+    uint m_blendTextureOffset{~0u};
+    uint m_blendImageOffset{~0u};
+    uint m_blendDisplacementImageId{~0u};
     uint m_slopeMoments0ImageId{~0u};
     uint m_slopeMoments1ImageId{~0u};
 };
