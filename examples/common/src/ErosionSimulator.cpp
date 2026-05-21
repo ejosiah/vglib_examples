@@ -153,11 +153,10 @@ void ErosionSimulator::controlsContent() {
         ImGui::SliderFloat("Talus bias (Ki)", &m_constants.talusAngleTangentBias, 0.0f, 1.0f, "%.3f");
     }
     ImGui::Text("Erosion methods:");
-    ImGui::Indent(16);
+    ImGui::SameLine();
     ImGui::Checkbox("Hydraulic", &m_hydraulicErosion);
     ImGui::SameLine();
     ImGui::Checkbox("Thermal", &m_thermalErosion);
-    ImGui::Indent(-16);
 
     if (!m_hydraulicErosion && !m_thermalErosion) {
         m_hydraulicErosion = true;
@@ -284,7 +283,7 @@ uint ErosionSimulator::velocityFieldTextureIndex() const {
 
 void ErosionSimulator::runIteration(VkCommandBuffer commandBuffer, uint iteration) {
     if (!m_hydraulicErosion && !m_thermalErosion) {
-        throw std::runtime_error{ "at least one erosion type most be set" };
+        throw std::runtime_error{ "at least one erosion type must be set" };
     }
     m_constants.iteration = iteration;
 
@@ -296,11 +295,11 @@ void ErosionSimulator::runIteration(VkCommandBuffer commandBuffer, uint iteratio
     computeOutflowFlux(commandBuffer);
     computeWaterHeightChange(commandBuffer);
     computeSedimentCapacity(commandBuffer);
-    computeThermalOutflow(commandBuffer);
     erodeDepositSediment(commandBuffer);
     advectSediment(commandBuffer);
-    applyThermalErosion(commandBuffer);
     evaporateWater(commandBuffer);
+    computeThermalOutflow(commandBuffer);
+    applyThermalErosion(commandBuffer);
 }
 
 void ErosionSimulator::applyRain(VkCommandBuffer commandBuffer) {
