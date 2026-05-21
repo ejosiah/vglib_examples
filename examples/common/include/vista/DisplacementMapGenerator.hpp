@@ -218,6 +218,16 @@ private:
     void dispatchBlend(VkCommandBuffer commandBuffer, uint baseTextureId, uint layerTextureId, uint outputImageId,
                        BlendMode blendMode, float opacity, float dissolveSeed);
 
+    bool stateFileControls();
+
+    void openStateFileDialog();
+
+    void saveState(const fs::path& path) const;
+
+    void loadState(const fs::path& path);
+
+    void setStateStatus(std::string message, bool error = false);
+
     Context* m_context;
     std::string m_path;
     DisplacementMap m_displacementMap;
@@ -227,6 +237,12 @@ private:
     ComputePipelines m_compute;
     FileInfo m_fileInfo;
     bool m_dirty{false};
+    bool m_regenerateFile{false};
+    std::array<char, 500> m_stateFilePath{};
+    bool m_stateFileDialogOpen{false};
+    bool m_stateFileDialogClosed{false};
+    std::string m_stateStatus;
+    bool m_stateStatusError{false};
     uint m_faultFormationImageId{~0u};
     uint m_noiseImageId{~0u};
     Texture m_fftPing;

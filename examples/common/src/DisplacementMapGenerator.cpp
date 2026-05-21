@@ -1,9 +1,12 @@
 #include "vista/DisplacementMapGenerator.hpp"
 #include "Barrier.hpp"
+#include "L2DFileDialog.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <imgui.h>
+#include <nlohmann/json.hpp>
 
 namespace {
     constexpr VkSamplerAddressMode DepthMapAddressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -49,6 +52,47 @@ namespace {
 
     static constexpr std::array<const char*, 2> BlendLayerSources{ "Noise", "FFT" };
 
+    static constexpr std::array<const char*, 6> DisplacementMethodStateNames{
+        "none",
+        "file",
+        "fault_formation",
+        "noise",
+        "fft",
+        "blend"
+    };
+
+    static constexpr std::array<const char*, 2> BlendLayerSourceStateNames{
+        "noise",
+        "fft"
+    };
+
+    static constexpr std::array<const char*, 24> BlendModeStateNames{
+        "normal",
+        "dissolve",
+        "darken",
+        "multiply",
+        "color_burn",
+        "linear_burn",
+        "darker_color",
+        "lighten",
+        "screen",
+        "color_dodge",
+        "linear_dodge",
+        "lighter_color",
+        "overlay",
+        "soft_light",
+        "hard_light",
+        "vivid_light",
+        "linear_light",
+        "pin_light",
+        "hard_mix",
+        "difference",
+        "exclusion",
+        "subtract",
+        "divide",
+        "max_base_negative_layer"
+    };
+
     static constexpr std::array<const char*, 24> BlendModes{
         "Normal",
         "Dissolve",
@@ -75,6 +119,122 @@ namespace {
         "Divide",
         "Max (B, -L)"
     };
+
+    nlohmann::json toJson(glm::vec2 value) {
+        return nlohmann::json::array({ value.x, value.y });
+    }
+
+    glm::vec2 readVec2(const nlohmann::json& json, const char* key, glm::vec2 fallback) {
+        if(!json.is_object()) {
+            return fallback;
+        }
+
+        auto itr = json.find(key);
+        if(itr == json.end() || !itr->is_array() || itr->size() < 2) {
+            return fallback;
+        }
+
+        return {
+            (*itr)[0].get<float>(),
+            (*itr)[1].get<float>()
+        };
+    }
+
+    float readFloat(const nlohmann::json& json, const char* key, float fallback) {
+        if(!json.is_object()) {
+            return fallback;
+        }
+
+        auto itr = json.find(key);
+        return itr != json.end() && itr->is_number() ? itr->get<float>() : fallback;
+    }
+
+    uint readUint(const nlohmann::json& json, const char* key, uint fallback) {
+        if(!json.is_object()) {
+            return fallback;
+        }
+
+        auto itr = json.find(key);
+        if(itr == json.end() || !itr->is_number_integer()) {
+            return fallback;
+        }
+
+        const auto value = itr->get<int64_t>();
+        return value >= 0 ? static_cast<uint>(value) : fallback;
+    }
+
+    int readInt(const nlohmann::json& json, const char* key, int fallback) {
+        if(!json.is_object()) {
+            return fallback;
+        }
+
+        auto itr = json.find(key);
+        return itr != json.end() && itr->is_number_integer() ? itr->get<int>() : fallback;
+    }
+
+    bool readBool(const nlohmann::json& json, const char* key, bool fallback) {
+        if(!json.is_object()) {
+            return fallback;
+        }
+
+        auto itr = json.find(key);
+        return itr != json.end() && itr->is_boolean() ? itr->get<bool>() : fallback;
+    }
+
+    std::array<float, 6> readFrequencies(const nlohmann::json& json, std::array<float, 6> fallback) {
+        auto itr = json.find("frequencies");
+        if(itr == json.end() || !itr->is_array()) {
+            return fallback;
+        }
+
+        const auto count = std::min(itr->size(), fallback.size());
+        for(size_t i = 0; i < count; ++i) {
+            if((*itr)[i].is_number()) {
+                fallback[i] = (*itr)[i].get<float>();
+            }
+        }
+        return fallback;
+    }
+
+    template<size_t N>
+    const char* enumName(uint index, const std::array<const char*, N>& names) {
+        return names[std::min<uint>(index, static_cast<uint>(N - 1))];
+    }
+
+    template<size_t N>
+    uint readEnumIndex(const nlohmann::json& json, const char* key, const std::array<const char*, N>& names, uint fallback) {
+        if(!json.is_object()) {
+            return fallback;
+        }
+
+        auto itr = json.find(key);
+        if(itr == json.end()) {
+            return fallback;
+        }
+
+        if(itr->is_string()) {
+            const auto value = itr->get<std::string>();
+            for(uint i = 0; i < names.size(); ++i) {
+                if(value == names[i]) {
+                    return i;
+                }
+            }
+        }else if(itr->is_number_integer()) {
+            const auto value = itr->get<int64_t>();
+            if(value >= 0) {
+                return std::min<uint>(static_cast<uint>(value), static_cast<uint>(N - 1));
+            }
+        }
+
+        return fallback;
+    }
+
+    fs::path jsonPath(fs::path path) {
+        if(path.extension().empty()) {
+            path.replace_extension(".json");
+        }
+        return path;
+    }
 }
 
 DisplacementMapGenerator::DisplacementMapGenerator(Context &context, DisplacementMethod method, uint width, uint height, std::string path)
@@ -91,6 +251,8 @@ DisplacementMapGenerator::DisplacementMapGenerator(Context &context, Displacemen
     },
     m_path{path}
     {
+        std::strncpy(m_stateFilePath.data(), "displacement_generator.json", m_stateFilePath.size() - 1);
+
         m_blendLayers.resize(2);
         m_blendLayers[0].blendMode = BlendMode::Normal;
         m_blendLayers[0].opacity = 1.0f;
@@ -179,7 +341,12 @@ bool DisplacementMapGenerator::regenerateIfNeeded(VkCommandBuffer commandBuffer)
 
     m_dirty = false;
     if(m_method == DisplacementMethod::File) {
-        return false;
+        if(!m_regenerateFile) {
+            return false;
+        }
+
+        m_regenerateFile = false;
+        loadDisplacementMap();
     }
 
     exec(commandBuffer);
@@ -201,6 +368,10 @@ bool DisplacementMapGenerator::controls(bool show) {
 bool DisplacementMapGenerator::controlsContent() {
     bool dirty = false;
     static constexpr std::array<const char*, 6> methods{ "None", "File", "Fault formation", "Noise", "FFT", "Blend" };
+
+    dirty |= stateFileControls();
+    ImGui::Separator();
+
     int method = static_cast<int>(m_method);
     if(ImGui::Combo("Type", &method, methods.data(), static_cast<int>(methods.size()))) {
         m_method = static_cast<DisplacementMethod>(method);
@@ -253,6 +424,233 @@ bool DisplacementMapGenerator::controlsContent() {
 
     m_dirty |= dirty;
     return dirty;
+}
+
+bool DisplacementMapGenerator::stateFileControls() {
+    bool dirty = false;
+
+    ImGui::InputText("Generator JSON", m_stateFilePath.data(), m_stateFilePath.size());
+
+    if(ImGui::Button("Browse")) {
+        m_stateFileDialogOpen = true;
+        m_stateFileDialogClosed = false;
+    }
+    ImGui::SameLine();
+
+    if(ImGui::Button("Save")) {
+        try {
+            const auto path = jsonPath(m_stateFilePath.data());
+            saveState(path);
+            std::strncpy(m_stateFilePath.data(), path.string().c_str(), m_stateFilePath.size() - 1);
+            m_stateFilePath.back() = '\0';
+            setStateStatus(fmt::format("Saved {}", path.string()));
+        }catch(const std::exception& err) {
+            setStateStatus(err.what(), true);
+        }
+    }
+    ImGui::SameLine();
+
+    if(ImGui::Button("Load")) {
+        try {
+            const auto path = jsonPath(m_stateFilePath.data());
+            loadState(path);
+            std::strncpy(m_stateFilePath.data(), path.string().c_str(), m_stateFilePath.size() - 1);
+            m_stateFilePath.back() = '\0';
+            setStateStatus(fmt::format("Loaded {}", path.string()));
+            dirty = true;
+        }catch(const std::exception& err) {
+            setStateStatus(err.what(), true);
+        }
+    }
+
+    if(!m_stateStatus.empty()) {
+        const auto color = m_stateStatusError ? ImVec4{1.0f, 0.25f, 0.25f, 1.0f} : ImVec4{0.45f, 0.85f, 0.45f, 1.0f};
+        ImGui::TextColored(color, "%s", m_stateStatus.c_str());
+    }
+
+    openStateFileDialog();
+    return dirty;
+}
+
+void DisplacementMapGenerator::openStateFileDialog() {
+    if(!m_stateFileDialogOpen) {
+        return;
+    }
+
+    FileDialog::extFilter = { "json" };
+    FileDialog::ShowFileDialog(&m_stateFileDialogOpen, m_stateFilePath.data(), &m_stateFileDialogClosed, FileDialog::FileDialogType::OpenFile);
+    if(m_stateFileDialogClosed) {
+        m_stateFileDialogOpen = false;
+        m_stateFileDialogClosed = false;
+        FileDialog::extFilter.clear();
+    }
+}
+
+void DisplacementMapGenerator::setStateStatus(std::string message, bool error) {
+    m_stateStatus = std::move(message);
+    m_stateStatusError = error;
+}
+
+void DisplacementMapGenerator::saveState(const fs::path& path) const {
+    if(path.empty()) {
+        throw std::runtime_error{"Select a JSON file path before saving"};
+    }
+
+    auto noiseJson = [](const NoiseConstants& constants) {
+        return nlohmann::json{
+            { "seed", toJson(constants.seed) },
+            { "baseFrequency", constants.baseFrequency },
+            { "lacunarity", constants.lacunarity },
+            { "gain", constants.gain },
+            { "octaves", constants.octaves },
+            { "ridges", constants.enableRidges != 0u }
+        };
+    };
+
+    auto fftJson = [](const FftSpectrumConstants& constants) {
+        return nlohmann::json{
+            { "seed", toJson(constants.seed) },
+            { "amplitude", constants.amplitude },
+            { "spectralPower", constants.spectralPower },
+            { "frequencyCount", constants.frequencyCount },
+            { "frequencies", constants.frequencies }
+        };
+    };
+
+    nlohmann::json layers = nlohmann::json::array();
+    for(const auto& layer : m_blendLayers) {
+        layers.push_back({
+            { "enabled", layer.enabled },
+            { "source", enumName(static_cast<uint>(layer.source), BlendLayerSourceStateNames) },
+            { "blendMode", enumName(static_cast<uint>(layer.blendMode), BlendModeStateNames) },
+            { "opacity", layer.opacity },
+            { "noise", noiseJson(layer.noise) },
+            { "fft", fftJson(layer.fft) }
+        });
+    }
+
+    const auto state = nlohmann::json{
+        { "version", 1 },
+        { "type", enumName(static_cast<uint>(m_method), DisplacementMethodStateNames) },
+        { "parameters", {
+            { "size", { m_info.width, m_info.height } },
+            { "file", {
+                { "path", m_path }
+            } },
+            { "faultFormation", {
+                { "seed", toJson(ff_options.seed) },
+                { "maxIterations", ff_options.maxIterations },
+                { "blur", ff_options.blur },
+                { "blurIterations", ff_options.blurIterations }
+            } },
+            { "noise", noiseJson(noise_constants) },
+            { "fft", fftJson(fft_spectrum_constants) },
+            { "blend", {
+                { "layers", layers }
+            } }
+        } }
+    };
+
+    FileManager::save(state.dump(4), path, false);
+}
+
+void DisplacementMapGenerator::loadState(const fs::path& path) {
+    if(path.empty()) {
+        throw std::runtime_error{"Select a JSON file path before loading"};
+    }
+
+    const auto bytes = FileManager::instance().load(path.string(), false);
+    const auto state = nlohmann::json::parse(std::string{bytes.begin(), bytes.end()});
+    const auto& parameters = state.contains("parameters") && state["parameters"].is_object() ? state["parameters"] : state;
+
+    const auto method = readEnumIndex(state, "type", DisplacementMethodStateNames, static_cast<uint>(m_method));
+    m_method = static_cast<DisplacementMethod>(method);
+
+    if(auto sizeItr = parameters.find("size"); sizeItr != parameters.end() && sizeItr->is_array() && sizeItr->size() >= 2) {
+        m_info.width = std::clamp((*sizeItr)[0].get<uint>(), 16u, 8192u);
+        m_info.height = std::clamp((*sizeItr)[1].get<uint>(), 16u, 8192u);
+        m_displacementMap.width = m_info.width;
+        m_displacementMap.height = m_info.height;
+    }
+
+    if(auto fileItr = parameters.find("file"); fileItr != parameters.end() && fileItr->is_object()) {
+        auto pathItr = fileItr->find("path");
+        if(pathItr != fileItr->end() && pathItr->is_string()) {
+            const auto nextPath = pathItr->get<std::string>();
+            m_regenerateFile |= nextPath != m_path;
+            m_path = nextPath;
+        }
+    }
+
+    if(auto faultItr = parameters.find("faultFormation"); faultItr != parameters.end() && faultItr->is_object()) {
+        ff_options.seed = readVec2(*faultItr, "seed", ff_options.seed);
+        ff_options.maxIterations = readUint(*faultItr, "maxIterations", ff_options.maxIterations);
+        ff_options.blur = readBool(*faultItr, "blur", ff_options.blur);
+        ff_options.blurIterations = readInt(*faultItr, "blurIterations", ff_options.blurIterations);
+    }
+
+    if(auto noiseItr = parameters.find("noise"); noiseItr != parameters.end() && noiseItr->is_object()) {
+        noise_constants.seed = readVec2(*noiseItr, "seed", noise_constants.seed);
+        noise_constants.baseFrequency = readFloat(*noiseItr, "baseFrequency", noise_constants.baseFrequency);
+        noise_constants.lacunarity = readFloat(*noiseItr, "lacunarity", noise_constants.lacunarity);
+        noise_constants.gain = readFloat(*noiseItr, "gain", noise_constants.gain);
+        noise_constants.octaves = std::clamp(readUint(*noiseItr, "octaves", noise_constants.octaves), 1u, 12u);
+        noise_constants.enableRidges = readBool(*noiseItr, "ridges", noise_constants.enableRidges != 0u) ? 1u : 0u;
+    }
+
+    if(auto fftItr = parameters.find("fft"); fftItr != parameters.end() && fftItr->is_object()) {
+        fft_spectrum_constants.seed = readVec2(*fftItr, "seed", fft_spectrum_constants.seed);
+        fft_spectrum_constants.amplitude = readFloat(*fftItr, "amplitude", fft_spectrum_constants.amplitude);
+        fft_spectrum_constants.spectralPower = readFloat(*fftItr, "spectralPower", fft_spectrum_constants.spectralPower);
+        fft_spectrum_constants.frequencyCount = std::clamp(readUint(*fftItr, "frequencyCount", fft_spectrum_constants.frequencyCount), 1u, 6u);
+        fft_spectrum_constants.frequencies = readFrequencies(*fftItr, fft_spectrum_constants.frequencies);
+        normalizeFftFrequencies(fft_spectrum_constants, nextPowerOfTwo(std::max(m_info.width, m_info.height)));
+    }
+
+    if(auto blendItr = parameters.find("blend"); blendItr != parameters.end() && blendItr->is_object()) {
+        auto layersItr = blendItr->find("layers");
+        if(layersItr != blendItr->end() && layersItr->is_array()) {
+            m_blendLayers.clear();
+            for(const auto& layerJson : *layersItr) {
+                if(!layerJson.is_object()) {
+                    continue;
+                }
+
+                BlendLayer layer{};
+                layer.enabled = readBool(layerJson, "enabled", layer.enabled);
+                layer.source = static_cast<BlendLayerSource>(readEnumIndex(layerJson, "source", BlendLayerSourceStateNames, static_cast<uint>(layer.source)));
+                layer.blendMode = static_cast<BlendMode>(readEnumIndex(layerJson, "blendMode", BlendModeStateNames, static_cast<uint>(layer.blendMode)));
+                layer.opacity = std::clamp(readFloat(layerJson, "opacity", layer.opacity), 0.0f, 1.0f);
+
+                if(auto layerNoiseItr = layerJson.find("noise"); layerNoiseItr != layerJson.end() && layerNoiseItr->is_object()) {
+                    layer.noise.seed = readVec2(*layerNoiseItr, "seed", layer.noise.seed);
+                    layer.noise.baseFrequency = readFloat(*layerNoiseItr, "baseFrequency", layer.noise.baseFrequency);
+                    layer.noise.lacunarity = readFloat(*layerNoiseItr, "lacunarity", layer.noise.lacunarity);
+                    layer.noise.gain = readFloat(*layerNoiseItr, "gain", layer.noise.gain);
+                    layer.noise.octaves = std::clamp(readUint(*layerNoiseItr, "octaves", layer.noise.octaves), 1u, 12u);
+                    layer.noise.enableRidges = readBool(*layerNoiseItr, "ridges", layer.noise.enableRidges != 0u) ? 1u : 0u;
+                }
+
+                if(auto layerFftItr = layerJson.find("fft"); layerFftItr != layerJson.end() && layerFftItr->is_object()) {
+                    layer.fft.seed = readVec2(*layerFftItr, "seed", layer.fft.seed);
+                    layer.fft.amplitude = readFloat(*layerFftItr, "amplitude", layer.fft.amplitude);
+                    layer.fft.spectralPower = readFloat(*layerFftItr, "spectralPower", layer.fft.spectralPower);
+                    layer.fft.frequencyCount = std::clamp(readUint(*layerFftItr, "frequencyCount", layer.fft.frequencyCount), 1u, 6u);
+                    layer.fft.frequencies = readFrequencies(*layerFftItr, layer.fft.frequencies);
+                    normalizeFftFrequencies(layer.fft, nextPowerOfTwo(std::max(m_info.width, m_info.height)));
+                }
+
+                m_blendLayers.push_back(layer);
+            }
+
+            if(m_blendLayers.empty()) {
+                m_blendLayers.emplace_back();
+            }
+        }
+    }
+
+    m_dirty = true;
+    m_regenerateFile |= m_method == DisplacementMethod::File;
 }
 
 bool DisplacementMapGenerator::blendControls() {

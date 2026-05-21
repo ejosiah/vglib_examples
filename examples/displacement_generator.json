@@ -1,0 +1,122 @@
+{
+    "parameters": {
+        "blend": {
+            "layers": [
+                {
+                    "blendMode": "normal",
+                    "enabled": true,
+                    "fft": {
+                        "amplitude": 0.2800000011920929,
+                        "frequencies": [
+                            1.0,
+                            8.0,
+                            32.0,
+                            128.0,
+                            256.0,
+                            384.0
+                        ],
+                        "frequencyCount": 4,
+                        "seed": [
+                            271.0,
+                            619.0
+                        ],
+                        "spectralPower": 2.0
+                    },
+                    "noise": {
+                        "baseFrequency": 2.5,
+                        "gain": 0.5,
+                        "lacunarity": 2.0,
+                        "octaves": 6,
+                        "ridges": true,
+                        "seed": [
+                            146.0,
+                            941.0
+                        ]
+                    },
+                    "opacity": 1.0,
+                    "source": "noise"
+                },
+                {
+                    "blendMode": "darker_color",
+                    "enabled": true,
+                    "fft": {
+                        "amplitude": 0.1599999964237213,
+                        "frequencies": [
+                            2.0,
+                            12.0,
+                            48.0,
+                            192.0,
+                            256.0,
+                            384.0
+                        ],
+                        "frequencyCount": 4,
+                        "seed": [
+                            491.0,
+                            223.0
+                        ],
+                        "spectralPower": 1.9800000190734863
+                    },
+                    "noise": {
+                        "baseFrequency": 9.0,
+                        "gain": 0.41999998688697815,
+                        "lacunarity": 2.0,
+                        "octaves": 5,
+                        "ridges": true,
+                        "seed": [
+                            719.0,
+                            113.0
+                        ]
+                    },
+                    "opacity": 0.9139999747276306,
+                    "source": "fft"
+                }
+            ]
+        },
+        "faultFormation": {
+            "blur": true,
+            "blurIterations": 18,
+            "maxIterations": 100,
+            "seed": [
+                2097152.0,
+                4194304.0
+            ]
+        },
+        "fft": {
+            "amplitude": 0.2800000011920929,
+            "frequencies": [
+                1.0,
+                8.0,
+                32.0,
+                128.0,
+                256.0,
+                384.0
+            ],
+            "frequencyCount": 4,
+            "seed": [
+                271.0,
+                619.0
+            ],
+            "spectralPower": 2.0
+        },
+        "file": {
+            "path": "../data/textures/height_map/generated_displacement.png"
+        },
+        "noise": {
+            "baseFrequency": 2.5,
+            "gain": 0.5,
+            "lacunarity": 2.0,
+            "octaves": 6,
+            "ridges": true,
+            "seed": [
+                137.0,
+                941.0
+            ]
+        },
+        "size": [
+            4096,
+            4096
+        ]
+    },
+    "type": "blend",
+    "version": 1
+}
