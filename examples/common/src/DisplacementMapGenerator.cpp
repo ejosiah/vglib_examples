@@ -23,6 +23,29 @@ namespace {
         value = static_cast<uint>(std::clamp(current, min, max));
         return true;
     }
+
+    uint nextPowerOfTwo(uint value) {
+        if(value <= 1) {
+            return 1;
+        }
+
+        --value;
+        value |= value >> 1;
+        value |= value >> 2;
+        value |= value >> 4;
+        value |= value >> 8;
+        value |= value >> 16;
+        return value + 1;
+    }
+
+    uint log2PowerOfTwo(uint value) {
+        uint result = 0;
+        while(value > 1) {
+            value >>= 1;
+            ++result;
+        }
+        return result;
+    }
 }
 
 DisplacementMapGenerator::DisplacementMapGenerator(Context &context, DisplacementMethod method, uint width, uint height, std::string path)
@@ -61,6 +84,9 @@ void DisplacementMapGenerator::exec(VkCommandBuffer commandBuffer) {
             break;
         case DisplacementMethod::Noise:
             noiseHeightMap(commandBuffer);
+            break;
+        case DisplacementMethod::FFT:
+            fftDisplacementMap(commandBuffer);
             break;
         default:
             assert(false && "method not not yet implemented!");
@@ -123,7 +149,7 @@ bool DisplacementMapGenerator::controls(bool show) {
 
 bool DisplacementMapGenerator::controlsContent() {
     bool dirty = false;
-    static constexpr std::array<const char*, 4> methods{ "None", "File", "Fault formation", "Noise" };
+    static constexpr std::array<const char*, 5> methods{ "None", "File", "Fault formation", "Noise", "FFT" };
     int method = static_cast<int>(m_method);
     if(ImGui::Combo("Type", &method, methods.data(), static_cast<int>(methods.size()))) {
         m_method = static_cast<DisplacementMethod>(method);
@@ -162,6 +188,14 @@ bool DisplacementMapGenerator::controlsContent() {
             noise_constants.enableRidges = enableRidges ? 1u : 0u;
             dirty = true;
         }
+    }else if(m_method == DisplacementMethod::FFT) {
+        const auto fftSize = nextPowerOfTwo(std::max(m_info.width, m_info.height));
+        ImGui::Text("FFT: %u x %u", fftSize, fftSize);
+        dirty |= ImGui::DragFloat2("Seed", &fft_spectrum_constants.seed.x, 1.0f);
+        dirty |= ImGui::DragFloat("Amplitude", &fft_spectrum_constants.amplitude, 0.005f, 0.0f, 4.0f, "%.3f");
+        dirty |= ImGui::DragFloat("Spectral falloff", &fft_spectrum_constants.spectralPower, 0.02f, 0.25f, 6.0f, "%.2f");
+        dirty |= ImGui::DragFloat("Low frequency", &fft_spectrum_constants.lowFrequency, 0.1f, 0.001f, fftSize * 0.5f, "%.2f");
+        dirty |= ImGui::DragFloat("High frequency", &fft_spectrum_constants.highFrequency, 1.0f, 0.001f, fftSize * 0.5f, "%.2f");
     }
 
     if(m_method != DisplacementMethod::File && ImGui::Button("Regenerate")) {
@@ -350,6 +384,170 @@ void DisplacementMapGenerator::noiseHeightMap(VkCommandBuffer commandBuffer) {
     dispMap.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
+void DisplacementMapGenerator::createFftTextures(VkCommandBuffer commandBuffer, uint fftSize) {
+    bool queuedBarriers = false;
+    auto createSignalTexture = [&](Texture& texture) {
+        const bool recreate = texture.format != VK_FORMAT_R32G32_SFLOAT || texture.width != fftSize || texture.height != fftSize;
+        if(!recreate) {
+            return;
+        }
+
+        textures::createNoTransition(device(), texture, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R32G32_SFLOAT, {fftSize, fftSize, 1},
+                                     VK_SAMPLER_ADDRESS_MODE_REPEAT);
+
+        Barriers::push(texture.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_NONE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                       VK_ACCESS_NONE, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        texture.image.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+        queuedBarriers = true;
+    };
+
+    createSignalTexture(m_fftPing);
+    createSignalTexture(m_fftPong);
+    if(queuedBarriers) {
+        Barriers::flush(commandBuffer);
+    }
+}
+
+void DisplacementMapGenerator::fftDisplacementMap(VkCommandBuffer commandBuffer) {
+    auto info = displacementMapInfo();
+    const auto fftSize = nextPowerOfTwo(std::max(info.width, info.height));
+    createFftTextures(commandBuffer, fftSize);
+
+    auto& dispMap = m_displacementMap.values;
+    VkPipelineStageFlags2 srcStageMask = GeneratedTextureReadStages;
+    VkAccessFlags2 srcAccessMask = GeneratedTextureReadAccess;
+    VkImageLayout srcLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if(dispMap.format != VK_FORMAT_R16_SFLOAT || dispMap.width != info.width || dispMap.height != info.height) {
+        srcStageMask = VK_PIPELINE_STAGE_NONE;
+        srcLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        srcAccessMask = VK_ACCESS_NONE;
+        textures::createNoTransition(device(), dispMap, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R16_SFLOAT, {info.width, info.height, 1},
+                                     DepthMapAddressMode);
+    }
+
+    if(m_fftTextureOffset == ~0u) {
+        m_fftTextureOffset = bindlessDescriptor().reserveTextureSlots(2);
+    }
+    if(m_fftImageOffset == ~0u) {
+        m_fftImageOffset = bindlessDescriptor().reserveImageSlots(2);
+    }
+    if(m_fftDisplacementImageId == ~0u) {
+        m_fftDisplacementImageId = bindlessDescriptor().reserveImageSlots(1);
+    }
+
+    const std::array<uint, 2> fftTextureIds{m_fftTextureOffset, m_fftTextureOffset + 1};
+    const std::array<uint, 2> fftImageIds{m_fftImageOffset, m_fftImageOffset + 1};
+
+    bindlessDescriptor().update({ &m_fftPing, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, fftTextureIds[0], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_fftPong, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, fftTextureIds[1], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_fftPing, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, fftImageIds[0], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &m_fftPong, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, fftImageIds[1], VK_IMAGE_LAYOUT_GENERAL });
+    bindlessDescriptor().update({ &dispMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_fftDisplacementImageId, VK_IMAGE_LAYOUT_GENERAL });
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, srcStageMask, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           srcAccessMask, VK_ACCESS_SHADER_WRITE_BIT, srcLayout, VK_IMAGE_LAYOUT_GENERAL);
+
+    auto descriptorSet = bindlessDescriptorSet();
+    const auto gx = (fftSize + 31) / 32;
+    const auto gy = (fftSize + 31) / 32;
+
+    fft_spectrum_constants.lowFrequency = std::max(fft_spectrum_constants.lowFrequency, 0.001f);
+    fft_spectrum_constants.highFrequency = std::max(fft_spectrum_constants.highFrequency, fft_spectrum_constants.lowFrequency + 0.001f);
+    fft_spectrum_constants.output_image_index = fftImageIds[0];
+    fft_spectrum_constants.size = fftSize;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_spectrum"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fft_spectrum"), 0, 1, &descriptorSet, 0, 0);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("fft_spectrum"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(fft_spectrum_constants), &fft_spectrum_constants);
+    vkCmdDispatch(commandBuffer, gx, gy, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_reorder"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fft_reorder"), 0, 1, &descriptorSet, 0, 0);
+
+    int readIndex = 0;
+    int writeIndex = 1;
+
+    fft_reorder_constants = {
+        .input_tex_id = fftTextureIds[readIndex],
+        .output_image_index = fftImageIds[writeIndex],
+        .size = fftSize,
+        .horizontal = 1
+    };
+    vkCmdPushConstants(commandBuffer, m_compute.layout("fft_reorder"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(fft_reorder_constants), &fft_reorder_constants);
+    vkCmdDispatch(commandBuffer, gx, gy, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+    std::swap(readIndex, writeIndex);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_pass"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fft_pass"), 0, 1, &descriptorSet, 0, 0);
+
+    const auto numPasses = log2PowerOfTwo(fftSize);
+    for(uint pass = 0; pass < numPasses; ++pass) {
+        fft_pass_constants = {
+            .input_tex_id = fftTextureIds[readIndex],
+            .output_image_index = fftImageIds[writeIndex],
+            .size = fftSize,
+            .pass = pass,
+            .horizontal = 1
+        };
+        vkCmdPushConstants(commandBuffer, m_compute.layout("fft_pass"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(fft_pass_constants), &fft_pass_constants);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+        Barrier::computeWriteToRead(commandBuffer);
+        std::swap(readIndex, writeIndex);
+    }
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_reorder"));
+    fft_reorder_constants = {
+        .input_tex_id = fftTextureIds[readIndex],
+        .output_image_index = fftImageIds[writeIndex],
+        .size = fftSize,
+        .horizontal = 0
+    };
+    vkCmdPushConstants(commandBuffer, m_compute.layout("fft_reorder"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(fft_reorder_constants), &fft_reorder_constants);
+    vkCmdDispatch(commandBuffer, gx, gy, 1);
+    Barrier::computeWriteToRead(commandBuffer);
+    std::swap(readIndex, writeIndex);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_pass"));
+    for(uint pass = 0; pass < numPasses; ++pass) {
+        fft_pass_constants = {
+            .input_tex_id = fftTextureIds[readIndex],
+            .output_image_index = fftImageIds[writeIndex],
+            .size = fftSize,
+            .pass = pass,
+            .horizontal = 0
+        };
+        vkCmdPushConstants(commandBuffer, m_compute.layout("fft_pass"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(fft_pass_constants), &fft_pass_constants);
+        vkCmdDispatch(commandBuffer, gx, gy, 1);
+        Barrier::computeWriteToRead(commandBuffer);
+        std::swap(readIndex, writeIndex);
+    }
+
+    fft_displacement_constants = {
+        .input_tex_id = fftTextureIds[readIndex],
+        .dmap_image_index = m_fftDisplacementImageId,
+        .fftSize = fftSize,
+        ._padding = 0
+    };
+
+    const auto dmapGx = (info.width + 31) / 32;
+    const auto dmapGy = (info.height + 31) / 32;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("fft_to_displacement"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("fft_to_displacement"), 0, 1, &descriptorSet, 0, 0);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("fft_to_displacement"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(fft_displacement_constants), &fft_displacement_constants);
+    vkCmdDispatch(commandBuffer, dmapGx, dmapGy, 1);
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    dispMap.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
 std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
     return {
             {
@@ -375,6 +573,30 @@ std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
                 .shadePath = FileManager::resource("vista_noise_height_map_gen.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NoiseConstants)} }
+            },
+            {
+                .name = "fft_spectrum",
+                .shadePath = FileManager::resource("vista_fft_spectrum.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(FftSpectrumConstants)} }
+            },
+            {
+                .name = "fft_reorder",
+                .shadePath = FileManager::resource("vista_fft_reorder.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(FftReorderConstants)} }
+            },
+            {
+                .name = "fft_pass",
+                .shadePath = FileManager::resource("vista_fft_pass.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(FftPassConstants)} }
+            },
+            {
+                .name = "fft_to_displacement",
+                .shadePath = FileManager::resource("vista_fft_to_displacement.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(FftDisplacementConstants)} }
             },
             {
                 .name = "blur",

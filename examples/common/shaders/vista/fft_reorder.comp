@@ -1,0 +1,41 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : require
+
+#define fft_input global_textures[nonuniformEXT(pc.input_tex_id)]
+#define fft_output global_images[nonuniformEXT(pc.output_image_index)]
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11, rg32f) writeonly uniform image2D global_images[];
+
+layout(push_constant) uniform Constants {
+    uint input_tex_id;
+    uint output_image_index;
+    uint size;
+    uint horizontal;
+} pc;
+
+uint reverseIndex(uint value, uint bits) {
+    return bitfieldReverse(value) >> (32u - bits);
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    uint size = pc.size;
+    if(any(greaterThanEqual(gid, ivec2(size)))) {
+        return;
+    }
+
+    uint bits = uint(findMSB(size));
+    ivec2 src = gid;
+    if(pc.horizontal == 1u) {
+        src.x = int(reverseIndex(uint(gid.x), bits));
+    }else {
+        src.y = int(reverseIndex(uint(gid.y), bits));
+    }
+
+    vec2 value = texelFetch(fft_input, src, 0).rg;
+    imageStore(fft_output, gid, vec4(value, 0.0, 1.0));
+}

@@ -1,0 +1,32 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : require
+
+#define fft_input global_textures[nonuniformEXT(pc.input_tex_id)]
+#define displacement_map global_images[nonuniformEXT(pc.dmap_image_index)]
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 10) uniform sampler2D global_textures[];
+layout(set = 0, binding = 11, r16f) writeonly uniform image2D global_images[];
+
+layout(push_constant) uniform Constants {
+    uint input_tex_id;
+    uint dmap_image_index;
+    uint fftSize;
+    uint padding;
+} pc;
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outputSize = imageSize(displacement_map);
+    if(any(greaterThanEqual(gid, outputSize))) {
+        return;
+    }
+
+    vec2 uv = (vec2(gid) + 0.5) / vec2(outputSize);
+    ivec2 source = clamp(ivec2(floor(uv * float(pc.fftSize))), ivec2(0), ivec2(int(pc.fftSize) - 1));
+    float height = texelFetch(fft_input, source, 0).r / float(pc.fftSize * pc.fftSize);
+
+    imageStore(displacement_map, gid, vec4(clamp(0.5 + height, 0.0, 1.0)));
+}

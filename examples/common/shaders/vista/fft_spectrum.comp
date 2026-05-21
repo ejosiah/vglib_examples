@@ -1,0 +1,82 @@
+#version 460
+
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_GOOGLE_include_directive : enable
+
+#include "hash.glsl"
+
+#define spectrum_out global_images[nonuniformEXT(pc.output_image_index)]
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 11, rg32f) writeonly uniform image2D global_images[];
+
+layout(push_constant) uniform Constants {
+    vec2 seed;
+    float amplitude;
+    float spectralPower;
+    float lowFrequency;
+    float highFrequency;
+    uint output_image_index;
+    uint size;
+} pc;
+
+const float PI = 3.14159265358979323846;
+const float TWO_PI = 6.28318530717958647692;
+
+ivec2 conjugateCoord(ivec2 coord, int size) {
+    return ivec2((size - coord.x) & (size - 1), (size - coord.y) & (size - 1));
+}
+
+bool lexicographicLess(ivec2 lhs, ivec2 rhs) {
+    return lhs.y < rhs.y || (lhs.y == rhs.y && lhs.x <= rhs.x);
+}
+
+ivec2 signedFrequency(ivec2 coord, int size) {
+    ivec2 k = coord;
+    if(k.x > size / 2) {
+        k.x -= size;
+    }
+    if(k.y > size / 2) {
+        k.y -= size;
+    }
+    return k;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    int size = int(pc.size);
+    if(any(greaterThanEqual(gid, ivec2(size)))) {
+        return;
+    }
+
+    ivec2 paired = conjugateCoord(gid, size);
+    bool canonical = lexicographicLess(gid, paired);
+    ivec2 source = canonical ? gid : paired;
+    ivec2 k2 = signedFrequency(source, size);
+    float k = length(vec2(k2));
+
+    vec2 value = vec2(0.0);
+    if(k > 0.0) {
+        float low = max(pc.lowFrequency, 0.001);
+        float high = min(max(pc.highFrequency, low + 0.001), float(size) * 0.5);
+        float lowTaper = smoothstep(low * 0.5, low, k);
+        float highTaper = 1.0 - smoothstep(high, high * 1.15, k);
+        float band = lowTaper * highTaper;
+
+        vec4 randomValues = hash42(vec2(source) + pc.seed);
+        float phase = randomValues.x * TWO_PI;
+        float gaussian = sqrt(max(-2.0 * log(max(randomValues.y, 0.000001)), 0.0));
+        float magnitude = pc.amplitude * float(size * size) * gaussian * band / pow(k, max(pc.spectralPower, 0.001));
+
+        value = magnitude * vec2(cos(phase), sin(phase));
+        if(!canonical) {
+            value.y = -value.y;
+        }
+        if(all(equal(gid, paired))) {
+            value.y = 0.0;
+        }
+    }
+
+    imageStore(spectrum_out, gid, vec4(value, 0.0, 1.0));
+}

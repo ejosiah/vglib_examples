@@ -6,7 +6,7 @@
 #include <string>
 #include "ContextAware.hpp"
 
-enum class DisplacementMethod { None, File, FaultFormation, Noise };
+enum class DisplacementMethod { None, File, FaultFormation, Noise, FFT };
 
 class DisplacementMapGenerator {
 public:
@@ -48,6 +48,10 @@ protected:
     void faultFormation(VkCommandBuffer commandBuffer);
 
     void noiseHeightMap(VkCommandBuffer commandBuffer);
+
+    void fftDisplacementMap(VkCommandBuffer commandBuffer);
+
+    void createFftTextures(VkCommandBuffer commandBuffer, uint fftSize);
 
     void blur(VkCommandBuffer commandBuffer);
 
@@ -115,6 +119,38 @@ private:
         uint enableRidges{1};
     } noise_constants;
 
+    struct FftSpectrumConstants {
+        glm::vec2 seed{271.0f, 619.0f};
+        float amplitude{0.28f};
+        float spectralPower{2.0f};
+        float lowFrequency{1.0f};
+        float highFrequency{384.0f};
+        uint output_image_index{~0u};
+        uint size{0};
+    } fft_spectrum_constants;
+
+    struct FftReorderConstants {
+        uint input_tex_id{~0u};
+        uint output_image_index{~0u};
+        uint size{0};
+        uint horizontal{1};
+    } fft_reorder_constants;
+
+    struct FftPassConstants {
+        uint input_tex_id{~0u};
+        uint output_image_index{~0u};
+        uint size{0};
+        uint pass{0};
+        uint horizontal{1};
+    } fft_pass_constants;
+
+    struct FftDisplacementConstants {
+        uint input_tex_id{~0u};
+        uint dmap_image_index{~0u};
+        uint fftSize{0};
+        uint _padding{0};
+    } fft_displacement_constants;
+
     Context* m_context;
     std::string m_path;
     DisplacementMap m_displacementMap;
@@ -126,6 +162,11 @@ private:
     bool m_dirty{false};
     uint m_faultFormationImageId{~0u};
     uint m_noiseImageId{~0u};
+    Texture m_fftPing;
+    Texture m_fftPong;
+    uint m_fftTextureOffset{~0u};
+    uint m_fftImageOffset{~0u};
+    uint m_fftDisplacementImageId{~0u};
     uint m_slopeMoments0ImageId{~0u};
     uint m_slopeMoments1ImageId{~0u};
 };
