@@ -1,0 +1,54 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    float outflow[8];
+    getThermalOutflow(gid, outflow);
+
+    float outVolume = 0.0;
+    for(int i = 0; i < 8; ++i) {
+        outVolume += outflow[i];
+    }
+
+    float inVolume = 0.0;
+    for(int iy = 0; iy < 3; ++iy) {
+        for(int ix = 0; ix < 3; ++ix) {
+            ivec2 offset = ivec2(ix - 1, iy - 1);
+
+            if(offset == ivec2(0)) {
+                continue;
+            }
+
+            ivec2 nloc = gid + offset;
+
+            if(!inTerrain(nloc)) {
+                continue;
+            }
+
+            inVolume += getThermalInflow(nloc, offset);
+        }
+    }
+
+    const vec2 cellSize = erosionCellSize();
+    const float cellArea = cellSize.x * cellSize.y;
+
+    float oldHeight = getTerrainHeight(gid);
+    float newHeight = oldHeight + (inVolume - outVolume) / cellArea;
+
+    setTerrainHeight(gid, newHeight);
+
+}

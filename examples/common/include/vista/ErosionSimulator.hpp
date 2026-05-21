@@ -52,6 +52,10 @@ protected:
 
     void evaporateWater(VkCommandBuffer commandBuffer);
 
+    void computeThermalOutflow(VkCommandBuffer commandBuffer);
+
+    void applyThermalErosion(VkCommandBuffer commandBuffer);
+
     void dispatch(VkCommandBuffer commandBuffer, const char* pipelineName);
 
     std::vector<PipelineMetaData> metadata();
@@ -69,12 +73,16 @@ private:
     Texture m_rain; // r(x,y)
     Texture m_localHardnessCoef; // R(x, y)
     Texture m_worksheet; // st+dt, C, dS, mode
+    Texture m_thermalFlow0;
+    Texture m_thermalFlow1;
     Texture* m_displacementMap{};
     float m_localHardness{0.8f};
     bool m_running{};
     bool m_restartRequested{};
     bool m_manualStepping{};
     bool m_stepRequested{};
+    bool m_hydraulicErosion{true};
+    bool m_thermalErosion{true};
     uint m_iteration{};
 
     struct Constants {
@@ -106,6 +114,8 @@ private:
         uint rainTextureIndex{~0u};
         uint localHardnessCoefTextureIndex{~0u};
         uint worksheetTextureIndex{~0u};
+        uint thermalFlowTextureIndex0{~0u};
+        uint thermalFlowTextureIndex1{~0u};
         uint terrainHeightImageIndex{~0u};
         uint waterHeightImageIndex{~0u};
         uint sedimentAmountImageIndex{~0u};
@@ -114,6 +124,8 @@ private:
         uint rainImageIndex{~0u};
         uint localHardnessCoefImageIndex{~0u};
         uint worksheetImageIndex{~0u};
+        uint thermalFlowImageIndex0{~0u};
+        uint thermalFlowImageIndex1{~0u};
     } m_constants;
 
 };

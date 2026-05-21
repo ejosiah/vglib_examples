@@ -1,0 +1,86 @@
+#version 460
+
+/*
+Source: Balazs Jako and Balazs Toth, "Fast Hydraulic and Thermal Erosion on the GPU" (CESCG 2011).
+URL: https://old.cescg.org/CESCG-2011/papers/TUBudapest-Jako-Balazs.pdf
+Equations implemented:
+- (17) volume to be moved
+- (18) volume per neighbour proportional to height difference
+- (4)-(5) outflow limiting factor.
+*/
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+#include "constants.glsl"
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+
+    if(!inTerrain(gid)) {
+        return;
+    }
+
+    const float dt = timeStep;
+    const vec2 cellSize = erosionCellSize();
+    const float cellArea = cellSize.x * cellSize.y;
+
+    const float Kt = thermalErosionRate;
+    const float Rxy = getLocalHardnessCoef(gid);
+    const float Ka = talusAngleTangentCoeff;
+    const float Ki = talusAngleTangentBias;
+
+    float thisHeight = getTerrainHeight(gid);
+
+    float diffs[9] = float[9](0,0,0,0,0,0,0,0,0);
+    float weights[9] = float[9](0,0,0,0,0,0,0,0,0);
+
+    float H = 0.0;
+    float weightSum = 0.0;
+
+    float threshold = Rxy * Ka + Ki;
+
+    for(int iy = 0; iy < 3; ++iy) {
+        for(int ix = 0; ix < 3; ++ix) {
+            int idx = iy * 3 + ix;
+
+            ivec2 offset = ivec2(ix - 1, iy - 1);
+            ivec2 loc = gid + offset;
+
+            if(offset == ivec2(0) || !inTerrain(loc)) {
+                continue;
+            }
+
+            float neighborHeight = getTerrainHeight(loc);
+            float diff = thisHeight - neighborHeight;
+
+            if(diff <= 0.0) {
+                continue;
+            }
+
+            float distance = length(vec2(offset) * cellSize);
+            float slope = diff / distance;
+
+            if(slope > threshold) {
+                diffs[idx] = diff;
+                weights[idx] = diff;
+
+                H = max(H, diff);
+                weightSum += weights[idx];
+            }
+        }
+    }
+
+    float outflow[8] = float[8](0,0,0,0,0,0,0,0);
+    if(weightSum > 0.0 && H > 0.0) {
+        float dS = cellArea * dt * Kt * Rxy * H * 0.5;
+        dS = min(dS, H * cellArea * 0.5);
+
+        int slot = 0;
+        for(int i = 0; i < 9; ++i) {
+            if(i == 4) continue; // skip this cell
+            outflow[slot++] = dS * (weights[i] / weightSum);
+        }
+    }
+    setThermalOutflow(gid, outflow);
+
+}

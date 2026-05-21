@@ -155,6 +155,7 @@ protected:
     struct {
         float lightZenith{15};
         float lightAzimuth{223};
+        bool dynamicLight{false};
         bool debug{true};
         bool showOriginalTerrain{};
         bool visualizeWaterFlow{};

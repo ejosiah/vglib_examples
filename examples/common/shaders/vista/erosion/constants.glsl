@@ -39,6 +39,8 @@ layout(push_constant) uniform Constants {
     uint rainTextureIndex;
     uint localHardnessCoefTextureIndex;
     uint worksheetTextureIndex;
+    uint thermalFlowTextureIndex0;
+    uint thermalFlowTextureIndex1;
     uint terrainHeightImageIndex;
     uint waterHeightImageIndex;
     uint sedimentAmountImageIndex;
@@ -47,6 +49,8 @@ layout(push_constant) uniform Constants {
     uint rainImageIndex;
     uint localHardnessCoefImageIndex;
     uint worksheetImageIndex;
+    uint thermalFlowImageIndex0;
+    uint thermalFlowImageIndex1;
 };
 
 layout(set = 0, binding = 10) uniform sampler2D global_textures[];
@@ -62,6 +66,8 @@ layout(set = 0, binding = 11, rgba32f) uniform image2D global_rgba32_images[];
 #define rain_texture global_textures[nonuniformEXT(rainTextureIndex)]
 #define local_hardness_coef_texture global_textures[nonuniformEXT(localHardnessCoefTextureIndex)]
 #define worksheet_texture global_textures[nonuniformEXT(worksheetTextureIndex)]
+#define thermal_outflow0_texture global_textures[nonuniformEXT(thermalFlowTextureIndex0)]
+#define thermal_outflow1_texture global_textures[nonuniformEXT(thermalFlowTextureIndex1)]
 
 #define terrain_height_image global_r32_images[nonuniformEXT(terrainHeightImageIndex)]
 #define water_height_image global_r32_images[nonuniformEXT(waterHeightImageIndex)]
@@ -71,6 +77,8 @@ layout(set = 0, binding = 11, rgba32f) uniform image2D global_rgba32_images[];
 #define rain_image global_r32_images[nonuniformEXT(rainImageIndex)]
 #define local_hardness_coef_image global_r32_images[nonuniformEXT(localHardnessCoefImageIndex)]
 #define worksheet_image global_rgba32_images[nonuniformEXT(worksheetImageIndex)]
+#define thermal_outflow_image0 global_rgba32_images[nonuniformEXT(thermalFlowImageIndex0)]
+#define thermal_outflow_image1 global_rgba32_images[nonuniformEXT(thermalFlowImageIndex1)]
 
 bool inTerrain(ivec2 loc) {
     return all(greaterThanEqual(loc, ivec2(0))) && all(lessThan(loc, terrainSize));
@@ -145,6 +153,49 @@ float getOutflow(ivec3 loc) {
     return texelFetch(flux_texture, loc.xy, 0)[loc.z];
 }
 
+void getThermalOutflow(ivec2 loc, out float[8] inflow) {
+    vec4 in0 = texelFetch(thermal_outflow0_texture, loc, 0);
+    vec4 in1 = texelFetch(thermal_outflow1_texture, loc, 0);
+
+    inflow[0] = in0.x;
+    inflow[1] = in0.y;
+    inflow[2] = in0.z;
+    inflow[3] = in0.w;
+
+    inflow[4] = in1.x;
+    inflow[5] = in1.y;
+    inflow[6] = in1.z;
+    inflow[7] = in1.w;
+}
+
+int oppositeSlotFromOffset(ivec2 offset) {
+    if(offset == ivec2(-1,-1)) return 7;
+    if(offset == ivec2( 0,-1)) return 6;
+    if(offset == ivec2( 1,-1)) return 5;
+
+    if(offset == ivec2(-1, 0)) return 4;
+    if(offset == ivec2( 1, 0)) return 3;
+
+    if(offset == ivec2(-1, 1)) return 2;
+    if(offset == ivec2( 0, 1)) return 1;
+    if(offset == ivec2( 1, 1)) return 0;
+
+    return -1;
+}
+
+float readThermalSlot(ivec2 loc, int index) {
+    if(index < 4) {
+        return texelFetch(thermal_outflow0_texture, loc, 0)[index];
+    }
+
+    return texelFetch(thermal_outflow1_texture, loc, 0)[index - 4];
+}
+
+float getThermalInflow(ivec2 neighbourLoc, ivec2 offset) {
+    int slot = oppositeSlotFromOffset(offset);
+    return slot < 0 ? 0.0 : readThermalSlot(neighbourLoc, slot);
+}
+
 void setWaterHeight(ivec2 loc, float value) {
     imageStore(water_height_image, loc, vec4(value));
 }
@@ -182,6 +233,11 @@ void setSedimentExchange(ivec2 loc, float DeltaS, float mode) {
 void setAdvectedSediment(ivec2 loc, float st_dt) {
     vec4 worksheet = texelFetch(worksheet_texture, loc, 0);
     imageStore(worksheet_image, loc, vec4(st_dt, worksheet.yzw));
+}
+
+void setThermalOutflow(ivec2 loc, float[8] o) {
+    imageStore(thermal_outflow_image0, loc, vec4(o[0], o[1], o[2], o[3]));
+    imageStore(thermal_outflow_image1, loc, vec4(o[4], o[5], o[6], o[7]));
 }
 
 #endif

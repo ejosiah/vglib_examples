@@ -459,6 +459,7 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
         if(ImGui::BeginTabItem("Lighting")) {
             ImGui::SliderFloat("Zenith Angle", &options.lightZenith, -90, 180);
             ImGui::SliderFloat("Azimuth Angle", &options.lightAzimuth, 0, 360);
+            ImGui::Checkbox("Dynamic light", &options.dynamicLight);
             terrain->lightingControls();
             displacementShadowMap->controls();
 
@@ -675,6 +676,8 @@ void ErosionDemo::endFrame() {
 }
 
 void ErosionDemo::updateSunPosition()  {
+    if (!options.dynamicLight) return;
+
     auto now = std::chrono::system_clock::now();
     auto pos = sun_calc::get_position(now, currentPosition.x, currentPosition.y);
     options.lightZenith = glm::degrees(pos.altitude);

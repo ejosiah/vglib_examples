@@ -152,6 +152,16 @@ void ErosionSimulator::controlsContent() {
         ImGui::SliderFloat("Talus coeff (Ka)", &m_constants.talusAngleTangentCoeff, 0.0f, 1.0f, "%.3f");
         ImGui::SliderFloat("Talus bias (Ki)", &m_constants.talusAngleTangentBias, 0.0f, 1.0f, "%.3f");
     }
+    ImGui::Text("Erosion methods:");
+    ImGui::Indent(16);
+    ImGui::Checkbox("Hydraulic", &m_hydraulicErosion);
+    ImGui::SameLine();
+    ImGui::Checkbox("Thermal", &m_thermalErosion);
+    ImGui::Indent(-16);
+
+    if (!m_hydraulicErosion && !m_thermalErosion) {
+        m_hydraulicErosion = true;
+    }
 
     ImGui::Text("Iteration: %u / %u", m_iteration, m_constants.maxIterations);
     ImGui::Checkbox("Debug stepping", &m_manualStepping);
@@ -195,6 +205,8 @@ void ErosionSimulator::clear(VkCommandBuffer commandBuffer) {
     vkCmdClearColorImage(commandBuffer, m_rain.image, VK_IMAGE_LAYOUT_GENERAL, &one, 1, &subresourceRange);
     vkCmdClearColorImage(commandBuffer, m_localHardnessCoef.image, VK_IMAGE_LAYOUT_GENERAL, &localHardness, 1, &subresourceRange);
     vkCmdClearColorImage(commandBuffer, m_worksheet.image, VK_IMAGE_LAYOUT_GENERAL, &zero, 1, &subresourceRange);
+    vkCmdClearColorImage(commandBuffer, m_thermalFlow0.image, VK_IMAGE_LAYOUT_GENERAL, &zero, 1, &subresourceRange);
+    vkCmdClearColorImage(commandBuffer, m_thermalFlow1.image, VK_IMAGE_LAYOUT_GENERAL, &zero, 1, &subresourceRange);
 
     VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -271,6 +283,9 @@ uint ErosionSimulator::velocityFieldTextureIndex() const {
 }
 
 void ErosionSimulator::runIteration(VkCommandBuffer commandBuffer, uint iteration) {
+    if (!m_hydraulicErosion && !m_thermalErosion) {
+        throw std::runtime_error{ "at least one erosion type most be set" };
+    }
     m_constants.iteration = iteration;
 
     if(iteration == 0) {
@@ -278,53 +293,68 @@ void ErosionSimulator::runIteration(VkCommandBuffer commandBuffer, uint iteratio
     }
 
     applyRain(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
-
     computeOutflowFlux(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
-
     computeWaterHeightChange(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
-
     computeSedimentCapacity(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
-
+    computeThermalOutflow(commandBuffer);
     erodeDepositSediment(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
-
     advectSediment(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
-
+    applyThermalErosion(commandBuffer);
     evaporateWater(commandBuffer);
-    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::applyRain(VkCommandBuffer commandBuffer) {
+    if (!m_hydraulicErosion) return;
     dispatch(commandBuffer, "erosion_apply_rain");
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::computeOutflowFlux(VkCommandBuffer commandBuffer) {
+    if (!m_hydraulicErosion) return;
     dispatch(commandBuffer, "erosion_compute_outflow_flux");
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::computeWaterHeightChange(VkCommandBuffer commandBuffer) {
+    if (!m_hydraulicErosion) return;
     dispatch(commandBuffer, "erosion_compute_water_height_change");
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::computeSedimentCapacity(VkCommandBuffer commandBuffer) {
+    if (!m_hydraulicErosion) return;
     dispatch(commandBuffer, "erosion_compute_sediment_capacity");
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::erodeDepositSediment(VkCommandBuffer commandBuffer) {
+    if (!m_hydraulicErosion) return;
     dispatch(commandBuffer, "erosion_erode_deposit_sediment");
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::advectSediment(VkCommandBuffer commandBuffer) {
+    if (!m_hydraulicErosion) return;
     dispatch(commandBuffer, "erosion_advect_sediment");
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::evaporateWater(VkCommandBuffer commandBuffer) {
+    if (!m_hydraulicErosion) return;
     dispatch(commandBuffer, "erosion_evaporate_water");
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void ErosionSimulator::computeThermalOutflow(VkCommandBuffer commandBuffer) {
+    if (!m_thermalErosion) return;
+    dispatch(commandBuffer, "compute_thermal_outflow");
+    Barrier::computeWriteToRead(commandBuffer);
+}
+
+void ErosionSimulator::applyThermalErosion(VkCommandBuffer commandBuffer) {
+    if (!m_thermalErosion) return;
+    dispatch(commandBuffer, "apply_thermal_erosion");
+    Barrier::computeWriteToRead(commandBuffer);
 }
 
 void ErosionSimulator::dispatch(VkCommandBuffer commandBuffer, const char* pipelineName) {
@@ -375,6 +405,8 @@ void ErosionSimulator::createTextures() {
     createTexture(m_rain, VK_FORMAT_R32_SFLOAT, m_constants.rainTextureIndex, m_constants.rainImageIndex);
     createTexture(m_localHardnessCoef, VK_FORMAT_R32_SFLOAT, m_constants.localHardnessCoefTextureIndex, m_constants.localHardnessCoefImageIndex);
     createTexture(m_worksheet, VK_FORMAT_R32G32B32A32_SFLOAT, m_constants.worksheetTextureIndex, m_constants.worksheetImageIndex);
+    createTexture(m_thermalFlow0, VK_FORMAT_R32G32B32A32_SFLOAT, m_constants.thermalFlowTextureIndex0, m_constants.thermalFlowImageIndex0);
+    createTexture(m_thermalFlow1, VK_FORMAT_R32G32B32A32_SFLOAT, m_constants.thermalFlowTextureIndex1, m_constants.thermalFlowImageIndex1);
 }
 
 void ErosionSimulator::createComputePipelines() {
@@ -423,6 +455,18 @@ std::vector<PipelineMetaData> ErosionSimulator::metadata() {
         {
             .name = "erosion_evaporate_water",
             .shadePath = FileManager::resource("vista_erosion_evaporate_water.comp.spv"),
+            .layouts = {const_cast<VulkanDescriptorSetLayout*>(m_context.bindlessDescriptor->descriptorSetLayout)},
+            .ranges = {{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants)}}
+        },
+        {
+            .name = "compute_thermal_outflow",
+            .shadePath = FileManager::resource("vista_erosion_compute_thermal_outflow.comp.spv"),
+            .layouts = {const_cast<VulkanDescriptorSetLayout*>(m_context.bindlessDescriptor->descriptorSetLayout)},
+            .ranges = {{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants)}}
+        },
+        {
+            .name = "apply_thermal_erosion",
+            .shadePath = FileManager::resource("vista_erosion_apply_thermal_erosion.comp.spv"),
             .layouts = {const_cast<VulkanDescriptorSetLayout*>(m_context.bindlessDescriptor->descriptorSetLayout)},
             .ranges = {{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants)}}
         }
