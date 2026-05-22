@@ -1,6 +1,8 @@
 #ifndef PERLIN_WORLEY_GLSL
 #define PERLIN_WORLEY_GLSL
 
+#include "hash.glsl"
+
 /**
 This tab contains all the necessary noise functions required to model a cloud shape.
 */

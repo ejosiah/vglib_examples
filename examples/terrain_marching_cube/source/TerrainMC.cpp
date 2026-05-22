@@ -7,7 +7,7 @@
 #include "MarchingCubeLuts.hpp"
 
 TerrainMC::TerrainMC(const Settings& settings) : VulkanBaseApp("Marching Cube Terrain", settings) {
-    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("terrain_marching_cube");
     fileManager().addSearchPathFront("terrain_marching_cube/data");
     fileManager().addSearchPathFront("terrain_marching_cube/spv");
@@ -88,30 +88,14 @@ void TerrainMC::initBindlessDescriptor() {
 
 void TerrainMC::beforeDeviceCreation() {
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
-    if(devFeatures12.has_value()) {
-        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan12Features devFeatures12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-        devFeatures12.scalarBlockLayout = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
-    }
+    devFeatures12->scalarBlockLayout = VK_TRUE;
 
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-        devFeatures13.value()->maintenance4 = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        devFeatures13.maintenance4 = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
 
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+    AppContext::addExtensions(deviceCreateNextChain);
 }
 
 void TerrainMC::createDescriptorPool() {
@@ -887,7 +871,7 @@ void TerrainMC::initBlockData() {
     debugDrawOffset = sizeof(DrawCommand) * poolSize;
     drawAllocations[poolSize].vertexCount = 24;
     drawAllocations[poolSize].instanceCount = numBlocks;
-    gpu.drawIndirectBuffer = device.createDeviceLocalBuffer(drawAllocations.data(), BYTE_SIZE(drawAllocations), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite);
+    gpu.drawIndirectBuffer = device.createCpuVisibleBuffer(drawAllocations.data(), BYTE_SIZE(drawAllocations), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | transferReadWrite);
     device.setName<VK_OBJECT_TYPE_BUFFER>("draw_indirect", gpu.drawIndirectBuffer.buffer);
     cpuBuffer = device.createStagingBuffer((10 << 20));
 

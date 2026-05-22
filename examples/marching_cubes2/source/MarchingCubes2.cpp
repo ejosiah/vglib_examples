@@ -10,8 +10,8 @@
 
 MarchingCubes2::MarchingCubes2(const Settings& settings) : VulkanBaseApp("Marching Cubes", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("data");
-    fileManager().addSearchPathFront("data/shaders");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("marching_cubes2");
     fileManager().addSearchPathFront("marching_cubes2/data");
     fileManager().addSearchPathFront("marching_cubes2/spv");
@@ -56,16 +56,31 @@ void MarchingCubes2::initCamera() {
 void MarchingCubes2::loadVoxel() {
 
     auto volume = Volume::loadFromVdb(resource("cow.vdb")).begin()->second;
+    const auto localToWorld = glm::mat4{1};
+    const auto worldToVoxelTransform = volume.localToVoxelTransform * glm::inverse(localToWorld);
+    const auto voxelToWorldTransform = localToWorld * volume.voxelToLocalTransform;
+
     voxels.dim = volume.dim;
-    voxels.bounds.min = volume.bounds.min;
-    voxels.bounds.max = volume.bounds.max;
     voxels.voxelSize = volume.voxelSize;
-    voxels.transform = volume.worldToVoxelTransform;
+    voxels.transform = worldToVoxelTransform;
 
-    textures::create(device, voxels.texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, volume.data.data(), voxels.dim);
+    const std::array<glm::vec3, 8> volumeCorners{{
+        {0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1},
+        {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1},
+    }};
+    voxels.bounds.min = (voxelToWorldTransform * glm::vec4(volumeCorners.front(), 1)).xyz();
+    voxels.bounds.max = voxels.bounds.min;
+    for(const auto& point : volumeCorners) {
+        const auto worldPoint = (voxelToWorldTransform * glm::vec4(point, 1)).xyz();
+        voxels.bounds.min = glm::min(voxels.bounds.min, worldPoint);
+        voxels.bounds.max = glm::max(voxels.bounds.max, worldPoint);
+    }
+
+    auto voxelValues = volume.placeIn(volume.bounds.min, volume.bounds.max);
+    textures::create(device, voxels.texture, VK_IMAGE_TYPE_3D, VK_FORMAT_R32_SFLOAT, voxelValues.data(), voxels.dim);
 
 
-    VoxelData voxelData{voxels.transform, glm::inverse(voxels.transform), static_cast<int>(volume.numVoxels)};
+    VoxelData voxelData{worldToVoxelTransform, voxelToWorldTransform, static_cast<int>(volume.numVoxels)};
     voxels.dataBuffer = device.createCpuVisibleBuffer(&voxelData, sizeof(voxelData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     voxels.data = reinterpret_cast<VoxelData*>(voxels.dataBuffer.map());
 
@@ -175,23 +190,23 @@ void MarchingCubes2::createRenderPipeline() {
 			.name("solid_render")
 			.build(pipelines.render.layout);
 
-	pipelines.cubeMarcher.pipeline =
-        prototypes->cloneGraphicsPipeline()
-			.shaderStage()
-                .taskSShader(resource("marching_cubes.task.spv"))
-				.meshShader(resource("marching_cube.mesh.spv"))
-                .fragmentShader(resource("solid.frag.spv"))
-            .inputAssemblyState()
-                .triangles()
-            .dynamicState()
-                .polygonModeEnable()
-            .layout().clear()
-                .addPushConstantRange(VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT, 0, sizeof(pipelines.cubeMarcher.constants))
-                .addDescriptorSetLayout(voxels.descriptorSetLayout)
-                .addDescriptorSetLayout(cubeMarcher.lutDescriptorSetLayout())
-                .addDescriptorSetLayout(cubeMarcher.vertexDescriptorSetLayout())
-			.name("mesh_shader_cube_marcher")
-			.build(pipelines.cubeMarcher.layout);
+	// pipelines.cubeMarcher.pipeline =
+ //        prototypes->cloneGraphicsPipeline()
+	// 		.shaderStage()
+ //                .taskSShader(resource("marching_cubes.task.spv"))
+	// 			.meshShader(resource("marching_cube.mesh.spv"))
+ //                .fragmentShader(resource("solid.frag.spv"))
+ //            .inputAssemblyState()
+ //                .triangles()
+ //            .dynamicState()
+ //                .polygonModeEnable()
+ //            .layout().clear()
+ //                .addPushConstantRange(VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT, 0, sizeof(pipelines.cubeMarcher.constants))
+ //                .addDescriptorSetLayout(voxels.descriptorSetLayout)
+ //                .addDescriptorSetLayout(cubeMarcher.lutDescriptorSetLayout())
+ //                .addDescriptorSetLayout(cubeMarcher.vertexDescriptorSetLayout())
+	// 		.name("mesh_shader_cube_marcher")
+	// 		.build(pipelines.cubeMarcher.layout);
     //    @formatter:on
 }
 
@@ -323,7 +338,7 @@ void MarchingCubes2::renderUI(VkCommandBuffer commandBuffer) {
     if(ImGui::CollapsingHeader("Properties", ImGuiTreeNodeFlags_DefaultOpen)){
         ImGui::SliderFloat("Cube size", &cubeSizeMultiplier, 0.25, 4.0);
 
-        ImGui::Checkbox("Use mesh shader", &useMeshShader);
+        // ImGui::Checkbox("Use mesh shader", &useMeshShader);
 
         if(!useMeshShader) {
             bool mergeDuplicateVertices = true;
@@ -369,40 +384,21 @@ void MarchingCubes2::endFrame() {
 }
 
 void MarchingCubes2::beforeDeviceCreation() {
-    static VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
-    meshFeatures.meshShader = VK_TRUE;
-    meshFeatures.taskShader = VK_TRUE;
-    meshFeatures.multiviewMeshShader = VK_TRUE;
-    meshFeatures.meshShaderQueries = VK_TRUE;
-
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    meshFeatures.pNext = &dsFeatures;
-
-    deviceCreateNextChain = &meshFeatures;
+    auto meshFeatures = findExtension<VkPhysicalDeviceMeshShaderFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT, deviceCreateNextChain);
+    meshFeatures->meshShader = VK_TRUE;
+    meshFeatures->taskShader = VK_TRUE;
+    meshFeatures->multiviewMeshShader = VK_TRUE;
+    meshFeatures->meshShaderQueries = VK_TRUE;
 
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->maintenance4 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.maintenance4 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
+    devFeatures13->maintenance4 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
 
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
-    if(devFeatures12.has_value()) {
-        devFeatures12.value()->scalarBlockLayout = VK_TRUE;
-        devFeatures12.value()->descriptorIndexing = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan12Features devFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-        devFeatures12.scalarBlockLayout = VK_TRUE;
-        devFeatures12.descriptorIndexing = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures12);
-    };
+    devFeatures12->scalarBlockLayout = VK_TRUE;
+    devFeatures12->descriptorIndexing = VK_TRUE;
 
+    AppContext::addExtensions(deviceCreateNextChain);
 }
 
 
