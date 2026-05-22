@@ -1,9 +1,12 @@
 #include "vista/DisplacementMapGenerator.hpp"
 #include "Barrier.hpp"
 #include "L2DFileDialog.h"
+#include <stb_image_write.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -235,6 +238,49 @@ namespace {
         }
         return path;
     }
+
+    fs::path nextAvailablePath(const fs::path& basePath) {
+        if(!fs::exists(basePath)) {
+            return basePath;
+        }
+
+        const auto parent = basePath.parent_path();
+        const auto stem = basePath.filename().string();
+        for(uint counter = 1;; ++counter) {
+            auto candidate = parent / fmt::format("{}_{}", stem, counter);
+            if(!fs::exists(candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    void saveTextureKtx(VulkanDevice& device, Texture& texture, const fs::path& path) {
+        if(!texture.isValid()) {
+            throw std::runtime_error{fmt::format("cannot save invalid terrain map: {}", path.string())};
+        }
+
+        fs::create_directories(path.parent_path());
+        const auto oldLayout = texture.image.currentLayout;
+        VkImageSubresourceRange subresourceRange{texture.aspectMask, 0, texture.levels, 0, texture.layers};
+
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+            texture.image.transitionLayout(commandBuffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange,
+                                           VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                           VK_ACCESS_TRANSFER_READ_BIT,
+                                           VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                           VK_PIPELINE_STAGE_TRANSFER_BIT);
+        });
+
+        textures::saveAsKtx(device, texture, path.string());
+
+        device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+            texture.image.transitionLayout(commandBuffer, oldLayout, subresourceRange,
+                                           VK_ACCESS_TRANSFER_READ_BIT,
+                                           VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                           VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        });
+    }
 }
 
 DisplacementMapGenerator::DisplacementMapGenerator(Context &context, DisplacementMethod method, uint width, uint height, std::string path)
@@ -332,6 +378,22 @@ void DisplacementMapGenerator::refreshDerivedMaps(VkCommandBuffer commandBuffer)
 
     generateNormalMap(commandBuffer);
     bindlessDescriptor().update({ &m_displacementMap.normals, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_info.normal_tex_id });
+}
+
+fs::path DisplacementMapGenerator::saveTerrainMaps(const fs::path& basePath) {
+    const auto savePath = nextAvailablePath(basePath);
+    fs::create_directories(savePath);
+
+    auto saveMap = [&](Texture& texture, const char* name) {
+        saveTextureKtx(device(), texture, savePath / fmt::format("{}.ktx", name));
+    };
+
+    saveMap(m_displacementMap.values, "displacement");
+    saveMap(m_displacementMap.normals, "normals");
+    saveMap(m_displacementMap.slopeMoments0, "slope_moments0");
+    saveMap(m_displacementMap.slopeMoments1, "slope_moments1");
+
+    return savePath;
 }
 
 bool DisplacementMapGenerator::regenerateIfNeeded(VkCommandBuffer commandBuffer) {

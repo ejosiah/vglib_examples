@@ -10,6 +10,8 @@
 
 #include "sun_calc.hpp"
 
+#include <exception>
+
 namespace {
     constexpr glm::ivec2 TerrainWorldSize{10000};
     constexpr glm::vec2 TerrainHeightScale{-1.0f, 1059.0f};
@@ -191,7 +193,6 @@ void ErosionDemo::createPipelineCache() {
     pipelineCache = device.createPipelineCache();
 }
 
-
 void ErosionDemo::createRenderPipeline() {
     const auto extent = sceneExtent();
     const auto scissorWidth = static_cast<int32_t>(extent.x);
@@ -248,6 +249,7 @@ void ErosionDemo::createRenderPipeline() {
                 .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(toneMapper.constants))
             .name("tone_mapper")
         .build(toneMapper.layout);
+
     //    @formatter:on
 }
 
@@ -278,6 +280,8 @@ void ErosionDemo::onSwapChainRecreation() {
 VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
     numCommandBuffers = 1;
     auto& commandBuffer = commandBuffers[imageIndex];
+
+    processTerrainMapSave();
 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
@@ -331,6 +335,22 @@ void ErosionDemo::runSim(VkCommandBuffer commandBuffer) {
         if(options.visualizeWaterFlow) {
             Barrier::computeWriteToFragmentRead(commandBuffer);
         }
+    }
+}
+
+void ErosionDemo::processTerrainMapSave() {
+    if(!terrainMapSave.requested) {
+        return;
+    }
+
+    terrainMapSave.requested = false;
+    try {
+        const auto savePath = displacementMapGenerator->saveTerrainMaps(terrainMapSave.path.data());
+        terrainMapSave.status = fmt::format("Saved {}", savePath.string());
+        terrainMapSave.error = false;
+    }catch(const std::exception& err) {
+        terrainMapSave.status = fmt::format("Save failed: {}", err.what());
+        terrainMapSave.error = true;
     }
 }
 
@@ -433,6 +453,15 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
     if(ImGui::BeginTabBar("ErosionDemoTabs")) {
         if(ImGui::BeginTabItem("Terrain")) {
             ImGui::Checkbox("Show original terrain", &options.showOriginalTerrain);
+            ImGui::Separator();
+            ImGui::InputText("Save path", terrainMapSave.path.data(), terrainMapSave.path.size());
+            if(ImGui::Button("Save maps")) {
+                terrainMapSave.requested = true;
+            }
+            if(!terrainMapSave.status.empty()) {
+                const auto color = terrainMapSave.error ? ImVec4{1.0f, 0.25f, 0.2f, 1.0f} : ImVec4{0.3f, 0.9f, 0.45f, 1.0f};
+                ImGui::TextColored(color, "%s", terrainMapSave.status.c_str());
+            }
             ImGui::Separator();
             terrain->controlsContent();
             ImGui::EndTabItem();

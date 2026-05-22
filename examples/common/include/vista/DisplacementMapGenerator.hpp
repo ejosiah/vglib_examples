@@ -38,6 +38,8 @@ public:
 
     void refreshDerivedMaps(VkCommandBuffer commandBuffer);
 
+    fs::path saveTerrainMaps(const fs::path& basePath);
+
 protected:
     void createComputePipelines();
 

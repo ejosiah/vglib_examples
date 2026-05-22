@@ -24,10 +24,12 @@ find_package(TinyGLTF)
 find_package(stb)
 find_package(cpr)
 find_package(nlohmann_json)
+find_package(Ktx)
 
 set(CONAN_LIBS   assimp::assimp glm::glm glfw spdlog::spdlog Freetype::Freetype imgui::imgui gtest::gtest
                     argparse::argparse Bullet::Bullet EnTT::EnTT meshoptimizer::meshoptimizer openexr::openexr
-                    Taskflow::Taskflow ZLIB::ZLIB TinyGLTF::TinyGLTF stb::stb cpr::cpr nlohmann_json::nlohmann_json)
+                    Taskflow::Taskflow ZLIB::ZLIB TinyGLTF::TinyGLTF stb::stb cpr::cpr nlohmann_json::nlohmann_json
+                    KTX::ktx)
 
 set(LIB_DEPENDENCIES VulkanBase Vulkan::Vulkan ${CONAN_LIBS})
 

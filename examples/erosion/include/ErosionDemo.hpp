@@ -11,7 +11,9 @@
 #include "vista/ErosionSimulator.hpp"
 #include "imgui.h"
 
+#include <array>
 #include <map>
+#include <string>
 
 class ErosionDemo : public VulkanBaseApp{
 public:
@@ -71,6 +73,8 @@ protected:
     void renderToDisplay(VkCommandBuffer commandBuffer);
 
     void textureViewerControls();
+
+    void processTerrainMapSave();
 
     void backupOriginalTerrain(VkCommandBuffer commandBuffer);
 
@@ -144,6 +148,13 @@ protected:
         int textureSlot{};
         std::map<const Texture*, ImTextureID> imguiTextureIds;
     } textureViewer;
+
+    struct {
+        std::array<char, 500> path{"erosion/saves/terrain"};
+        bool requested{};
+        bool error{};
+        std::string status;
+    } terrainMapSave;
 
     glm::vec3 lightDirection;
 

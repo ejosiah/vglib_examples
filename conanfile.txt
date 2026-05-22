@@ -19,6 +19,7 @@ gsl-lite/0.42.0
 array/0.1
 cpr/1.10.0
 nlohmann_json/3.11.3
+ktx/4.4.2
 
 [generators]
 CMakeDeps

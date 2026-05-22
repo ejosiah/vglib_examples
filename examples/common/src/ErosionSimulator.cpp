@@ -120,6 +120,11 @@ void ErosionSimulator::controls(bool show) {
 
 void ErosionSimulator::controlsContent() {
     inputUint("Iterations", m_constants.maxIterations);
+    ImGui::SameLine();
+    if(ImGui::Button("Reset settings")) {
+        resetControlValues();
+    }
+
     if(m_iteration >= m_constants.maxIterations) {
         m_iteration = m_constants.maxIterations;
         m_running = false;
@@ -156,7 +161,7 @@ void ErosionSimulator::controlsContent() {
     ImGui::SameLine();
     ImGui::Checkbox("Hydraulic", &m_hydraulicErosion);
     ImGui::SameLine();
-    ImGui::Checkbox("Thermal", &m_thermalErosion);
+    ImGui::Checkbox("Thermal On", &m_thermalErosion);
 
     if (!m_hydraulicErosion && !m_thermalErosion) {
         m_hydraulicErosion = true;
@@ -187,6 +192,32 @@ void ErosionSimulator::controlsContent() {
             m_stepRequested = false;
         }
     }
+}
+
+void ErosionSimulator::resetControlValues() {
+    const Constants defaults{};
+
+    m_constants.timeStep = defaults.timeStep;
+    m_constants.rainScale = defaults.rainScale;
+    m_constants.pipeArea = defaults.pipeArea;
+    m_constants.gravity = defaults.gravity;
+    m_constants.sedimentCapacity = defaults.sedimentCapacity;
+    m_constants.thermalErosionRate = defaults.thermalErosionRate;
+    m_constants.soilSuspensionRate = defaults.soilSuspensionRate;
+    m_constants.sedimentDepositionRate = defaults.sedimentDepositionRate;
+    m_constants.sedimentSofteningRate = defaults.sedimentSofteningRate;
+    m_constants.maximalErosionDepth = defaults.maximalErosionDepth;
+    m_constants.evaporationRate = defaults.evaporationRate;
+    m_constants.minimumHardness = defaults.minimumHardness;
+    m_constants.talusAngleTangentCoeff = defaults.talusAngleTangentCoeff;
+    m_constants.talusAngleTangentBias = defaults.talusAngleTangentBias;
+    m_constants.maxIterations = defaults.maxIterations;
+
+    m_localHardness = 0.8f;
+    m_manualStepping = false;
+    m_hydraulicErosion = true;
+    m_thermalErosion = true;
+    m_stepRequested = m_running;
 }
 
 void ErosionSimulator::clear(VkCommandBuffer commandBuffer) {

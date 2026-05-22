@@ -1,6 +1,8 @@
 #resource files
 **/*.dat
 **/*.vol
+**/*.ktx
+**/*generator*.json
 
 data/**
 data/**/*.png
