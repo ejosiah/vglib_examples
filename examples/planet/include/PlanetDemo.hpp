@@ -1,6 +1,10 @@
+#include "constants.hpp"
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
-#include "GroundPatch.hpp"
+#include "cbt/large/cbt.h"
+#include "cpu_mesh.hpp"
+#include "planet.hpp"
+#include "cbt/large/cbt_utility.h"
 
 class PlanetDemo : public VulkanBaseApp{
 public:
@@ -9,9 +13,9 @@ public:
 protected:
     void initApp() override;
 
-    void initCamera();
+    void initGeometry();
 
-    void createGroundPlane();
+    void initCamera();
 
     void initBindlessDescriptor();
 
@@ -35,8 +39,6 @@ protected:
 
     void onSwapChainRecreation() override;
 
-    void newFrame() override;
-
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
     void update(float time) override;
@@ -57,12 +59,15 @@ protected:
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
-    std::unique_ptr<FirstPersonCameraController> camera;
+    std::unique_ptr<BaseCameraController> camera;
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
-    GroundPatch ground_patch_;
-    struct {
-        VulkanBuffer vertices;
-        VulkanBuffer indexes;
-    } ground;
+    CPUMesh planetMesh;
+
+    Planet m_EarthPlanet;
+    Planet m_MoonPlanet;
+
+    CBTType m_CBTType = CBTType::OCBT_128K;
+    CBTType m_NewCBTType = CBTType::OCBT_128K;
+
 };

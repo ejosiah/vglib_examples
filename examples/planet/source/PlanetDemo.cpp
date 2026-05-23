@@ -5,43 +5,60 @@
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
 
-PlanetDemo::PlanetDemo(const Settings& settings) : VulkanBaseApp("planet", settings) {
+PlanetDemo::PlanetDemo(const Settings& settings) : VulkanBaseApp("Planet", settings) {
     fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("planet");
     fileManager().addSearchPathFront("planet/data");
     fileManager().addSearchPathFront("planet/spv");
     fileManager().addSearchPathFront("planet/models");
     fileManager().addSearchPathFront("planet/textures");
-    fileManager().addSearchPathFront("data/shaders");
 }
 
 void PlanetDemo::initApp() {
     initCamera();
-    createGroundPlane();
     createDescriptorPool();
+    initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
+    initGeometry();
     initLoader();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
-//    ground_patch_ = GroundPatch{ device, 1, 12766};
-//    ground_patch_.init();
-//    ground_patch_.update(*camera);
+}
+
+void PlanetDemo::initGeometry() {
+    // Num elements the CBT holds
+    const auto cbtNumElements = cbt_large::cbt_num_elements(m_CBTType);
+    cbt_large::CBT* cbt = create_cbt(m_CBTType);
+    planetMesh = CPUMesh::load_cpu_mesh(resource("icosahedron.ccm"), cbtNumElements);
+
+    m_EarthPlanet = Planet{device, "earth", g_EarthRadius, g_EarthCenter, g_EarthImpostorToggle, g_EarthTriangleSize, EARTH_MATERIAL};
+    m_EarthPlanet.initialize(*cbt, planetMesh);
+
+    m_MoonPlanet = Planet{device, "moon", g_MoonRadius, g_MoonCenter, g_MoonImpostorToggle, g_MoonTriangleSize, MOON_MATERIAL};
+    m_MoonPlanet.initialize(*cbt, planetMesh);
+
+    delete cbt;
 }
 
 void PlanetDemo::initCamera() {
-    FirstPersonSpectatorCameraSettings cameraSettings;
-    cameraSettings.acceleration = glm::vec3(0.5);
-    cameraSettings.velocity = glm::vec3(1.47);
-//    cameraSettings.acceleration = glm::vec3(20 * km);
-//    cameraSettings.velocity = glm::vec3(100 * km);
-    cameraSettings.zFar = 100'000 * km;
+    OrbitingCameraSettings cameraSettings;
+//    FirstPersonSpectatorCameraSettings cameraSettings;
+    cameraSettings.orbitMinZoom = 0.1;
+    cameraSettings.orbitMaxZoom = 512.0f;
+    cameraSettings.offsetDistance = 1.0f;
+    cameraSettings.modelHeight = 0.5;
     cameraSettings.fieldOfView = 60.0f;
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
 
-    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
 }
 
 void PlanetDemo::initBindlessDescriptor() {
@@ -52,19 +69,11 @@ void PlanetDemo::initBindlessDescriptor() {
 
 void PlanetDemo::beforeDeviceCreation() {
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
-    if(devFeatures13.has_value()) {
-        devFeatures13.value()->synchronization2 = VK_TRUE;
-        devFeatures13.value()->dynamicRendering = VK_TRUE;
-    }else {
-        static VkPhysicalDeviceVulkan13Features devFeatures13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        devFeatures13.synchronization2 = VK_TRUE;
-        devFeatures13.dynamicRendering = VK_TRUE;
-        deviceCreateNextChain = addExtension(deviceCreateNextChain, devFeatures13);
-    };
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
 
-    static VkPhysicalDeviceExtendedDynamicState3FeaturesEXT dsFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-    dsFeatures.extendedDynamicState3PolygonMode = VK_TRUE;
-    deviceCreateNextChain = addExtension(deviceCreateNextChain, dsFeatures);
+    AppContext::addExtensions(deviceCreateNextChain);
 }
 
 void PlanetDemo::createDescriptorPool() {
@@ -108,22 +117,16 @@ void PlanetDemo::createRenderPipeline() {
         render.pipeline =
             builder
                 .shaderStage()
-                    .vertexShader(resource("terrain.vert.spv"))
-                    .tessellationControlShader(resource("terrain.tesc.spv"))
-                    .tessellationEvaluationShader(resource("terrain.tese.spv"))
-                    .fragmentShader(resource("terrain.frag.spv"))
-                .inputAssemblyState()
-                    .patches()
-                .tessellationState()
-                    .patchControlPoints(4)
-                    .domainOrigin(VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
+                    .vertexShader(resource("render.vert.spv"))
+                    .fragmentShader(resource("flat.frag.spv"))
+                .vertexInputState().clear()
+                    .addVertexBindingDescription(0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX)
+                    .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0)
                 .rasterizationState()
                     .polygonModeLine()
                     .cullNone()
-                .layout().clear()
-                    .addPushConstantRange(Camera::pushConstant(VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT))
-                .name("terrain")
-            .build(render.layout);
+                .name("render")
+                .build(render.layout);
     //    @formatter:on
 }
 
@@ -144,30 +147,16 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    static std::array<VkClearValue, 2> clearValues;
-    clearValues[0].color = {0, 0, 1, 1};
-    clearValues[1].depthStencil = {1.0, 0u};
+    clearColor(0, 0, 1);
 
-    VkRenderPassBeginInfo rPassInfo = initializers::renderPassBeginInfo();
-    rPassInfo.clearValueCount = COUNT(clearValues);
-    rPassInfo.pClearValues = clearValues.data();
-    rPassInfo.framebuffer = framebuffers[imageIndex];
-    rPassInfo.renderArea.offset = {0u, 0u};
-    rPassInfo.renderArea.extent = swapChain.extent;
-    rPassInfo.renderPass = renderPass;
-
-    vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    AppContext::renderAtmosphere(commandBuffer, *camera);
-
-    VkDeviceSize offset = 0;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
-    camera->push(commandBuffer, render.layout, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT);
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, ground.vertices, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, ground.indexes, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(commandBuffer, ground.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
-
-    vkCmdEndRenderPass(commandBuffer);
+    renderToSwapChain([&]{
+        VkDeviceSize offset = 0;
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+        camera->push(commandBuffer, render.layout);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, m_EarthPlanet.m_BaseMesh.vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, m_EarthPlanet.m_BaseMesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(commandBuffer, m_EarthPlanet.m_BaseMesh.indexBuffer.sizeAs<uint32_t>(), 1, 0, 0, 0);
+    }, commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -177,7 +166,6 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 void PlanetDemo::update(float time) {
     camera->update(time);
     auto cam = camera->cam();
-    setTitle(fmt::format("{} - cam: {}", title, camera->position()));
 }
 
 void PlanetDemo::checkAppInputs() {
@@ -193,55 +181,23 @@ void PlanetDemo::onPause() {
     VulkanBaseApp::onPause();
 }
 
-void PlanetDemo::createGroundPlane() {
-    static constexpr int SQRT_NUM_PATCHES = 1;
-    static constexpr float PATCH_SIZE = 1 * km;
-    int w = SQRT_NUM_PATCHES;
-    int h = SQRT_NUM_PATCHES;
-    glm::mat4 xform = glm::rotate(glm::mat4{1}, -glm::half_pi<float>(), {1, 0, 0});
-//    glm::mat4 xform{1};
-    auto plane = primitives::plane(w, h, PATCH_SIZE, PATCH_SIZE, xform, {1, 0, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-
-    std::vector<uint32_t> indices;
-    for(int j = 0; j < h; j++){
-        for(int i = 0; i < w; i++){
-            indices.push_back(j * (w + 1) + i);                 // 3
-            indices.push_back(j * (w + 1) + i + 1);             // 2
-            indices.push_back((j + 1) * (w + 1) + i + 1);       // 1
-            indices.push_back((j + 1) * (w + 1) + i);           // 0
-        }
-    }
-
-//    indices.push_back(0);
-//    indices.push_back(1);
-//    indices.push_back(3);
-//    indices.push_back(2);
-    ground.vertices = device.createDeviceLocalBuffer(plane.vertices.data(), BYTE_SIZE(plane.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    ground.indexes = device.createDeviceLocalBuffer(indices.data(), BYTE_SIZE(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-}
-
-void PlanetDemo::newFrame() {
-    camera->_move.forward->press();
-}
-
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
-        settings.width = 1024;
-        settings.height = 1024;
+        settings.width = 1440;
+        settings.height = 1280;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;
 
-        fs::current_path("../../../../examples/");
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
         auto app = PlanetDemo{ settings };
         app.addPlugin(imGui);
