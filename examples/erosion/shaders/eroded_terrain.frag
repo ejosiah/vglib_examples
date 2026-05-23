@@ -57,6 +57,20 @@ vec3 mixWireFrame(vec3 srcColor) {
     return mix(srcColor, wireColor, t);
 }
 
+vec3 mixGraphSignal(vec3 srcColor) {
+    if(!visualizeGraphSignal()) {
+        return srcColor;
+    }
+
+    float coord = globals.graphSignalAxis == 0 ? f.uv.y : f.uv.x;
+    float screenWidth = globals.graphSignalAxis == 0 ? fwidth(f.uv.y) : fwidth(f.uv.x);
+    float halfWidth = max(globals.graphSignalWidth, 1e-6);
+    float aa = max(screenWidth, 1e-6);
+    float t = 1.0 - smoothstep(halfWidth, halfWidth + aa, abs(coord - globals.graphSignalPosition));
+
+    return mix(srcColor, globals.graphSignalColor, t);
+}
+
 float terrainTileScale() {
     float x = length(globals.modelMatrix[0].xyz);
     float y = length(globals.modelMatrix[1].xyz);
@@ -233,7 +247,7 @@ void main() {
     }
 
     if(visualizeWaterFlow()) {
-        radiance = mixWireFrame(waterFlowColor(f.uv));
+        radiance = mixWireFrame(mixGraphSignal(waterFlowColor(f.uv)));
         return;
     }
 
@@ -248,5 +262,5 @@ void main() {
 
     vec3 lit = shadeLambertian(material, N, V, L, visibility, sunTransmittance, vec3(0.22));
 
-    radiance = mixWireFrame(lit);
+    radiance = mixWireFrame(mixGraphSignal(lit));
 }

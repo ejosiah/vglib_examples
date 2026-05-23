@@ -5,18 +5,89 @@
 #include "ImGuiPlugin.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
+#include "implot.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 
 #include "sun_calc.hpp"
 
 #include <exception>
+#include <stdexcept>
 
 namespace {
     constexpr glm::ivec2 TerrainWorldSize{10000};
     constexpr glm::vec2 TerrainHeightScale{-1.0f, 1059.0f};
     constexpr uint32_t ControlPanelWidth = 450;
     constexpr uint32_t MinSceneWidth = 320;
+
+    float halfToFloat(uint16_t value) {
+        const auto sign = (static_cast<uint32_t>(value) & 0x8000u) << 16u;
+        auto exponent = static_cast<int32_t>((value >> 10u) & 0x1fu);
+        auto mantissa = static_cast<uint32_t>(value & 0x03ffu);
+        uint32_t bits{};
+
+        if(exponent == 0) {
+            if(mantissa == 0u) {
+                bits = sign;
+            }else {
+                while((mantissa & 0x0400u) == 0u) {
+                    mantissa <<= 1u;
+                    --exponent;
+                }
+                ++exponent;
+                mantissa &= 0x03ffu;
+                bits = sign | (static_cast<uint32_t>(exponent + 112) << 23u) | (mantissa << 13u);
+            }
+        }else if(exponent == 31) {
+            bits = sign | 0x7f800000u | (mantissa << 13u);
+        }else {
+            bits = sign | (static_cast<uint32_t>(exponent + 112) << 23u) | (mantissa << 13u);
+        }
+
+        float result{};
+        std::memcpy(&result, &bits, sizeof(result));
+        return result;
+    }
+
+    uint32_t graphFormatChannelCount(VkFormat format) {
+        switch(format) {
+            case VK_FORMAT_R8_UNORM:
+            case VK_FORMAT_R16_SFLOAT:
+            case VK_FORMAT_R32_SFLOAT:
+                return 1;
+            case VK_FORMAT_R8G8_UNORM:
+            case VK_FORMAT_R16G16_SFLOAT:
+            case VK_FORMAT_R32G32_SFLOAT:
+                return 2;
+            case VK_FORMAT_R8G8B8A8_UNORM:
+            case VK_FORMAT_R16G16B16A16_SFLOAT:
+            case VK_FORMAT_R32G32B32A32_SFLOAT:
+                return 4;
+            default:
+                throw std::runtime_error{fmt::format("unsupported graph displacement format {}", static_cast<int>(format))};
+        }
+    }
+
+    float readGraphChannel(const std::byte* data, VkFormat format) {
+        if(format == VK_FORMAT_R8_UNORM || format == VK_FORMAT_R8G8_UNORM || format == VK_FORMAT_R8G8B8A8_UNORM) {
+            return static_cast<float>(std::to_integer<uint8_t>(*data)) / 255.0f;
+        }
+        if(format == VK_FORMAT_R16_SFLOAT || format == VK_FORMAT_R16G16_SFLOAT || format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+            uint16_t value{};
+            std::memcpy(&value, data, sizeof(value));
+            return halfToFloat(value);
+        }
+        if(format == VK_FORMAT_R32_SFLOAT || format == VK_FORMAT_R32G32_SFLOAT || format == VK_FORMAT_R32G32B32A32_SFLOAT) {
+            float value{};
+            std::memcpy(&value, data, sizeof(value));
+            return value;
+        }
+        throw std::runtime_error{fmt::format("unsupported graph displacement format {}", static_cast<int>(format))};
+    }
 }
 
 ErosionDemo::ErosionDemo(const Settings& settings) : VulkanBaseApp("Erosion", settings) {
@@ -282,6 +353,7 @@ VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     auto& commandBuffer = commandBuffers[imageIndex];
 
     processTerrainMapSave();
+    processGraphReadback();
 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
@@ -289,6 +361,8 @@ VkCommandBuffer *ErosionDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t 
     if(displacementMapGenerator->regenerateIfNeeded(commandBuffer)) {
         backupOriginalTerrain(commandBuffer);
         erosionSim->update(commandBuffer, displacementMapGenerator->displacementTexture());
+        graph.readbackRequested = true;
+        graph.signalDirty = true;
     }
     runSim(commandBuffer);
     applyTerrainMapBinding();
@@ -332,6 +406,8 @@ void ErosionDemo::runSim(VkCommandBuffer commandBuffer) {
     auto& displacementTexture = displacementMapGenerator->displacementTexture();
     if(erosionSim->step(commandBuffer, displacementTexture) != ErosionSimulator::StepResult::Idle) {
         displacementMapGenerator->refreshDerivedMaps(commandBuffer);
+        graph.readbackRequested = true;
+        graph.signalDirty = true;
         if(options.visualizeWaterFlow) {
             Barrier::computeWriteToFragmentRead(commandBuffer);
         }
@@ -351,6 +427,147 @@ void ErosionDemo::processTerrainMapSave() {
     }catch(const std::exception& err) {
         terrainMapSave.status = fmt::format("Save failed: {}", err.what());
         terrainMapSave.error = true;
+    }
+}
+
+void ErosionDemo::processGraphReadback() {
+    if(!graph.readbackRequested || (!graph.visible && !graph.overlayEnabled && !graph.heightMap.empty())) {
+        return;
+    }
+
+    graph.readbackRequested = false;
+    try {
+        readDisplacementGraphData();
+        buildGraphSignal();
+        graph.status = fmt::format("Read {} x {} displacement map", graph.width, graph.height);
+        graph.error = false;
+    }catch(const std::exception& err) {
+        graph.status = fmt::format("Graph refresh failed: {}", err.what());
+        graph.error = true;
+    }
+}
+
+void ErosionDemo::readDisplacementGraphData() {
+    auto& texture = displacementMapGenerator->displacementTexture();
+    if(!texture.isValid()) {
+        throw std::runtime_error{"displacement texture is not ready"};
+    }
+
+    const auto bytesPerChannel = textures::byteSize(texture.format);
+    const auto channelCount = graphFormatChannelCount(texture.format);
+    const auto pixelStride = bytesPerChannel * channelCount;
+    const auto imageSize = static_cast<VkDeviceSize>(texture.width) * texture.height * pixelStride;
+    auto stagingBuffer = device.createStagingBuffer(imageSize);
+    const auto oldLayout = texture.image.currentLayout;
+    VkImageSubresourceRange subresourceRange{texture.aspectMask, 0, texture.levels, 0, texture.layers};
+
+    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer) {
+        texture.image.transitionLayout(commandBuffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, subresourceRange,
+                                       VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                       VK_ACCESS_TRANSFER_READ_BIT,
+                                       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                       VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        VkBufferImageCopy region{};
+        region.imageSubresource = {texture.aspectMask, 0, 0, texture.layers};
+        region.imageExtent = {texture.width, texture.height, texture.depth};
+        vkCmdCopyImageToBuffer(commandBuffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
+
+        texture.image.transitionLayout(commandBuffer, oldLayout, subresourceRange,
+                                       VK_ACCESS_TRANSFER_READ_BIT,
+                                       VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                       VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    });
+
+    graph.width = texture.width;
+    graph.height = texture.height;
+    graph.heightMap.resize(static_cast<size_t>(graph.width) * graph.height);
+
+    const auto* data = reinterpret_cast<const std::byte*>(stagingBuffer.map());
+    for(size_t index = 0; index < graph.heightMap.size(); ++index) {
+        graph.heightMap[index] = readGraphChannel(data + index * pixelStride, texture.format);
+    }
+    stagingBuffer.unmap();
+    graph.signalDirty = true;
+}
+
+void ErosionDemo::buildGraphSignal() {
+    graph.signalDirty = false;
+    graph.signalX.clear();
+    graph.signalY.clear();
+    if(graph.heightMap.empty() || graph.width == 0 || graph.height == 0) {
+        return;
+    }
+
+    const bool sampleX = graph.axis == 0;
+    const auto sourceCount = sampleX ? graph.width : graph.height;
+    const auto fixedCount = sampleX ? graph.height : graph.width;
+    if(sourceCount == 0 || fixedCount == 0) {
+        return;
+    }
+
+    const auto fixedIndex = static_cast<uint32_t>(std::round(std::clamp(graph.position, 0.0f, 1.0f) * static_cast<float>(fixedCount - 1)));
+    graph.signalX.resize(sourceCount);
+    graph.signalY.resize(sourceCount);
+
+    for(uint32_t index = 0; index < sourceCount; ++index) {
+        const auto x = sampleX ? index : fixedIndex;
+        const auto y = sampleX ? fixedIndex : index;
+        graph.signalX[index] = sourceCount > 1 ? static_cast<float>(index) / static_cast<float>(sourceCount - 1) : 0.0f;
+        graph.signalY[index] = graph.heightMap[static_cast<size_t>(y) * graph.width + x];
+    }
+}
+
+void ErosionDemo::graphControls() {
+    graph.visible = true;
+
+    if(ImGui::RadioButton("X axis", graph.axis == 0)) {
+        graph.axis = 0;
+        graph.signalDirty = true;
+    }
+    ImGui::SameLine();
+    if(ImGui::RadioButton("Y axis", graph.axis == 1)) {
+        graph.axis = 1;
+        graph.signalDirty = true;
+    }
+
+    const char* sliderLabel = graph.axis == 0 ? "Y position" : "X position";
+    if(ImGui::SliderFloat(sliderLabel, &graph.position, 0.0f, 1.0f, "%.4f")) {
+        graph.signalDirty = true;
+    }
+
+    if(ImGui::Button("Refresh")) {
+        graph.readbackRequested = true;
+        graph.status = "Graph refresh queued";
+        graph.error = false;
+    }
+    ImGui::Checkbox("Overlay on terrain", &graph.overlayEnabled);
+    ImGui::SliderFloat("Overlay width", &graph.overlayWidthSamples, 1.0f, 64.0f, "%.1f samples", ImGuiSliderFlags_Logarithmic);
+    ImGui::ColorEdit3("Signal color", &graph.color.x);
+
+    if(!graph.status.empty()) {
+        const auto color = graph.error ? ImVec4{1.0f, 0.25f, 0.2f, 1.0f} : ImVec4{0.55f, 0.75f, 1.0f, 1.0f};
+        ImGui::TextColored(color, "%s", graph.status.c_str());
+    }
+
+    if(!ImGui::IsAnyItemActive() && graph.signalDirty) {
+        buildGraphSignal();
+    }
+
+    if(graph.signalX.empty()) {
+        ImGui::TextDisabled("No displacement samples loaded");
+        return;
+    }
+
+    const auto plotSize = ImVec2{-1.0f, 300.0f};
+    if(ImPlot::BeginPlot("Noise signal", plotSize)) {
+        ImPlot::SetupAxes(graph.axis == 0 ? "x" : "y", "height");
+        ImPlot::SetupAxisLimits(ImAxis_X1, 0.0, 1.0, ImGuiCond_Always);
+        ImPlot::SetupAxisLimits(ImAxis_Y1, 0.0, 1.01, ImGuiCond_Always);
+        ImPlot::SetNextLineStyle(ImVec4{graph.color.x, graph.color.y, graph.color.z, 1.0f}, 2.0f);
+        ImPlot::PlotLine("height", graph.signalX.data(), graph.signalY.data(), static_cast<int>(graph.signalX.size()));
+        ImPlot::EndPlot();
     }
 }
 
@@ -438,6 +655,8 @@ void ErosionDemo::renderToDisplay(VkCommandBuffer commandBuffer) {
 }
 
 void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
+    graph.visible = false;
+
     const auto& io = ImGui::GetIO();
     const auto panelWidth = static_cast<float>(ControlPanelWidth);
     ImGui::SetNextWindowPos({std::max(0.0f, io.DisplaySize.x - panelWidth), 0.0f}, ImGuiCond_Always);
@@ -468,6 +687,10 @@ void ErosionDemo::renderUI(VkCommandBuffer commandBuffer) {
         }
         if(ImGui::BeginTabItem("Displacement")) {
             displacementMapGenerator->controlsContent();
+            ImGui::Separator();
+            if(ImGui::CollapsingHeader("Graph")) {
+                graphControls();
+            }
             ImGui::EndTabItem();
         }
         if(ImGui::BeginTabItem("Erosion")) {
@@ -732,6 +955,12 @@ void ErosionDemo::newFrame() {
     atmosphere->newFrame();
     terrain->newFrame();
     terrain->setWaterFlowVisualization(options.visualizeWaterFlow, erosionSim->velocityFieldTextureIndex(), options.waterFlowScale);
+    const auto fixedGraphSize = graph.axis == 0 ? graph.height : graph.width;
+    const auto graphSamplePosition = fixedGraphSize > 1
+        ? std::round(graph.position * static_cast<float>(fixedGraphSize - 1)) / static_cast<float>(fixedGraphSize - 1)
+        : graph.position;
+    const auto graphLineWidth = fixedGraphSize > 0 ? std::max(0.5f * graph.overlayWidthSamples / static_cast<float>(fixedGraphSize), 0.0001f) : 0.001f;
+    terrain->setGraphSignalOverlay(graph.overlayEnabled && !graph.signalX.empty(), graph.axis, graphSamplePosition, graph.color, graphLineWidth);
 }
 
 void ErosionDemo::initGBuffer() {

@@ -55,11 +55,12 @@ namespace {
 
     static constexpr std::array<const char*, 2> BlendLayerSources{ "Noise", "FFT" };
 
-    static constexpr std::array<const char*, 6> DisplacementMethodStateNames{
+    static constexpr std::array<const char*, 7> DisplacementMethodStateNames{
         "none",
         "file",
         "fault_formation",
         "noise",
+        "experimental",
         "fft",
         "blend"
     };
@@ -341,6 +342,9 @@ void DisplacementMapGenerator::exec(VkCommandBuffer commandBuffer) {
         case DisplacementMethod::Noise:
             noiseHeightMap(commandBuffer);
             break;
+        case DisplacementMethod::Experimental:
+            experimentalHeightMap(commandBuffer);
+            break;
         case DisplacementMethod::FFT:
             fftDisplacementMap(commandBuffer);
             break;
@@ -429,7 +433,7 @@ bool DisplacementMapGenerator::controls(bool show) {
 
 bool DisplacementMapGenerator::controlsContent() {
     bool dirty = false;
-    static constexpr std::array<const char*, 6> methods{ "None", "File", "Fault formation", "Noise", "FFT", "Blend" };
+    static constexpr std::array<const char*, 7> methods{ "None", "File", "Fault formation", "Noise", "Experimental", "FFT", "Blend" };
 
     dirty |= stateFileControls();
     ImGui::Separator();
@@ -461,16 +465,18 @@ bool DisplacementMapGenerator::controlsContent() {
         if(ff_options.blur) {
             dirty |= ImGui::SliderInt("Blur iterations", &ff_options.blurIterations, 1, 64);
         }
-    }else if(m_method == DisplacementMethod::Noise) {
+    }else if(m_method == DisplacementMethod::Noise || m_method == DisplacementMethod::Experimental) {
         dirty |= ImGui::DragFloat2("Seed", &noise_constants.seed.x, 1.0f);
         dirty |= ImGui::DragFloat("Base frequency", &noise_constants.baseFrequency, 0.05f, 0.001f, 64.0f, "%.3f");
         dirty |= ImGui::DragFloat("Lacunarity", &noise_constants.lacunarity, 0.01f, 1.001f, 8.0f, "%.3f");
         dirty |= ImGui::SliderFloat("Gain", &noise_constants.gain, 0.0f, 1.0f);
         dirty |= sliderUint("Octaves", noise_constants.octaves, 1, 12);
-        bool enableRidges = noise_constants.enableRidges == 1;
-        if(ImGui::Checkbox("Ridges", &enableRidges)) {
-            noise_constants.enableRidges = enableRidges ? 1u : 0u;
-            dirty = true;
+        if(m_method == DisplacementMethod::Noise) {
+            bool enableRidges = noise_constants.enableRidges == 1;
+            if(ImGui::Checkbox("Ridges", &enableRidges)) {
+                noise_constants.enableRidges = enableRidges ? 1u : 0u;
+                dirty = true;
+            }
         }
     }else if(m_method == DisplacementMethod::FFT) {
         const auto fftSize = nextPowerOfTwo(std::max(m_info.width, m_info.height));
@@ -1005,6 +1011,48 @@ void DisplacementMapGenerator::noiseHeightMap(VkCommandBuffer commandBuffer) {
     dispMap.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
+void DisplacementMapGenerator::experimentalHeightMap(VkCommandBuffer commandBuffer) {
+    auto info = displacementMapInfo();
+    auto& dispMap = m_displacementMap.values;
+
+    VkPipelineStageFlags2 srcStageMask = GeneratedTextureReadStages;
+    VkAccessFlags2 srcAccessMask = GeneratedTextureReadAccess;
+    VkImageLayout srcLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if(dispMap.format != VK_FORMAT_R16_SFLOAT || dispMap.width != info.width || dispMap.height != info.height) {
+        srcStageMask = VK_PIPELINE_STAGE_NONE;
+        srcLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        srcAccessMask = VK_ACCESS_NONE;
+        textures::createNoTransition(device(), dispMap, VK_IMAGE_TYPE_2D,
+                                     VK_FORMAT_R16_SFLOAT, {info.width, info.height, 1},
+                                     DepthMapAddressMode);
+    }
+
+    if(m_noiseImageId == ~0u) {
+        m_noiseImageId = bindlessDescriptor().reserveImageSlots(1);
+    }
+
+    bindlessDescriptor().update({ &dispMap, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_noiseImageId, VK_IMAGE_LAYOUT_GENERAL });
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, srcStageMask, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           srcAccessMask, VK_ACCESS_SHADER_WRITE_BIT, srcLayout, VK_IMAGE_LAYOUT_GENERAL);
+
+    noise_constants.dmap_image_index = m_noiseImageId;
+    const auto gx = (info.width + 31)/32;
+    const auto gy = (info.height + 31)/32;
+
+    auto descriptorSet = bindlessDescriptorSet();
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline("experimental_height_map_gen"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout("experimental_height_map_gen"), 0, 1, &descriptorSet, 0, 0);
+    vkCmdPushConstants(commandBuffer, m_compute.layout("experimental_height_map_gen"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(noise_constants), &noise_constants);
+    vkCmdDispatch(commandBuffer, gx, gy, 1);
+
+    Barriers::pushAndFlush(commandBuffer, dispMap.image, DEFAULT_SUB_RANGE, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    dispMap.image.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
 void DisplacementMapGenerator::createFftTextures(VkCommandBuffer commandBuffer, uint fftSize) {
     bool queuedBarriers = false;
     auto createSignalTexture = [&](Texture& texture) {
@@ -1346,6 +1394,12 @@ std::vector<PipelineMetaData> DisplacementMapGenerator::metadata() {
             {
                 .name = "noise_height_map_gen",
                 .shadePath = FileManager::resource("vista_noise_height_map_gen.comp.spv"),
+                .layouts = { &bindlessDescriptorSetLayout() },
+                .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NoiseConstants)} }
+            },
+            {
+                .name = "experimental_height_map_gen",
+                .shadePath = FileManager::resource("vista_experimental_height_map_gen.comp.spv"),
                 .layouts = { &bindlessDescriptorSetLayout() },
                 .ranges = { {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NoiseConstants)} }
             },

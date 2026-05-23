@@ -80,6 +80,11 @@ layout(set = 2, binding = 0, scalar) buffer Constants {
     uint visualizeWaterFlow;
     uint waterFlowTextureIndex;
     float waterFlowScale;
+    uint visualizeGraphSignal;
+    uint graphSignalAxis;
+    float graphSignalPosition;
+    float graphSignalWidth;
+    vec3 graphSignalColor;
 } globals;
 
 bool wireframeEnabled() {
@@ -100,6 +105,10 @@ bool visualizeDepthFade() {
 
 bool visualizeWaterFlow() {
     return globals.visualizeWaterFlow == 1;
+}
+
+bool visualizeGraphSignal() {
+    return globals.visualizeGraphSignal == 1;
 }
 
 float getHeightScale() {

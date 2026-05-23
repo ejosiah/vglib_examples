@@ -63,6 +63,8 @@ public:
 
     void setWaterFlowVisualization(bool enabled, uint textureIndex, float scale);
 
+    void setGraphSignalOverlay(bool enabled, int axis, float position, glm::vec3 color, float width);
+
     void endFrame();
 
     uint nodeCount() const;
@@ -156,6 +158,11 @@ private:
         uint visualizeWaterFlow{0};
         uint waterFlowTextureIndex{~0u};
         float waterFlowScale{32.0f};
+        uint visualizeGraphSignal{0};
+        uint graphSignalAxis{0};
+        float graphSignalPosition{0.5f};
+        float graphSignalWidth{0.001f};
+        glm::vec3 graphSignalColor{1.0f, 0.77f, 0.16f};
     } defaultValues{};
 
     Context* m_context{};
@@ -196,6 +203,11 @@ private:
         bool visualizeWaterFlow{false};
         uint waterFlowTextureIndex{~0u};
         float waterFlowScale{32.0f};
+        bool visualizeGraphSignal{};
+        uint graphSignalAxis{};
+        float graphSignalPosition{0.5f};
+        float graphSignalWidth{0.001f};
+        glm::vec3 graphSignalColor{1.0f, 0.77f, 0.16f};
         bool showTiles{false};
         bool inspect{false};
         int tileColor{0};

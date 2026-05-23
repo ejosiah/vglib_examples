@@ -14,6 +14,7 @@
 #include <array>
 #include <map>
 #include <string>
+#include <vector>
 
 class ErosionDemo : public VulkanBaseApp{
 public:
@@ -75,6 +76,14 @@ protected:
     void textureViewerControls();
 
     void processTerrainMapSave();
+
+    void processGraphReadback();
+
+    void graphControls();
+
+    void buildGraphSignal();
+
+    void readDisplacementGraphData();
 
     void backupOriginalTerrain(VkCommandBuffer commandBuffer);
 
@@ -155,6 +164,24 @@ protected:
         bool error{};
         std::string status;
     } terrainMapSave;
+
+    struct {
+        int axis{};
+        float position{0.5f};
+        bool visible{};
+        bool overlayEnabled{};
+        bool readbackRequested{true};
+        bool signalDirty{true};
+        bool error{};
+        uint32_t width{};
+        uint32_t height{};
+        std::vector<float> heightMap;
+        std::vector<float> signalX;
+        std::vector<float> signalY;
+        glm::vec3 color{1.0f, 0.77f, 0.16f};
+        float overlayWidthSamples{4.0f};
+        std::string status{"Waiting for graph refresh"};
+    } graph;
 
     glm::vec3 lightDirection;
 

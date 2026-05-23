@@ -8,7 +8,7 @@
 #include <vector>
 #include "ContextAware.hpp"
 
-enum class DisplacementMethod { None, File, FaultFormation, Noise, FFT, Blend };
+enum class DisplacementMethod { None, File, FaultFormation, Noise, Experimental, FFT, Blend };
 
 class DisplacementMapGenerator {
 public:
@@ -52,6 +52,8 @@ protected:
     void faultFormation(VkCommandBuffer commandBuffer);
 
     void noiseHeightMap(VkCommandBuffer commandBuffer);
+
+    void experimentalHeightMap(VkCommandBuffer commandBuffer);
 
     void fftDisplacementMap(VkCommandBuffer commandBuffer);
 

@@ -77,6 +77,11 @@ void Terrain::newFrame() {
     m_uniforms.cpu->visualizeWaterFlow = uint(m_options.visualizeWaterFlow);
     m_uniforms.cpu->waterFlowTextureIndex = m_options.waterFlowTextureIndex;
     m_uniforms.cpu->waterFlowScale = m_options.waterFlowScale;
+    m_uniforms.cpu->visualizeGraphSignal = uint(m_options.visualizeGraphSignal);
+    m_uniforms.cpu->graphSignalAxis = m_options.graphSignalAxis;
+    m_uniforms.cpu->graphSignalPosition = m_options.graphSignalPosition;
+    m_uniforms.cpu->graphSignalWidth = m_options.graphSignalWidth;
+    m_uniforms.cpu->graphSignalColor = m_options.graphSignalColor;
     static Frustum frustum;
     Frustum::extractFrustum(frustum, mvp);
     std::memcpy(m_uniforms.cpu->frustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
@@ -389,6 +394,22 @@ void Terrain::setWaterFlowVisualization(bool enabled, uint textureIndex, float s
         m_uniforms.cpu->visualizeWaterFlow = uint(enabled);
         m_uniforms.cpu->waterFlowTextureIndex = textureIndex;
         m_uniforms.cpu->waterFlowScale = scale;
+    }
+}
+
+void Terrain::setGraphSignalOverlay(bool enabled, int axis, float position, glm::vec3 color, float width) {
+    m_options.visualizeGraphSignal = enabled;
+    m_options.graphSignalAxis = static_cast<uint>(std::clamp(axis, 0, 1));
+    m_options.graphSignalPosition = std::clamp(position, 0.0f, 1.0f);
+    m_options.graphSignalWidth = std::max(width, 0.0f);
+    m_options.graphSignalColor = color;
+
+    if(m_uniforms.cpu) {
+        m_uniforms.cpu->visualizeGraphSignal = uint(enabled);
+        m_uniforms.cpu->graphSignalAxis = m_options.graphSignalAxis;
+        m_uniforms.cpu->graphSignalPosition = m_options.graphSignalPosition;
+        m_uniforms.cpu->graphSignalWidth = m_options.graphSignalWidth;
+        m_uniforms.cpu->graphSignalColor = m_options.graphSignalColor;
     }
 }
 
