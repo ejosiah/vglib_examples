@@ -1,0 +1,136 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#define WORKGROUP_SIZE 64
+#define UNSUPPORTED_FIRST_BIT_HIGH
+
+struct BisectorGeometry {
+    vec3 p[4];
+};
+
+#include "../shared_lib/constant_buffers.glsl"
+
+#define MESH_UPDATE_SET 1
+#define MESH_SET 2
+#include "common.glsl"
+
+#define PLANTE_SET 2
+#include "../shared_lib/planet_constants.glsl"
+
+vec3 NegativeVertex(vec3 bmin, vec3 bmax, vec3 n)
+{
+    bvec3 b = greaterThan(n, vec3(0));
+    return mix(bmin, bmax, b);
+}
+
+bool FrustumAABBIntersect(in vec4 planes[6], vec3 bmin, vec3 bmax)
+{
+    float a = 1.0;
+
+    for (int i = 0; i < 6 && a >= 0.0; ++i) {
+        vec3 n = NegativeVertex(bmin, bmax, planes[i].xyz);
+        a = dot(vec4(n, 1.0), vec4(planes[i].xyz, planes[i].w));
+    }
+
+    return a >= 0.0;
+}
+
+int ClassifyBisector(in BisectorGeometry tri, uint depth)
+{
+    vec3 triNormal = normalize(cross(tri.p[2] - tri.p[1], tri.p[0] - tri.p[1]));
+    vec3 triCenter = (tri.p[0] + tri.p[1] + tri.p[2]) / 3.0;
+    vec3 viewDir = normalize(-triCenter);
+    float FdotV = dot(viewDir, _UpdateCameraForward);
+    float VdotN = dot(viewDir, triNormal);
+
+    if (FdotV < 0.0 && VdotN < -1e-3) return BACK_FACE_CULLED;
+
+    vec3 aabbMin = vec3(min(min(tri.p[0].x, tri.p[1].x), tri.p[2].x), min(min(tri.p[0].y, tri.p[1].y), tri.p[2].y), min(min(tri.p[0].z, tri.p[1].z), tri.p[2].z));
+    vec3 aabbMax = vec3(max(max(tri.p[0].x, tri.p[1].x), tri.p[2].x), max(max(tri.p[0].y, tri.p[1].y), tri.p[2].y), max(max(tri.p[0].z, tri.p[1].z), tri.p[2].z));
+
+    if (!FrustumAABBIntersect(_FrustumPlanes, aabbMin, aabbMax)) return FRUSTUM_CULLED;
+
+    vec4 p0P = _UpdateViewProjectionMatrix * vec4(tri.p[0], 1.0);
+    p0P.xy = p0P.xy / p0P.w;
+    p0P.xy = (p0P.xy * 0.5 + 0.5);
+
+    vec4 p1P = _UpdateViewProjectionMatrix * vec4(tri.p[1], 1.0);
+    p1P.xy = p1P.xy / p1P.w;
+    p1P.xy = (p1P.xy * 0.5 + 0.5);
+
+    vec4 p2P = _UpdateViewProjectionMatrix * vec4(tri.p[2], 1.0);
+    p2P.xy = p2P.xy / p2P.w;
+    p2P.xy = (p2P.xy * 0.5 + 0.5);
+
+    float area = 0.5 * abs(p0P.x * (p2P.y - p1P.y) + p1P.x * (p0P.y - p2P.y) + p2P.x * (p1P.y - p0P.y));
+    area *= _ScreenSize.x * _ScreenSize.y;
+
+    float areaOverestimation = mix(2.0, 1.0, pow(max(VdotN, 0.0), 0.2));
+    area *= areaOverestimation;
+
+    if (_TriangleSize < area && depth < _MaxSubdivisionDepth) return BISECT_ELEMENT;
+
+    if ((_TriangleSize * 0.5 > area) || (depth > _MaxSubdivisionDepth)) {
+        vec4 p3P = _UpdateViewProjectionMatrix * vec4(tri.p[3], 1.0);
+        p3P.xy = p3P.xy / p3P.w;
+        p3P.xy = (p3P.xy * 0.5 + 0.5);
+
+        float areaParent = 0.5 * abs(p0P.x * (p2P.y - p3P.y) + p3P.x * (p0P.y - p2P.y) + p2P.x * (p3P.y - p0P.y));
+        areaParent *= _ScreenSize.x * _ScreenSize.y;
+        areaParent *= areaOverestimation;
+
+        return ((_TriangleSize >= areaParent) || (depth > _MaxSubdivisionDepth)) ? TOO_SMALL : UNCHANGED_ELEMENT;
+    }
+
+    return UNCHANGED_ELEMENT;
+}
+
+void ClassifyElement(uint currentID, BisectorGeometry bis, uint totalNumElements, uint baseDepth)
+{
+    uint64_t heapID = _HeapIDBuffer[currentID];
+    uint depth = HeapIDDepth(heapID);
+    BisectorData cbisectorData = _BisectorDataBuffer[currentID];
+
+    cbisectorData.subdivisionPattern = 0;
+    cbisectorData.bisectorState = UNCHANGED_ELEMENT;
+    cbisectorData.problematicNeighbor = INVALID_POINTER;
+    cbisectorData.flags = VISIBLE_BISECTOR;
+
+    int currentValidity = ClassifyBisector(bis, depth);
+    if (currentValidity > UNCHANGED_ELEMENT) {
+        cbisectorData.bisectorState = BISECT_ELEMENT;
+        uint targetSlot = atomicAdd(_ClassificationBuffer[SPLIT_COUNTER], 1);
+        _ClassificationBuffer[CLASSIFY_COUNTER_OFFSET + targetSlot] = currentID;
+    } else {
+        cbisectorData.flags = currentValidity >= TOO_SMALL ? VISIBLE_BISECTOR : 0;
+    }
+
+    if (baseDepth != depth && currentValidity < UNCHANGED_ELEMENT) {
+        cbisectorData.bisectorState = SIMPLIFY_ELEMENT;
+        if (heapID % 2ul == 0) {
+            uint targetSlot = atomicAdd(_ClassificationBuffer[SIMPLIFY_COUNTER], 1);
+            _ClassificationBuffer[CLASSIFY_COUNTER_OFFSET + totalNumElements + targetSlot] = currentID;
+        }
+    }
+
+    _BisectorDataBuffer[currentID] = cbisectorData;
+}
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+void main() {
+    uint currentID = gl_GlobalInvocationID.x;
+    if (currentID >= _IndirectDrawBuffer[9]) return;
+
+    currentID = _BisectorIndicesBuffer[currentID];
+
+    BisectorGeometry bis;
+    bis.p[0] = _CurrentVertexBuffer[3 * currentID];
+    bis.p[1] = _CurrentVertexBuffer[3 * currentID + 1];
+    bis.p[2] = _CurrentVertexBuffer[3 * currentID + 2];
+    bis.p[3] = _CurrentVertexBuffer[3 * _TotalNumElements + currentID];
+
+    ClassifyElement(currentID, bis, _TotalNumElements, _BaseDepth);
+}

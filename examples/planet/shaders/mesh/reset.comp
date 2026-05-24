@@ -1,0 +1,57 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#define UNSUPPORTED_FIRST_BIT_HIGH
+
+#include "common.glsl"
+
+#define PLANTE_SET 1
+#include "../shared_lib/planet_constants.glsl"
+
+layout(set = 2, binding = 0, scalar) buffer CBTBuffer {
+    uint _CBTBufferRW[];
+};
+
+layout(set = 2, binding = 1, scalar) buffer BitfieldBuffer {
+    uint64_t _BitfieldBufferRW[];
+};
+
+int cbt_size() { return int(_TotalNumElements); }
+
+int bit_count_buffer() { return int(_CBTBufferRW[0]); }
+
+void ResetBuffers()
+{
+    _MemoryBuffer[0] = 0;
+    _MemoryBuffer[1] = cbt_size() - bit_count_buffer();
+
+    _ClassificationBuffer[SPLIT_COUNTER] = 0;
+    _ClassificationBuffer[SIMPLIFY_COUNTER] = 0;
+
+    _AllocateBuffer[0] = 0;
+
+    _PropagateBuffer[0] = 0;
+    _PropagateBuffer[1] = 0;
+
+    _SimplificationBuffer[0] = 0;
+
+    _IndirectDrawBuffer[0] = 0;
+    _IndirectDrawBuffer[1] = 1;
+    _IndirectDrawBuffer[2] = 0;
+    _IndirectDrawBuffer[3] = 0;
+
+    _IndirectDrawBuffer[4] = 0;
+    _IndirectDrawBuffer[5] = 1;
+    _IndirectDrawBuffer[6] = 0;
+    _IndirectDrawBuffer[7] = 0;
+
+    _IndirectDrawBuffer[8] = 0;
+}
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    ResetBuffers();
+}

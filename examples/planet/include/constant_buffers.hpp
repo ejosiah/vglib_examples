@@ -10,151 +10,71 @@ struct Plane {
 };
 
 // Global constant buffer
-struct GlobalCB
-{
-    // View projection matrix
-    glm::mat4 _ViewProjectionMatrix;
-
-    // Inverse view projection matrix
-    glm::mat4 _InvViewProjectionMatrix;
-
-    // Camera position in double as we are operating on planeraty coordinates
-    glm::dvec3 _CameraPosition;
-    // Current frame index
-    uint32_t _FrameIndex;
-    // Total time since the begining
-    float _Time;
-
-    // Camera position in double as we are operating on planeraty coordinates
-    glm::vec3 _CameraPositionSP;
-    float _CullFlag;
-
-    // Screen size and inverse screen size
-    glm::vec4 _ScreenSize;
-
-    // Sun elevation
-    glm::vec3 _SunDirection;
-    // Field of view
-    float _FoV;
-
-    // Wireframe color
-    glm::vec3 _WireFrameColor;
-    // Wireframe size
-    float _WireFrameSize;
-
-    float _ScreenSpaceShadow;
-    // Far plane distance
-    float _FarPlaneDistance;
-
-    // View projection matrix
-    glm::dmat4 _ViewProjectionMatrixDB;
+struct GlobalCB {
+    glm::mat4 ViewProjectionMatrix{1};
+    glm::mat4 InvViewProjectionMatrix{1};
+    glm::vec4 ScreenSize{};
+    glm::vec3 CameraPosition{};
+    glm::vec3 SunDirection{1};
+    glm::vec3 WireFrameColor{};
+    uint32_t FrameIndex;
+    float Time;
+    float CullFlag;
+    float FoV;
+    float WireFrameSize;
+    float ScreenSpaceShadow;
+    float FarPlaneDistance;
 };
 
-struct UpdateCB
-{
-    // View projection matrix used for the update
-    glm::mat4 _UpdateViewProjectionMatrix;
-
-    // Inverse View projection matrix used for the update
-    glm::mat4 _UpdateInvViewProjectionMatrix;
-
-    // Camera position in double as we are operating on planeraty coordinates
-    glm::dvec3 _UpdateCameraPosition;
-    // Triangle size
-    float _TriangleSize;
-    // Max subdivision depth
-    uint32_t _MaxSubdivisionDepth;
-
-    // Camera position in float
-    glm::vec3 _UpdateCameraPositionSP;
-    // FOV
-    float _UpdateFOV;
-
-    // Camera forward vector
-    glm::vec3 _UpdateCameraForward;
-    // Far plane
-    float _UpdateFarPlaneDistance;
-
-    // Frustum planes
-    Plane _UpdateFrustumPlanes[6];
+struct UpdateCB {
+    glm::mat4 UpdateViewProjectionMatrix{1};
+    glm::mat4 UpdateInvViewProjectionMatrix{1};
+    glm::vec4 FrustumPlanes[6];
+    glm::vec3 UpdateCameraPosition{};
+    glm::vec3 UpdateCameraForward{};
+    float TriangleSize{};
+    uint32_t MaxSubdivisionDepth{};
+    float UpdateFOV{};
+    float UpdateFarPlaneDistance{};
 };
 
-struct GeometryCB
-{
-    // Total number of elements of the geometry
-    uint32_t _TotalNumElements;
-    // Base depth of the planet mesh
-    uint32_t _BaseDepth;
-    // Total Num Vertices
-    uint32_t _TotalNumVertices;
-    // Material ID
-    uint32_t _MaterialID;
+struct GeometryCB {
+    uint32_t TotalNumElements{};
+    uint32_t BaseDepth{};
+    uint32_t TotalNumVertices{};
+    uint32_t MaterialID{};
 };
 
-struct PlanetCB
-{
-    // Center of the planet
-    glm::vec3 _PlanetCenter;
-
-    // Radius of the planet
-    float _PlanetRadius;
+struct PlanetCB {
+    glm::vec3 PlanetCenter;
+    float PlanetRadius;
 };
 
-struct DeformationCB
-{
-    // Patch Size for the deformation
-    glm::vec4 _PatchSize;
-
-    // Patch roughness
-    glm::vec4 _PatchRoughness;
-    
-    // Choppiness of the displacement
-    float _Choppiness;
-    // Is the attenuation enabled?
-    int _Attenuation;
-    // Amplification
-    float _Amplification;
-    // Patch Flags
-    uint32_t _PatchFlags;
+struct DeformationCB {
+    glm::vec4 PatchSize;
+    glm::vec4 PatchRoughness;
+    float Choppiness;
+    int Attenuation;
+    float Amplification;
+    uint32_t PatchFlags;
 };
 
-struct WaterSimulationCB
-{
-    // Resolution at which the simulation is evaluated
-    uint32_t _SimulationRes;
-    // Time at which the simulation should be evaluated
-    float _SimulationTime;
-    // Choppiness
-    float _Choppiness;
-    // Amplification
-    float _Amplification;
-
-    // Individual sizes of the wave bands
-    glm::vec4 _PatchSize;
-
-    // Horizontal wind direction
-    glm::vec4 _PatchWindOrientation;
-
-    // Controls how much the wind affect the current of the waves
-    glm::vec4 _PatchDirectionDampener;
-
-    // Wind speed per band
-    glm::vec4 _PatchWindSpeed;
+struct WaterSimulationCB {
+    glm::vec4 PatchSize;
+    glm::vec4 PatchWindOrientation;
+    glm::vec4 PatchDirectionDampener;
+    glm::vec4 PatchWindSpeed;
+    uint32_t SimulationRes;
+    float SimulationTime;
+    float Choppiness;
+    float Amplification;
 };
 
-struct MoonCB
-{
-    // Texture size of the elevation texture
-    glm::uvec2 _ElevationTextureSize;
-    // Texture size of the detail texture
-    glm::uvec2 _DetailTextureSize;
-
-    // Patch sizes of the detail bands
-    float _PatchSize;
-    // Patch amplitudes
-    float _PatchAmplitude;
-    // Num octaves
-    int32_t _NumOctaves;
-    // Attenuation
-    uint32_t _Attenuation;
+struct MoonCB {
+    glm::uvec2 ElevationTextureSize;
+    glm::uvec2 DetailTextureSize;
+    float PatchSize;
+    float PatchAmplitude;
+    int32_t NumOctaves;
+    uint32_t Attenuation;
 };

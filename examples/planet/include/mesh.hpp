@@ -56,6 +56,12 @@ struct CBTMesh {
 
     // Device version of the CBT
     GPU_CBT gpuCBT;
+
+    // Descriptor set containing the mesh buffers
+    VkDescriptorSet descriptorSet{};
+
+    // Descriptor set containing the CBT buffers
+    VkDescriptorSet cbtDescriptorSet{};
 };
 
 // Function to initialize a cbt mesh

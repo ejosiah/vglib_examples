@@ -16,8 +16,21 @@ public:
 
     void initialize(const cbt_large::CBT& cbt, const CPUMesh &mesh);
 
+    void createDescriptorSetLayout();
+
+    static void createDescriptorSetLayout(VulkanDevice& device);
+
+    void createCBTDescriptorSetLayout();
+
+    static void createCBTDescriptorSetLayout(VulkanDevice& device);
+
+    void updateDescriptorSet();
+
+    void updateCBTDescriptorSet();
+
     // General
     VulkanDevice* m_Device{};
+    std::string m_name;
 
     // Static properties
     float m_PlanetRadius = 0.0;
@@ -35,10 +48,13 @@ public:
     VulkanBuffer m_GeometryCB; // ConstantBuffer
     VulkanBuffer m_PlanetCB; // ConstantBuffer
     VulkanBuffer m_UpdateCB; // ConstantBuffer
-    std::string m_name;
-
+    VkDescriptorSet m_descriptorSet{};
+    VkDescriptorSet m_CBTDescriptorSet{};
     // Compute shader
     // ComputeShader m_LebEvalCS = 0;
     // ComputeShader m_ClearCS = 0;
     ComputePipelines m_compute;
+    static VulkanDescriptorSetLayout descriptorSetLayout;
+    static VulkanDescriptorSetLayout cbtDescriptorSetLayout;
+
 };

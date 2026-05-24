@@ -1,8 +1,10 @@
 #include "constants.hpp"
+#include "constant_buffers.hpp"
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 #include "cbt/large/cbt.h"
 #include "cpu_mesh.hpp"
+#include "mesh_updater.hpp"
 #include "planet.hpp"
 #include "cbt/large/cbt_utility.h"
 
@@ -13,9 +15,15 @@ public:
 protected:
     void initApp() override;
 
+    void createBuffers();
+
     void initGeometry();
 
     void initCamera();
+
+    void loadTextures();
+
+    void creatSkyBox();
 
     void initBindlessDescriptor();
 
@@ -41,6 +49,8 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void renderSkyBox(VkCommandBuffer commandBuffer);
+
     void update(float time) override;
 
     void checkAppInputs() override;
@@ -51,9 +61,16 @@ protected:
 
 protected:
     struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
+        Pipeline primitive;
+        Pipeline skybox;
     } render;
+
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer indexes;
+    } skybox;
+
+    Texture milkyway;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -64,8 +81,18 @@ protected:
     BindlessDescriptor bindlessDescriptor;
     CPUMesh planetMesh;
 
+    VulkanDescriptorSetLayout textureDescriptorSetLayout;
+    VkDescriptorSet milkywayDescriptorSet{};
+
+    GlobalCB* global;
+    VulkanBuffer globalBuffer;
+
     Planet m_EarthPlanet;
     Planet m_MoonPlanet;
+    MeshUpdater m_MeshUpdater;
+
+    VulkanDescriptorSetLayout globalDescriptorSetLayout;
+    VkDescriptorSet globalDescriptorSet{};
 
     CBTType m_CBTType = CBTType::OCBT_128K;
     CBTType m_NewCBTType = CBTType::OCBT_128K;
