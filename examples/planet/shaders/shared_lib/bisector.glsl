@@ -5,9 +5,9 @@
 #define INVALID_POINTER 4294967295
 
 // Possible culling state
-#define BACK_FACE_CULLED -3
-#define FRUSTUM_CULLED -2
-#define TOO_SMALL -1
+#define BACK_FACE_CULLED (-3)
+#define FRUSTUM_CULLED (-2)
+#define TOO_SMALL (-1)
 #define UNCHANGED_ELEMENT 0
 #define BISECT_ELEMENT 1
 #define SIMPLIFY_ELEMENT 2

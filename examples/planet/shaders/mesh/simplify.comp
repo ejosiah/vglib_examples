@@ -1,0 +1,138 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_atomic_int64 : require
+
+#include "../shared_lib/constant_buffers.glsl"
+
+#define MESH_UPDATE_SET 1
+#define MESH_SET 2
+#include "common.glsl"
+
+#define MESH_SET 2
+#include "../shared_lib/mesh_constants.glsl"
+
+#define CBT_SET 3
+#define CBT_ENABLE_ATOMIC_INT64
+#include "../shared_lib/cbt_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(push_constant) uniform Constants {
+    uint currentNeighborsBufferIndex;
+    uint nextNeighborsBufferIndex;
+};
+
+uvec3 Neighbors(uint index) {
+    return _NeighborsBuffer[nextNeighborsBufferIndex].v[index];
+}
+
+void SetNeighbors(uint index, uvec3 neighbors) {
+    _NeighborsBuffer[nextNeighborsBufferIndex].v[index] = neighbors;
+}
+
+void SimplifyElement(uint currentID);
+
+void main() {
+    uint currentID = gl_GlobalInvocationID.x;
+
+    // This thread doesn't have any work to do, we're done
+    if (currentID >= _SimplificationBuffer[0])
+        return;
+
+    // Simplify an element
+    SimplifyElement(_SimplificationBuffer[1 + currentID]);
+}
+
+void SimplifyElement(uint currentID)
+{
+    // Grab the current bisector
+    BisectorData cBisectorData = _BisectorDataBuffer[currentID];
+    uvec3 cNeighbors = Neighbors(currentID);
+
+    // Grab the pair neighbor (it has to exist)
+    uint pairID = cNeighbors[0];
+    BisectorData pBisectorData = _BisectorDataBuffer[pairID];
+    uvec3 pNeighbors = Neighbors(pairID);
+
+    // We need to indentify our twin pair
+    uint twinLowID = pNeighbors[0];
+    uint twinHighID = cNeighbors[1];
+
+    // Set the heap IDs
+    _HeapIDBuffer[currentID] = _HeapIDBuffer[currentID] / 2ul;
+    _HeapIDBuffer[pairID] = 0ul;
+
+    // All conditions are met for us to simplify these triangles
+    uvec3 newNeighbors;
+    newNeighbors[0] = cNeighbors[2];
+    newNeighbors[1] = pNeighbors[2];
+    newNeighbors[2] = twinLowID;
+    SetNeighbors(currentID, newNeighbors);
+
+    // Update the bisector data
+    cBisectorData.propagationID = pairID;
+    cBisectorData.problematicNeighbor = pNeighbors[2];
+    cBisectorData.bisectorState = MERGED_ELEMENT;
+    cBisectorData.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+    _BisectorDataBuffer[currentID] = cBisectorData;
+
+    // Mark this for propagation
+    if (cBisectorData.problematicNeighbor != INVALID_POINTER)
+    {
+        // Mark this for propagation
+        uint targetLocation = atomicAdd(_PropagateBuffer[1], 1u);
+        _PropagateBuffer[2 + targetLocation] = currentID;
+    }
+
+    // Clear the pair's heap for identification
+    pBisectorData.bisectorState = MERGED_ELEMENT;
+    pBisectorData.flags = 0;
+    _BisectorDataBuffer[pairID] = pBisectorData;
+
+    // Don't forget to free the bit
+    set_bit_atomic_buffer(pairID, false);
+
+    // If there was a facing pair, simplify it aswell
+    if (twinLowID != INVALID_POINTER)
+    {
+        // Set the heap IDs
+        _HeapIDBuffer[twinLowID] = _HeapIDBuffer[twinLowID] / 2ul;
+        _HeapIDBuffer[twinHighID] = 0ul;
+
+        // Read both bisectors
+        BisectorData lowFacingBst = _BisectorDataBuffer[twinLowID];
+        uvec3 lfNeighbors = Neighbors(twinLowID);
+        BisectorData highFacingBst = _BisectorDataBuffer[twinHighID];
+        uvec3 hfNeighbors = Neighbors(twinHighID);
+
+        // Update the lowest ID
+        newNeighbors[0] = lfNeighbors[2];
+        newNeighbors[1] = hfNeighbors[2];
+        newNeighbors[2] = currentID;
+        SetNeighbors(twinLowID, newNeighbors);
+
+        // Update the twin bisector data
+        lowFacingBst.propagationID = twinHighID;
+        lowFacingBst.problematicNeighbor = hfNeighbors[2];
+        lowFacingBst.bisectorState = MERGED_ELEMENT;
+        lowFacingBst.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[twinLowID] = lowFacingBst;
+
+        if (lowFacingBst.problematicNeighbor != INVALID_POINTER)
+        {
+            // Mark this for propagation
+            uint targetLocation = atomicAdd(_PropagateBuffer[1], 1u);
+            _PropagateBuffer[2 + targetLocation] = twinLowID;
+        }
+
+        // Clear the pair's heap for identification
+        highFacingBst.bisectorState = MERGED_ELEMENT;
+        highFacingBst.flags = 0;
+        _BisectorDataBuffer[twinHighID] = highFacingBst;
+
+        // Don't forget to free the bit
+        set_bit_atomic_buffer(twinHighID, false);
+    }
+}

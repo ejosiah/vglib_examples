@@ -1,0 +1,17 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#define CAN_USE_SHARED_MEMORY
+
+#include "common.glsl"
+
+#define CBT_SET 0
+#include "../shared_lib/cbt_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+void main() {
+    reduce_second_pass(gl_LocalInvocationIndex);
+}

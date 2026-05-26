@@ -46,8 +46,8 @@ struct GeometryCB {
 };
 
 struct PlanetCB {
-    glm::vec3 PlanetCenter;
-    float PlanetRadius;
+    glm::vec3 center{};
+    float radius{};
 };
 
 struct DeformationCB {

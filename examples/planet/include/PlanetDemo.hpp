@@ -6,6 +6,7 @@
 #include "cpu_mesh.hpp"
 #include "mesh_updater.hpp"
 #include "planet.hpp"
+#include "cbt/large/leb_matrix_cache.h"
 #include "cbt/large/cbt_utility.h"
 
 class PlanetDemo : public VulkanBaseApp{
@@ -89,6 +90,7 @@ protected:
 
     Planet m_EarthPlanet;
     Planet m_MoonPlanet;
+    LebMatrixCache m_LebMatrixCache;
     MeshUpdater m_MeshUpdater;
 
     VulkanDescriptorSetLayout globalDescriptorSetLayout;

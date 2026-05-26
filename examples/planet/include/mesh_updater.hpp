@@ -7,6 +7,7 @@
 #include "mesh.hpp"
 
 #include <VulkanDevice.h>
+#include <cstdint>
 #include <string>
 
 #include "ComputePipelins.hpp"
@@ -25,16 +26,38 @@ public:
     bool reload_shaders(const std::string& shaderLibrary, CBTType cbtType, const char* updateShader = "UpdateMesh.compute");
 
     // Update a given mesh
-    void update(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, VkDescriptorSet meshDescriptorSet, VkDescriptorSet cbtDescriptorSet);
+    void update(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, CBTMesh& mesh);
 
     // Make sure the mesh's topology is valid
     void validate(VkCommandBuffer cmd, const CBTMesh& mesh, VulkanBuffer geometryCB);
 
     // Reset the buffers
-    void reset_buffers(VkCommandBuffer cmd,  VkDescriptorSet meshDescriptorSet);
+    void reset_buffers(VkCommandBuffer cmd,  VkDescriptorSet meshDescriptorSet, VkDescriptorSet cbtDescriptorSet);
+
+    void classify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh);
+
+    void split(VkCommandBuffer cmd, const CBTMesh& mesh);
+
+    void allocate(VkCommandBuffer cmd, const CBTMesh& mesh);
+
+    void copy_neighbors(VkCommandBuffer cmd, const CBTMesh& mesh);
+
+    void bisect(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh);
+
+    void propagate_bisect(VkCommandBuffer cmd, const CBTMesh& mesh);
 
     // Prepare the mesh for indirect dispatches
-    void prepare_indirection(VkCommandBuffer cmd, const CBTMesh& mesh, VulkanBuffer geometryCB);
+    void prepare_indirection(VkCommandBuffer cmd, VkDescriptorSet meshDescriptorSet, int32_t bufferIndex, uint32_t gx, const std::string& section);
+
+    void prepare_indirection(VkCommandBuffer cmd, const CBTMesh& mesh);
+
+    void prepare_simplify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh);
+
+    void simplify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh);
+
+    void propagate_simplify(VkCommandBuffer cmd, const CBTMesh& mesh);
+
+    void reduce(VkCommandBuffer cmd, const CBTMesh& mesh);
 
     // Control if the validation pass should run
     bool check_if_valid();
@@ -70,6 +93,8 @@ private:
     VkDescriptorSet m_descriptorSet{};
 
     ComputePipelines m_compute;
+    uint32_t m_currentNeighborsBufferIdx{};
+    uint32_t m_nextNeighborsBufferIdx{};
 
     // Main update
     // ComputeShader m_ResetCS = 0;

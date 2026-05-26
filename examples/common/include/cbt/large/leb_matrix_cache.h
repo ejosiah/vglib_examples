@@ -26,3 +26,5 @@ namespace cbt_large {
     };
 
 }
+
+using LebMatrixCache = cbt_large::LebMatrixCache;

@@ -1,0 +1,334 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_atomic_int64 : require
+
+#include "../shared_lib/constant_buffers.glsl"
+
+#define MESH_UPDATE_SET 1
+#define MESH_SET 2
+#include "common.glsl"
+
+#define MESH_SET 2
+#include "../shared_lib/mesh_constants.glsl"
+
+#define CBT_SET 3
+#define CBT_ENABLE_ATOMIC_INT64
+#include "../shared_lib/cbt_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(push_constant) uniform Constants {
+    uint currentNeighborsBufferIndex;
+    uint nextNeighborsBufferIndex;
+};
+
+uvec3 Neighbors(uint index) {
+    return _NeighborsBuffer[currentNeighborsBufferIndex].v[index];
+}
+
+void SetOutputNeighbors(uint index, uvec3 neighbors) {
+    _NeighborsBuffer[nextNeighborsBufferIndex].v[index] = neighbors;
+}
+
+void BisectElement(uint currentID);
+
+void main() {
+    const uint groupIndex = gl_WorkGroupID.x;
+    const uint dispatchID = gl_GlobalInvocationID.x;
+
+    if (dispatchID >= _AllocateBuffer[0]) return;
+
+    // Operation the bisection of this element
+    BisectElement(_AllocateBuffer[1 + dispatchID]);
+}
+
+#define SIBLING0_ID 0
+#define SIBLING1_ID 1
+#define SIBLING2_ID 2
+
+void evaluate_neighbors(uint currentID, uint bisectorID, out uint resX, out uint resY)
+{
+    BisectorData nBisectorData = _BisectorDataBuffer[bisectorID];
+    uvec3 nNeighbors = Neighbors(bisectorID);
+    if (nBisectorData.subdivisionPattern == 0x01)
+    {
+        resX = nBisectorData.indices[SIBLING0_ID];
+        resY = bisectorID;
+    }
+    else if (nBisectorData.subdivisionPattern == 0x03)
+    {
+        if (nNeighbors[0] == currentID)
+        {
+            resX = nBisectorData.indices[SIBLING1_ID];
+            resY = bisectorID;
+        }
+        else
+        {
+            resX = nBisectorData.indices[SIBLING0_ID];
+            resY = nBisectorData.indices[SIBLING1_ID];
+        }
+    }
+    else if (nBisectorData.subdivisionPattern == 0x05)
+    {
+        if (nNeighbors[1] == currentID)
+        {
+            resX = nBisectorData.indices[SIBLING1_ID];
+            resY = nBisectorData.indices[SIBLING0_ID];
+        }
+        else
+        {
+            resX = nBisectorData.indices[SIBLING0_ID];
+            resY = bisectorID;
+        }
+    }
+    else
+    {
+        if (nNeighbors[0] == currentID)
+        {
+            resX = nBisectorData.indices[SIBLING1_ID];
+            resY = bisectorID;
+        }
+        else if (nNeighbors[1] == currentID)
+        {
+            resX = nBisectorData.indices[SIBLING2_ID];
+            resY = nBisectorData.indices[SIBLING0_ID];
+        }
+        else
+        {
+            resX = nBisectorData.indices[SIBLING0_ID];
+            resY = nBisectorData.indices[SIBLING1_ID];
+        }
+    }
+}
+
+void BisectElement(uint currentID)
+{
+    // If this bisector is not allocated or not subdivided, stop right away
+    uint64_t baseHeapID = _HeapIDBuffer[currentID];
+    BisectorData cBisectorData = _BisectorDataBuffer[currentID];
+    if (baseHeapID == 0 || cBisectorData.subdivisionPattern == NO_SPLIT)
+        return;
+
+    // Load the bisector data of the target triangle
+    uint currentSubdiv = cBisectorData.subdivisionPattern;
+
+    // neighbors of the parent
+    uvec3 cNeighbors = Neighbors(currentID);
+    uint p_n0 = cNeighbors[0];
+    uint p_n1 = cNeighbors[1];
+    uint p_n2 = cNeighbors[2];
+
+    // Get the main axis subdiv
+    uint siblingID0 = cBisectorData.indices[0];
+    uint siblingID1 = cBisectorData.indices[1];
+    uint siblingID2 = cBisectorData.indices[2];
+
+    // Simple subdivision (along the main axis)
+    if (currentSubdiv == CENTER_SPLIT)
+    {
+        uint resX = INVALID_POINTER, resY = INVALID_POINTER;
+        if (p_n2 != INVALID_POINTER)
+            evaluate_neighbors(currentID, p_n2, resX, resY);
+
+        // Set the heap IDs
+        _HeapIDBuffer[currentID] = 2ul * baseHeapID;
+        _HeapIDBuffer[siblingID0] = 2ul * baseHeapID + 1ul;
+
+        // Update the neighbors
+        uvec3 modifiedNeighbors;
+        modifiedNeighbors[0] = siblingID0;
+        modifiedNeighbors[1] = resX;
+        modifiedNeighbors[2] = p_n0;
+        SetOutputNeighbors(currentID, modifiedNeighbors);
+        modifiedNeighbors[0] = resY;
+        modifiedNeighbors[1] = currentID;
+        modifiedNeighbors[2] = p_n1;
+        SetOutputNeighbors(siblingID0, modifiedNeighbors);
+
+        // Keep track of the parent
+        BisectorData modifiedBisector = cBisectorData;
+        modifiedBisector.propagationID = currentID;
+
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[currentID] = modifiedBisector;
+
+        modifiedBisector.problematicNeighbor = p_n1;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID0] = modifiedBisector;
+
+        // Mark this for propagation
+        uint targetLocation = atomicAdd(_PropagateBuffer[0], 1u);
+        _PropagateBuffer[2 + targetLocation] = siblingID0;
+    }
+    else if (currentSubdiv == RIGHT_DOUBLE_SPLIT)
+    {
+        // Grab the bisector of the twin
+        uint res0X = INVALID_POINTER, res0Y = INVALID_POINTER;
+        evaluate_neighbors(currentID, p_n0, res0X, res0Y);
+
+        uint res1X = INVALID_POINTER, res1Y = INVALID_POINTER;
+        if (p_n2 != INVALID_POINTER)
+            evaluate_neighbors(currentID, p_n2, res1X, res1Y);
+
+        // Set the heap IDs
+        _HeapIDBuffer[currentID] = 4ul * baseHeapID;
+        _HeapIDBuffer[siblingID0] = 2ul * baseHeapID + 1ul;
+        _HeapIDBuffer[siblingID1] = 4ul * baseHeapID + 1ul;
+
+        uvec3 modifiedNeighbors;
+        modifiedNeighbors[0] = siblingID1;
+        modifiedNeighbors[1] = res0X;
+        modifiedNeighbors[2] = siblingID0;
+        SetOutputNeighbors(currentID, modifiedNeighbors);
+        modifiedNeighbors[0] = res1Y;
+        modifiedNeighbors[1] = currentID;
+        modifiedNeighbors[2] = p_n1;
+        SetOutputNeighbors(siblingID0, modifiedNeighbors);
+        modifiedNeighbors[0] = res0Y;
+        modifiedNeighbors[1] = currentID;
+        modifiedNeighbors[2] = res1X;
+        SetOutputNeighbors(siblingID1, modifiedNeighbors);
+
+        // Keep track of the parent
+        BisectorData modifiedBisector = cBisectorData;
+        modifiedBisector.propagationID = currentID;
+
+        // Lower the element down the tree and update it's sibling
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[currentID] = modifiedBisector;
+
+        // Create the sibling of the current element
+        modifiedBisector.problematicNeighbor = p_n1;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID0] = modifiedBisector;
+
+        // Create the sibling of the current element
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID1] = modifiedBisector;
+
+        // Mark this for propagation
+        uint targetLocation = atomicAdd(_PropagateBuffer[0], 1u);
+        _PropagateBuffer[2 + targetLocation] = siblingID0;
+    }
+    else if (currentSubdiv == LEFT_DOUBLE_SPLIT)
+    {
+        // Grab the bisector of the twin
+        uint res0X = INVALID_POINTER, res0Y = INVALID_POINTER;
+        evaluate_neighbors(currentID, p_n1, res0X, res0Y);
+
+        uint res1X = INVALID_POINTER, res1Y = INVALID_POINTER;
+        if (p_n2 != INVALID_POINTER)
+            evaluate_neighbors(currentID, p_n2, res1X, res1Y);
+
+        // Set the heap IDs
+        _HeapIDBuffer[currentID] = 2ul * baseHeapID;
+        _HeapIDBuffer[siblingID0] = 4ul * baseHeapID + 2ul;
+        _HeapIDBuffer[siblingID1] = 4ul * baseHeapID + 3ul;
+
+        uvec3 modifiedNeighbors;
+        modifiedNeighbors[0] = siblingID1;
+        modifiedNeighbors[1] = res1X;
+        modifiedNeighbors[2] = p_n0;
+        SetOutputNeighbors(currentID, modifiedNeighbors);
+        modifiedNeighbors[0] = siblingID1;
+        modifiedNeighbors[1] = res0X;
+        modifiedNeighbors[2] = res1Y;
+        SetOutputNeighbors(siblingID0, modifiedNeighbors);
+        modifiedNeighbors[0] = res0Y;
+        modifiedNeighbors[1] = siblingID0;
+        modifiedNeighbors[2] = currentID;
+        SetOutputNeighbors(siblingID1, modifiedNeighbors);
+
+        // Keep track of the parent
+        BisectorData modifiedBisector = cBisectorData;
+        modifiedBisector.propagationID = currentID;
+
+        // Lower the element down the tree and update it's sibling
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[currentID] = modifiedBisector;
+
+        // Create the sibling of the current element
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID0] = modifiedBisector;
+
+        // Create the sibling of the current element
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID1] = modifiedBisector;
+    }
+    else if (currentSubdiv == TRIPLE_SPLIT)
+    {
+        // Grab the bisector of the twin
+        uint res0X = INVALID_POINTER, res0Y = INVALID_POINTER;
+        evaluate_neighbors(currentID, p_n0, res0X, res0Y);
+
+        uint res1X = INVALID_POINTER, res1Y = INVALID_POINTER;
+        evaluate_neighbors(currentID, p_n1, res1X, res1Y);
+
+        uint res2X = INVALID_POINTER, res2Y = INVALID_POINTER;
+        if (p_n2 != INVALID_POINTER)
+            evaluate_neighbors(currentID, p_n2, res2X, res2Y);
+
+        // Set the heap IDs
+        _HeapIDBuffer[currentID] = 4ul * baseHeapID;
+        _HeapIDBuffer[siblingID0] = 4ul * baseHeapID + 2ul;
+        _HeapIDBuffer[siblingID1] = 4ul * baseHeapID + 1ul;
+        _HeapIDBuffer[siblingID2] = 4ul * baseHeapID + 3ul;
+
+        uvec3 modifiedNeighbors;
+        modifiedNeighbors[0] = siblingID1;
+        modifiedNeighbors[1] = res0X;
+        modifiedNeighbors[2] = siblingID2;
+        SetOutputNeighbors(currentID, modifiedNeighbors);
+        modifiedNeighbors[0] = siblingID2;
+        modifiedNeighbors[1] = res1X;
+        modifiedNeighbors[2] = res2Y;
+        SetOutputNeighbors(siblingID0, modifiedNeighbors);
+        modifiedNeighbors[0] = res0Y;
+        modifiedNeighbors[1] = currentID;
+        modifiedNeighbors[2] = res2X;
+        SetOutputNeighbors(siblingID1, modifiedNeighbors);
+        modifiedNeighbors[0] = res1Y;
+        modifiedNeighbors[1] = siblingID0;
+        modifiedNeighbors[2] = currentID;
+        SetOutputNeighbors(siblingID2, modifiedNeighbors);
+
+        // Keep track of the parent
+        BisectorData modifiedBisector = cBisectorData;
+        modifiedBisector.propagationID = currentID;
+
+        // Lower the element down the tree and update it's sibling
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[currentID] = modifiedBisector;
+
+        // Create the sibling of the current element
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID0] = modifiedBisector;
+
+        // Create the sibling of the current element
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID1] = modifiedBisector;
+
+        // Create the sibling of the current element
+        modifiedBisector.problematicNeighbor = INVALID_POINTER;
+        modifiedBisector.flags = (VISIBLE_BISECTOR | MODIFIED_BISECTOR);
+        _BisectorDataBuffer[siblingID2] = modifiedBisector;
+    }
+
+    // How many bits do we need to raise
+    uint numSiblings = uint(bitCount64(uint64_t(currentSubdiv)));
+    for (uint siblingIdx = 0; siblingIdx < numSiblings; ++siblingIdx)
+    {
+        set_bit_atomic_buffer(cBisectorData.indices[siblingIdx], true);
+    }
+}

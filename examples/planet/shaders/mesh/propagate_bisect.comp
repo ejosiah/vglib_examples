@@ -1,0 +1,83 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_atomic_int64 : require
+
+#define MESH_UPDATE_SET 0
+#include "common.glsl"
+
+#define MESH_SET 1
+#include "../shared_lib/mesh_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(push_constant) uniform Constants {
+    uint currentNeighborsBufferIndex;
+    uint nextNeighborsBufferIndex;
+};
+
+void PropagateBisectElement(uint currentID);
+
+void main() {
+    const uint dispatchID = gl_GlobalInvocationID.x;
+
+    // If this element doesn't need to be processed, we're done
+    if (dispatchID >= _PropagateBuffer[0])
+    return;
+
+    PropagateBisectElement(_PropagateBuffer[2 + dispatchID]);
+}
+
+uvec3 Neighbors(uint index) {
+    return _NeighborsBuffer[nextNeighborsBufferIndex].v[index];
+}
+
+void setNeighbors(uint index, int vIndex, uint value) {
+    _NeighborsBuffer[nextNeighborsBufferIndex].v[index][vIndex] = value;
+}
+
+void PropagateBisectElement(uint currentID)
+{
+    // Load the bisector data of the target triangle
+    BisectorData cBisectorData = _BisectorDataBuffer[currentID];
+
+    // neighbors of the parent
+    uint parentID = cBisectorData.propagationID;
+    uint problematicNeighbor = cBisectorData.problematicNeighbor;
+
+    // Read the neighbor that may have changed
+    BisectorData tBisectorData = _BisectorDataBuffer[problematicNeighbor];
+    uvec3 tNeighbors = Neighbors(problematicNeighbor);
+    uint targetID = problematicNeighbor;
+    uint sibling1 = tBisectorData.indices[1];
+
+    if (tBisectorData.subdivisionPattern == NO_SPLIT)
+    {
+        if (tNeighbors[0] == parentID)
+        setNeighbors(targetID, 0, currentID);
+        if (tNeighbors[1] == parentID)
+        setNeighbors(targetID, 1, currentID);
+        if (tNeighbors[2] == parentID)
+        setNeighbors(targetID, 2, currentID);
+    }
+    else if (tBisectorData.subdivisionPattern == CENTER_SPLIT)
+    {
+        if (Neighbors(targetID)[2] == parentID)
+        setNeighbors(targetID, 2, currentID);
+        if (Neighbors(tBisectorData.propagationID)[2] == parentID)
+        setNeighbors(tBisectorData.propagationID, 2, currentID);
+    }
+    else if (tBisectorData.subdivisionPattern == RIGHT_DOUBLE_SPLIT)
+    {
+        setNeighbors(sibling1, 2, currentID);
+    }
+    else if (tBisectorData.subdivisionPattern == LEFT_DOUBLE_SPLIT)
+    {
+        setNeighbors(targetID, 2, currentID);
+    }
+
+    // Reset the problematic neighbor and the bisection state
+    _BisectorDataBuffer[currentID].problematicNeighbor = INVALID_POINTER;
+    _BisectorDataBuffer[currentID].bisectorState = UNCHANGED_ELEMENT;
+}

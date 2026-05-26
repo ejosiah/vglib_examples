@@ -1,0 +1,111 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_atomic_int64 : require
+
+#include "../shared_lib/constant_buffers.glsl"
+
+#define MESH_UPDATE_SET 1
+#define MESH_SET 2
+#include "common.glsl"
+
+#define MESH_SET 2
+#include "../shared_lib/mesh_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(push_constant) uniform Constants {
+    uint currentNeighborsBufferIndex;
+    uint nextNeighborsBufferIndex;
+};
+
+void PrepareSimplifyElement(uint currentID);
+
+void main() {
+    const uint dispatchID = gl_GlobalInvocationID.x;
+
+    // If this element doesn't need to be processed, we're done
+    if (dispatchID >= _ClassificationBuffer[SIMPLIFY_COUNTER])
+    return;
+
+    // Grab the real elementID
+    uint currentID = _ClassificationBuffer[CLASSIFY_COUNTER_OFFSET + _TotalNumElements + dispatchID];
+
+    // Simplify an element
+    PrepareSimplifyElement(currentID);
+}
+
+
+uvec3 Neighbors(uint index) {
+    return _NeighborsBuffer[nextNeighborsBufferIndex].v[index];
+}
+
+void PrepareSimplifyElement(uint currentID)
+{
+    // Get the bisector
+    BisectorData cBisectorData = _BisectorDataBuffer[currentID];
+
+    // Grab the current bisector
+    uint64_t cHeapID = _HeapIDBuffer[currentID];
+
+    // If this is not an even heap number it will be handeled by it's pair, the twin or the twin's pair
+
+    // Neighbors of this element
+    uvec3 cNeighbors = Neighbors(currentID);
+
+    // Evaluate the depth of this bisector
+    uint currentDepth = HeapIDDepth(cHeapID);
+
+    // Grab the pair neighbor (it has to exist)
+    uint pairID = cNeighbors[0];
+    uint64_t pHeapID = _HeapIDBuffer[pairID];
+    BisectorData pBisectorData = _BisectorDataBuffer[pairID];
+    uvec3 pNeighbors = Neighbors(pairID);
+
+    // Evaluate the depth of the pair
+    uint pairDepth = HeapIDDepth(pHeapID);
+
+    // If they are not at the same depth or the pair is not to be simplified, we're done
+    if (pairDepth != currentDepth || pBisectorData.bisectorState != SIMPLIFY_ELEMENT)
+    return;
+
+    // We need to identify our twin pair
+    uint twinLowID = pNeighbors[0];
+    uint twinHighID = cNeighbors[1];
+    if (twinLowID != INVALID_POINTER)
+    {
+        // Grab the two bisectors
+        uint64_t twinLowHeapID = _HeapIDBuffer[twinLowID];
+        uint64_t twinHighHeapID = _HeapIDBuffer[twinHighID];
+
+        // The current bisector is not the smallest element of the neighborhood, he will be handeled by twinLowBisect if needed
+        if (cHeapID > twinLowHeapID)
+        return;
+
+        // Compute the depth of both neighbors
+        uint lowFacingDepth = HeapIDDepth(twinLowHeapID);
+        uint highFacingDepth = HeapIDDepth(twinHighHeapID);
+
+        // If all four elements are not on the same
+        if (lowFacingDepth != currentDepth || highFacingDepth != currentDepth)
+        return;
+
+        // Grab the two bisectors
+        BisectorData twinLowBisectData = _BisectorDataBuffer[twinLowID];
+        BisectorData twinHighBisectData = _BisectorDataBuffer[twinHighID];
+
+        // This element should not be doing the simplifications if:
+        // - One of the four elements doesn't have the same depth
+        // - One of the four elements isn't flagged for simplification
+        if (twinLowBisectData.bisectorState != SIMPLIFY_ELEMENT
+        || twinHighBisectData.bisectorState != SIMPLIFY_ELEMENT)
+        return;
+    }
+
+    // This element will simplify itself, it's pair and possibilty it's twin and twin-pair.
+    uint bisectorSlot = atomicAdd(_SimplificationBuffer[0], 1);
+
+    // Log the bisector ID
+    _SimplificationBuffer[1 + bisectorSlot] = currentID;
+}

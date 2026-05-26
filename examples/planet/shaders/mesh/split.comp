@@ -1,0 +1,162 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "common.glsl"
+
+#define MESH_SET 1
+#include "../shared_lib/mesh_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(push_constant) uniform Constants {
+    uint neighborsBufferIndex;
+};
+
+uvec3 Neighbors(uint index) {
+    return _NeighborsBuffer[neighborsBufferIndex].v[index];
+}
+
+void SplitElement(uint currentID, uint baseDepth);
+
+void main() {
+    uint dispatchID = gl_GlobalInvocationID.x;
+
+    if (dispatchID >= _ClassificationBuffer[SPLIT_COUNTER]) return;
+
+    uint currentID = _ClassificationBuffer[CLASSIFY_COUNTER_OFFSET + dispatchID];
+    SplitElement(currentID, _BaseDepth);
+}
+
+void SplitElement(uint currentID, uint baseDepth)
+{
+    // Get the neighbors information
+    uvec3 cNeighbors = Neighbors(currentID);
+
+    // If there is a neighbor X
+    if (cNeighbors.x != INVALID_POINTER)
+    {
+        // This is on the path of it's neighbor X
+        uvec3 xNeighbors = Neighbors(cNeighbors.x);
+        if (xNeighbors.z == currentID && _BisectorDataBuffer[cNeighbors.x].bisectorState != UNCHANGED_ELEMENT)
+        return;
+    }
+
+    // If there is a neighbor Y
+    if (cNeighbors.y != INVALID_POINTER)
+    {
+        // This is on the path of it's neighbor Y
+        uvec3 yNeighbors = Neighbors(cNeighbors.y);
+        if (yNeighbors.z == currentID && _BisectorDataBuffer[cNeighbors.y].bisectorState != UNCHANGED_ELEMENT)
+        return;
+    }
+
+    // Depth of the current triangle
+    uint64_t heapID = _HeapIDBuffer[currentID];
+    uint currentDepth = HeapIDDepth(heapID);
+
+    // Compute the maximal required memory for this subdivision
+    int maxRequiredMemory = int(2 * (currentDepth - baseDepth) - 1);
+
+    // Get the twin information
+    uint twinID = cNeighbors.z;
+
+    // This avoid the massive over-reservation and saves a bunch of artifacts
+    if (twinID == INVALID_POINTER)
+    maxRequiredMemory = 1;
+    else if (Neighbors(twinID).z == currentID)
+    maxRequiredMemory = 2;
+
+    // Try to reserve
+    int remainingMemory = atomicAdd(_MemoryBuffer[1], -maxRequiredMemory);
+
+    // Did someone manage to sneak-in while we were trying to pick the memory, add it back and try again
+    if (remainingMemory < maxRequiredMemory)
+    {
+        // Then add back the required memory and stop
+        remainingMemory = atomicAdd(_MemoryBuffer[1], maxRequiredMemory);
+        return;
+    }
+
+    // Let's actually count the memory that we will be using
+    uint usedMemory = 1;
+    uint prevPattern = atomicOr(_BisectorDataBuffer[currentID].subdivisionPattern, CENTER_SPLIT);
+
+    // If this is not zero, it means an other neighbor went faster than us, we restore the memory and leave.
+    if (prevPattern != 0)
+    {
+        remainingMemory = atomicAdd(_MemoryBuffer[1], maxRequiredMemory);
+        return;
+    }
+
+    // Mark this for allocation
+    uint targetLocation = atomicAdd(_AllocateBuffer[0], 1);
+    _AllocateBuffer[1 + targetLocation] = currentID;
+
+    // While we're not done (up the tree or everything is subdivided properly)
+    bool done = false;
+    while (!done)
+    {
+        // If this neighbor is not allocated, we're done.
+        if (twinID == INVALID_POINTER)
+        break;
+
+        // Grab the bisector of the neighbor
+        uint64_t nHeapID = _HeapIDBuffer[twinID];
+        BisectorData nBisectorData = _BisectorDataBuffer[twinID];
+        uint nDepth = HeapIDDepth(nHeapID);
+        uvec3 nNeighbors = Neighbors(twinID);
+
+        // If both triangles have the same depth
+        if (nDepth == currentDepth)
+        {
+            // Raised the center split
+            prevPattern = atomicOr(_BisectorDataBuffer[twinID].subdivisionPattern, CENTER_SPLIT);
+
+            // Only account for it if it was not raised before.
+            if (prevPattern == 0)
+            {
+                // Mark this for allocation
+                uint targetLocation = atomicAdd(_AllocateBuffer[0], 1);
+                _AllocateBuffer[1 + targetLocation] = twinID;
+                usedMemory++;
+            }
+
+            // And we're done
+            done = true;
+        }
+        // If this node has already been subdivided, it means that we need to add the third subdivision and we're done
+        else
+        {
+            if (nNeighbors[0] == currentID)
+                prevPattern = atomicOr(_BisectorDataBuffer[twinID].subdivisionPattern, RIGHT_DOUBLE_SPLIT);
+            else // if (nNeighbors[1] == currentID)
+                prevPattern = atomicOr(_BisectorDataBuffer[twinID].subdivisionPattern, LEFT_DOUBLE_SPLIT);
+
+            if (prevPattern != 0)
+            {
+                usedMemory++;
+                done = true;
+            }
+            else
+            {
+                // Mark this for allocation
+                uint targetLocation = atomicAdd(_AllocateBuffer[0], 1);
+                _AllocateBuffer[1 + targetLocation] = twinID;
+
+                // Account for two splits
+                usedMemory += 2;
+
+                // the new bisector that needs to be propagated
+                currentID = twinID;
+                currentDepth = nDepth;
+                twinID = Neighbors(currentID).z;
+            }
+        }
+    }
+
+    // Add back the unused memory (in case)
+    remainingMemory = atomicAdd(_MemoryBuffer[1], max(maxRequiredMemory - int(usedMemory), 0));
+}

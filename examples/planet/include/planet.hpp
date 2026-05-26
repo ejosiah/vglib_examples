@@ -6,6 +6,9 @@
 #include <glm/glm.hpp>
 
 #include <string>
+#include <vector>
+
+#include "constant_buffers.hpp"
 
 class Planet {
 public:
@@ -14,7 +17,7 @@ public:
     Planet(VulkanDevice& device, const std::string& name, float planetRadius, const glm::dvec3& planetCenter, float toggleDistance,
          float triangleSize, uint32_t materialID);
 
-    void initialize(const cbt_large::CBT& cbt, const CPUMesh &mesh);
+    void initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh, VulkanDescriptorSetLayout globalDescriptorSetLayout);
 
     void createDescriptorSetLayout();
 
@@ -24,12 +27,29 @@ public:
 
     static void createCBTDescriptorSetLayout(VulkanDevice& device);
 
+    void createLEBDescriptorSetLayout();
+
+    static void createLEBDescriptorSetLayout(VulkanDevice& device);
+
     void updateDescriptorSet();
 
     void updateCBTDescriptorSet();
 
+    void updateLEBDescriptorSet(const VulkanBuffer& lebMatrixCache);
+
+    void clear(VkCommandBuffer cmd);
+
+    void evaluate_leb(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSet, bool clearBuffer, bool complete = false);
+
+protected:
+    std::vector<PipelineMetaData> metadata();
+
+    void createPipelines();
+
+public:
     // General
     VulkanDevice* m_Device{};
+    VulkanDescriptorSetLayout m_globalDescriptorSetLayout;
     std::string m_name;
 
     // Static properties
@@ -47,14 +67,21 @@ public:
     BaseMesh m_BaseMesh;
     VulkanBuffer m_GeometryCB; // ConstantBuffer
     VulkanBuffer m_PlanetCB; // ConstantBuffer
-    VulkanBuffer m_UpdateCB; // ConstantBuffer
+
+    struct {
+        VulkanBuffer gpu;
+        UpdateCB* cpu{};
+    } m_UpdateCB;
+
     VkDescriptorSet m_descriptorSet{};
     VkDescriptorSet m_CBTDescriptorSet{};
+    VkDescriptorSet m_LEBDescriptorSet{};
     // Compute shader
     // ComputeShader m_LebEvalCS = 0;
     // ComputeShader m_ClearCS = 0;
     ComputePipelines m_compute;
     static VulkanDescriptorSetLayout descriptorSetLayout;
     static VulkanDescriptorSetLayout cbtDescriptorSetLayout;
+    static VulkanDescriptorSetLayout lebDescriptorSetLayout;
 
 };

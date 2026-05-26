@@ -429,8 +429,8 @@ VkCommandBuffer *RtxDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    device.group([&]{
-        device.group([&]{
+    device.section([&]{
+        device.section([&]{
             Offscreen::render(commandBuffer, renderInfo, [&]{
                 renderScene(commandBuffer, render.pbr);
                 renderLights(commandBuffer);

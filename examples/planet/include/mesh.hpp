@@ -3,7 +3,7 @@
 
 // Project includes
 #include "cbt/large/bisector.h"
-#include "cbt/large//cbt.h"
+#include "cbt/large/cbt_utility.h"
 #include "cpu_mesh.hpp"
 #include <VulkanDevice.h>
 
@@ -21,6 +21,9 @@ struct BaseMesh {
 };
 
 struct CBTMesh {
+    // CBT variant backing this mesh
+    CBTType cbtType{CBTType::OCBT_128K};
+
     // Total number of elements
     uint32_t totalNumElements;
 

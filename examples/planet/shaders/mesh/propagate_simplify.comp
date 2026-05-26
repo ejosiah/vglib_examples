@@ -1,0 +1,89 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#define MESH_UPDATE_SET 0
+#include "common.glsl"
+
+#define MESH_SET 1
+#include "../shared_lib/mesh_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(push_constant) uniform Constants {
+    uint currentNeighborsBufferIndex;
+    uint nextNeighborsBufferIndex;
+};
+
+void PropagateElementSimplify(uint currentID);
+
+void main() {
+    const uint dispatchID = gl_GlobalInvocationID.x;
+
+    // If this element doesn't need to be processed, we're done
+    if (dispatchID >= _PropagateBuffer[1])
+        return;
+
+    PropagateElementSimplify(_PropagateBuffer[2 + dispatchID]);
+}
+
+uvec3 Neighbors(uint index) {
+    return _NeighborsBuffer[nextNeighborsBufferIndex].v[index];
+}
+
+void setNeighbors(uint index, uint vIndex, uint value) {
+    _NeighborsBuffer[nextNeighborsBufferIndex].v[index][vIndex] = value;
+}
+
+void PropagateElementSimplify(uint currentID)
+{
+    // Load the bisector data of the target element
+    BisectorData cBisectorData = _BisectorDataBuffer[currentID];
+
+    // Id of the element before the simplification
+    uint deletedPair = cBisectorData.propagationID;
+
+    // neighbors of the parent
+    uint neighborID = cBisectorData.problematicNeighbor;
+
+    // Read the neighbor that may have changed
+    BisectorData nBisectorData = _BisectorDataBuffer[neighborID];
+    uvec3 nNeighbors = Neighbors(neighborID);
+
+    // The neighbor has not changed, so we just need to make it point on currentID instead of the pair that was deleted
+    if (nBisectorData.bisectorState != MERGED_ELEMENT)
+    {
+        for (uint i = 0; i < 3; ++i)
+        {
+            if (nNeighbors[i] == deletedPair)
+                setNeighbors(neighborID, i, currentID);
+        }
+    }
+    // The neighbor has had a simplification, so we need to update a different neighbor based on if it went up one depth in the tree or was deleted.
+    else if (nBisectorData.bisectorState == MERGED_ELEMENT)
+    {
+        // He still exist, but was simplified
+        if (_HeapIDBuffer[neighborID] != 0ul)
+        {
+            for (uint i = 0; i < 3; ++i)
+            {
+                if (nNeighbors[i] == deletedPair)
+                    setNeighbors(neighborID, i, currentID);
+            }
+        }
+        // He is gone, we need to update his pair instead of him.
+        else
+        {
+            uint neighborPair = nNeighbors[1];
+            for (uint i = 0; i < 3; ++i)
+            {
+                if (Neighbors(neighborPair)[i] == deletedPair)
+                    setNeighbors(neighborPair, i, currentID);
+            }
+        }
+    }
+
+    // Reset the problematic neighbor
+    _BisectorDataBuffer[currentID].problematicNeighbor = INVALID_POINTER;
+}

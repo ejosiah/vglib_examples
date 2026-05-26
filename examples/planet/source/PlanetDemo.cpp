@@ -47,13 +47,17 @@ void PlanetDemo::initGeometry() {
     const auto cbtNumElements = cbt_large::cbt_num_elements(m_CBTType);
     cbt_large::CBT* cbt = create_cbt(m_CBTType);
     planetMesh = CPUMesh::load_cpu_mesh(resource("icosahedron.ccm"), cbtNumElements);
+    m_LebMatrixCache.intialize(device, LEB_MATRIX_CACHE_SIZE);
 
     m_EarthPlanet = Planet{device, "earth", g_EarthRadius, g_EarthCenter, g_EarthImpostorToggle, g_EarthTriangleSize, EARTH_MATERIAL};
-    m_EarthPlanet.initialize(*cbt, planetMesh);
+    m_EarthPlanet.initialize(*cbt, planetMesh, globalDescriptorSetLayout);
+    m_EarthPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
     m_MoonPlanet = Planet{device, "moon", g_MoonRadius, g_MoonCenter, g_MoonImpostorToggle, g_MoonTriangleSize, MOON_MATERIAL};
-    m_MoonPlanet.initialize(*cbt, planetMesh);
+    m_MoonPlanet.initialize(*cbt, planetMesh, globalDescriptorSetLayout);
+    m_MoonPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
+    // TODO - move into planet and only create one CBTType shader, reload shader based on CBTType
     m_MeshUpdater = MeshUpdater{device, globalDescriptorSetLayout};
     m_MeshUpdater.initialize();
 
@@ -100,17 +104,18 @@ void PlanetDemo::beforeDeviceCreation() {
 
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
     devFeatures12->scalarBlockLayout = VK_TRUE;
+    devFeatures12->shaderBufferInt64Atomics = VK_TRUE;
+
     AppContext::addExtensions(deviceCreateNextChain);
 }
 
 void PlanetDemo::createDescriptorPool() {
     constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 4> poolSizes{
+    std::array<VkDescriptorPoolSize, 3> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
-                    { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 * maxSets },
             }
     };
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
@@ -134,7 +139,7 @@ void PlanetDemo::createDescriptorSetLayouts() {
 
     globalDescriptorSetLayout =
         device.descriptorSetLayoutBuilder()
-            .name("texture_descriptor_set_layout")
+            .name("global_descriptor_set_layout")
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
@@ -146,6 +151,9 @@ void PlanetDemo::updateDescriptorSets(){
     auto sets = descriptorPool.allocate( { textureDescriptorSetLayout, globalDescriptorSetLayout });
     milkywayDescriptorSet = sets[0];
     globalDescriptorSet = sets[1];
+
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("milkyway_descriptor_set", milkywayDescriptorSet);
+    device.setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>("global_descriptor_set", globalDescriptorSet);
 
     auto writes = initializers::writeDescriptorSets<2>();
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -229,6 +237,9 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
+    m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_EarthPlanet.m_CBTMesh);
+    m_EarthPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, true, true);
+
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
@@ -268,6 +279,7 @@ void PlanetDemo::checkAppInputs() {
 
 void PlanetDemo::cleanup() {
     loader->stop();
+    m_LebMatrixCache.release();
     AppContext::shutdown();
 }
 
@@ -290,6 +302,7 @@ int main(){
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_KHR_SHADER_ATOMIC_INT64_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;

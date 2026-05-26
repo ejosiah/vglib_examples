@@ -1,0 +1,31 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 1) in;
+
+#include "common.glsl"
+
+#define MESH_SET 0
+#include "../shared_lib/mesh_constants.glsl"
+
+void main() {
+    // Indirect dispatch for each bisector
+    _IndirectDispatchBuffer[0] = (_IndirectDrawBuffer[0] / 3u + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
+    _IndirectDispatchBuffer[1] = 1u;
+    _IndirectDispatchBuffer[2] = 1u;
+
+    // Indirect dispatch for each vertex to process (3 per bisector + 1 for the parent)
+    _IndirectDispatchBuffer[3] = (_IndirectDrawBuffer[0] * 4u / 3u + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
+    _IndirectDispatchBuffer[4] = 1u;
+    _IndirectDispatchBuffer[5] = 1u;
+
+    // Indirect dispatch for each modified vertex to process
+    _IndirectDispatchBuffer[6] = (_IndirectDrawBuffer[8] + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
+    _IndirectDispatchBuffer[7] = 1u;
+    _IndirectDispatchBuffer[8] = 1u;
+
+    // Explicit counter of the number of bisectors
+    _IndirectDrawBuffer[9] = _IndirectDrawBuffer[0] / 3u;
+}

@@ -1,0 +1,60 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_atomic_int64 : require
+
+#define CAN_USE_SHARED_MEMORY
+#define CBT_ENABLE_ATOMIC_INT64
+
+#include "common.glsl"
+
+#define MESH_SET 1
+#include "../shared_lib/mesh_constants.glsl"
+
+#define CBT_SET 2
+#include "../shared_lib/cbt_constants.glsl"
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+void AllocateElement(uint currentID);
+
+void main() {
+    const uint groupIndex = gl_WorkGroupID.x;
+    const uint dispatchID = gl_GlobalInvocationID.x;
+
+    // Load the CBT to the LDS
+    load_buffer_to_shared_memory(groupIndex);
+
+    // If this element doesn't need to be processed, we're done
+    if (dispatchID >= _AllocateBuffer[0])
+    return;
+
+    // Allocate the required bits
+    AllocateElement(_AllocateBuffer[1 + dispatchID]);
+}
+
+void AllocateElement(uint currentID) {
+    // Load the bisector for this element
+    BisectorData bisectorData = _BisectorDataBuffer[currentID];
+
+    // Does this guy need to be subdivided
+    if (bisectorData.subdivisionPattern != 0)
+    {
+        // How many bits do we need?
+        int numSlots = int(bitCount64(bisectorData.subdivisionPattern));
+
+        // Request the number of bits we need using an interlock add
+        uint firstBitIndex = uint(atomicAdd(_MemoryBuffer[0], numSlots));
+
+        // llocate the bits we need
+        for (uint bitId = 0; bitId < uint(numSlots); ++bitId)
+        {
+            uint index = decode_bit_complement(firstBitIndex + bitId);
+            bisectorData.indices[bitId] = index;
+        }
+
+        // Output
+        _BisectorDataBuffer[currentID] = bisectorData;
+    }
+}

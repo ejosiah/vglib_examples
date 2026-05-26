@@ -1,0 +1,82 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#ifndef EnableDoublePrecisionLEB
+#define EnableDoublePrecisionLEB 1
+#endif
+
+#if EnableDoublePrecisionLEB
+#define LEB_DOUBLE
+#define REAL_DP double
+#define REAL3_DP dvec3
+#else
+#define REAL_DP float
+#define REAL3_DP vec3
+#endif
+
+#define GLOBAL_CB_SET 0
+#define GLOBAL_CB_BINDING_SLOT 0
+#include "../shared_lib/constant_buffers.glsl"
+
+#define MESH_SET 1
+#include "../mesh/common.glsl"
+#include "../shared_lib/mesh_constants.glsl"
+
+layout(set = MESH_SET, binding = 12, scalar) readonly buffer BaseVertexBuffer {
+    vec3 _BaseVertexBuffer[];
+};
+
+layout(set = MESH_SET, binding = 13, scalar) buffer LEBPositionBuffer {
+    REAL3_DP _LEBPositionBuffer[];
+};
+
+layout(set = MESH_SET, binding = 14, scalar) readonly buffer PlanetCB {
+    vec3 _PlanetCenter;
+    float _PlanetRadius;
+};
+
+#define LEB_MATRIX_SET 2
+#include "../shared_lib/mesh_utilities.glsl"
+
+layout(push_constant) uniform Constants {
+    uint complete;
+};
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+REAL3_DP TransformToPlanetCoordinate(REAL3_DP posPS)
+{
+    REAL_DP invL = inversesqrt(dot(posPS, posPS));
+    return REAL3_DP(_PlanetCenter) + posPS * invL * REAL_DP(_PlanetRadius);
+}
+
+void main() {
+    uint currentID = gl_GlobalInvocationID.x;
+    uint groupIndex = gl_LocalInvocationIndex;
+
+    load_leb_matrix_cache_to_shared_memory(groupIndex);
+
+    uint numBisectors = pre_rendering_frame() ? _IndirectDrawBuffer[9] : (_IndirectDrawBuffer[8] / 4u);
+    if (currentID >= numBisectors)
+        return;
+
+    currentID = complete != 0u ? _BisectorIndicesBuffer[currentID] : _ModifiedBisectorIndicesBuffer[currentID];
+
+    uint64_t cHeapID = _HeapIDBuffer[currentID];
+    uint depth = HeapIDDepth(cHeapID);
+
+    Triangle parentTri;
+    Triangle childTri;
+    EvaluateElementPosition(cHeapID, 0u, _BaseDepth, parentTri, childTri);
+
+    _LEBPositionBuffer[3u * currentID] = TransformToPlanetCoordinate(childTri.p[0]);
+    _LEBPositionBuffer[3u * currentID + 1u] = TransformToPlanetCoordinate(childTri.p[1]);
+    _LEBPositionBuffer[3u * currentID + 2u] = TransformToPlanetCoordinate(childTri.p[2]);
+
+    if (_BaseDepth < depth) {
+        uint parentOffset = 3u * _TotalNumElements;
+        _LEBPositionBuffer[parentOffset + currentID] = TransformToPlanetCoordinate((cHeapID & 1ul) == 0ul ? parentTri.p[0] : parentTri.p[2]);
+    }
+}

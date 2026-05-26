@@ -29,7 +29,7 @@ void rtx::shadow::init() {
 }
 
 void rtx::shadow::exec(VkCommandBuffer commandBuffer) {
-    m_device->group([&]{
+    m_device->section([&]{
         vkCmdUpdateBuffer(commandBuffer, m_constantsBuffer, 0, sizeof(m_constants), &m_constants);
         Barrier::transferWriteToComputeRead(commandBuffer);
 

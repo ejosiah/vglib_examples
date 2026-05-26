@@ -7,25 +7,16 @@
 
 #include "common.glsl"
 
-#define PLANTE_SET 1
-#include "../shared_lib/planet_constants.glsl"
+#define MESH_SET 1
+#include "../shared_lib/mesh_constants.glsl"
 
-layout(set = 2, binding = 0, scalar) buffer CBTBuffer {
-    uint _CBTBufferRW[];
-};
-
-layout(set = 2, binding = 1, scalar) buffer BitfieldBuffer {
-    uint64_t _BitfieldBufferRW[];
-};
-
-int cbt_size() { return int(_TotalNumElements); }
-
-int bit_count_buffer() { return int(_CBTBufferRW[0]); }
+#define CBT_SET 2
+#include "../shared_lib/cbt_constants.glsl"
 
 void ResetBuffers()
 {
     _MemoryBuffer[0] = 0;
-    _MemoryBuffer[1] = cbt_size() - bit_count_buffer();
+    _MemoryBuffer[1] = int(cbt_size() - bit_count_buffer());
 
     _ClassificationBuffer[SPLIT_COUNTER] = 0;
     _ClassificationBuffer[SIMPLIFY_COUNTER] = 0;

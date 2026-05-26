@@ -79,7 +79,7 @@ Probes rtx::ddgi::probes() const {
 }
 
 void rtx::ddgi::exec(VkCommandBuffer commandBuffer) {
-    m_device->group([&]{
+    m_device->section([&]{
         probeRT(commandBuffer);
         updateIrradiance(commandBuffer);
         updateVisibility(commandBuffer);

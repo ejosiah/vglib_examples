@@ -399,14 +399,14 @@ void dev::NeuralNetwork::train(VkCommandBuffer commandBuffer, uint epoch) {
     spdlog::info("epoch {}", epoch);
     m_constants.epoch = epoch;
 
-    device->group([&] {
+    device->section([&] {
         shuffleTrainingData(commandBuffer);
         for (auto k = 0; k < m_params.numBatches; ++k) {
             updateBatch(commandBuffer, k);
         }
     }, commandBuffer, "gradient_descent", {1, 0, 0, 1});
 
-    device->group([&] {
+    device->section([&] {
         evaluateClassificationRate(commandBuffer);
     }, commandBuffer, "classification_rate", {0, 0, 1, 1});
 }

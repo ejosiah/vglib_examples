@@ -1,5 +1,6 @@
 #include "mesh.hpp"
 
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -24,9 +25,18 @@ bool supports_shader_float64(VulkanDevice& device) {
     return features.shaderFloat64 == VK_TRUE;
 }
 
+CBTType cbt_type_from_num_elements(uint32_t numElements) {
+    if (numElements == cbt_large::cbt_num_elements(CBTType::OCBT_128K)) return CBTType::OCBT_128K;
+    if (numElements == cbt_large::cbt_num_elements(CBTType::OCBT_256K)) return CBTType::OCBT_256K;
+    if (numElements == cbt_large::cbt_num_elements(CBTType::OCBT_512K)) return CBTType::OCBT_512K;
+    if (numElements == cbt_large::cbt_num_elements(CBTType::OCBT_1M)) return CBTType::OCBT_1M;
+    throw std::runtime_error("unsupported CBT size");
+}
+
 }
 
 void initialize_cbt_mesh(const CPUMesh &cpuMesh, const CBT &cbt, VulkanDevice &device, CBTMesh &cbtMesh) {
+    cbtMesh.cbtType = cbt_type_from_num_elements(cbt.num_elements());
     cbt_large::initialize_gpu_cbt(cbt, device, cbtMesh.gpuCBT);
 
     cbtMesh.totalNumElements = cpuMesh.totalNumElements;
