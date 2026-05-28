@@ -24,29 +24,28 @@ namespace {
     }
 }
 
-VulkanDescriptorSetLayout Planet::descriptorSetLayout;
+VulkanDescriptorSetLayout Planet::meshDescriptorSetLayout;
 VulkanDescriptorSetLayout Planet::cbtDescriptorSetLayout;
 VulkanDescriptorSetLayout Planet::lebDescriptorSetLayout;
 
-Planet::Planet(VulkanDevice& device, const std::string& name, float planetRadius, const glm::dvec3 &planetCenter, float toggleDistance,
-    float triangleSize, uint32_t materialID)
-        : m_Device{&device}
-        , m_name(name)
-        , m_PlanetRadius(planetRadius)
-        , m_PlanetCenter(planetCenter)
-        , m_ToggleDistance(toggleDistance)
-        , m_TriangleSize(triangleSize)
-        , m_MaterialID(materialID) {}
+Planet::Planet(const Params& params)
+        : m_name(params.name)
+        , m_device{&params.device}
+        , m_globalDescriptorSetLayout(params.globalDescriptorSetLayout)
+        , m_PlanetRadius(params.planetRadius)
+        , m_PlanetCenter(params.planetCenter)
+        , m_ToggleDistance(params.toggleDistance)
+        , m_TriangleSize(params.triangleSize)
+        , m_MaterialID(params.materialID) {}
 
-void Planet::initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh, VulkanDescriptorSetLayout globalDescriptorSetLayout) {
-    m_globalDescriptorSetLayout = globalDescriptorSetLayout;
+void Planet::initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh) {
 
-    initialize_cbt_mesh(mesh, cbt, *m_Device, m_CBTMesh);
-    initialize_base_mesh(mesh, *m_Device, m_BaseMesh);
+    initialize_cbt_mesh(mesh, cbt, *m_device, m_CBTMesh);
+    initialize_base_mesh(mesh, *m_device, m_BaseMesh);
 
     PlanetCB planet{ m_PlanetCenter, m_PlanetRadius };
-    m_PlanetCB = m_Device->createDeviceLocalBuffer(&planet, sizeof(PlanetCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    m_Device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_planet_cb", m_name), m_PlanetCB.buffer);
+    m_PlanetCB = m_device->createDeviceLocalBuffer(&planet, sizeof(PlanetCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    m_device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_planet_cb", m_name), m_PlanetCB.buffer);
 
 
     GeometryCB geometryCB {
@@ -55,20 +54,24 @@ void Planet::initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh, VulkanDe
         .TotalNumVertices = m_CBTMesh.totalNumElements * 3,
         .MaterialID = m_MaterialID
     };
-    m_GeometryCB = m_Device->createDeviceLocalBuffer(&geometryCB, sizeof(GeometryCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    m_Device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_geometry_cb", m_name), m_GeometryCB.buffer);
+    m_GeometryCB = m_device->createDeviceLocalBuffer(&geometryCB, sizeof(GeometryCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    m_device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_geometry_cb", m_name), m_GeometryCB.buffer);
 
 
-    m_UpdateCB.gpu = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(UpdateCB), fmt::format("{}_update_cb", m_name));
+    m_UpdateCB.gpu = m_device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(UpdateCB), fmt::format("{}_update_cb", m_name));
     m_UpdateCB.cpu = static_cast<UpdateCB*>(m_UpdateCB.gpu.map());
     *m_UpdateCB.cpu = {};
 
-    createDescriptorSetLayout();
+    createDescriptorSetLayouts();
+    createPipelines();
+}
+
+void Planet::createDescriptorSetLayouts() {
+    createMeshDescriptorSetLayout();
     createCBTDescriptorSetLayout();
     createLEBDescriptorSetLayout();
     updateDescriptorSet();
     updateCBTDescriptorSet();
-    createPipelines();
 }
 
 std::vector<PipelineMetaData> Planet::metadata() {
@@ -76,28 +79,30 @@ std::vector<PipelineMetaData> Planet::metadata() {
         {
             .name = Clear,
             .shadePath = FileManager::resource("planet_clear.comp.spv"),
-            .layouts = { &descriptorSetLayout },
+            .layouts = { &meshDescriptorSetLayout },
         },
         {
             .name = LebEval,
             .shadePath = FileManager::resource("planet_evaluate_leb.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &descriptorSetLayout, &lebDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &meshDescriptorSetLayout, &lebDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) } },
         },
     };
 }
 
 void Planet::createPipelines() {
-    m_compute = ComputePipelines{ m_Device, metadata() };
+    m_compute = ComputePipelines{ m_device, metadata() };
     m_compute.createPipelines();
 }
 
-void Planet::createDescriptorSetLayout() { createDescriptorSetLayout(*m_Device); }
+void Planet::createMeshDescriptorSetLayout() {
+    createMeshDescriptorSetLayout(*m_device);
+}
 
-void Planet::createDescriptorSetLayout(VulkanDevice& device) {
+void Planet::createMeshDescriptorSetLayout(VulkanDevice& device) {
     if (descriptorSetLayoutInitialized) return;
 
-    descriptorSetLayout =
+    meshDescriptorSetLayout =
         device.descriptorSetLayoutBuilder()
             .name("planet_descriptor_set_layout")
             .binding(0)  // m_GeometryCB
@@ -165,7 +170,7 @@ void Planet::createDescriptorSetLayout(VulkanDevice& device) {
     descriptorSetLayoutInitialized = true;
 }
 
-void Planet::createCBTDescriptorSetLayout() { createCBTDescriptorSetLayout(*m_Device); }
+void Planet::createCBTDescriptorSetLayout() { createCBTDescriptorSetLayout(*m_device); }
 
 void Planet::createCBTDescriptorSetLayout(VulkanDevice& device) {
     if (cbtDescriptorSetLayoutInitialized) return;
@@ -186,7 +191,7 @@ void Planet::createCBTDescriptorSetLayout(VulkanDevice& device) {
     cbtDescriptorSetLayoutInitialized = true;
 }
 
-void Planet::createLEBDescriptorSetLayout() { createLEBDescriptorSetLayout(*m_Device); }
+void Planet::createLEBDescriptorSetLayout() { createLEBDescriptorSetLayout(*m_device); }
 
 void Planet::createLEBDescriptorSetLayout(VulkanDevice& device) {
     if (lebDescriptorSetLayoutInitialized) return;
@@ -204,16 +209,17 @@ void Planet::createLEBDescriptorSetLayout(VulkanDevice& device) {
 }
 
 void Planet::updateDescriptorSet() {
-    m_descriptorSet = AppContext::descriptorPool().allocate({ descriptorSetLayout }).front();
-    m_CBTMesh.descriptorSet = m_descriptorSet;
+    auto sets = AppContext::descriptorPool().allocate({ meshDescriptorSetLayout });
+    m_descriptorSet = sets[0];
+    m_CBTMesh.descriptorSet = sets[0];
 
-    m_Device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("{}_mesh_descriptor_set", m_name), m_descriptorSet);
-
+    m_device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("{}_mesh_descriptor_set", m_name), m_descriptorSet);
 
     VkDescriptorBufferInfo geometryInfo = descriptor_buffer_info(m_GeometryCB);
     VkDescriptorBufferInfo updateInfo = descriptor_buffer_info(m_UpdateCB.gpu);
     VkDescriptorBufferInfo neighborsInfo[] = { descriptor_buffer_info(m_CBTMesh.neighborsBuffers[0]), descriptor_buffer_info(m_CBTMesh.neighborsBuffers[1]) };
     VkDescriptorBufferInfo currentVertexInfo = descriptor_buffer_info(m_CBTMesh.currentVertexBuffer);
+    VkDescriptorBufferInfo currentDisplacementInfo = descriptor_buffer_info(m_CBTMesh.currentDisplacementBuffer);
     VkDescriptorBufferInfo indirectDrawInfo = descriptor_buffer_info(m_CBTMesh.indirectDrawBuffer);
     VkDescriptorBufferInfo indirectDispatchInfo = descriptor_buffer_info(m_CBTMesh.indirectDispatchBuffer);
     VkDescriptorBufferInfo indexedBisectorInfo = descriptor_buffer_info(m_CBTMesh.indexedBisectorBuffer);
@@ -247,14 +253,14 @@ void Planet::updateDescriptorSet() {
     set_buffer_write(writes[12], 12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &baseVertexInfo);
     set_buffer_write(writes[13], 13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &lebVertexInfo);
     set_buffer_write(writes[14], 14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &planetInfo);
-    m_Device->updateDescriptorSets(writes);
+    m_device->updateDescriptorSets(writes);
 }
 
 void Planet::updateCBTDescriptorSet() {
     m_CBTDescriptorSet = AppContext::descriptorPool().allocate({ cbtDescriptorSetLayout }).front();
     m_CBTMesh.cbtDescriptorSet = m_CBTDescriptorSet;
 
-    m_Device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("{}_cbt_descriptor_set", m_name), m_CBTDescriptorSet);
+    m_device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("{}_cbt_descriptor_set", m_name), m_CBTDescriptorSet);
 
     VkDescriptorBufferInfo cbtTreeInfo = descriptor_buffer_info(m_CBTMesh.gpuCBT.bufferArray[0]);
     VkDescriptorBufferInfo cbtBitfieldInfo = descriptor_buffer_info(m_CBTMesh.gpuCBT.bufferArray[1]);
@@ -262,22 +268,22 @@ void Planet::updateCBTDescriptorSet() {
     auto writes = initializers::writeDescriptorSets<2>(m_CBTDescriptorSet);
     set_buffer_write(writes[0], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &cbtTreeInfo);
     set_buffer_write(writes[1], 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &cbtBitfieldInfo);
-    m_Device->updateDescriptorSets(writes);
+    m_device->updateDescriptorSets(writes);
 }
 
 void Planet::updateLEBDescriptorSet(const VulkanBuffer& lebMatrixCache) {
     m_LEBDescriptorSet = AppContext::descriptorPool().allocate({ lebDescriptorSetLayout }).front();
-    m_Device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("{}_leb_descriptor_set", m_name), m_LEBDescriptorSet);
+    m_device->setName<VK_OBJECT_TYPE_DESCRIPTOR_SET>(fmt::format("{}_leb_descriptor_set", m_name), m_LEBDescriptorSet);
 
     VkDescriptorBufferInfo lebMatrixCacheInfo = descriptor_buffer_info(lebMatrixCache);
 
     auto writes = initializers::writeDescriptorSets<1>(m_LEBDescriptorSet);
     set_buffer_write(writes[0], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &lebMatrixCacheInfo);
-    m_Device->updateDescriptorSets(writes);
+    m_device->updateDescriptorSets(writes);
 }
 
 void Planet::clear(VkCommandBuffer cmd) {
-    m_Device->section([&] {
+    m_device->section([&] {
         const auto layout = m_compute.layout(Clear);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(Clear));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &m_descriptorSet, 0, nullptr);
@@ -289,7 +295,7 @@ void Planet::clear(VkCommandBuffer cmd) {
 void Planet::evaluate_leb(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSet, bool clearBuffer, bool complete) {
     if (clearBuffer) clear(cmd);
 
-    m_Device->section([&] {
+    m_device->section([&] {
         const auto layout = m_compute.layout(LebEval);
         const uint32_t completeValue = complete ? 1u : 0u;
         const VkDeviceSize indirectOffset = complete ? 0 : sizeof(uint32_t) * 6;
@@ -302,4 +308,10 @@ void Planet::evaluate_leb(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorS
         vkCmdDispatchIndirect(cmd, m_CBTMesh.indirectDispatchBuffer, indirectOffset);
         Barrier::computeWriteToRead(cmd);
     }, cmd, "evaluate_leb");
+}
+
+void Planet::update_constant_buffers(const UpdateCB& updateCb) {
+    *m_UpdateCB.cpu = updateCb;
+    m_UpdateCB.cpu->MaxSubdivisionDepth = m_MaxSubdivisionDepth;
+    m_UpdateCB.cpu->TriangleSize = m_TriangleSize;
 }

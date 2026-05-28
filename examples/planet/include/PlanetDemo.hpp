@@ -4,8 +4,10 @@
 #include "VulkanBaseApp.h"
 #include "cbt/large/cbt.h"
 #include "cpu_mesh.hpp"
+#include "earth_renderer.hpp"
 #include "mesh_updater.hpp"
 #include "planet.hpp"
+#include "water_deformer.hpp"
 #include "cbt/large/leb_matrix_cache.h"
 #include "cbt/large/cbt_utility.h"
 
@@ -18,11 +20,15 @@ protected:
 
     void createBuffers();
 
+    void prepareRender();
+
     void initGeometry();
 
     void initCamera();
 
     void loadTextures();
+
+    void newFrame() override;
 
     void creatSkyBox();
 
@@ -56,9 +62,13 @@ protected:
 
     void checkAppInputs() override;
 
+    void endFrame() override;
+
     void cleanup() override;
 
     void onPause() override;
+
+    void updateConstantBuffers();
 
 protected:
     struct {
@@ -85,18 +95,40 @@ protected:
     VulkanDescriptorSetLayout textureDescriptorSetLayout;
     VkDescriptorSet milkywayDescriptorSet{};
 
-    GlobalCB* global;
+    GlobalCB* global{};
     VulkanBuffer globalBuffer;
 
     Planet m_EarthPlanet;
     Planet m_MoonPlanet;
+    EarthRenderer m_EarthRenderer;
     LebMatrixCache m_LebMatrixCache;
     MeshUpdater m_MeshUpdater;
+    WaterDeformer m_WaterDeformer;
 
     VulkanDescriptorSetLayout globalDescriptorSetLayout;
     VkDescriptorSet globalDescriptorSet{};
 
     CBTType m_CBTType = CBTType::OCBT_128K;
     CBTType m_NewCBTType = CBTType::OCBT_128K;
+
+    // Global rendering properties
+    uint32_t m_FrameIndex = 0;
+    double m_Time = 0.0;
+    glm::vec4 m_ScreenSize = { 0.0, 0.0, 0.0, 0.0 };
+    glm::ivec2 m_ScreenSizeI = { 0, 0 };
+    bool m_RayTracingPath = false;
+
+    // UI controls
+    bool m_DisplayUI{};
+    bool m_ActiveUpdate{};
+    bool m_ActiveWireFrame{};
+    bool m_EnableValidation{};
+    bool m_EnableOccupancy{};
+    glm::vec3 m_WireframeColor{ 0.6, 0.6, 0.6 };
+    float m_WireframeSize{ 0.5 };
+    uint32_t m_Occupancy{ 0 };
+    UpdateCB m_updateCB{};
+
+    bool m_MirrorPOV{true};
 
 };

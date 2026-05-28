@@ -1,14 +1,7 @@
 #ifndef MESH_UTILITIES_GLSL
 #define MESH_UTILITIES_GLSL
 
-#ifdef LEB_DOUBLE
-#define LEB_DATA_TYPE double
-#define LEB_DATA_TYPE3 REAL3_DP
-#else
-#define LEB_DATA_TYPE float
-#define LEB_DATA_TYPE3 REAL3_DP
-#endif
-
+#include "../types.glsl"
 #include "leb.glsl"
 
 struct Triangle

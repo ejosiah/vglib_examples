@@ -21,6 +21,9 @@ struct BaseMesh {
 };
 
 struct CBTMesh {
+    friend class MeshUpdater;
+    friend class WaterDeformer;
+    friend class EarthRenderer;
     // CBT variant backing this mesh
     CBTType cbtType{CBTType::OCBT_128K};
 

@@ -2,19 +2,8 @@
 
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_debug_printf : enable
 
-#ifndef EnableDoublePrecisionLEB
-#define EnableDoublePrecisionLEB 1
-#endif
-
-#if EnableDoublePrecisionLEB
-#define LEB_DOUBLE
-#define REAL_DP double
-#define REAL3_DP dvec3
-#else
-#define REAL_DP float
-#define REAL3_DP vec3
-#endif
 
 #define GLOBAL_CB_SET 0
 #define GLOBAL_CB_BINDING_SLOT 0
@@ -23,19 +12,6 @@
 #define MESH_SET 1
 #include "../mesh/common.glsl"
 #include "../shared_lib/mesh_constants.glsl"
-
-layout(set = MESH_SET, binding = 12, scalar) readonly buffer BaseVertexBuffer {
-    vec3 _BaseVertexBuffer[];
-};
-
-layout(set = MESH_SET, binding = 13, scalar) buffer LEBPositionBuffer {
-    REAL3_DP _LEBPositionBuffer[];
-};
-
-layout(set = MESH_SET, binding = 14, scalar) readonly buffer PlanetCB {
-    vec3 _PlanetCenter;
-    float _PlanetRadius;
-};
 
 #define LEB_MATRIX_SET 2
 #include "../shared_lib/mesh_utilities.glsl"
@@ -59,6 +35,9 @@ void main() {
     load_leb_matrix_cache_to_shared_memory(groupIndex);
 
     uint numBisectors = pre_rendering_frame() ? _IndirectDrawBuffer[9] : (_IndirectDrawBuffer[8] / 4u);
+
+//    debugPrintfEXT("frame: %u, id: %u, numBisectors %u\n", _FrameIndex, currentID, numBisectors);
+
     if (currentID >= numBisectors)
         return;
 
@@ -70,6 +49,14 @@ void main() {
     Triangle parentTri;
     Triangle childTri;
     EvaluateElementPosition(cHeapID, 0u, _BaseDepth, parentTri, childTri);
+
+    Triangle p = parentTri;
+    Triangle c = childTri;
+//    debugPrintfEXT("frame: %u, id: %u, \n\tparent: [[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]\n\tchild: [[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]\n", _FrameIndex, currentID
+//    , p.p[0].x, p.p[0].y, p.p[0].z, p.p[1].x, p.p[1].y, p.p[1].z, p.p[2].x, p.p[2].y, p.p[2].z
+//    , c.p[0].x, c.p[0].y, c.p[0].z, c.p[1].x, c.p[1].y, c.p[1].z, c.p[2].x, c.p[2].y, c.p[2].z);
+
+
 
     _LEBPositionBuffer[3u * currentID] = TransformToPlanetCoordinate(childTri.p[0]);
     _LEBPositionBuffer[3u * currentID + 1u] = TransformToPlanetCoordinate(childTri.p[1]);

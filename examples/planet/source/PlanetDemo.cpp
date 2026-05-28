@@ -5,7 +5,9 @@
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
 
-PlanetDemo::PlanetDemo(const Settings& settings) : VulkanBaseApp("Planet", settings) {
+PlanetDemo::PlanetDemo(const Settings& settings)
+    : VulkanBaseApp("Planet", settings)
+     {
     fileManager().addSearchPathFront(".");
     fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
     fileManager().addSearchPathFront("../data");
@@ -34,12 +36,29 @@ void PlanetDemo::initApp() {
     createCommandPool();
     createPipelineCache();
     createRenderPipeline();
+    prepareRender();
 }
 
 void PlanetDemo::createBuffers() {
     globalBuffer = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(GlobalCB), "global_buffer");
     global = static_cast<GlobalCB *>(globalBuffer.map());
     *global = GlobalCB{};
+}
+
+void PlanetDemo::prepareRender() {
+    device.graphicsCommandPool().oneTimeCommand([this](auto cmd) {
+        m_FrameIndex = UINT32_MAX;
+        m_Time = 0;
+
+        m_EarthPlanet.update_constant_buffers(m_updateCB);
+        updateConstantBuffers();
+
+        m_MeshUpdater.reset_buffers(cmd, m_EarthPlanet.m_descriptorSet, m_EarthPlanet.m_CBTDescriptorSet);
+        m_MeshUpdater.prepare_indirection(cmd, m_EarthPlanet);
+        m_EarthPlanet.evaluate_leb(cmd, globalDescriptorSet, true, true);
+        m_WaterDeformer.apply_deformation(cmd, m_EarthPlanet);
+    });
+    m_FrameIndex = 0;
 }
 
 void PlanetDemo::initGeometry() {
@@ -49,36 +68,54 @@ void PlanetDemo::initGeometry() {
     planetMesh = CPUMesh::load_cpu_mesh(resource("icosahedron.ccm"), cbtNumElements);
     m_LebMatrixCache.intialize(device, LEB_MATRIX_CACHE_SIZE);
 
-    m_EarthPlanet = Planet{device, "earth", g_EarthRadius, g_EarthCenter, g_EarthImpostorToggle, g_EarthTriangleSize, EARTH_MATERIAL};
-    m_EarthPlanet.initialize(*cbt, planetMesh, globalDescriptorSetLayout);
+    m_EarthPlanet = Planet{ { "earth", device, globalDescriptorSetLayout, g_EarthRadius, g_EarthCenter, g_EarthImpostorToggle, g_EarthTriangleSize, EARTH_MATERIAL } };
+    m_EarthPlanet.initialize(*cbt, planetMesh);
     m_EarthPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
-    m_MoonPlanet = Planet{device, "moon", g_MoonRadius, g_MoonCenter, g_MoonImpostorToggle, g_MoonTriangleSize, MOON_MATERIAL};
-    m_MoonPlanet.initialize(*cbt, planetMesh, globalDescriptorSetLayout);
+    m_EarthRenderer = { { device, m_EarthPlanet, globalDescriptorSetLayout} };
+    m_EarthRenderer.initialize();
+
+    m_MoonPlanet = Planet{ { "moon", device, globalDescriptorSetLayout, g_MoonRadius, g_MoonCenter, g_MoonImpostorToggle, g_MoonTriangleSize, MOON_MATERIAL } };
+    m_MoonPlanet.initialize(*cbt, planetMesh);
     m_MoonPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
     // TODO - move into planet and only create one CBTType shader, reload shader based on CBTType
-    m_MeshUpdater = MeshUpdater{device, globalDescriptorSetLayout};
+    m_MeshUpdater = {device, globalDescriptorSetLayout};
     m_MeshUpdater.initialize();
+
+
+    m_WaterDeformer = { device };
+    m_WaterDeformer.initialize();
 
     delete cbt;
 }
 
 void PlanetDemo::initCamera() {
-    OrbitingCameraSettings cameraSettings;
-//    FirstPersonSpectatorCameraSettings cameraSettings;
-    cameraSettings.orbitMinZoom = 0.1;
-    cameraSettings.orbitMaxZoom = 512.0f;
-    cameraSettings.offsetDistance = 1.0f;
-    cameraSettings.modelHeight = 0.5;
-    cameraSettings.fieldOfView = 60.0f;
-    cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
+    FirstPersonSpectatorCameraSettings cameraSettings;
+    cameraSettings.fieldOfView = g_CameraFOV;
+    cameraSettings.zFar = 100;
+    cameraSettings.zNear = 1;
+    cameraSettings.aspectRatio = static_cast<float>(width) / static_cast<float>(height);
 
-    camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    float yaw = glm::pi<float>()/4.2;
+    float pitch = -0.1f;
+    auto rotX = glm::rotate(glm::mat4{1}, pitch, {1, 0, 0});
+    auto rotY = glm::rotate(glm::mat4{1}, yaw, {0, 1, 0});
+
+    glm::vec3 pos{0, 0, -(g_EarthRadius + 100.f)};
+    pos = (rotX  * rotY * glm::vec4(pos, 1)).xyz();
+    camera->position(pos);
+    camera->rotate(glm::degrees(yaw), glm::degrees(pitch), 0);
 }
 
 void PlanetDemo::loadTextures() {
     textures::fromFile(device, milkyway, resource("milky_way/milky_way.png"), false, VK_FORMAT_R8G8B8A8_SRGB);
+}
+
+void PlanetDemo::newFrame() {
+    camera->newFrame();
+    updateConstantBuffers();
 }
 
 void PlanetDemo::creatSkyBox() {
@@ -237,18 +274,14 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_EarthPlanet.m_CBTMesh);
-    m_EarthPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, true, true);
+    m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_EarthPlanet);
+    m_EarthPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
+    m_WaterDeformer.apply_deformation(commandBuffer, m_EarthPlanet);
 
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        VkDeviceSize offset = 0;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.primitive.pipeline.handle);
-        camera->push(commandBuffer, render.primitive.layout);
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, m_EarthPlanet.m_BaseMesh.vertexBuffer, &offset);
-        vkCmdBindIndexBuffer(commandBuffer, m_EarthPlanet.m_BaseMesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(commandBuffer, m_EarthPlanet.m_BaseMesh.indexBuffer.sizeAs<uint32_t>(), 1, 0, 0, 0);
+        m_EarthRenderer.render(commandBuffer, *camera.get(), globalDescriptorSet);
 
         renderSkyBox(commandBuffer);
     }, commandBuffer);
@@ -277,6 +310,30 @@ void PlanetDemo::checkAppInputs() {
     camera->processInput();
 }
 
+void PlanetDemo::endFrame() {
+
+    if (m_MirrorPOV) {
+        const auto cam = camera->camera;
+        auto viewProjection = cam.proj * cam.view;
+        auto modelViewProjection = viewProjection;
+        auto invViewProjection = glm::inverse(viewProjection);
+
+        static Frustum frustum;
+        Frustum::extractFrustum(frustum, modelViewProjection);
+
+        m_updateCB.ViewProjectionMatrix = viewProjection;
+        m_updateCB.InvViewProjectionMatrix = invViewProjection;
+        m_updateCB.CameraPosition = camera->position();
+        m_updateCB.CameraForward = camera->viewDir;
+        m_updateCB.FarPlaneDistance = camera->far();
+        m_updateCB.FOV = camera->fov;
+        std::memcpy(m_updateCB.FrustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
+
+        m_EarthPlanet.update_constant_buffers(m_updateCB);
+    }
+    m_Time = elapsedTime;
+}
+
 void PlanetDemo::cleanup() {
     loader->stop();
     m_LebMatrixCache.release();
@@ -285,6 +342,24 @@ void PlanetDemo::cleanup() {
 
 void PlanetDemo::onPause() {
     VulkanBaseApp::onPause();
+}
+
+void PlanetDemo::updateConstantBuffers() {
+    const auto cam = camera->camera;
+    auto viewProjection = cam.proj * cam.view;
+    auto invViewProjection = glm::inverse(viewProjection);
+    global->ViewProjectionMatrix = viewProjection;
+    global->InvViewProjectionMatrix = invViewProjection;
+    global->CameraPosition = camera->position();
+    global->FoV = glm::radians(camera->fov);
+    global->ScreenSize = {width, height};
+    global->SunDirection = glm::vec3{glm::inversesqrt(3.f)}; // TODO update
+    global->FrameIndex = m_FrameIndex;
+    global->Time = elapsedTime;
+    global->FarPlaneDistance = camera->far();
+    global->WireFrameColor = m_WireframeColor;
+    global->WireFrameSize = m_WireframeSize;
+    global->ScreenSpaceShadow = m_RayTracingPath ? 1.0f : 0.0f;
 }
 
 

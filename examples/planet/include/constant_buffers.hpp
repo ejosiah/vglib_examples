@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 
+#include <array>
+
 struct Plane {
     glm::vec3 normal;
     float d;
@@ -13,10 +15,10 @@ struct Plane {
 struct GlobalCB {
     glm::mat4 ViewProjectionMatrix{1};
     glm::mat4 InvViewProjectionMatrix{1};
-    glm::vec4 ScreenSize{};
     glm::vec3 CameraPosition{};
     glm::vec3 SunDirection{1};
     glm::vec3 WireFrameColor{};
+    glm::vec2 ScreenSize{};
     uint32_t FrameIndex;
     float Time;
     float CullFlag;
@@ -27,15 +29,15 @@ struct GlobalCB {
 };
 
 struct UpdateCB {
-    glm::mat4 UpdateViewProjectionMatrix{1};
-    glm::mat4 UpdateInvViewProjectionMatrix{1};
-    glm::vec4 FrustumPlanes[6];
-    glm::vec3 UpdateCameraPosition{};
-    glm::vec3 UpdateCameraForward{};
+    glm::mat4 ViewProjectionMatrix{1};
+    glm::mat4 InvViewProjectionMatrix{1};
+    std::array<glm::vec4, 6> FrustumPlanes{};
+    glm::vec3 CameraPosition{};
+    glm::vec3 CameraForward{};
     float TriangleSize{};
     uint32_t MaxSubdivisionDepth{};
-    float UpdateFOV{};
-    float UpdateFarPlaneDistance{};
+    float FOV{};
+    float FarPlaneDistance{};
 };
 
 struct GeometryCB {

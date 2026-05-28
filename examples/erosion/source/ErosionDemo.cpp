@@ -144,7 +144,7 @@ void ErosionDemo::initCamera() {
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     auto pos = glm::vec3{-2272, 25, -517};
     auto target = pos + glm::vec3{-0.5, 0.13, 0.8};
-     camera->lookAt(pos, target, {0, 1, 0});
+    camera->lookAt(pos, target, {0, 1, 0});
 }
 
 void ErosionDemo::initBindlessDescriptor() {

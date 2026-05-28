@@ -2,7 +2,6 @@
 #include "AppContext.hpp"
 #include "planet.hpp"
 #include "filemanager.hpp"
-#include <array>
 #include <cinttypes>
 
 #include "Barrier.hpp"
@@ -145,7 +144,7 @@ namespace {
 
 MeshUpdater::MeshUpdater(VulkanDevice &device, VulkanDescriptorSetLayout globalDescriptorSetLayout)
 : m_Device(&device)
-, m_globalDescriptorSetLayout(globalDescriptorSetLayout){}
+, m_globalDescriptorSetLayout(std::move(globalDescriptorSetLayout)){}
 
 void MeshUpdater::initialize() {
     indirectBuffer = m_Device->createBuffer(StorageAndIndirectUsage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(VkDispatchIndirectCommand) * 3);
@@ -159,10 +158,13 @@ void MeshUpdater::initialize() {
     createPipelines();
 }
 
-void MeshUpdater::update(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSet, CBTMesh& mesh) {
+void MeshUpdater::update(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSet, Planet& planet) {
+    auto& mesh = planet.m_CBTMesh;
+    m_globalDescriptorSet = globalDescriptorSet;
     auto meshUpdaterSection = m_Device->section(cmd, "mesh_updater");
     m_currentNeighborsBufferIdx = mesh.currentNeighborsBufferIdx;
     m_nextNeighborsBufferIdx = (m_currentNeighborsBufferIdx + 1) % 2;
+
     Barrier::fragmentReadToComputeWrite(cmd);
 
     reset_buffers(cmd, mesh.descriptorSet, mesh.cbtDescriptorSet);
@@ -188,7 +190,7 @@ void MeshUpdater::update(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSe
     reduce(cmd, mesh);
 
     mesh.currentNeighborsBufferIdx = m_nextNeighborsBufferIdx;
-    prepare_indirection(cmd, mesh);
+    prepare_indirection(cmd, planet);
 }
 
 void MeshUpdater::createDescriptorSetLayout() {
@@ -231,121 +233,121 @@ std::vector<PipelineMetaData> MeshUpdater::metadata() {
         {
             .name = Reset,
             .shadePath = FileManager::resource("mesh_reset.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
         },
         {
             .name = Classify,
             .shadePath = FileManager::resource("mesh_classify.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout },
         },
         {
             .name = PrepareIndirect,
             .shadePath = FileManager::resource("mesh_prepare_indirect.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(int32_t) } },
         },
         {
             .name = Split,
             .shadePath = FileManager::resource("mesh_split.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) } },
         },
         {
             .name = Allocate128K,
             .shadePath = FileManager::resource("mesh_allocate.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .specializationConstants = cbt_type_specialization(CbtType128K),
         },
         {
             .name = Allocate256K,
             .shadePath = FileManager::resource("mesh_allocate.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .specializationConstants = cbt_type_specialization(CbtType256K),
         },
         {
             .name = Allocate512K,
             .shadePath = FileManager::resource("mesh_allocate.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .specializationConstants = cbt_type_specialization(CbtType512K),
         },
         {
             .name = Allocate1M,
             .shadePath = FileManager::resource("mesh_allocate.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .specializationConstants = cbt_type_specialization(CbtType1M),
         },
         {
             .name = Bisect128K,
             .shadePath = FileManager::resource("mesh_bisect.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType128K),
         },
         {
             .name = Bisect256K,
             .shadePath = FileManager::resource("mesh_bisect.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType256K),
         },
         {
             .name = Bisect512K,
             .shadePath = FileManager::resource("mesh_bisect.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType512K),
         },
         {
             .name = Bisect1M,
             .shadePath = FileManager::resource("mesh_bisect.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType1M),
         },
         {
             .name = PropagateBisect,
             .shadePath = FileManager::resource("mesh_propagate_bisect.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout},
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout},
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
         },
         {
             .name = PrepareSimplify,
             .shadePath = FileManager::resource("mesh_prepare_simplify.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout},
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout},
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
         },
         {
             .name = Simplify128K,
             .shadePath = FileManager::resource("mesh_simplify.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType128K),
         },
         {
             .name = Simplify256K,
             .shadePath = FileManager::resource("mesh_simplify.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType256K),
         },
         {
             .name = Simplify512K,
             .shadePath = FileManager::resource("mesh_simplify.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType512K),
         },
         {
             .name = Simplify1M,
             .shadePath = FileManager::resource("mesh_simplify.comp.spv"),
-            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::descriptorSetLayout, &Planet::cbtDescriptorSetLayout },
+            .layouts = { &m_globalDescriptorSetLayout, &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout, &Planet::cbtDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
             .specializationConstants = cbt_type_specialization(CbtType1M),
         },
         {
             .name = PropagateSimplify,
             .shadePath = FileManager::resource("mesh_propagate_simplify.comp.spv"),
-            .layouts = { &m_descriptorSetLayout, &Planet::descriptorSetLayout },
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(NeighborBufferIndices) } },
         },
         {
@@ -423,13 +425,13 @@ std::vector<PipelineMetaData> MeshUpdater::metadata() {
         {
             .name = BisectorIndexation,
             .shadePath = FileManager::resource("mesh_bisector_indexation.comp.spv"),
-            .layouts = { &Planet::descriptorSetLayout },
+            .layouts = { &Planet::meshDescriptorSetLayout, &m_globalDescriptorSetLayout },
             .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) } },
         },
         {
             .name = PrepareBisectorIndirect,
             .shadePath = FileManager::resource("mesh_prepare_bisector_indirect.comp.spv"),
-            .layouts = { &Planet::descriptorSetLayout },
+            .layouts = { &Planet::meshDescriptorSetLayout },
         },
     };
 }
@@ -439,7 +441,7 @@ void MeshUpdater::createPipelines() {
     m_compute.createPipelines();
 }
 
-void MeshUpdater::reset_buffers(VkCommandBuffer cmd, VkDescriptorSet meshDescriptorSet, VkDescriptorSet cbtDescriptorSet) {
+void MeshUpdater::reset_buffers(VkCommandBuffer cmd, VkDescriptorSet meshDescriptorSet, VkDescriptorSet cbtDescriptorSet) const {
     m_Device->section([&] {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(Reset));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout(Reset), 0, 1, &m_descriptorSet, 0, nullptr);
@@ -451,7 +453,7 @@ void MeshUpdater::reset_buffers(VkCommandBuffer cmd, VkDescriptorSet meshDescrip
 
 }
 
-void MeshUpdater::classify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) {
+void MeshUpdater::classify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) const {
     m_Device->section([&] {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(Classify));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout(Classify), 0, 1, &globalDescriptorSetLayout, 0, nullptr);
@@ -462,7 +464,7 @@ void MeshUpdater::classify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptor
     }, cmd, "classify");
 }
 
-void MeshUpdater::split(VkCommandBuffer cmd, const CBTMesh& mesh) {
+void MeshUpdater::split(VkCommandBuffer cmd, const CBTMesh& mesh) const {
     m_Device->section([&] {
         const auto layout = m_compute.layout(Split);
         const auto neighborsBufferIndex = m_currentNeighborsBufferIdx;
@@ -475,7 +477,7 @@ void MeshUpdater::split(VkCommandBuffer cmd, const CBTMesh& mesh) {
     }, cmd, "split");
 }
 
-void MeshUpdater::allocate(VkCommandBuffer cmd, const CBTMesh& mesh) {
+void MeshUpdater::allocate(VkCommandBuffer cmd, const CBTMesh& mesh) const {
     m_Device->section([&] {
         const auto pipelineName = allocate_pipeline_name(mesh.cbtType);
         const auto layout = m_compute.layout(pipelineName);
@@ -488,7 +490,7 @@ void MeshUpdater::allocate(VkCommandBuffer cmd, const CBTMesh& mesh) {
     }, cmd, "allocate");
 }
 
-void MeshUpdater::copy_neighbors(VkCommandBuffer cmd, const CBTMesh& mesh) {
+void MeshUpdater::copy_neighbors(VkCommandBuffer cmd, const CBTMesh& mesh) const {
     const auto& currentNeighborsBuffer = mesh.neighborsBuffers[m_currentNeighborsBufferIdx];
     const auto& nextNeighborsBuffer = mesh.neighborsBuffers[m_nextNeighborsBufferIdx];
     const VkBufferCopy copy{ 0, 0, currentNeighborsBuffer.size };
@@ -499,7 +501,7 @@ void MeshUpdater::copy_neighbors(VkCommandBuffer cmd, const CBTMesh& mesh) {
     Barrier::transferWriteToComputeRead(cmd);
 }
 
-void MeshUpdater::bisect(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) {
+void MeshUpdater::bisect(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) const {
     m_Device->section([&] {
         const auto pipelineName = bisect_pipeline_name(mesh.cbtType);
         const auto layout = m_compute.layout(pipelineName);
@@ -516,7 +518,7 @@ void MeshUpdater::bisect(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSe
     }, cmd, "bisect");
 }
 
-void MeshUpdater::propagate_bisect(VkCommandBuffer cmd, const CBTMesh &mesh) {
+void MeshUpdater::propagate_bisect(VkCommandBuffer cmd, const CBTMesh &mesh) const {
 
     m_Device->section([&] {
         const auto pipelineName = PropagateBisect;
@@ -532,7 +534,7 @@ void MeshUpdater::propagate_bisect(VkCommandBuffer cmd, const CBTMesh &mesh) {
     }, cmd, "propagate_bisect");
 }
 
-void MeshUpdater::prepare_simplify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) {
+void MeshUpdater::prepare_simplify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) const {
     m_Device->section([&] {
         const auto pipelineName = PrepareSimplify;
         const auto layout = m_compute.layout(pipelineName);
@@ -548,7 +550,7 @@ void MeshUpdater::prepare_simplify(VkCommandBuffer cmd, VkDescriptorSet globalDe
     }, cmd, "prepare_simplify");
 }
 
-void MeshUpdater::simplify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) {
+void MeshUpdater::simplify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) const {
     m_Device->section([&] {
         const auto pipelineName = simplify_pipeline_name(mesh.cbtType);
         const auto layout = m_compute.layout(pipelineName);
@@ -565,7 +567,7 @@ void MeshUpdater::simplify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptor
     }, cmd, "simplify");
 }
 
-void MeshUpdater::propagate_simplify(VkCommandBuffer cmd, const CBTMesh& mesh) {
+void MeshUpdater::propagate_simplify(VkCommandBuffer cmd, const CBTMesh& mesh) const {
     m_Device->section([&] {
         const auto pipelineName = PropagateSimplify;
         const auto layout = m_compute.layout(pipelineName);
@@ -580,7 +582,7 @@ void MeshUpdater::propagate_simplify(VkCommandBuffer cmd, const CBTMesh& mesh) {
     }, cmd, "propagate_simplify");
 }
 
-void MeshUpdater::reduce(VkCommandBuffer cmd, const CBTMesh& mesh) {
+void MeshUpdater::reduce(VkCommandBuffer cmd, const CBTMesh& mesh) const {
     m_Device->section([&] {
         const auto prepassPipelineName = reduce_prepass_pipeline_name(mesh.cbtType);
         auto layout = m_compute.layout(prepassPipelineName);
@@ -605,7 +607,7 @@ void MeshUpdater::reduce(VkCommandBuffer cmd, const CBTMesh& mesh) {
     }, cmd, "reduce");
 }
 
-void MeshUpdater::prepare_indirection(VkCommandBuffer cmd, VkDescriptorSet meshDescriptorSet, int32_t bufferIndex, uint32_t gx, const std::string& section) {
+void MeshUpdater::prepare_indirection(VkCommandBuffer cmd, VkDescriptorSet meshDescriptorSet, int32_t bufferIndex, uint32_t gx, const std::string& section) const {
     m_Device->section([&] {
         const auto layout = m_compute.layout(PrepareIndirect);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(PrepareIndirect));
@@ -617,13 +619,15 @@ void MeshUpdater::prepare_indirection(VkCommandBuffer cmd, VkDescriptorSet meshD
     }, cmd, fmt::format("prepare_indirect_{}", section));
 }
 
-void MeshUpdater::prepare_indirection(VkCommandBuffer cmd, const CBTMesh& mesh) {
+void MeshUpdater::prepare_indirection(VkCommandBuffer cmd, const Planet& planet) const {
     m_Device->section([&] {
+        const auto& mesh = planet.m_CBTMesh;
         const auto numGroups = (mesh.totalNumElements + WorkgroupSize - 1) / WorkgroupSize;
 
         auto layout = m_compute.layout(BisectorIndexation);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(BisectorIndexation));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &mesh.descriptorSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 1, 1, &m_globalDescriptorSet, 0, nullptr);
         vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(mesh.currentNeighborsBufferIdx), &mesh.currentNeighborsBufferIdx);
         vkCmdDispatch(cmd, numGroups, 1, 1);
 

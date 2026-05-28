@@ -12,16 +12,40 @@
 
 class Planet {
 public:
+    friend class EarthRenderer;
+    friend class WaterDeformer;
+    friend class MeshUpdater;
+
+    struct Params {
+        std::string name;
+        VulkanDevice& device;
+        VulkanDescriptorSetLayout globalDescriptorSetLayout;
+        float planetRadius;
+        glm::dvec3 planetCenter;
+        float toggleDistance;
+        float triangleSize;
+        uint32_t materialID;
+    };
+
+    static VulkanDescriptorSetLayout meshDescriptorSetLayout;
+    static VulkanDescriptorSetLayout cbtDescriptorSetLayout;
+    static VulkanDescriptorSetLayout lebDescriptorSetLayout;
+
+    VkDescriptorSet m_descriptorSet{};
+    VkDescriptorSet m_CBTDescriptorSet{};
+    VkDescriptorSet m_LEBDescriptorSet{};
+
     Planet() = default;
 
-    Planet(VulkanDevice& device, const std::string& name, float planetRadius, const glm::dvec3& planetCenter, float toggleDistance,
-         float triangleSize, uint32_t materialID);
+    explicit Planet(const Params& params);
 
-    void initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh, VulkanDescriptorSetLayout globalDescriptorSetLayout);
+    void initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh);
 
-    void createDescriptorSetLayout();
+    void createDescriptorSetLayouts();
 
-    static void createDescriptorSetLayout(VulkanDevice& device);
+    void createMeshDescriptorSetLayout();
+
+    static void createMeshDescriptorSetLayout(VulkanDevice& device);
 
     void createCBTDescriptorSetLayout();
 
@@ -41,14 +65,16 @@ public:
 
     void evaluate_leb(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSet, bool clearBuffer, bool complete = false);
 
+    void update_constant_buffers(const UpdateCB& updateCb);
+
 protected:
     std::vector<PipelineMetaData> metadata();
 
     void createPipelines();
 
-public:
+private:
     // General
-    VulkanDevice* m_Device{};
+    VulkanDevice* m_device{};
     VulkanDescriptorSetLayout m_globalDescriptorSetLayout;
     std::string m_name;
 
@@ -73,15 +99,9 @@ public:
         UpdateCB* cpu{};
     } m_UpdateCB;
 
-    VkDescriptorSet m_descriptorSet{};
-    VkDescriptorSet m_CBTDescriptorSet{};
-    VkDescriptorSet m_LEBDescriptorSet{};
     // Compute shader
     // ComputeShader m_LebEvalCS = 0;
     // ComputeShader m_ClearCS = 0;
     ComputePipelines m_compute;
-    static VulkanDescriptorSetLayout descriptorSetLayout;
-    static VulkanDescriptorSetLayout cbtDescriptorSetLayout;
-    static VulkanDescriptorSetLayout lebDescriptorSetLayout;
 
 };

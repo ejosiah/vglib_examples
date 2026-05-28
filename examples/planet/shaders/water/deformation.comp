@@ -1,0 +1,39 @@
+#version 460
+
+#extension GL_EXT_debug_printf : enable
+
+#define MESH_SET 0
+#include "../shared_lib/mesh_constants.glsl"
+#include "../transforms.glsl"
+
+#define WORKGROUP_SIZE 64
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+void main() {
+    uint currentID = gl_GlobalInvocationID.x;
+
+    // This thread doesn't have any work to do, we're done
+    if (currentID >= _IndirectDrawBuffer[9] * 4u)
+        return;
+
+//    debugPrintfEXT("id: %u, draw count: %u\n", currentID, _IndirectDrawBuffer[9]);
+
+    // Extract the bisector ID and the vertexID
+    uint bisectorID = currentID / 4u;
+    uint localVertexID = currentID % 4u;
+
+    bisectorID = _BisectorIndicesBuffer[bisectorID];
+
+    currentID = localVertexID < 3u ? bisectorID * 3u + localVertexID : 3u * _TotalNumElements + bisectorID;
+
+    REAL3_DP positionWS = _LEBPositionBuffer[currentID];
+    vec3 positionRWS = vec3(positionWS - REAL3_DP(_UpdateCameraPosition));
+
+
+    vec3 p = vec3(positionWS);
+//    debugPrintfEXT("id: %u, pos: <%f, %f, %f>\n", currentID, p.x, p.y, p.z);
+
+    // Export the deformed position
+    _CurrentVertexBuffer[currentID] = positionRWS;
+}

@@ -5,6 +5,7 @@
 
 #define UNSUPPORTED_FIRST_BIT_HIGH
 
+#define MESH_UPDATE_SET 0
 #include "common.glsl"
 
 #define MESH_SET 1

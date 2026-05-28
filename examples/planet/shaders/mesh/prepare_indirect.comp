@@ -6,11 +6,11 @@
 
 layout(local_size_x = 1) in;
 
+#define MESH_UPDATE_SET 0
 #define MESH_UPDATE_INDIRECT_BUFFER
 #include "common.glsl"
 
 #define MESH_SET 1
-#define MESH_SKIP_INDIRECT_DISPATCH_BUFFER
 #include "../shared_lib/mesh_constants.glsl"
 
 layout(push_constant) uniform Constants {
@@ -19,7 +19,7 @@ layout(push_constant) uniform Constants {
 
 void main() {
     uint currentID = gl_GlobalInvocationID.x;
-    _IndirectDispatchBuffer[currentID * 3 + 0] = (_WorkListBuffer(bufferIndex)[currentID] + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
-    _IndirectDispatchBuffer[currentID * 3 + 1] = 1;
-    _IndirectDispatchBuffer[currentID * 3 + 2] = 1;
+    mesh_updater._IndirectDispatchBuffer[currentID * 3 + 0] = (_WorkListBuffer(bufferIndex)[currentID] + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+    mesh_updater._IndirectDispatchBuffer[currentID * 3 + 1] = 1;
+    mesh_updater._IndirectDispatchBuffer[currentID * 3 + 2] = 1;
 }

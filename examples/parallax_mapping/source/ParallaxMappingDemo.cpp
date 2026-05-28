@@ -4,15 +4,16 @@
 #include "ImGuiPlugin.hpp"
 
 ParallaxMappingDemo::ParallaxMappingDemo(const Settings& settings) : VulkanBaseApp("Parallax Mapping", settings) {
-    fileManager.addSearchPath(".");
-    fileManager.addSearchPath("../../examples/parallax_mapping");
-    fileManager.addSearchPath("../../examples/parallax_mapping/spv");
-    fileManager.addSearchPath("../../examples/parallax_mapping/models");
-    fileManager.addSearchPath("../../examples/parallax_mapping/textures");
-    fileManager.addSearchPath("../../data/shaders");
-    fileManager.addSearchPath("../../data/models");
-    fileManager.addSearchPath("../../data/textures");
-    fileManager.addSearchPath("../../data");
+    fileManager().addSearchPath(".");
+    fileManager().addSearchPath("parallax_mapping");
+    fileManager().addSearchPath("parallax_mapping/data/textures");
+    fileManager().addSearchPath("parallax_mapping/spv");
+    fileManager().addSearchPath("parallax_mapping/models");
+    fileManager().addSearchPath("parallax_mapping/textures");
+    fileManager().addSearchPath("../data/shaders");
+    fileManager().addSearchPath("../data/models");
+    fileManager().addSearchPath("../data/textures");
+    fileManager().addSearchPath("../data");
 }
 
 void ParallaxMappingDemo::initApp() {
@@ -25,7 +26,7 @@ void ParallaxMappingDemo::initApp() {
     createCube();
     createPlane();
     initCamera();
-    updateDescriptorSets(materials[MATERIAL_BRICK]);
+    updateDescriptorSets(materials[MATERIAL_MAN_HOLE]);
     createRenderPipeline();
     createComputePipeline();
 }
@@ -80,6 +81,13 @@ void ParallaxMappingDemo::createDescriptorSetLayout() {
     materialSet = descriptorPool.allocate({ materialSetLayout }).front();
 }
 
+void ParallaxMappingDemo::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+}
+
 void ParallaxMappingDemo::updateDescriptorSets(const Material& material) {
     auto [width, height, depth] = std::tuple(float(material.distanceMap.width), float(material.distanceMap.height), float(material.distanceMap.depth));
     distanceMapping.constants.normalizationFactor = {depth/width, depth/height, 1};
@@ -89,28 +97,28 @@ void ParallaxMappingDemo::updateDescriptorSets(const Material& material) {
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    VkDescriptorImageInfo albedoInfo{ material.albedo.sampler, material.albedo.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo albedoInfo{ material.albedo.sampler.handle, material.albedo.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[0].pImageInfo = &albedoInfo;
     
     writes[1].dstSet = materialSet;
     writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    VkDescriptorImageInfo normalInfo{ material.normal.sampler, material.normal.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo normalInfo{ material.normal.sampler.handle, material.normal.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[1].pImageInfo = &normalInfo;
     
     writes[2].dstSet = materialSet;
     writes[2].dstBinding = 2;
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
-    VkDescriptorImageInfo depthInfo{ material.depth.sampler, material.depth.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo depthInfo{ material.depth.sampler.handle, material.depth.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[2].pImageInfo = &depthInfo;
 
     writes[3].dstSet = materialSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[3].descriptorCount = 1;
-    VkDescriptorImageInfo distInfo{ material.distanceMap.sampler, material.distanceMap.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo distInfo{ material.distanceMap.sampler.handle, material.distanceMap.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     writes[3].pImageInfo = &distInfo;
     
     device.updateDescriptorSets(writes);
@@ -200,16 +208,16 @@ void ParallaxMappingDemo::createRenderPipeline() {
 }
 
 void ParallaxMappingDemo::createComputePipeline() {
-    auto module = VulkanShaderModule{ "../../data/shaders/pass_through.comp.spv", device};
+    auto module = device.createShaderModule(resource("pass_through.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
     compute.layout = device.createPipelineLayout();
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
-    computeCreateInfo.layout = compute.layout;
+    computeCreateInfo.layout = compute.layout.handle;
 
-    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache);
+    compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
 }
 
 
@@ -269,13 +277,13 @@ VkCommandBuffer *ParallaxMappingDemo::buildCommandBuffers(uint32_t imageIndex, u
     return &commandBuffer;
 }
 
-void ParallaxMappingDemo::render(VkCommandBuffer commandBuffer, Object& object, VkPipeline pipeline, VkPipelineLayout layout,
+void ParallaxMappingDemo::render(VkCommandBuffer commandBuffer, Object& object, VulkanPipeline pipeline, VulkanPipelineLayout layout,
                                  void *constants, uint32_t constantsSize) {
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle);
     cameraController->push(commandBuffer, layout);
-    vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), constantsSize, constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &materialSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), constantsSize, constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout.handle, 0, 1, &materialSet, 0, VK_NULL_HANDLE);
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, object.vertexBuffer, &offset);
     vkCmdBindIndexBuffer(commandBuffer, object.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -293,13 +301,13 @@ void ParallaxMappingDemo::update(float time) {
     static int prevMaterial = currentMaterial;
     if(prevMaterial != currentMaterial){
         prevMaterial = currentMaterial;
-        if(currentMaterial > MATERIAL_BOX){
+        // if(currentMaterial > MATERIAL_BOX){
             parallaxOcclusion.constants.invertDepthMap = true;
             reliefMapping.constants.invertDepthMap = true;
-        }else{
-            parallaxOcclusion.constants.invertDepthMap = false;
-            reliefMapping.constants.invertDepthMap = false;
-        }
+        // }else{
+        //     parallaxOcclusion.constants.invertDepthMap = false;
+        //     reliefMapping.constants.invertDepthMap = false;
+        // }
         updateDescriptorSets(materials[currentMaterial]);
     }
 }
@@ -318,15 +326,15 @@ void ParallaxMappingDemo::onPause() {
 }
 
 void ParallaxMappingDemo::loadMaterial() {
-    textures::fromFile(device, materials[MATERIAL_BRICK].albedo, resource("bricks.jpg"));
-    textures::fromFile(device, materials[MATERIAL_BRICK].normal, resource("bricks_normal.jpg"));
-    textures::fromFile(device, materials[MATERIAL_BRICK].depth, resource("bricks_disp.jpg"));
-    createDistanceMap(materials[MATERIAL_BRICK].depth, materials[MATERIAL_BRICK].distanceMap);
+    // textures::fromFile(device, materials[MATERIAL_BRICK].albedo, resource("bricks.jpg"));
+    // textures::fromFile(device, materials[MATERIAL_BRICK].normal, resource("bricks_normal.jpg"));
+    // textures::fromFile(device, materials[MATERIAL_BRICK].depth, resource("bricks_disp.jpg"));
+    // createDistanceMap(materials[MATERIAL_BRICK].depth, materials[MATERIAL_BRICK].distanceMap);
 
-    textures::fromFile(device, materials[MATERIAL_BOX].albedo, resource("wood.png"));
-    textures::fromFile(device, materials[MATERIAL_BOX].normal, resource("toy_box_normal.png"));
-    textures::fromFile(device, materials[MATERIAL_BOX].depth, resource("toy_box_disp.png"));
-    createDistanceMap(materials[MATERIAL_BOX].depth, materials[MATERIAL_BOX].distanceMap);
+    // textures::fromFile(device, materials[MATERIAL_BOX].albedo, resource("wood.png"));
+    // textures::fromFile(device, materials[MATERIAL_BOX].normal, resource("toy_box_normal.png"));
+    // textures::fromFile(device, materials[MATERIAL_BOX].depth, resource("toy_box_disp.png"));
+    // createDistanceMap(materials[MATERIAL_BOX].depth, materials[MATERIAL_BOX].distanceMap);
     
     textures::fromFile(device, materials[MATERIAL_MAN_HOLE].albedo, resource("fan-color.png"), true);
     textures::fromFile(device, materials[MATERIAL_MAN_HOLE].normal, resource("fan-normal.png"), true);
@@ -414,8 +422,8 @@ void ParallaxMappingDemo::renderUI(VkCommandBuffer commandBuffer) {
         ImGui::RadioButton("Box", &currentObject, OBJECT_CUBE); ImGui::SameLine();
         ImGui::RadioButton("Plane", &currentObject, OBJECT_PLANE);
 
-        static const char* cMaterials[6] = {"Bricks", "Box", "Man hole", "text", "NV Eye", "Stone bricks"};
-        ImGui::Combo("Material", &currentMaterial, cMaterials, 6);
+        static const char* cMaterials[4] = {"Man hole", "text", "NV Eye", "Stone bricks"};
+        ImGui::Combo("Material", &currentMaterial, cMaterials, std::size(cMaterials));
     }
 
     ImGui::End();
@@ -432,6 +440,7 @@ int main(){
         settings.height = 720;
         settings.depthTest = true;
 
+        fs::current_path("../../../../examples/");
         auto app = ParallaxMappingDemo{ settings };
         std::unique_ptr<Plugin> plugin = std::make_unique<ImGuiPlugin>();
         app.addPlugin(plugin);

@@ -133,6 +133,8 @@ public:
 
     static VulkanRenderPass& renderPass();
 
+    static Prototypes& prototypes();
+
 private:
     void createDescriptorSets();
 

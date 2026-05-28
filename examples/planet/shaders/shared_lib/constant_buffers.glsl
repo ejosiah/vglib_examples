@@ -1,6 +1,8 @@
 #ifndef GLOBAL_CB_HLSL
 #define GLOBAL_CB_HLSL
 
+#extension GL_EXT_scalar_block_layout : enable
+
 #ifndef UINT32_MAX
 #define UINT32_MAX 0xffffffffu
 #endif // UINT32_MAX
@@ -13,10 +15,10 @@
 layout(set = GLOBAL_CB_SET, binding = 0, scalar) buffer GlobalCB {
     mat4 _ViewProjectionMatrix;
     mat4 _InvViewProjectionMatrix;
-    vec4 _ScreenSize;
     vec3 _CameraPosition;
     vec3 _SunDirection;
     vec3 _WireFrameColor;
+    vec2 _ScreenSize;
     uint _FrameIndex;
     float _Time;
     float _CullFlag;
@@ -27,12 +29,9 @@ layout(set = GLOBAL_CB_SET, binding = 0, scalar) buffer GlobalCB {
 };
 
 
-#if defined(GLOBAL_CB_BINDING_SLOT)
-bool pre_rendering_frame()
-{
+bool pre_rendering_frame() {
     return _FrameIndex == UINT32_MAX;
 }
-#endif
 #endif // GLOBAL_CB_SET
 
 #endif // GLOBAL_CB_HLSL

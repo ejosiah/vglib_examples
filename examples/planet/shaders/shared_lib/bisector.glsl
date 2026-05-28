@@ -1,5 +1,5 @@
-#ifndef BISECTOR_H
-#define BISECTOR_H
+#ifndef BISECTOR_GLSL
+#define BISECTOR_GLSL
 
 // Pointer to an invalid neighbor or index
 #define INVALID_POINTER 4294967295
@@ -51,8 +51,8 @@ uint HeapIDDepth(uint64_t x)
 #else
 uint HeapIDDepth(uint64_t heapID)
 {
-    return firstbithigh(int64_t(heapID)) + 1;
+    return uint(findMSB(heapID)) + 1u;
 }
 #endif
 
-#endif // BISECTOR_H
+#endif // BISECTOR_GLSL

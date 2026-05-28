@@ -10,10 +10,6 @@ struct BisectorGeometry {
     vec3 p[4];
 };
 
-#ifndef MESH_UPDATE_SET
-#define MESH_UPDATE_SET 0
-#endif // MESH_UPDATE_SET
-
 #ifdef MESH_UPDATE_SET
 layout(set = MESH_UPDATE_SET, binding = 0, scalar) buffer MemoryBuffer {
     int _MemoryBuffer[];
@@ -24,9 +20,9 @@ layout(set = MESH_UPDATE_SET, binding = 1, scalar) buffer ValidationBuffer {
 };
 
 #ifdef MESH_UPDATE_INDIRECT_BUFFER
-layout(set = MESH_UPDATE_SET, binding = 2, scalar) buffer IndirectDispatchBuffer {
+layout(set = MESH_UPDATE_SET, binding = 2, scalar) buffer MeshUpdaterIndirectDispatchBuffer {
     uint _IndirectDispatchBuffer[];
-};
+} mesh_updater;
 #endif // MESH_UPDATE_INDIRECT_BUFFER
 #endif // MESH_UPDATE_SET
 

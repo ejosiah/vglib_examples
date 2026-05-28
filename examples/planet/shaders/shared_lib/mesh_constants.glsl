@@ -1,6 +1,11 @@
 #ifndef MESH_COSNTANTS_GLSL
 #define MESH_COSNTANTS_GLSL
 
+#include "../types.glsl"
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_nonuniform_qualifier : require
 
 #ifndef MESH_SET
 #define MESH_SET 0
@@ -38,11 +43,9 @@ layout(set = MESH_SET, binding = 4, scalar) buffer IndirectDrawBuffer {
     uint _IndirectDrawBuffer[];
 };
 
-#ifndef MESH_SKIP_INDIRECT_DISPATCH_BUFFER
-layout(set = MESH_SET, binding = 5, scalar) buffer IndirectDispatchBuffer {
+layout(set = MESH_SET, binding = 5, scalar) buffer MeshIndirectDispatchBuffer {
     uint _IndirectDispatchBuffer[];
-};
-#endif // MESH_SKIP_INDIRECT_DISPATCH_BUFFER
+} mesh;
 
 layout(set = MESH_SET, binding = 6, scalar) buffer BisectorIndicesBuffer {
     uint _BisectorIndicesBuffer[];
@@ -61,18 +64,33 @@ layout(set = MESH_SET, binding = 9, scalar) buffer HeapIDBuffer {
     uint64_t _HeapIDBuffer[];
 };
 
+#ifdef BISECTOR_GLSL
 layout(set = MESH_SET, binding = 10, scalar) buffer BisectorDataBuffer {
     BisectorData _BisectorDataBuffer[];
+};
+#endif
+
+layout(set = MESH_SET, binding = 11, scalar) buffer WorkListBuffers {
+    uint buf[];
+} _WorkListBuffers[];
+
+layout(set = MESH_SET, binding = 12, scalar) readonly buffer BaseVertexBuffer {
+    vec3 _BaseVertexBuffer[];
+};
+
+layout(set = MESH_SET, binding = 13, scalar) buffer LEBPositionBuffer {
+    REAL3_DP _LEBPositionBuffer[];
+};
+
+layout(set = MESH_SET, binding = 14, scalar) readonly buffer PlanetCB {
+    vec3 _PlanetCenter;
+    float _PlanetRadius;
 };
 
 #define WORK_LIST_CLASSIFICATION 0
 #define WORK_LIST_SIMPLIFICATION 1
 #define WORK_LIST_ALLOCATE 2
 #define WORK_LIST_PROPAGATE 3
-
-layout(set = MESH_SET, binding = 11, scalar) buffer WorkListBuffers {
-    uint buf[];
-} _WorkListBuffers[];
 
 #define _WorkListBuffer(index) _WorkListBuffers[index].buf
 #define _ClassificationBuffer _WorkListBuffer(WORK_LIST_CLASSIFICATION)

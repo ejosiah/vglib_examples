@@ -290,4 +290,8 @@ VulkanRenderPass &AppContext::renderPass() {
     return *instance._renderPass;
 }
 
+Prototypes & AppContext::prototypes() {
+    return *instance._prototype;
+}
+
 AppContext AppContext::instance;

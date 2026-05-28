@@ -26,6 +26,8 @@ protected:
 
     void createDescriptorSetLayout();
 
+    void beforeDeviceCreation() override;
+
     void updateDescriptorSets(const Material& material);
 
     void createCommandPool();
@@ -44,7 +46,7 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
-    void render(VkCommandBuffer commandBuffer, Object& object, VkPipeline pipeline, VkPipelineLayout layout, void* constants, uint32_t constantsSize);
+    void render(VkCommandBuffer commandBuffer, Object& object, VulkanPipeline pipeline, VulkanPipelineLayout layout, void* constants, uint32_t constantsSize);
 
     void update(float time) override;
 
@@ -102,12 +104,12 @@ protected:
     std::array<Material, 6> materials;
     int currentMaterial = 0;
 
-    static constexpr int MATERIAL_BRICK = 0;
-    static constexpr int MATERIAL_BOX = 1;
-    static constexpr int MATERIAL_MAN_HOLE = 2;
-    static constexpr int MATERIAL_TEXT = 3;
-    static constexpr int MATERIAL_NV_EYE = 4;
-    static constexpr int MATERIAL_STONE_BRICK = 5;
+    // static constexpr int MATERIAL_BRICK = 0;
+    // static constexpr int MATERIAL_BOX = 0;
+    static constexpr int MATERIAL_MAN_HOLE = 0;
+    static constexpr int MATERIAL_TEXT = 1;
+    static constexpr int MATERIAL_NV_EYE = 2;
+    static constexpr int MATERIAL_STONE_BRICK = 3;
 
     VulkanDescriptorSetLayout materialSetLayout;
     VkDescriptorSet materialSet;
