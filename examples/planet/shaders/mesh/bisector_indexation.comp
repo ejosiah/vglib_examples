@@ -2,7 +2,6 @@
 
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_EXT_debug_printf : enable
 
 #include "common.glsl"
 
@@ -40,8 +39,9 @@ void BisectorElementIndexation(uint currentID)
     uint64_t cHeapID = _HeapIDBuffer[currentID];
 
     // Deallocated element, we don't care
-    if (cHeapID == 0ul)
+    if (cHeapID == 0ul) {
         return;
+    }
 
     // Reserve a slot for this bisector
     uint bisectorSlot = atomicAdd(_IndirectDrawBuffer[0], 3u);
@@ -53,10 +53,9 @@ void BisectorElementIndexation(uint currentID)
     BisectorData cBisectorData = _BisectorDataBuffer[currentID];
 
     // Is it visible?
-    if ((cBisectorData.flags & VISIBLE_BISECTOR) == 0u)
+    if ((cBisectorData.flags & VISIBLE_BISECTOR) == 0u) {
         return;
-
-//    debugPrintfEXT("frame: %d, currentID, %d, cHeapID: %d, is visible\n", int(_FrameIndex), int(currentID), int(cHeapID));
+    }
 
     // Reserve a slot for this visible bisector
     bisectorSlot = atomicAdd(_IndirectDrawBuffer[4], 3u);
@@ -65,13 +64,13 @@ void BisectorElementIndexation(uint currentID)
     _VisibleBisectorIndicesBuffer[bisectorSlot / 3u] = currentID;
 
     // Is it modified?
-    if ((cBisectorData.flags & MODIFIED_BISECTOR) == 0u)
+    if ((cBisectorData.flags & MODIFIED_BISECTOR) == 0u) {
         return;
+    }
 
     // Reserve a slot for this modified bisector
     bisectorSlot = atomicAdd(_IndirectDrawBuffer[8], 4u);
 
     // Keep track of it's global ID
-//    debugPrintfEXT("currentID, %d, cHeapID: %d\n, slot: %d, drawCount: %d", int(currentID), int(cHeapID), int(bisectorSlot), int(_IndirectDrawBuffer[0]));
     _ModifiedBisectorIndicesBuffer[bisectorSlot / 4u] = currentID;
 }

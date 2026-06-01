@@ -3,6 +3,11 @@
 #include "planet.hpp"
 #include "filemanager.hpp"
 #include <cinttypes>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <limits>
+#include <utility>
 
 #include "Barrier.hpp"
 
@@ -53,7 +58,9 @@ namespace {
     constexpr auto PrepareBisectorIndirect = "PrepareBisectorIndirect";
 
     constexpr uint32_t WorkgroupSize = 64;
-    constexpr auto StorageAndIndirectUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    constexpr auto StorageAndIndirectUsage =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    constexpr auto DumpableStorageUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     int32_t CbtType128K = static_cast<int32_t>(CBTType::OCBT_128K);
     int32_t CbtType256K = static_cast<int32_t>(CBTType::OCBT_256K);
     int32_t CbtType512K = static_cast<int32_t>(CBTType::OCBT_512K);
@@ -146,10 +153,11 @@ MeshUpdater::MeshUpdater(VulkanDevice &device, VulkanDescriptorSetLayout globalD
 : m_Device(&device)
 , m_globalDescriptorSetLayout(std::move(globalDescriptorSetLayout)){}
 
-void MeshUpdater::initialize() {
+void MeshUpdater::initialize(VkDescriptorSet globalDescriptorSet) {
+    m_globalDescriptorSet = globalDescriptorSet;
     indirectBuffer = m_Device->createBuffer(StorageAndIndirectUsage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(VkDispatchIndirectCommand) * 3);
-    memoryBuffer = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int32_t) * 2);
-    validationBuffer = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int32_t) * 2);
+    memoryBuffer = m_Device->createBuffer(DumpableStorageUsage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int32_t) * 2);
+    validationBuffer = m_Device->createBuffer(DumpableStorageUsage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int32_t) * 2);
     validationBufferRB = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(int32_t) * 2);
     occupancyBufferRB = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * 2);
 
@@ -453,7 +461,7 @@ void MeshUpdater::reset_buffers(VkCommandBuffer cmd, VkDescriptorSet meshDescrip
 
 }
 
-void MeshUpdater::classify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) const {
+void MeshUpdater::classify(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, const CBTMesh& mesh) {
     m_Device->section([&] {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(Classify));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.layout(Classify), 0, 1, &globalDescriptorSetLayout, 0, nullptr);
@@ -640,4 +648,157 @@ void MeshUpdater::prepare_indirection(VkCommandBuffer cmd, const Planet& planet)
 
         Barrier::computeWriteToDrawIndirect(cmd);
     }, cmd, "prepare_indirect_draw_dispatch");
+}
+
+void MeshUpdater::enqueue_buffer_dump(VkCommandBuffer cmd, const char* name, const VulkanBuffer& sourceBuffer,
+                                      VkDeviceSize elementSize, BufferDumpFormat format) {
+    PendingBufferDump dump;
+    dump.name = name;
+    dump.readbackBuffer = m_Device->createBuffer(
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sourceBuffer.size,
+        fmt::format("{}_frame_{}_readback", name, m_pendingBufferDumpFrameIndex));
+    dump.elementSize = elementSize;
+    dump.format = format;
+
+    const VkBufferCopy copy{0, 0, sourceBuffer.size};
+    vkCmdCopyBuffer(cmd, sourceBuffer, dump.readbackBuffer, 1, &copy);
+    Barrier::transferWriteToHostRead(cmd, dump.readbackBuffer);
+    m_pendingBufferDumps.push_back(std::move(dump));
+}
+
+void MeshUpdater::capture_frame_buffer_dumps(VkCommandBuffer cmd, const CBTMesh& mesh, const BaseMesh& baseMesh,
+                                             const VulkanBuffer& lebMatrixBuffer, uint32_t frameIndex) {
+    if (!m_pendingBufferDumps.empty())
+        return;
+
+    m_pendingBufferDumpFrameIndex = frameIndex;
+    m_pendingNeighborsBufferIdx = mesh.currentNeighborsBufferIdx;
+    Barrier::computeWriteToTransferRead(cmd);
+
+    enqueue_buffer_dump(cmd, "earth.base.vertexBuffer", baseMesh.vertexBuffer, sizeof(glm::vec3), BufferDumpFormat::Float3);
+    enqueue_buffer_dump(cmd, "earth.base.indexBuffer", baseMesh.indexBuffer, sizeof(glm::uvec3), BufferDumpFormat::UInt3);
+    enqueue_buffer_dump(cmd, "earth.cbt.bufferArray0", mesh.gpuCBT.bufferArray[0], sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.cbt.bufferArray1", mesh.gpuCBT.bufferArray[1], sizeof(uint64_t), BufferDumpFormat::UInt64);
+    enqueue_buffer_dump(cmd, "earth.heapIDBuffer", mesh.heapIDBuffer, sizeof(uint64_t), BufferDumpFormat::UInt64);
+    enqueue_buffer_dump(cmd, "earth.neighborsBuffers0", mesh.neighborsBuffers[0], sizeof(glm::uvec3), BufferDumpFormat::UInt3);
+    enqueue_buffer_dump(cmd, "earth.neighborsBuffers1", mesh.neighborsBuffers[1], sizeof(glm::uvec3), BufferDumpFormat::UInt3);
+    enqueue_buffer_dump(cmd, "earth.updateBuffer", mesh.updateBuffer, sizeof(cbt_large::BisectorData), BufferDumpFormat::Bisector);
+    enqueue_buffer_dump(cmd, "earth.classificationBuffer", mesh.classificationBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.simplificationBuffer", mesh.simplificationBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.allocateBuffer", mesh.allocateBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.propagateBuffer", mesh.propagateBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.indirectDrawBuffer", mesh.indirectDrawBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.indirectDispatchBuffer", mesh.indirectDispatchBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.indexedBisectorBuffer", mesh.indexedBisectorBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.visibleIndexedBisectorBuffer", mesh.visibleIndexedBisectorBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "earth.modifiedIndexedBisectorBuffer", mesh.modifiedIndexedBisectorBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+
+    const auto lebVertexFormat = mesh.lebVertexBuffer.size == sizeof(glm::dvec3) * mesh.totalNumElements * 4
+                                     ? BufferDumpFormat::Double3
+                                     : BufferDumpFormat::Float3;
+    enqueue_buffer_dump(cmd, "earth.lebVertexBuffer", mesh.lebVertexBuffer,
+                        lebVertexFormat == BufferDumpFormat::Double3 ? sizeof(glm::dvec3) : sizeof(glm::vec3),
+                        lebVertexFormat);
+    enqueue_buffer_dump(cmd, "earth.currentVertexBuffer", mesh.currentVertexBuffer, sizeof(glm::vec3), BufferDumpFormat::Float3);
+    enqueue_buffer_dump(cmd, "earth.currentDisplacementBuffer", mesh.currentDisplacementBuffer, sizeof(glm::vec3), BufferDumpFormat::Float3);
+    enqueue_buffer_dump(cmd, "meshUpdater.indirectBuffer", indirectBuffer, sizeof(uint32_t), BufferDumpFormat::UInt32);
+    enqueue_buffer_dump(cmd, "meshUpdater.memoryBuffer", memoryBuffer, sizeof(int32_t), BufferDumpFormat::Int32);
+    enqueue_buffer_dump(cmd, "meshUpdater.validationBuffer", validationBuffer, sizeof(int32_t), BufferDumpFormat::Int32);
+    enqueue_buffer_dump(cmd, "lebMatrixCache", lebMatrixBuffer, sizeof(glm::mat3), BufferDumpFormat::Float3x3);
+}
+
+void MeshUpdater::write_pending_frame_buffer_dumps(const std::string& projectDir) {
+    if (m_pendingBufferDumps.empty())
+        return;
+
+    m_Device->wait();
+
+    const auto logDir = std::filesystem::path(projectDir) / "buffer_logs" /
+                        fmt::format("frame_{:06}", m_pendingBufferDumpFrameIndex);
+    std::filesystem::create_directories(logDir);
+
+    const auto formatName = [](BufferDumpFormat format) {
+        switch (format) {
+            case BufferDumpFormat::UInt32: return "uint32";
+            case BufferDumpFormat::Int32: return "int32";
+            case BufferDumpFormat::UInt64: return "uint64";
+            case BufferDumpFormat::UInt3: return "uint3";
+            case BufferDumpFormat::Float3: return "float3";
+            case BufferDumpFormat::Double3: return "double3";
+            case BufferDumpFormat::Bisector: return "BisectorData";
+            case BufferDumpFormat::Float3x3: return "float3x3";
+        }
+        return "unknown";
+    };
+
+    std::ofstream manifest(logDir / "manifest.txt");
+    manifest << "currentNeighborsBufferIdx = " << m_pendingNeighborsBufferIdx << '\n';
+
+    for (auto& dump : m_pendingBufferDumps) {
+        manifest << dump.name << ": bytes = " << dump.readbackBuffer.size << ", elementSize = " << dump.elementSize
+                 << ", format = " << formatName(dump.format) << '\n';
+
+        std::ofstream file(logDir / fmt::format("{}.txt", dump.name));
+        file << std::setprecision(std::numeric_limits<double>::max_digits10);
+        const auto* buffer = static_cast<const char*>(dump.readbackBuffer.map());
+        const auto numValues = dump.readbackBuffer.size / dump.elementSize;
+
+        switch (dump.format) {
+            case BufferDumpFormat::UInt32: {
+                const auto* values = reinterpret_cast<const uint32_t*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx) file << '[' << idx << "] = " << values[idx] << '\n';
+                break;
+            }
+            case BufferDumpFormat::Int32: {
+                const auto* values = reinterpret_cast<const int32_t*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx) file << '[' << idx << "] = " << values[idx] << '\n';
+                break;
+            }
+            case BufferDumpFormat::UInt64: {
+                const auto* values = reinterpret_cast<const uint64_t*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx) file << '[' << idx << "] = " << values[idx] << '\n';
+                break;
+            }
+            case BufferDumpFormat::UInt3: {
+                const auto* values = reinterpret_cast<const glm::uvec3*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx)
+                    file << '[' << idx << "] = { " << values[idx].x << ", " << values[idx].y << ", " << values[idx].z << " }\n";
+                break;
+            }
+            case BufferDumpFormat::Float3: {
+                const auto* values = reinterpret_cast<const glm::vec3*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx)
+                    file << '[' << idx << "] = { " << values[idx].x << ", " << values[idx].y << ", " << values[idx].z << " }\n";
+                break;
+            }
+            case BufferDumpFormat::Double3: {
+                const auto* values = reinterpret_cast<const glm::dvec3*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx)
+                    file << '[' << idx << "] = { " << values[idx].x << ", " << values[idx].y << ", " << values[idx].z << " }\n";
+                break;
+            }
+            case BufferDumpFormat::Bisector: {
+                const auto* values = reinterpret_cast<const cbt_large::BisectorData*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx)
+                    file << '[' << idx << "] = { subdivisionPattern = " << values[idx].subdivisionPattern
+                         << ", indices = { " << values[idx].indices.x << ", " << values[idx].indices.y << ", "
+                         << values[idx].indices.z << " }, problematicNeighbor = " << values[idx].problematicNeighbor
+                         << ", bisectorState = " << values[idx].bisectorState << ", flags = " << values[idx].flags
+                         << ", propagationID = " << values[idx].propagationID << " }\n";
+                break;
+            }
+            case BufferDumpFormat::Float3x3: {
+                const auto* values = reinterpret_cast<const glm::mat3*>(buffer);
+                for (VkDeviceSize idx = 0; idx < numValues; ++idx)
+                    for (uint32_t row = 0; row < 3; ++row)
+                        for (uint32_t col = 0; col < 3; ++col)
+                            file << '[' << idx << "][" << row << " * " << col << "] = " << values[idx][col][row] << '\n';
+                break;
+            }
+        }
+
+        dump.readbackBuffer.unmap();
+    }
+
+    m_pendingBufferDumps.clear();
 }

@@ -15,6 +15,7 @@ public:
     friend class EarthRenderer;
     friend class WaterDeformer;
     friend class MeshUpdater;
+    friend class PlanetDemo;
 
     struct Params {
         std::string name;
@@ -67,6 +68,14 @@ public:
 
     void update_constant_buffers(const UpdateCB& updateCb);
 
+    const GeometryCB& get_geometry_cb_data() const { return m_GeometryCBData; }
+    const PlanetCB& get_planet_cb_data() const { return m_PlanetCBData; }
+    const UpdateCB& get_update_cb_data() const { return *m_UpdateCB.cpu; }
+
+    void createDebugPipeline();
+
+    void renderDebug(VkCommandBuffer commandBuffer, VkDescriptorSet globalDescriptorSet);
+
 protected:
     std::vector<PipelineMetaData> metadata();
 
@@ -74,9 +83,12 @@ protected:
 
 private:
     // General
-    VulkanDevice* m_device{};
-    VulkanDescriptorSetLayout m_globalDescriptorSetLayout;
     std::string m_name;
+    VulkanDevice* m_device{};
+    ComputePipelines m_compute;
+    VulkanDescriptorSetLayout m_globalDescriptorSetLayout;
+
+    Pipeline m_debug;
 
     // Static properties
     float m_PlanetRadius = 0.0;
@@ -86,22 +98,19 @@ private:
 
     // Modifiable properties
     int32_t m_MaxSubdivisionDepth = 63;
-    float m_TriangleSize = 0.0;
+    float m_TriangleSize = 60.0;
 
+public:
     // Runtime resources
     CBTMesh m_CBTMesh;
     BaseMesh m_BaseMesh;
     VulkanBuffer m_GeometryCB; // ConstantBuffer
     VulkanBuffer m_PlanetCB; // ConstantBuffer
+    GeometryCB m_GeometryCBData{};
+    PlanetCB m_PlanetCBData{};
 
     struct {
         VulkanBuffer gpu;
         UpdateCB* cpu{};
     } m_UpdateCB;
-
-    // Compute shader
-    // ComputeShader m_LebEvalCS = 0;
-    // ComputeShader m_ClearCS = 0;
-    ComputePipelines m_compute;
-
 };

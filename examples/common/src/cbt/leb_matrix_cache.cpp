@@ -49,7 +49,8 @@ namespace cbt_large {
         for (uint64_t heapID = 1ULL; heapID < (2ULL << m_CacheDepth); ++heapID)
             table[heapID] = DecodeSubdivisionMatrix(heapID);
 
-        m_LebMatrixBuffer = device.createDeviceLocalBuffer(table.data(), BYTE_SIZE(table), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+        m_LebMatrixBuffer = device.createDeviceLocalBuffer(table.data(), BYTE_SIZE(table),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     }
 

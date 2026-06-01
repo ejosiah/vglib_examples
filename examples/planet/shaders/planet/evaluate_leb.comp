@@ -2,8 +2,6 @@
 
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_EXT_debug_printf : enable
-
 
 #define GLOBAL_CB_SET 0
 #define GLOBAL_CB_BINDING_SLOT 0
@@ -22,10 +20,12 @@ layout(push_constant) uniform Constants {
 
 layout(local_size_x = WORKGROUP_SIZE) in;
 
-REAL3_DP TransformToPlanetCoordinate(REAL3_DP posPS)
-{
-    REAL_DP invL = inversesqrt(dot(posPS, posPS));
-    return REAL3_DP(_PlanetCenter) + posPS * invL * REAL_DP(_PlanetRadius);
+
+REAL3_DP TransformToPlanetCoordinate(REAL3_DP posPS) {
+    REAL_DP pp = dot(posPS, posPS);
+    if(pp == 0.0) return REAL3_DP(0);
+
+    return REAL3_DP(_PlanetCenter) + normalize(posPS) * REAL_DP(_PlanetRadius);
 }
 
 void main() {
@@ -35,8 +35,6 @@ void main() {
     load_leb_matrix_cache_to_shared_memory(groupIndex);
 
     uint numBisectors = pre_rendering_frame() ? _IndirectDrawBuffer[9] : (_IndirectDrawBuffer[8] / 4u);
-
-//    debugPrintfEXT("frame: %u, id: %u, numBisectors %u\n", _FrameIndex, currentID, numBisectors);
 
     if (currentID >= numBisectors)
         return;
@@ -49,14 +47,6 @@ void main() {
     Triangle parentTri;
     Triangle childTri;
     EvaluateElementPosition(cHeapID, 0u, _BaseDepth, parentTri, childTri);
-
-    Triangle p = parentTri;
-    Triangle c = childTri;
-//    debugPrintfEXT("frame: %u, id: %u, \n\tparent: [[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]\n\tchild: [[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]\n", _FrameIndex, currentID
-//    , p.p[0].x, p.p[0].y, p.p[0].z, p.p[1].x, p.p[1].y, p.p[1].z, p.p[2].x, p.p[2].y, p.p[2].z
-//    , c.p[0].x, c.p[0].y, c.p[0].z, c.p[1].x, c.p[1].y, c.p[1].z, c.p[2].x, c.p[2].y, c.p[2].z);
-
-
 
     _LEBPositionBuffer[3u * currentID] = TransformToPlanetCoordinate(childTri.p[0]);
     _LEBPositionBuffer[3u * currentID + 1u] = TransformToPlanetCoordinate(childTri.p[1]);

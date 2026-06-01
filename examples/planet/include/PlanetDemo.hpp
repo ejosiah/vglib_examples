@@ -11,6 +11,8 @@
 #include "cbt/large/leb_matrix_cache.h"
 #include "cbt/large/cbt_utility.h"
 
+#include <optional>
+
 class PlanetDemo : public VulkanBaseApp{
 public:
     explicit PlanetDemo(const Settings& settings = {});
@@ -56,6 +58,8 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
+    void renderUI(VkCommandBuffer commandBuffer);
+
     void renderSkyBox(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
@@ -80,6 +84,11 @@ protected:
         VulkanBuffer vertices;
         VulkanBuffer indexes;
     } skybox;
+
+    struct {
+        VulkanBuffer vertices;
+        VulkanBuffer indexes;
+    } proxy;
 
     Texture milkyway;
 
@@ -124,10 +133,15 @@ protected:
     bool m_ActiveWireFrame{};
     bool m_EnableValidation{};
     bool m_EnableOccupancy{};
+    bool m_EnableFileLogging{};
+    uint32_t m_FileLoggingFrameCount{};
+    uint32_t m_MaxFileLoggingFrames{10};
+    bool advanceFrame{false};
+    std::optional<uint32_t> m_PendingBufferDumpFrameIndex;
     glm::vec3 m_WireframeColor{ 0.6, 0.6, 0.6 };
     float m_WireframeSize{ 0.5 };
     uint32_t m_Occupancy{ 0 };
-    UpdateCB m_updateCB{};
+    UpdateCB m_updateCB;
 
     bool m_MirrorPOV{true};
 

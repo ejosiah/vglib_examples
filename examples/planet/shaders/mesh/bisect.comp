@@ -108,6 +108,7 @@ void BisectElement(uint currentID)
     // If this bisector is not allocated or not subdivided, stop right away
     uint64_t baseHeapID = _HeapIDBuffer[currentID];
     BisectorData cBisectorData = _BisectorDataBuffer[currentID];
+
     if (baseHeapID == 0 || cBisectorData.subdivisionPattern == NO_SPLIT)
         return;
 
@@ -326,7 +327,7 @@ void BisectElement(uint currentID)
     }
 
     // How many bits do we need to raise
-    uint numSiblings = uint(bitCount64(uint64_t(currentSubdiv)));
+    uint numSiblings = uint(bitCount(currentSubdiv));
     for (uint siblingIdx = 0; siblingIdx < numSiblings; ++siblingIdx)
     {
         set_bit_atomic_buffer(cBisectorData.indices[siblingIdx], true);

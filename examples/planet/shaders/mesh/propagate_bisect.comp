@@ -52,6 +52,8 @@ void PropagateBisectElement(uint currentID)
     uint targetID = problematicNeighbor;
     uint sibling1 = tBisectorData.indices[1];
 
+
+
     if (tBisectorData.subdivisionPattern == NO_SPLIT)
     {
         if (tNeighbors[0] == parentID)

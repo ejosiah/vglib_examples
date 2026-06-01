@@ -1,5 +1,6 @@
 #version 460
 
+
 #include "../types.glsl"
 
 #define GLOBAL_CB_SET 0
@@ -44,11 +45,16 @@ void main() {
     // Operate the indirection
     triangle_id = _IndexedBisectorBuffer[triangle_id];
 
+
     // Which vertex should be read?
     local_vert_id = local_vert_id == 0 ? 2 : (local_vert_id == 2 ? 0 : 1);
 
+//    if(_FrameIndex < 2) {
+//    }
+
     // Camera relative world space position
     REAL3_DP positionRWS = REAL3_DP(_CurrentVertexBuffer[triangle_id * 3 + local_vert_id]) + _UpdateCameraPosition - _CameraPosition;
+//    REAL3_DP positionRWS = REAL3_DP(_CurrentVertexBuffer[triangle_id * 3 + local_vert_id]) + _UpdateCameraPosition;
 
     // Original position
     vs.positionORWS = vec3(positionRWS - _CurrentDisplacementBuffer[triangle_id * 3 + local_vert_id]);

@@ -85,7 +85,7 @@ void SplitElement(uint currentID, uint baseDepth)
     uint usedMemory = 1;
     uint prevPattern = atomicOr(_BisectorDataBuffer[currentID].subdivisionPattern, CENTER_SPLIT);
 
-    // If this is not zero, it means an other neighbor went faster than us, we restore the memory and leave.
+    // If this is not zero, it means another neighbor went faster than us, we restore the memory and leave.
     if (prevPattern != 0)
     {
         remainingMemory = atomicAdd(_MemoryBuffer[1], maxRequiredMemory);

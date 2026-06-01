@@ -11,17 +11,17 @@ layout(local_size_x = 1) in;
 #include "../shared_lib/mesh_constants.glsl"
 
 void main() {
-    // Indirect dispatch for each bisector
+    // Indirect dispatch for each bisector, classify
     mesh._IndirectDispatchBuffer[0] = (_IndirectDrawBuffer[0] / 3u + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
     mesh._IndirectDispatchBuffer[1] = 1u;
     mesh._IndirectDispatchBuffer[2] = 1u;
 
-    // Indirect dispatch for each vertex to process (3 per bisector + 1 for the parent)
+    // Indirect dispatch for each vertex to process (3 per bisector + 1 for the parent), deformer
     mesh._IndirectDispatchBuffer[3] = (_IndirectDrawBuffer[0] * 4u / 3u + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
     mesh._IndirectDispatchBuffer[4] = 1u;
     mesh._IndirectDispatchBuffer[5] = 1u;
 
-    // Indirect dispatch for each modified vertex to process
+    // Indirect dispatch for each modified vertex to process, evaluate leb
     mesh._IndirectDispatchBuffer[6] = (_IndirectDrawBuffer[8] + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
     mesh._IndirectDispatchBuffer[7] = 1u;
     mesh._IndirectDispatchBuffer[8] = 1u;

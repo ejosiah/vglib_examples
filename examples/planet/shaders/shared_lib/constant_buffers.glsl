@@ -12,7 +12,7 @@
 #endif // GLOBAL_CB_SET
 
 #ifdef GLOBAL_CB_SET
-layout(set = GLOBAL_CB_SET, binding = 0, scalar) buffer GlobalCB {
+layout(set = GLOBAL_CB_SET, binding = 0, scalar) readonly buffer GlobalCB {
     mat4 _ViewProjectionMatrix;
     mat4 _InvViewProjectionMatrix;
     vec3 _CameraPosition;

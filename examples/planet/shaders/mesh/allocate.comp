@@ -21,7 +21,7 @@ layout(local_size_x = WORKGROUP_SIZE) in;
 void AllocateElement(uint currentID);
 
 void main() {
-    const uint groupIndex = gl_WorkGroupID.x;
+    const uint groupIndex = gl_LocalInvocationIndex;
     const uint dispatchID = gl_GlobalInvocationID.x;
 
     // Load the CBT to the LDS
@@ -43,7 +43,7 @@ void AllocateElement(uint currentID) {
     if (bisectorData.subdivisionPattern != 0)
     {
         // How many bits do we need?
-        int numSlots = int(bitCount64(bisectorData.subdivisionPattern));
+        int numSlots = bitCount(bisectorData.subdivisionPattern);
 
         // Request the number of bits we need using an interlock add
         uint firstBitIndex = uint(atomicAdd(_MemoryBuffer[0], numSlots));

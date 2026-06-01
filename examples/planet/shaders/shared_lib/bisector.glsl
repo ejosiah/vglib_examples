@@ -20,22 +20,22 @@
 struct BisectorData
 {
     // Subvision that should be applied to this bisector
-    uint subdivisionPattern;
+    uint subdivisionPattern; // 0
 
     // Allocated indices for this bisector
-    uint indices[3];
+    uint indices[3]; // 1, 2, 3
 
     // Neighbor that should be processed
-    uint problematicNeighbor;
+    uint problematicNeighbor; // 4
 
     // State of this bisector (split, merge, etc)
-    uint bisectorState;
+    uint bisectorState; // 5
 
     // Visibility and modification flags of a bisector
-    uint flags;
+    uint flags; // 6
 
     // ID used for the propagation
-    uint propagationID;
+    uint propagationID; //7
 };
 
 #if defined(UNSUPPORTED_FIRST_BIT_HIGH)

@@ -11,7 +11,8 @@ namespace cbt_large {
         for (uint32_t bufferIdx = 0; bufferIdx < gpuCBT.bufferCount; ++bufferIdx)
         {
             uint32_t bufferSize = cbt.buffer_size(bufferIdx);
-            gpuCBT.bufferArray[bufferIdx] = device.createDeviceLocalBuffer(cbt.raw_buffer(bufferIdx), bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            gpuCBT.bufferArray[bufferIdx] = device.createDeviceLocalBuffer(cbt.raw_buffer(bufferIdx), bufferSize,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
         }
     }

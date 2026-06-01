@@ -16,7 +16,7 @@ VkDeviceSize buffer_size(uint32_t elementCount) {
 }
 
 VulkanBuffer create_storage_buffer(VulkanDevice& device, VkDeviceSize byteSize, VkBufferUsageFlags usage = StorageBufferUsage) {
-    return device.createBuffer(usage, VMA_MEMORY_USAGE_GPU_ONLY, byteSize);
+    return device.createBuffer(usage, VMA_MEMORY_USAGE_CPU_TO_GPU, byteSize);
 }
 
 bool supports_shader_float64(VulkanDevice& device) {
@@ -46,7 +46,7 @@ void initialize_cbt_mesh(const CPUMesh &cpuMesh, const CBT &cbt, VulkanDevice &d
     cbtMesh.heapIDBuffer = device.createDeviceLocalBuffer(cpuMesh.heapIDArray.data(), buffer_size<uint64_t>(cpuMesh.totalNumElements), StorageBufferUsage);
 
     cbtMesh.currentNeighborsBufferIdx = 0;
-    cbtMesh.neighborsBuffers[0] = device.createDeviceLocalBuffer(cpuMesh.neighborsArray.data(), buffer_size<glm::uvec3>(cpuMesh.totalNumElements), StorageBufferUsage);
+    cbtMesh.neighborsBuffers[0] = device.createCpuVisibleBuffer(cpuMesh.neighborsArray.data(), buffer_size<glm::uvec3>(cpuMesh.totalNumElements), StorageBufferUsage);
     cbtMesh.neighborsBuffers[1] = create_storage_buffer(device, buffer_size<glm::uvec3>(cpuMesh.totalNumElements));
 
     cbtMesh.updateBuffer = create_storage_buffer(device, buffer_size<cbt_large::BisectorData>(cpuMesh.totalNumElements));
@@ -72,12 +72,12 @@ void initialize_base_mesh(const CPUMesh &cpuMesh, VulkanDevice &device, BaseMesh
     baseMesh.numVertices = numBaseVertices;
     baseMesh.numElements = numBaseVertices / 3;
 
-    baseMesh.vertexBuffer = device.createDeviceLocalBuffer(cpuMesh.basePoints.data(), buffer_size<glm::vec3>(numBaseVertices), VertexStorageBufferUsage);
+    baseMesh.vertexBuffer = device.createCpuVisibleBuffer(cpuMesh.basePoints.data(), buffer_size<glm::vec3>(numBaseVertices), VertexStorageBufferUsage);
 
     std::vector<glm::uvec3> indices(cpuMesh.totalNumElements);
     for (uint32_t elementIdx = 0; elementIdx < cpuMesh.totalNumElements; ++elementIdx) {
         indices[elementIdx] = { 3 * elementIdx, 3 * elementIdx + 1, 3 * elementIdx + 2 };
     }
 
-    baseMesh.indexBuffer = device.createDeviceLocalBuffer(indices.data(), buffer_size<glm::uvec3>(cpuMesh.totalNumElements), IndexStorageBufferUsage);
+    baseMesh.indexBuffer = device.createCpuVisibleBuffer(indices.data(), buffer_size<glm::uvec3>(cpuMesh.totalNumElements), IndexStorageBufferUsage);
 }

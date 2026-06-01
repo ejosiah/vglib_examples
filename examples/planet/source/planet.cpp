@@ -16,11 +16,13 @@ namespace {
 
     VkDescriptorBufferInfo descriptor_buffer_info(const VulkanBuffer& buffer) { return { buffer, 0, VK_WHOLE_SIZE }; }
 
-    void set_buffer_write(VkWriteDescriptorSet& write, uint32_t binding, VkDescriptorType descriptorType, const VkDescriptorBufferInfo* bufferInfo, uint32_t descriptorCount = 1) {
+    void set_buffer_write(VkWriteDescriptorSet& write, uint32_t binding, VkDescriptorType descriptorType,
+        const VkDescriptorBufferInfo* bufferInfo, uint32_t descriptorCount = 1, uint32_t arrayElement = 0) {
         write.dstBinding = binding;
         write.descriptorType = descriptorType;
         write.descriptorCount = descriptorCount;
         write.pBufferInfo = bufferInfo;
+        write.dstArrayElement = arrayElement;
     }
 }
 
@@ -43,24 +45,38 @@ void Planet::initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh) {
     initialize_cbt_mesh(mesh, cbt, *m_device, m_CBTMesh);
     initialize_base_mesh(mesh, *m_device, m_BaseMesh);
 
-    PlanetCB planet{ m_PlanetCenter, m_PlanetRadius };
-    m_PlanetCB = m_device->createDeviceLocalBuffer(&planet, sizeof(PlanetCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    auto n0 = m_CBTMesh.neighborsBuffers[0].span<glm::uvec3>();
+    auto n1 = m_CBTMesh.neighborsBuffers[1].span<glm::uvec3>();
+
+    auto start = n0.size() - 5;
+    auto end = n0.size();
+    for (auto i = start; i < end; ++i) {
+        spdlog::info("neighbours0 {} => [{}, {}, {}]",  i,n0[i].x, n0[i].y, n0[i].z);
+    }
+    spdlog::info("\n");
+    for (auto i = start; i < end; ++i) {
+        spdlog::info("neighbours1 {} => [{}, {}, {}]", i, n1[i].x, n1[i].y, n1[i].z);
+    }
+
+    m_PlanetCBData = PlanetCB{ m_PlanetCenter, m_PlanetRadius };
+    m_PlanetCB = m_device->createDeviceLocalBuffer(&m_PlanetCBData, sizeof(PlanetCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     m_device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_planet_cb", m_name), m_PlanetCB.buffer);
 
 
-    GeometryCB geometryCB {
+    m_GeometryCBData = GeometryCB {
         .TotalNumElements = m_CBTMesh.totalNumElements,
         .BaseDepth = m_CBTMesh.baseDepth,
         .TotalNumVertices = m_CBTMesh.totalNumElements * 3,
         .MaterialID = m_MaterialID
     };
-    m_GeometryCB = m_device->createDeviceLocalBuffer(&geometryCB, sizeof(GeometryCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    m_GeometryCB = m_device->createDeviceLocalBuffer(&m_GeometryCBData, sizeof(GeometryCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     m_device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_geometry_cb", m_name), m_GeometryCB.buffer);
 
 
     m_UpdateCB.gpu = m_device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(UpdateCB), fmt::format("{}_update_cb", m_name));
     m_UpdateCB.cpu = static_cast<UpdateCB*>(m_UpdateCB.gpu.map());
-    *m_UpdateCB.cpu = {};
+    m_UpdateCB.cpu->ViewProjectionMatrix[3] = {0, 0, 0, 1};
+    m_UpdateCB.cpu->InvViewProjectionMatrix[3] = {0, 0, 0, 1};
 
     createDescriptorSetLayouts();
     createPipelines();
@@ -72,6 +88,33 @@ void Planet::createDescriptorSetLayouts() {
     createLEBDescriptorSetLayout();
     updateDescriptorSet();
     updateCBTDescriptorSet();
+    createDebugPipeline();
+}
+
+void Planet::createDebugPipeline() {
+    m_debug.pipeline =
+    AppContext::prototypes().cloneGraphicsPipeline()
+        .shaderStage()
+            .vertexShader(FileManager::resource("planet_debug.vert.spv"))
+            .fragmentShader(FileManager::resource("flat.frag.spv"))
+        .vertexInputState().clear()
+        .rasterizationState()
+        .layout().clear()
+            .addDescriptorSetLayout(m_globalDescriptorSetLayout)
+            .addDescriptorSetLayout(meshDescriptorSetLayout)
+            .addDescriptorSetLayout(cbtDescriptorSetLayout)
+            .addDescriptorSetLayout(lebDescriptorSetLayout)
+        .name(fmt::format("{}_debug", m_name))
+    .build(m_debug.layout);
+}
+
+void Planet::renderDebug(VkCommandBuffer commandBuffer, VkDescriptorSet globalDescriptorSet) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug.layout.handle, 0, 1, &globalDescriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug.layout.handle, 1, 1, &m_descriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug.layout.handle, 2, 1, &m_CBTDescriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug.layout.handle, 3, 1, &m_LEBDescriptorSet, 0, nullptr);
+    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
 
 std::vector<PipelineMetaData> Planet::metadata() {
@@ -108,63 +151,63 @@ void Planet::createMeshDescriptorSetLayout(VulkanDevice& device) {
             .binding(0)  // m_GeometryCB
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(1)  // m_updateCB
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(2) // m_CBTMesh.neighborsBuffers
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(2)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(3) // m_CBTMesh.currentVertexBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(4)  // m_CBTMesh.indirectDrawBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(5)  // m_CBTMesh.indirectDispatchBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(6)  // m_CBTMesh.indexedBisectorBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(7)  // m_CBTMesh.visibleIndexedBisectorBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(8)  // m_CBTMesh.modifiedIndexedBisectorBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(9)  // m_CBTMesh.heapIDBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(10)  // m_CBTMesh.updateBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(11)  // work list buffers
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(4)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(12)  // m_BaseMesh.vertexBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(13)  // m_CBTMesh.lebVertexBuffer
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(14)  // m_PlanetCB
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 
     descriptorSetLayoutInitialized = true;
@@ -181,11 +224,11 @@ void Planet::createCBTDescriptorSetLayout(VulkanDevice& device) {
             .binding(0)  // m_CBTMesh.gpuCBT.bufferArray[0]
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
             .binding(1)  // m_CBTMesh.gpuCBT.bufferArray[1]
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 
     cbtDescriptorSetLayoutInitialized = true;
@@ -202,7 +245,7 @@ void Planet::createLEBDescriptorSetLayout(VulkanDevice& device) {
             .binding(0)  // LEB matrix cache
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+                .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 
     lebDescriptorSetLayoutInitialized = true;
@@ -298,7 +341,7 @@ void Planet::evaluate_leb(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorS
     m_device->section([&] {
         const auto layout = m_compute.layout(LebEval);
         const uint32_t completeValue = complete ? 1u : 0u;
-        const VkDeviceSize indirectOffset = complete ? 0 : sizeof(uint32_t) * 6;
+        const VkDeviceSize indirectOffset = complete ? 0 : sizeof(VkDispatchIndirectCommand) * 2;
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(LebEval));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &globalDescriptorSet, 0, nullptr);

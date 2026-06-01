@@ -13,8 +13,8 @@ struct Plane {
 
 // Global constant buffer
 struct GlobalCB {
-    glm::mat4 ViewProjectionMatrix{1};
-    glm::mat4 InvViewProjectionMatrix{1};
+    glm::mat4 ViewProjectionMatrix{0};
+    glm::mat4 InvViewProjectionMatrix{0};
     glm::vec3 CameraPosition{};
     glm::vec3 SunDirection{1};
     glm::vec3 WireFrameColor{};

@@ -33,7 +33,7 @@ layout(set = MESH_SET, binding = 1, scalar) readonly buffer UpdateCB{
 
 layout(set = MESH_SET, binding = 2, scalar) buffer NeighborsBuffer {
     uvec3 v[];
-} _NeighborsBuffer[2];
+} _NeighborsBuffer[];
 
 layout(set = MESH_SET, binding = 3, scalar) buffer CurrentVertexBuffer {
     vec3 _CurrentVertexBuffer[];

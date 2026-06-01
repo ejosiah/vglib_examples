@@ -43,7 +43,8 @@ void EarthRenderer::createPipeline() {
             .vertexInputState().clear()
             .rasterizationState()
                 .cullNone()
-                .polygonModeLine()
+                // .frontFaceClockwise()
+                // .polygonModeLine()
             .layout()
                 .addDescriptorSetLayout(m_globalDescriptorSetLayout)
                 .addDescriptorSetLayout(m_descriptorSetLayout)
@@ -59,23 +60,23 @@ void EarthRenderer::createLayoutDescriptorSet() {
         .binding(0)  // m_updateCB
             .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .descriptorCount(1)
-            .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
         .binding(1)  // plant
             .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .descriptorCount(1)
-            .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
         .binding(2) //  m_CBTMesh.currentVertexBuffer
             .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .descriptorCount(1)
-            .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
         .binding(3)  // m_CBTMesh.currentDisplacementBuffer
             .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .descriptorCount(1)
-            .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
         .binding(4) //  m_CBTMesh.indexedBisectorBuffer
             .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .descriptorCount(1)
-            .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .shaderStages(VK_SHADER_STAGE_ALL_GRAPHICS)
     .createLayout();
 }
 

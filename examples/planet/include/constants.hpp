@@ -4,10 +4,10 @@
 #include <glm/gtc/constants.hpp>
 
 // Camera properties
-const float g_CameraFOV = glm::radians(20.0f);
+const float g_CameraFOV = 40.0f;
 
 // Earth data
-const float g_EarthRadius = 6371000.0;
+const float g_EarthRadius = 1;//  6371000.0;
 const glm::dvec3 g_EarthCenter = { 0.0, 0.0, 0.0 };
 const float g_EarthImpostorToggle = g_EarthRadius * 1.1f;
 const float g_EarthTriangleSize = 60.0f;

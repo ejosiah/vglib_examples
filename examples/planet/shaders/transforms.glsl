@@ -3,7 +3,6 @@
 
 vec2 clip_space_to_pixel(vec4 positionCS, vec2 screenSize) {
     vec2 p = positionCS.xy / positionCS.w;
-    p.y = -p.y;
     p.xy = (p.xy * 0.5 + 0.5);
     p.xy *= screenSize.xy;
     return p.xy;

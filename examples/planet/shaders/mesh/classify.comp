@@ -2,6 +2,7 @@
 
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_debug_printf : enable
 
 #include "../shared_lib/constant_buffers.glsl"
 
@@ -12,22 +13,122 @@
 #define MESH_SET 2
 #include "../shared_lib/mesh_constants.glsl"
 
+void ClassifyElement(uint currentID, BisectorGeometry bis, uint totalNumElements, uint baseDepth);
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+uint currentID;
+void main() {
+    currentID = gl_GlobalInvocationID.x;
+    if (currentID >= _IndirectDrawBuffer[9]) return;
+
+    currentID = _BisectorIndicesBuffer[currentID];
+
+    BisectorGeometry bis;
+    bis.p[0] = _CurrentVertexBuffer[3 * currentID];
+    bis.p[1] = _CurrentVertexBuffer[3 * currentID + 1];
+    bis.p[2] = _CurrentVertexBuffer[3 * currentID + 2];
+    bis.p[3] = _CurrentVertexBuffer[3 * _TotalNumElements + currentID];
+
+    ClassifyElement(currentID, bis, _TotalNumElements, _BaseDepth);
+}
+
+
 vec3 NegativeVertex(vec3 bmin, vec3 bmax, vec3 n)
 {
     bvec3 b = greaterThan(n, vec3(0));
     return mix(bmin, bmax, b);
 }
 
-bool FrustumAABBIntersect(in vec4 planes[6], vec3 bmin, vec3 bmax)
+//bool FrustumAABBIntersect(in vec4 planes[6], vec3 bmin, vec3 bmax)
+//{
+//    float a = 1.0;
+//
+//    for (int i = 0; i < 6 && a >= 0.0; ++i) {
+//        vec3 n = NegativeVertex(bmin, bmax, planes[i].xyz);
+//        a = dot(vec4(n, 1.0), vec4(planes[i].xyz, planes[i].w));
+//    }
+//
+//    return a >= 0.0;
+//}
+
+bool FrustumAABBIntersect(in vec4 frustumPlanes[6], vec3 aabbMin, vec3 aabbMax)
 {
-    float a = 1.0;
+    vec3 center = (aabbMax + aabbMin) * 0.5;
+    vec3 extents = (aabbMax - aabbMin) * 0.5;
+    for (int i = 0; i < 4; i++)
+    {
+        vec4 plane = frustumPlanes[i];
+        vec3 normal_sign = sign(plane.xyz);
+        vec3 test_point = center + extents * normal_sign;
 
-    for (int i = 0; i < 6 && a >= 0.0; ++i) {
-        vec3 n = NegativeVertex(bmin, bmax, planes[i].xyz);
-        a = dot(vec4(n, 1.0), vec4(planes[i].xyz, planes[i].w));
+        float dotProd = dot(test_point, plane.xyz);
+        if (dotProd + plane.w < 0)
+        return false;
     }
+    return true;
+}
 
-    return a >= 0.0;
+
+void logValididty(BisectorGeometry t, int valididty)  {
+//    if(currentID != 0 || currentID != 1 || currentID != 2 || currentID != 3) return;
+    switch (valididty) {
+        case BACK_FACE_CULLED:
+            debugPrintfEXT("frame: %u, id: %u, tri: [[%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f]] -> BACK_FACE_CULLED\n",
+            _FrameIndex, currentID,
+            t.p[0].x, t.p[0].y, t.p[0].z,
+            t.p[1].x, t.p[1].y, t.p[1].z,
+            t.p[2].x, t.p[2].y, t.p[2].z
+            );
+            break;
+        case FRUSTUM_CULLED:
+            debugPrintfEXT("frame: %u, id: %u, tri: [[%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f]] -> FRUSTUM_CULLED\n",
+            _FrameIndex, currentID,
+            t.p[0].x, t.p[0].y, t.p[0].z,
+            t.p[1].x, t.p[1].y, t.p[1].z,
+            t.p[2].x, t.p[2].y, t.p[2].z
+            );
+        break;
+        case TOO_SMALL:
+            debugPrintfEXT("frame: %u, id: %u, tri: [[%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f]] -> TOO_SMALL\n",
+            _FrameIndex, currentID,
+            t.p[0].x, t.p[0].y, t.p[0].z,
+            t.p[1].x, t.p[1].y, t.p[1].z,
+            t.p[2].x, t.p[2].y, t.p[2].z
+            );
+            break;
+        case UNCHANGED_ELEMENT:
+            debugPrintfEXT("frame: %u, id: %u, tri: [[%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f]] -> UNCHANGED_ELEMENT\n",
+            _FrameIndex, currentID,
+            t.p[0].x, t.p[0].y, t.p[0].z,
+            t.p[1].x, t.p[1].y, t.p[1].z,
+            t.p[2].x, t.p[2].y, t.p[2].z
+            );
+            break;
+        case BISECT_ELEMENT:
+            debugPrintfEXT("frame: %u, id: %u, tri: [[%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f]] -> BISECT_ELEMENT\n",
+            _FrameIndex, currentID,
+            t.p[0].x, t.p[0].y, t.p[0].z,
+            t.p[1].x, t.p[1].y, t.p[1].z,
+            t.p[2].x, t.p[2].y, t.p[2].z
+            );
+            break;
+        case SIMPLIFY_ELEMENT:
+            debugPrintfEXT("frame: %u, id: %u, tri: [[%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f]] -> SIMPLIFY_ELEMENT\n",
+            _FrameIndex, currentID,
+            t.p[0].x, t.p[0].y, t.p[0].z,
+            t.p[1].x, t.p[1].y, t.p[1].z,
+            t.p[2].x, t.p[2].y, t.p[2].z
+            );
+            break;
+        case MERGED_ELEMENT:
+            debugPrintfEXT("frame: %u, id: %u, tri: [[%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f], [%.2f, %.2f,%.2f]] -> MERGED_ELEMENT\n",
+            _FrameIndex, currentID,
+            t.p[0].x, t.p[0].y, t.p[0].z,
+            t.p[1].x, t.p[1].y, t.p[1].z,
+            t.p[2].x, t.p[2].y, t.p[2].z
+            );
+            break;
+    }
 }
 
 int ClassifyBisector(in BisectorGeometry tri, uint depth)
@@ -92,6 +193,7 @@ void ClassifyElement(uint currentID, BisectorGeometry bis, uint totalNumElements
     cbisectorData.flags = VISIBLE_BISECTOR;
 
     int currentValidity = ClassifyBisector(bis, depth);
+    logValididty(bis, currentValidity);
     if (currentValidity > UNCHANGED_ELEMENT) {
         cbisectorData.bisectorState = BISECT_ELEMENT;
         uint targetSlot = atomicAdd(_ClassificationBuffer[SPLIT_COUNTER], 1);
@@ -109,21 +211,4 @@ void ClassifyElement(uint currentID, BisectorGeometry bis, uint totalNumElements
     }
 
     _BisectorDataBuffer[currentID] = cbisectorData;
-}
-
-layout(local_size_x = WORKGROUP_SIZE) in;
-
-void main() {
-    uint currentID = gl_GlobalInvocationID.x;
-    if (currentID >= _IndirectDrawBuffer[9]) return;
-
-    currentID = _BisectorIndicesBuffer[currentID];
-
-    BisectorGeometry bis;
-    bis.p[0] = _CurrentVertexBuffer[3 * currentID];
-    bis.p[1] = _CurrentVertexBuffer[3 * currentID + 1];
-    bis.p[2] = _CurrentVertexBuffer[3 * currentID + 2];
-    bis.p[3] = _CurrentVertexBuffer[3 * _TotalNumElements + currentID];
-
-    ClassifyElement(currentID, bis, _TotalNumElements, _BaseDepth);
 }

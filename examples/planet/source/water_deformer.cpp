@@ -34,10 +34,12 @@ void WaterDeformer::createPipelines() {
 void WaterDeformer::apply_deformation(VkCommandBuffer cmd, const Planet& planet) {
     m_Device->section([&] {
         const auto layout = m_compute.layout(EvaluateDeformation);
+        auto dispatchOffset = sizeof(VkDispatchIndirectCommand);
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(EvaluateDeformation));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &planet.m_descriptorSet, 0, nullptr);
-        vkCmdDispatchIndirect(cmd, planet.m_CBTMesh.indirectDispatchBuffer, sizeof(VkDispatchIndirectCommand));
+        vkCmdDispatchIndirect(cmd, planet.m_CBTMesh.indirectDispatchBuffer, dispatchOffset);
         Barrier::computeWriteToVertexDraw(cmd, { planet.m_CBTMesh.currentVertexBuffer });
+        Barrier::computeWriteToVertexRead(cmd);
     }, cmd, "water_deformation");
 }
