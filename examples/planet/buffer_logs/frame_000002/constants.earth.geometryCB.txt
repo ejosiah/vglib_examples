@@ -1,4 +1,0 @@
-TotalNumElements = 131076
-BaseDepth = 4
-TotalNumVertices = 393228
-MaterialID = 1

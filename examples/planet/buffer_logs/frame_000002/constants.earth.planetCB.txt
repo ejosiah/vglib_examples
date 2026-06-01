@@ -1,2 +1,0 @@
-PlanetCenter = { 0, 0, 0 }
-PlanetRadius = 1
