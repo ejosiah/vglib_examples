@@ -10,6 +10,9 @@
 #include "planet.hpp"
 #include "water_deformer.hpp"
 #include "WaterSimulation.hpp"
+#include "MoonMaterial.hpp"
+#include "moon_deformer.hpp"
+#include "moon_renderer.hpp"
 #include "cbt/large/leb_matrix_cache.h"
 #include "cbt/large/cbt_utility.h"
 #include "CameraManager.hpp"
@@ -113,11 +116,14 @@ protected:
     Planet m_EarthPlanet;
     Planet m_MoonPlanet;
     EarthRenderer m_EarthRenderer;
+    MoonRenderer m_MoonRenderer;
     LebMatrixCache m_LebMatrixCache;
     MeshUpdater m_MeshUpdater;
     WaterData wataData;
     WaterSimulation m_WaterSimulation;
     WaterDeformer m_WaterDeformer;
+    MoonMaterial m_MoonMaterial;
+    MoonDeformer m_MoonDeformer;
 
     VulkanDescriptorSetLayout globalDescriptorSetLayout;
     VkDescriptorSet globalDescriptorSet{};

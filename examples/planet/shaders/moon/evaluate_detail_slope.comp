@@ -1,0 +1,25 @@
+#version 460
+
+#include "material_common.glsl"
+
+#define WORKGROUP_RES 8
+
+layout(local_size_x = WORKGROUP_RES, local_size_y = WORKGROUP_RES, local_size_z = 1) in;
+
+void main() {
+    uvec2 coord = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(coord, _DetailTextureSize))) {
+        return;
+    }
+
+    ivec2 center = ivec2(coord);
+    float left = texelFetch(MOON_REPEAT(DetailTexture), wrap_coord(center + ivec2(-1, 0), _DetailTextureSize), 0).r;
+    float right = texelFetch(MOON_REPEAT(DetailTexture), wrap_coord(center + ivec2(1, 0), _DetailTextureSize), 0).r;
+    float down = texelFetch(MOON_REPEAT(DetailTexture), wrap_coord(center + ivec2(0, -1), _DetailTextureSize), 0).r;
+    float up = texelFetch(MOON_REPEAT(DetailTexture), wrap_coord(center + ivec2(0, 1), _DetailTextureSize), 0).r;
+
+    float slopeX = float(_DetailTextureSize.x) * 0.5 * (right - left);
+    float slopeY = float(_DetailTextureSize.y) * 0.5 * (down - up);
+
+    imageStore(DetailSlopeRW, center, vec4(slopeX, slopeY, 0.0, 1.0));
+}

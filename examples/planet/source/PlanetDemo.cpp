@@ -248,7 +248,8 @@ PlanetDemo::PlanetDemo(const Settings& settings)
     fileManager().addSearchPathFront("../data/shaders");
     fileManager().addSearchPathFront("../data/models");
     fileManager().addSearchPathFront("planet");
-    fileManager().addSearchPathFront("planet/data");
+    fileManager().addSearchPathFront("planet/resources");
+    fileManager().addSearchPathFront("planet/resources/moon_textures");
     fileManager().addSearchPathFront("planet/spv");
     fileManager().addSearchPathFront("planet/models");
     fileManager().addSearchPathFront("planet/textures");
@@ -294,6 +295,13 @@ void PlanetDemo::prepareRender() {
         wataData.upload_constant_buffers();
         m_WaterSimulation.evaluate(cmd, wataData);
         m_WaterDeformer.apply_deformation(cmd, m_EarthPlanet, wataData);
+
+        m_MoonMaterial.upload_constant_buffers();
+        m_MoonPlanet.update_constant_buffers(m_updateCB);
+        m_MeshUpdater.reset_buffers(cmd, m_MoonPlanet.m_descriptorSet, m_MoonPlanet.m_CBTDescriptorSet);
+        m_MeshUpdater.prepare_indirection(cmd, m_MoonPlanet);
+        m_MoonPlanet.evaluate_leb(cmd, globalDescriptorSet, true, true);
+        m_MoonDeformer.apply_deformation(cmd, m_MoonPlanet, m_MoonMaterial);
     });
     m_FrameIndex = 0;
 }
@@ -319,6 +327,12 @@ void PlanetDemo::initGeometry() {
     m_MoonPlanet.initialize(*cbt, planetMesh);
     m_MoonPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
+    m_MoonMaterial = { device };
+    m_MoonMaterial.initialize(m_MoonPlanet);
+
+    m_MoonRenderer = { { device, m_MoonPlanet, m_MoonMaterial, globalDescriptorSetLayout } };
+    m_MoonRenderer.initialize();
+
     // TODO - move into planet and only create one CBTType shader, reload shader based on CBTType
     m_MeshUpdater = {device, globalDescriptorSetLayout};
     m_MeshUpdater.initialize(globalDescriptorSet);
@@ -328,6 +342,9 @@ void PlanetDemo::initGeometry() {
 
     m_WaterDeformer = { device };
     m_WaterDeformer.initialize();
+
+    m_MoonDeformer = { device };
+    m_MoonDeformer.initialize();
 
 
     std::vector<mesh::Mesh> meshes;
@@ -362,6 +379,7 @@ void PlanetDemo::newFrame() {
     updateAtmosphereInfo();
     updateConstantBuffers();
     wataData.upload_constant_buffers();
+    m_MoonMaterial.upload_constant_buffers();
 }
 
 void PlanetDemo::creatSkyBox() {
@@ -396,9 +414,11 @@ void PlanetDemo::beforeDeviceCreation() {
 
 void PlanetDemo::createDescriptorPool() {
     constexpr uint32_t maxSets = 100;
-    std::array<VkDescriptorPoolSize, 3> poolSizes{
+    std::array<VkDescriptorPoolSize, 5> poolSizes{
             {
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 * maxSets},
+                    {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100 * maxSets},
+                    {VK_DESCRIPTOR_TYPE_SAMPLER, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100 * maxSets},
                     {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 * maxSets},
             }
@@ -526,18 +546,20 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    if (advanceFrame) {
-        m_WaterSimulation.evaluate(commandBuffer, wataData);
-        m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_EarthPlanet);
-        m_EarthPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
-        m_WaterDeformer.apply_deformation(commandBuffer, m_EarthPlanet, wataData);
-        advanceFrame = false;
-    }
+    m_WaterSimulation.evaluate(commandBuffer, wataData);
+    m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_EarthPlanet);
+    m_EarthPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
+    m_WaterDeformer.apply_deformation(commandBuffer, m_EarthPlanet, wataData);
+
+    m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_MoonPlanet);
+    m_MoonPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
+    m_MoonDeformer.apply_deformation(commandBuffer, m_MoonPlanet, m_MoonMaterial);
 
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
         m_EarthRenderer.render(commandBuffer, globalDescriptorSet);
+        m_MoonRenderer.render(commandBuffer, globalDescriptorSet);
         renderSkyBox(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
@@ -657,6 +679,7 @@ void PlanetDemo::endFrame() {
         std::memcpy(m_updateCB.FrustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
 
         m_EarthPlanet.update_constant_buffers(m_updateCB);
+        m_MoonPlanet.update_constant_buffers(m_updateCB);
     }
     m_Time = elapsedTime;
 

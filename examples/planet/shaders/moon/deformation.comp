@@ -1,0 +1,180 @@
+#version 460
+
+#define MESH_SET 0
+#include "../shared_lib/mesh_constants.glsl"
+
+#define MOON_MATERIAL_SET 1
+#define MOON_MATERIAL_DISABLE_PLANET_CB
+#include "material_common.glsl"
+#include "../transforms.glsl"
+
+#define WORKGROUP_SIZE 64
+#define SG_BAND_ATTENUATION_START 15.0
+#define SG_BAND_ATTENUATION_END 30.0
+#define BAND_GROUP_SIZE_FACTOR 16.0
+
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+float saturate(float value) {
+    return clamp(value, 0.0, 1.0);
+}
+
+REAL2_DP frac_real2(REAL2_DP value) {
+    return value - floor(value);
+}
+
+REAL_DP sqrt_real(REAL_DP value) {
+#ifdef LEB_DOUBLE
+    return value < REAL_DP(1e-32) ? REAL_DP(0.0) : REAL_DP(1.0) / inversesqrt(value);
+#else
+    return sqrt(value);
+#endif
+}
+
+REAL_DP acos_real(REAL_DP value) {
+#ifdef LEB_DOUBLE
+    REAL_DP y = abs(clamp(value, REAL_DP(-1.0), REAL_DP(1.0)));
+    REAL_DP sqrtY = y != REAL_DP(1.0) ? sqrt_real(REAL_DP(1.0) - y) : REAL_DP(0.0);
+    REAL_DP z = (REAL_DP(-0.168577) * y + REAL_DP(1.56723)) * sqrtY;
+    return value > REAL_DP(0.0) ? z : REAL_DP(0.5 * PI);
+#else
+    return acos(clamp(value, REAL_DP(-1.0), REAL_DP(1.0)));
+#endif
+}
+
+REAL_DP asin_real(REAL_DP value) {
+#ifdef LEB_DOUBLE
+    REAL_DP negate = value < REAL_DP(0.0) ? REAL_DP(1.0) : REAL_DP(0.0);
+    REAL_DP x = abs(clamp(value, REAL_DP(-1.0), REAL_DP(1.0)));
+    REAL_DP ret = REAL_DP(-0.0187293);
+    ret = ret * x + REAL_DP(0.0742610);
+    ret = ret * x - REAL_DP(0.2121144);
+    ret = ret * x + REAL_DP(1.5707288);
+    ret = REAL_DP(0.5 * PI) - sqrt_real(REAL_DP(1.0) - x) * ret;
+    return ret - REAL_DP(2.0) * negate * ret;
+#else
+    return asin(clamp(value, REAL_DP(-1.0), REAL_DP(1.0)));
+#endif
+}
+
+REAL_DP atan2_real(REAL_DP y, REAL_DP x) {
+#ifdef LEB_DOUBLE
+    REAL_DP ax = abs(x);
+    REAL_DP ay = abs(y);
+    REAL_DP t0 = max(ax, ay);
+    REAL_DP t1 = min(ax, ay);
+
+    if (t0 == REAL_DP(0.0)) {
+        return REAL_DP(0.0);
+    }
+
+    REAL_DP a = t1 / t0;
+    REAL_DP s = a * a;
+    REAL_DP p = REAL_DP(1.858552116405489677124095112269935093498e-3);
+    p = p * s + REAL_DP(-1.079891788348568421355096111489189625479e-2);
+    p = p * s + REAL_DP(2.938542391751121307313459297120064977888e-2);
+    p = p * s + REAL_DP(-5.205055255952184339031830383744136009889e-2);
+    p = p * s + REAL_DP(7.212338962134411520637759523226823838487e-2);
+    p = p * s + REAL_DP(-8.993611617787817334566922323958104463948e-2);
+    p = p * s + REAL_DP(1.110012236849539584126568416131750076191e-1);
+    p = p * s + REAL_DP(-1.428514132711481940637283859690014415584e-1);
+    p = p * s + REAL_DP(1.999999117496509842004185053319506031014e-1);
+    p = p * s + REAL_DP(-3.333333333333333333333333333303396520128e-1);
+    p = p * s * a + a;
+
+    REAL_DP r = ay > ax ? REAL_DP(0.5 * PI) - p : p;
+    r = x < REAL_DP(0.0) ? REAL_DP(PI) - r : r;
+    return y < REAL_DP(0.0) ? -r : r;
+#else
+    return atan(y, x);
+#endif
+}
+
+REAL2_DP project_position_to_disk(REAL3_DP posNPS) {
+    REAL_DP v = abs(posNPS.y) + REAL_DP(1e-10);
+    if (v <= REAL_DP(0.999)) {
+        REAL_DP r = acos_real(v) / REAL_DP(0.5 * PI);
+        REAL_DP s = posNPS.x * posNPS.x + posNPS.z * posNPS.z;
+        REAL_DP p = s != REAL_DP(0.0) ? inversesqrt(s) * r : REAL_DP(0.0);
+        return REAL2_DP(posNPS.x * p, posNPS.z * p);
+    }
+    return posNPS.xz / REAL_DP(0.5 * PI);
+}
+
+REAL2_DP normalized_coordinates_to_longlat(REAL3_DP positionNPS) {
+    REAL_DP lat = asin_real(positionNPS.z) / REAL_DP(PI) + REAL_DP(0.5);
+    REAL_DP lon = atan2_real(positionNPS.y, positionNPS.x) / REAL_DP(2.0 * PI) + REAL_DP(0.5);
+    return REAL2_DP(lon, lat);
+}
+
+float sample_linear(texture2D targetTexture, sampler targetSampler, REAL2_DP uv) {
+    return textureLod(sampler2D(targetTexture, targetSampler), vec2(uv), 0.0).r;
+}
+
+void combine_band_displacement(vec3 positionRWS, vec3 normalWS, float detail, uint attenuation, inout float waveLength, inout float amplitude, inout float displacement) {
+    vec3 currentPositionRWS = positionRWS + detail * normalWS;
+    float distanceToCamera = length(currentPositionRWS);
+    float att = attenuation != 0u
+        ? mix(1.0, 0.0, saturate((distanceToCamera - waveLength * SG_BAND_ATTENUATION_START) / (waveLength * SG_BAND_ATTENUATION_END)))
+        : 1.0;
+
+    displacement += detail * att;
+    waveLength *= 0.5;
+    amplitude *= 0.5;
+}
+
+void evaluate_detail(REAL2_DP sampleUV, float patchSize, float patchAmplitude, uint numOctaves, vec3 positionRWS, vec3 normalWS, uint attenuation, inout float displacement) {
+    float waveLength = patchSize;
+    float amplitude = patchAmplitude;
+    uint bandIdx = 0u;
+
+    for (; bandIdx < min(2u, numOctaves); ++bandIdx) {
+        REAL2_DP bandUV = frac_real2(sampleUV / REAL_DP(waveLength));
+        float bandDetail = sample_linear(DetailTexture, LinearRepeatSampler, bandUV) * amplitude;
+        combine_band_displacement(positionRWS, normalWS, bandDetail, attenuation, waveLength, amplitude, displacement);
+    }
+
+    waveLength /= BAND_GROUP_SIZE_FACTOR;
+    amplitude /= BAND_GROUP_SIZE_FACTOR;
+
+    for (; bandIdx < numOctaves; ++bandIdx) {
+        REAL2_DP bandUV = frac_real2(sampleUV / REAL_DP(waveLength));
+        float bandDetail = sample_linear(DetailTexture, LinearRepeatSampler, bandUV) * amplitude;
+        combine_band_displacement(positionRWS, normalWS, bandDetail, attenuation, waveLength, amplitude, displacement);
+    }
+}
+
+void main() {
+    uint currentID = gl_GlobalInvocationID.x;
+
+    if (currentID >= _IndirectDrawBuffer[9] * 4u) {
+        return;
+    }
+
+    uint bisectorID = currentID / 4u;
+    uint localVertexID = currentID % 4u;
+
+    bisectorID = _BisectorIndicesBuffer[bisectorID];
+    currentID = localVertexID < 3u ? bisectorID * 3u + localVertexID : 3u * _TotalNumElements + bisectorID;
+
+    REAL3_DP positionWS = _LEBPositionBuffer[currentID];
+    vec3 positionRWS = vec3(positionWS - REAL3_DP(_UpdateCameraPosition));
+
+    REAL3_DP positionPS = positionWS - REAL3_DP(_PlanetCenter);
+    REAL3_DP normalPS = evaluate_normalized_planet_space(positionPS, REAL_DP(_PlanetRadius));
+
+    REAL2_DP sampleNUV = project_position_to_disk(normalPS);
+    REAL2_DP sampleUV = sampleNUV * REAL_DP(_PlanetRadius);
+    REAL2_DP lonlat = normalized_coordinates_to_longlat(normalPS);
+
+    float displacement = sample_linear(ElevationTexture, LinearRepeatSampler, lonlat) * 1000.0;
+    if (lonlat.y < REAL_DP(0.00017)) {
+        displacement = 0.0;
+    }
+
+    evaluate_detail(sampleUV, _PatchSize, _PatchAmplitude, uint(_NumOctaves), positionRWS, vec3(normalPS), _Attenuation, displacement);
+
+    vec3 displacementPS = vec3(REAL_DP(displacement) * normalPS);
+    _CurrentVertexBuffer[currentID] = positionRWS + displacementPS;
+    _CurrentDisplacementBuffer[currentID] = displacementPS;
+}

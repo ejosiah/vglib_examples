@@ -1,0 +1,36 @@
+#version 460
+
+#include "material_common.glsl"
+
+#define WORKGROUP_RES 8
+
+layout(local_size_x = WORKGROUP_RES, local_size_y = WORKGROUP_RES, local_size_z = 1) in;
+
+void main() {
+    uvec2 threadID = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(threadID, _ElevationTextureSize))) {
+        return;
+    }
+
+    vec2 textureSize = vec2(_ElevationTextureSize);
+    vec2 uv = (vec2(threadID) + vec2(0.5)) / textureSize;
+    float elevC = textureLod(MOON_MIRROR_V(ElevationTexture), uv, 0.0).r * 1000.0;
+
+    vec2 nxUv = uv + vec2(1.0 / textureSize.x, 0.0);
+    vec2 nyUv = uv + vec2(0.0, -1.0 / textureSize.y);
+
+    float elevX = textureLod(MOON_MIRROR_V(ElevationTexture), nxUv, 0.0).r * 1000.0;
+    float elevY = textureLod(MOON_MIRROR_V(ElevationTexture), nyUv, 0.0).r * 1000.0;
+
+    vec3 normal = longlat_to_normalized_coordinates(uv.x, uv.y);
+    vec3 positionC = normal * (float(_PlanetRadius) + elevC);
+
+    vec3 neighborX = longlat_to_normalized_coordinates(nxUv.x, nxUv.y);
+    vec3 neighborY = longlat_to_normalized_coordinates(nyUv.x, nyUv.y);
+
+    vec3 v0 = neighborX * (float(_PlanetRadius) + elevX) - positionC;
+    vec3 v1 = neighborY * (float(_PlanetRadius) + elevY) - positionC;
+    vec3 pertNormal = normalize(cross(v1, v0));
+
+    imageStore(ElevationSurfaceGradientRW, ivec2(threadID), vec4(surface_gradient_from_perturbed_normal(normal, pertNormal), elevC));
+}

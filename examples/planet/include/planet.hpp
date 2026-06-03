@@ -13,6 +13,7 @@
 class Planet {
 public:
     friend class EarthRenderer;
+    friend class MoonRenderer;
     friend class WaterDeformer;
     friend class MeshUpdater;
     friend class PlanetDemo;

@@ -6,9 +6,9 @@ void CameraManager::initialize(InputManager& inputManager, const glm::ivec2& scr
     PlanetCameraSettings cameraSettings;
     cameraSettings.fieldOfView = g_CameraFOV;
     cameraSettings.zNear = 1.0;
-    cameraSettings.zFar =  20000;
-    cameraSettings.acceleration = PlanetVec3(50 * m);
-    cameraSettings.velocity = PlanetVec3(200 * m);
+    cameraSettings.zFar =  200000;
+    cameraSettings.acceleration = PlanetVec3(50 * km);
+    cameraSettings.velocity = PlanetVec3(200 * km);
     cameraSettings.aspectRatio = static_cast<PlanetScalar>(screenSize.x) / static_cast<PlanetScalar>(screenSize.y);
     cameraSettings.mode = m_CurrentMode;
 
@@ -18,6 +18,7 @@ void CameraManager::initialize(InputManager& inputManager, const glm::ivec2& scr
     m_camera->lookAt(pos, target, PlanetVec3{0, 0, -1});
 
     evaluateDistances();
+    evaluateClipPlanes();
 }
 
 void CameraManager::update(float deltaTime) {
