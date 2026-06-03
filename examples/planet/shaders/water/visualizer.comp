@@ -1,0 +1,37 @@
+#version 460
+
+#include "constants.glsl"
+
+layout(local_size_x = WORKGROUP_RES, local_size_y = WORKGROUP_RES) in;
+
+layout(set = WATER_SIM_SET, binding = 3, rgba16f) writeonly uniform image2D VisualizerBuffer;
+
+layout(push_constant) uniform PushConstants {
+    int view;
+    int band;
+    float scale;
+} pc;
+
+void main() {
+    ivec2 position = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(position, imageSize(VisualizerBuffer)))) {
+        return;
+    }
+
+    vec4 value = vec4(0.0);
+    if (pc.view == 0) {
+        value = imageLoad(SpectrumBuffer[pc.band], position);
+    } else if (pc.view == 1) {
+        value = imageLoad(HImaginaryBuffer[pc.band], position);
+    } else if (pc.view == 2) {
+        value = imageLoad(DisplacementBuffer[pc.band], position);
+    } else if (pc.view == 3) {
+        value = imageLoad(FFTRowPassRealBuffer[pc.band], position);
+    } else if (pc.view == 4) {
+        value = imageLoad(FFTRowPassImaginaryBuffer[pc.band], position);
+    } else if (pc.view == 5) {
+        value = imageLoad(SurfaceGradientBuffer[pc.band], position);
+    }
+
+    imageStore(VisualizerBuffer, position, vec4(value.xyz * pc.scale + vec3(0.5), 1.0));
+}

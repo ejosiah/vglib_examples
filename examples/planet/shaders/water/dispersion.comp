@@ -1,0 +1,34 @@
+#version 460
+
+#include "constants.glsl"
+
+layout(local_size_x = WORKGROUP_RES, local_size_y = WORKGROUP_RES, local_size_z = 1) in;
+
+void main() {
+    uvec3 currentThread = gl_GlobalInvocationID;
+    vec2 k = TWO_PI * (vec2(currentThread.xy) - float(_SimulationRes) * 0.5) / _PatchSize[currentThread.z];
+    float kl = length(k);
+    float w = sqrt(EARTH_GRAVITY * kl);
+    vec2 kx = vec2(k.x / kl, 0.0);
+    vec2 ky = vec2(k.y / kl, 0.0);
+    vec2 h0 = imageLoad(SpectrumBuffer[currentThread.z], ivec2(currentThread.xy)).xy;
+    vec2 ch0 = complex_conjugate(h0);
+    vec2 ht = complex_mult(h0, complex_exp(w * _SimulationTime))
+        + complex_mult(ch0, complex_exp(-w * _SimulationTime));
+    vec2 dx = complex_mult(complex_mult(vec2(0.0, -1.0), kx), ht);
+    vec2 dy = complex_mult(complex_mult(vec2(0.0, -1.0), ky), ht);
+
+    if (isnan(dx.x)) dx.x = 0.0;
+    if (isnan(dx.y)) dx.y = 0.0;
+    if (isnan(dy.x)) dy.x = 0.0;
+    if (isnan(dy.y)) dy.y = 0.0;
+
+    uint halfBandResolution = _SimulationRes / 2u;
+    if (currentThread.x == halfBandResolution && currentThread.y == halfBandResolution) {
+        dx = vec2(0.0);
+        dy = vec2(0.0);
+    }
+
+    imageStore(DisplacementBuffer[currentThread.z], ivec2(currentThread.xy), vec4(ht.x, dx.x, dy.x, 0.0));
+    imageStore(HImaginaryBuffer[currentThread.z], ivec2(currentThread.xy), vec4(ht.y, dx.y, dy.y, 0.0));
+}

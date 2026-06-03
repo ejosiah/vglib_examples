@@ -1,0 +1,26 @@
+#version 460
+
+#include "constants.glsl"
+
+layout(local_size_x = WORKGROUP_RES, local_size_y = WORKGROUP_RES, local_size_z = 1) in;
+
+void main() {
+    uvec3 thread = gl_GlobalInvocationID;
+    // This water offset ensures that when we switch the resolution the spectrum stays about the same
+    uvec3 sampleCoordinate = uvec3(thread.xy, thread.z);
+
+    // We need 4 random numbers from the sample coords
+    vec4 rn = hash_function_vec4(sampleCoordinate + NOISE_FUNCTION_OFFSET);
+
+    // First part of the phillips spectrum term
+    vec2 E = ONE_OVER_SQRT2 * vec2(gaussian_distribution(rn.x, rn.y), gaussian_distribution(rn.z, rn.w));
+
+    // Second part of the phillips spectrum term
+    vec2 k = TWO_PI * (vec2(thread.xy) - float(_SimulationRes) * 0.5) / _PatchSize[thread.z];
+    vec2 windDirection = -orientation_to_direction(_PatchWindOrientation[thread.z]);
+    float P = phillips_spectrum(k, windDirection, _PatchWindSpeed[thread.z], _PatchDirectionDampener[thread.z], _PatchSize[thread.z]);
+
+    // Combine and output
+    imageStore(SpectrumBuffer[thread.z], ivec2(thread.xy), vec4(E * sqrt(P), 0.0, 0.0));
+}
+

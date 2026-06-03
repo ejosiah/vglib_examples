@@ -8,10 +8,9 @@
 #include "mesh_updater.hpp"
 #include "planet.hpp"
 #include "water_deformer.hpp"
+#include "WaterSimulation.hpp"
 #include "cbt/large/leb_matrix_cache.h"
 #include "cbt/large/cbt_utility.h"
-
-#include <optional>
 
 class PlanetDemo : public VulkanBaseApp{
 public:
@@ -112,6 +111,8 @@ protected:
     EarthRenderer m_EarthRenderer;
     LebMatrixCache m_LebMatrixCache;
     MeshUpdater m_MeshUpdater;
+    WaterData wataData;
+    WaterSimulation m_WaterSimulation;
     WaterDeformer m_WaterDeformer;
 
     VulkanDescriptorSetLayout globalDescriptorSetLayout;
@@ -133,11 +134,8 @@ protected:
     bool m_ActiveWireFrame{};
     bool m_EnableValidation{};
     bool m_EnableOccupancy{};
-    bool m_EnableFileLogging{};
-    uint32_t m_FileLoggingFrameCount{};
-    uint32_t m_MaxFileLoggingFrames{10};
     bool advanceFrame{false};
-    std::optional<uint32_t> m_PendingBufferDumpFrameIndex;
+    bool m_ShowWaterVisualizer{false};
     glm::vec3 m_WireframeColor{ 0.6, 0.6, 0.6 };
     float m_WireframeSize{ 0.5 };
     uint32_t m_Occupancy{ 0 };

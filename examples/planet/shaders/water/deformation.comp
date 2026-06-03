@@ -1,23 +1,150 @@
 #version 460
 
-
 #define MESH_SET 0
 #include "../shared_lib/mesh_constants.glsl"
+
+#define WATER_DATA_SET 1
+#include "constants.glsl"
+
 #include "../transforms.glsl"
 
 #define WORKGROUP_SIZE 64
+#define NUM_WATER_BANDS 4u
+#define DISPLACEMENT_BAND_ATTENUATION_START 10.0
+#define DISPLACEMENT_BAND_ATTENUATION_END 20.0
 
 layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(set = WATER_DATA_SET, binding = 0, scalar) readonly buffer DeformationData {
+    vec4 _DeformationPatchSize;
+    vec4 _DeformationPatchRoughness;
+    float _DeformationChoppiness;
+    int _DeformationAttenuation;
+    float _DeformationAmplification;
+    uint _DeformationPatchFlags;
+};
+
+float saturate(float value) {
+    return clamp(value, 0.0, 1.0);
+}
+
+dvec2 frac_dvec2(dvec2 value) {
+    return value - floor(value);
+}
+
+double sqrt_double(double value) {
+    return value < 1e-32 ? 0.0 : 1.0 / inversesqrt(value);
+}
+
+double acos_double(double value) {
+    double y = abs(clamp(value, -1.0, 1.0));
+    double sqrtY = y != 1.0 ? sqrt_double(1.0 - y) : 0.0;
+    double z = (-0.168577 * y + 1.56723) * sqrtY;
+    return value > 0.0 ? z : 0.5 * PI;
+}
+
+dvec2 project_position_to_disk(dvec3 posNPS) {
+    double v = abs(posNPS.y) + 1e-10;
+    if (v <= 0.999) {
+        double r = acos_double(v) / HALF_PI;
+        double s = posNPS.x * posNPS.x + posNPS.z * posNPS.z;
+        double p = s != 0.0 ? inversesqrt(s) * r : 0.0;
+        return dvec2(posNPS.x * p, posNPS.z * p);
+    }
+    return posNPS.xz / HALF_PI;
+}
+
+mat3 get_local_frame(vec3 posNPS, vec2 uv) {
+    float u2 = uv.x * uv.x;
+    float v2 = uv.y * uv.y;
+    float u2v2 = u2 + v2;
+    float sqrtU2V2 = sqrt(u2v2);
+
+    if (sqrtU2V2 < 1e-7) {
+        return mat3(vec3(1, 0, 0), posNPS, vec3(0, 0, 1));
+    }
+
+    float u2v2_32 = sqrtU2V2 * u2v2;
+    float t = HALF_PI * sqrtU2V2;
+    float b = t < 1e-5 ? t : sin(t);
+    float a = t < 1e-5 ? 1.0 - t : cos(t);
+
+    float tuX = PI * u2 * a / (2.0 * u2v2) + v2 * b / u2v2_32;
+    float tuY = -PI * uv.x * b / (2.0 * sqrtU2V2);
+    float tuZ = 0.5 * uv.x * uv.y * (PI * a / u2v2 - 2.0 * b / u2v2_32);
+
+    float btvX = 0.5 * uv.x * uv.y * (PI * a / u2v2 - 2.0 * b / u2v2_32);
+    float btvY = -PI * uv.y * b / (2.0 * sqrtU2V2);
+    float btvZ = PI * v2 * a / (2.0 * u2v2) + u2 * b / u2v2_32;
+
+    vec3 tang = abs(uv.x) >= 1e-7 ? normalize(vec3(tuX, tuY, tuZ)) : vec3(1, 0, 0);
+    vec3 bitang = abs(uv.y) >= 1e-7 ? normalize(vec3(btvX, btvY, btvZ)) : vec3(0, 0, 1);
+
+    if (posNPS.y < 0.0) {
+        tang.y = -tang.y;
+        bitang.y = -bitang.y;
+    }
+
+    return mat3(tang, posNPS, bitang);
+}
+
+vec3 load_displacement_bilinear(uint bandIdx, dvec2 uv, bool sourceFirstBandShift) {
+    ivec2 textureSize = imageSize(DisplacementBuffer[bandIdx]);
+    dvec2 unnormalized = uv * dvec2(textureSize);
+    if (sourceFirstBandShift) {
+        unnormalized.y -= 0.5;
+    } else {
+        unnormalized -= dvec2(0.5);
+    }
+
+    ivec2 tapCoord = ivec2(floor(floor(unnormalized) + dvec2(0.5)));
+    ivec2 p0Coord = repeat_coord(tapCoord, uint(textureSize.x), uint(textureSize.y));
+    ivec2 p1Coord = repeat_coord(tapCoord + ivec2(1, 0), uint(textureSize.x), uint(textureSize.y));
+    ivec2 p2Coord = repeat_coord(tapCoord + ivec2(0, 1), uint(textureSize.x), uint(textureSize.y));
+    ivec2 p3Coord = repeat_coord(tapCoord + ivec2(1, 1), uint(textureSize.x), uint(textureSize.y));
+
+    vec3 p0 = imageLoad(DisplacementBuffer[bandIdx], p0Coord).xyz;
+    vec3 p1 = imageLoad(DisplacementBuffer[bandIdx], p1Coord).xyz;
+    vec3 p2 = imageLoad(DisplacementBuffer[bandIdx], p2Coord).xyz;
+    vec3 p3 = imageLoad(DisplacementBuffer[bandIdx], p3Coord).xyz;
+
+    vec2 fraction = vec2(frac_dvec2(unnormalized));
+    vec3 i0 = mix(p0, p1, fraction.x);
+    vec3 i1 = mix(p2, p3, fraction.x);
+    return mix(i0, i1, fraction.y);
+}
+
+vec3 evaluate_displacement(dvec2 sampleUV, float elevation, float distanceToCamera) {
+    dvec2 bandUV = frac_dvec2(sampleUV / double(_DeformationPatchSize.x));
+    vec3 displacement = load_displacement_bilinear(0u, bandUV, true);
+
+    float att = mix(1.0, 0.0, saturate((distanceToCamera - _DeformationPatchSize.x * DISPLACEMENT_BAND_ATTENUATION_START) /
+        (_DeformationPatchSize.x * DISPLACEMENT_BAND_ATTENUATION_END)));
+    att *= float(_DeformationPatchFlags & 0x1u);
+    displacement *= att;
+
+    for (uint bandIdx = 1u; bandIdx < NUM_WATER_BANDS; ++bandIdx) {
+        bandUV = frac_dvec2(sampleUV / double(_DeformationPatchSize[bandIdx]));
+        vec3 bandDisplacement = load_displacement_bilinear(bandIdx, bandUV, false);
+
+        float bandAtt = mix(1.0, 0.0, saturate((distanceToCamera - _DeformationPatchSize[bandIdx] * DISPLACEMENT_BAND_ATTENUATION_START) /
+            (_DeformationPatchSize[bandIdx] * DISPLACEMENT_BAND_ATTENUATION_END)));
+        bandAtt *= float((_DeformationPatchFlags >> bandIdx) & 0x1u);
+        displacement += bandDisplacement * bandAtt;
+    }
+
+    displacement = vec3(-displacement.y, displacement.x, -displacement.z);
+    displacement.xz *= mix(0.0, _DeformationChoppiness, elevation);
+    return displacement;
+}
 
 void main() {
     uint currentID = gl_GlobalInvocationID.x;
 
-    // This thread doesn't have any work to do, we're done
-    if (currentID >= _IndirectDrawBuffer[9] * 4u)
+    if (currentID >= _IndirectDrawBuffer[9] * 4u) {
         return;
+    }
 
-
-    // Extract the bisector ID and the vertexID
     uint bisectorID = currentID / 4u;
     uint localVertexID = currentID % 4u;
 
@@ -28,9 +155,18 @@ void main() {
     REAL3_DP positionWS = _LEBPositionBuffer[currentID];
     vec3 positionRWS = vec3(positionWS - REAL3_DP(_UpdateCameraPosition));
 
-    vec3 cp = _UpdateCameraPosition;
-    vec3 p = vec3(positionRWS);
+    dvec3 positionPS = dvec3(positionWS - REAL3_DP(_PlanetCenter));
+    positionPS = evaluate_normalized_planet_space(positionPS, double(_PlanetRadius));
 
-    // Export the deformed position
-    _CurrentVertexBuffer[currentID] = positionRWS;
+    dvec2 sampleNUV = project_position_to_disk(positionPS);
+    float distanceToCamera = length(positionRWS);
+    dvec2 sampleUV = sampleNUV * double(_PlanetRadius);
+    float elevation = saturate(abs(float(positionPS.y)) * 5000.0);
+
+    vec3 displacement = evaluate_displacement(sampleUV, elevation, distanceToCamera);
+    mat3 localFrame = get_local_frame(vec3(positionPS), vec2(sampleNUV));
+    displacement = localFrame * displacement;
+
+    _CurrentVertexBuffer[currentID] = positionRWS + displacement;
+    _CurrentDisplacementBuffer[currentID] = displacement;
 }

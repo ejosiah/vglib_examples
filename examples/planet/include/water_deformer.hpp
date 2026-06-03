@@ -15,7 +15,7 @@ public:
 
     void initialize();
 
-    void apply_deformation(VkCommandBuffer cmd, const Planet& planet);
+    void apply_deformation(VkCommandBuffer cmd, const Planet& planet, const WaterData& waterData);
 
 private:
     std::vector<PipelineMetaData> metadata();

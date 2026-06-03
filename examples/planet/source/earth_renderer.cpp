@@ -1,18 +1,8 @@
 #include "earth_renderer.hpp"
 
 #include "AppContext.hpp"
+#include "descriptor_utils.hpp"
 #include "filemanager.hpp"
-
-namespace {
-    VkDescriptorBufferInfo descriptor_buffer_info(const VulkanBuffer& buffer) { return { buffer, 0, VK_WHOLE_SIZE }; }
-
-    void set_buffer_write(VkWriteDescriptorSet& write, uint32_t binding, VkDescriptorType descriptorType, const VkDescriptorBufferInfo* bufferInfo, uint32_t descriptorCount = 1) {
-        write.dstBinding = binding;
-        write.descriptorType = descriptorType;
-        write.descriptorCount = descriptorCount;
-        write.pBufferInfo = bufferInfo;
-    }
-}
 
 EarthRenderer::EarthRenderer(const Params &params)
     : m_device(&params.device)

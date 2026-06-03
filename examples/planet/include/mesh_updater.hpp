@@ -71,10 +71,6 @@ public:
     // Get the occupancy
     uint32_t get_occupancy();
 
-    void capture_frame_buffer_dumps(VkCommandBuffer cmd, const CBTMesh& mesh, const BaseMesh& baseMesh,
-                                    const VulkanBuffer& lebMatrixBuffer, uint32_t frameIndex);
-    void write_pending_frame_buffer_dumps(const std::string& projectDir);
-
 protected:
     std::vector<PipelineMetaData> metadata();
 
@@ -85,27 +81,6 @@ protected:
     void createPipelines();
 
 private:
-    enum class BufferDumpFormat {
-        UInt32,
-        Int32,
-        UInt64,
-        UInt3,
-        Float3,
-        Double3,
-        Bisector,
-        Float3x3
-    };
-
-    struct PendingBufferDump {
-        std::string name;
-        VulkanBuffer readbackBuffer;
-        VkDeviceSize elementSize{};
-        BufferDumpFormat format{BufferDumpFormat::UInt32};
-    };
-
-    void enqueue_buffer_dump(VkCommandBuffer cmd, const char* name, const VulkanBuffer& sourceBuffer,
-                             VkDeviceSize elementSize, BufferDumpFormat format);
-
     // Graphics Device
     VulkanDevice* m_Device{};
     VulkanDescriptorSetLayout m_globalDescriptorSetLayout;
@@ -117,9 +92,6 @@ private:
     VulkanBuffer validationBuffer;
     VulkanBuffer validationBufferRB;
     VulkanBuffer occupancyBufferRB;
-    std::vector<PendingBufferDump> m_pendingBufferDumps;
-    uint32_t m_pendingBufferDumpFrameIndex{};
-    uint32_t m_pendingNeighborsBufferIdx{};
 
     VulkanDescriptorSetLayout m_descriptorSetLayout;
     VkDescriptorSet m_descriptorSet{};

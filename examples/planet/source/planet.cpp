@@ -2,6 +2,7 @@
 #include "constant_buffers.hpp"
 #include "AppContext.hpp"
 #include "Barrier.hpp"
+#include "descriptor_utils.hpp"
 #include "filemanager.hpp"
 #include <fmt/format.h>
 
@@ -14,16 +15,6 @@ namespace {
     bool cbtDescriptorSetLayoutInitialized = false;
     bool lebDescriptorSetLayoutInitialized = false;
 
-    VkDescriptorBufferInfo descriptor_buffer_info(const VulkanBuffer& buffer) { return { buffer, 0, VK_WHOLE_SIZE }; }
-
-    void set_buffer_write(VkWriteDescriptorSet& write, uint32_t binding, VkDescriptorType descriptorType,
-        const VkDescriptorBufferInfo* bufferInfo, uint32_t descriptorCount = 1, uint32_t arrayElement = 0) {
-        write.dstBinding = binding;
-        write.descriptorType = descriptorType;
-        write.descriptorCount = descriptorCount;
-        write.pBufferInfo = bufferInfo;
-        write.dstArrayElement = arrayElement;
-    }
 }
 
 VulkanDescriptorSetLayout Planet::meshDescriptorSetLayout;
@@ -44,19 +35,6 @@ void Planet::initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh) {
 
     initialize_cbt_mesh(mesh, cbt, *m_device, m_CBTMesh);
     initialize_base_mesh(mesh, *m_device, m_BaseMesh);
-
-    auto n0 = m_CBTMesh.neighborsBuffers[0].span<glm::uvec3>();
-    auto n1 = m_CBTMesh.neighborsBuffers[1].span<glm::uvec3>();
-
-    auto start = n0.size() - 5;
-    auto end = n0.size();
-    for (auto i = start; i < end; ++i) {
-        spdlog::info("neighbours0 {} => [{}, {}, {}]",  i,n0[i].x, n0[i].y, n0[i].z);
-    }
-    spdlog::info("\n");
-    for (auto i = start; i < end; ++i) {
-        spdlog::info("neighbours1 {} => [{}, {}, {}]", i, n1[i].x, n1[i].y, n1[i].z);
-    }
 
     m_PlanetCBData = PlanetCB{ m_PlanetCenter, m_PlanetRadius };
     m_PlanetCB = m_device->createDeviceLocalBuffer(&m_PlanetCBData, sizeof(PlanetCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -208,6 +186,10 @@ void Planet::createMeshDescriptorSetLayout(VulkanDevice& device) {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
+            .binding(15)  // m_CBTMesh.currentDisplacementBuffer
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_ALL)
         .createLayout();
 
     descriptorSetLayoutInitialized = true;
@@ -280,7 +262,7 @@ void Planet::updateDescriptorSet() {
         descriptor_buffer_info(m_CBTMesh.propagateBuffer),
     };
 
-    auto writes = initializers::writeDescriptorSets<15>(m_descriptorSet);
+    auto writes = initializers::writeDescriptorSets<16>(m_descriptorSet);
     set_buffer_write(writes[0], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &geometryInfo);
     set_buffer_write(writes[1], 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &updateInfo);
     set_buffer_write(writes[2], 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, neighborsInfo, 2);
@@ -296,6 +278,7 @@ void Planet::updateDescriptorSet() {
     set_buffer_write(writes[12], 12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &baseVertexInfo);
     set_buffer_write(writes[13], 13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &lebVertexInfo);
     set_buffer_write(writes[14], 14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &planetInfo);
+    set_buffer_write(writes[15], 15, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &currentDisplacementInfo);
     m_device->updateDescriptorSets(writes);
 }
 

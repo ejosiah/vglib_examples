@@ -87,6 +87,10 @@ layout(set = MESH_SET, binding = 14, scalar) readonly buffer PlanetCB {
     float _PlanetRadius;
 };
 
+layout(set = MESH_SET, binding = 15, scalar) buffer CurrentDisplacementBuffer {
+    vec3 _CurrentDisplacementBuffer[];
+};
+
 #define WORK_LIST_CLASSIFICATION 0
 #define WORK_LIST_SIMPLIFICATION 1
 #define WORK_LIST_ALLOCATE 2

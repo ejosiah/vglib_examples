@@ -6,6 +6,8 @@
 
 #include <array>
 
+#include "VulkanBuffer.h"
+
 struct Plane {
     glm::vec3 normal;
     float d;
@@ -52,7 +54,7 @@ struct PlanetCB {
     float radius{};
 };
 
-struct DeformationCB {
+struct DeformationData {
     glm::vec4 PatchSize;
     glm::vec4 PatchRoughness;
     float Choppiness;
@@ -61,7 +63,7 @@ struct DeformationCB {
     uint32_t PatchFlags;
 };
 
-struct WaterSimulationCB {
+struct WaterSimulationData {
     glm::vec4 PatchSize;
     glm::vec4 PatchWindOrientation;
     glm::vec4 PatchDirectionDampener;
@@ -80,3 +82,12 @@ struct MoonCB {
     int32_t NumOctaves;
     uint32_t Attenuation;
 };
+
+template<typename T>
+struct ConstantBufferT {
+    T* cpu{};
+    VulkanBuffer gpu;
+};
+
+using DeformationCB = ConstantBufferT<DeformationData>;
+using WaterSimulationCB = ConstantBufferT<WaterSimulationData>;

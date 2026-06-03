@@ -8,100 +8,15 @@
 #include <glm/glm.hpp>
 #include <ccmesh.h>
 
-#include <fstream>
-#include <iomanip>
 #include <cstdint>
+#include <optional>
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
-#include <string_view>
 
 #include "math/geometry.hpp"
 
 namespace {
-    template <typename T>
-    void write_field(std::ofstream& file, std::string_view name, const T& value) {
-        file << name << " = " << value << '\n';
-    }
-
-    void write_field(std::ofstream& file, std::string_view name, const glm::vec2& value) {
-        file << name << " = { " << value.x << ", " << value.y << " }\n";
-    }
-
-    void write_field(std::ofstream& file, std::string_view name, const glm::vec3& value) {
-        file << name << " = { " << value.x << ", " << value.y << ", " << value.z << " }\n";
-    }
-
-    void write_field(std::ofstream& file, std::string_view name, const glm::vec4& value) {
-        file << name << " = { " << value.x << ", " << value.y << ", " << value.z << ", " << value.w << " }\n";
-    }
-
-    void write_matrix(std::ofstream& file, std::string_view name, const glm::mat4& value) {
-        for (uint32_t row = 0; row < 4; ++row)
-            for (uint32_t col = 0; col < 4; ++col)
-                file << name << '[' << row << " * " << col << "] = " << value[col][row] << '\n';
-    }
-
-    std::ofstream open_constant_dump(const fs::path& frameDir, const char* fileName) {
-        std::ofstream file(frameDir / fileName);
-        file << std::setprecision(17);
-        return file;
-    }
-
-    void write_constant_buffer_dumps(const std::string& projectDir, uint32_t frameIndex, const GlobalCB& globalCB,
-                                     const Planet& planet) {
-        const auto frameDir = fs::path(projectDir) / "buffer_logs" / fmt::format("frame_{:06}", frameIndex);
-        fs::create_directories(frameDir);
-
-        {
-            auto file = open_constant_dump(frameDir, "constants.globalCB.txt");
-            write_matrix(file, "ViewProjectionMatrix", globalCB.ViewProjectionMatrix);
-            write_matrix(file, "InvViewProjectionMatrix", globalCB.InvViewProjectionMatrix);
-            write_field(file, "CameraPosition", globalCB.CameraPosition);
-            write_field(file, "SunDirection", globalCB.SunDirection);
-            write_field(file, "WireFrameColor", globalCB.WireFrameColor);
-            write_field(file, "ScreenSize", globalCB.ScreenSize);
-            write_field(file, "FrameIndex", globalCB.FrameIndex);
-            write_field(file, "Time", globalCB.Time);
-            write_field(file, "CullFlag", globalCB.CullFlag);
-            write_field(file, "FoV", globalCB.FoV);
-            write_field(file, "WireFrameSize", globalCB.WireFrameSize);
-            write_field(file, "ScreenSpaceShadow", globalCB.ScreenSpaceShadow);
-            write_field(file, "FarPlaneDistance", globalCB.FarPlaneDistance);
-        }
-
-        {
-            const auto& updateCB = planet.get_update_cb_data();
-            auto file = open_constant_dump(frameDir, "constants.earth.updateCB.txt");
-            write_matrix(file, "ViewProjectionMatrix", updateCB.ViewProjectionMatrix);
-            write_matrix(file, "InvViewProjectionMatrix", updateCB.InvViewProjectionMatrix);
-            for (uint32_t idx = 0; idx < updateCB.FrustumPlanes.size(); ++idx)
-                write_field(file, fmt::format("FrustumPlanes[{}]", idx), updateCB.FrustumPlanes[idx]);
-            write_field(file, "CameraPosition", updateCB.CameraPosition);
-            write_field(file, "CameraForward", updateCB.CameraForward);
-            write_field(file, "TriangleSize", updateCB.TriangleSize);
-            write_field(file, "MaxSubdivisionDepth", updateCB.MaxSubdivisionDepth);
-            write_field(file, "FOV", updateCB.FOV);
-            write_field(file, "FarPlaneDistance", updateCB.FarPlaneDistance);
-        }
-
-        {
-            const auto& geometryCB = planet.get_geometry_cb_data();
-            auto file = open_constant_dump(frameDir, "constants.earth.geometryCB.txt");
-            write_field(file, "TotalNumElements", geometryCB.TotalNumElements);
-            write_field(file, "BaseDepth", geometryCB.BaseDepth);
-            write_field(file, "TotalNumVertices", geometryCB.TotalNumVertices);
-            write_field(file, "MaterialID", geometryCB.MaterialID);
-        }
-
-        {
-            const auto& planetCB = planet.get_planet_cb_data();
-            auto file = open_constant_dump(frameDir, "constants.earth.planetCB.txt");
-            write_field(file, "PlanetCenter", planetCB.center);
-            write_field(file, "PlanetRadius", planetCB.radius);
-        }
-    }
-
 struct EdgeKey {
     int32_t a;
     int32_t b;
@@ -360,7 +275,10 @@ void PlanetDemo::prepareRender() {
         m_MeshUpdater.reset_buffers(cmd, m_EarthPlanet.m_descriptorSet, m_EarthPlanet.m_CBTDescriptorSet);
         m_MeshUpdater.prepare_indirection(cmd, m_EarthPlanet);
         m_EarthPlanet.evaluate_leb(cmd, globalDescriptorSet, true, true);
-        m_WaterDeformer.apply_deformation(cmd, m_EarthPlanet);
+        wataData.update_simulation(static_cast<float>(m_Time));
+        wataData.upload_constant_buffers();
+        m_WaterSimulation.evaluate(cmd, wataData);
+        m_WaterDeformer.apply_deformation(cmd, m_EarthPlanet, wataData);
     });
     m_FrameIndex = 0;
 }
@@ -387,10 +305,14 @@ void PlanetDemo::initGeometry() {
     m_MeshUpdater = {device, globalDescriptorSetLayout};
     m_MeshUpdater.initialize(globalDescriptorSet);
 
+    wataData = { device };
+    wataData.initialize();
+
+    m_WaterSimulation = { device };
+    m_WaterSimulation.initialize();
 
     m_WaterDeformer = { device };
     m_WaterDeformer.initialize();
-
 
 
     std::vector<mesh::Mesh> meshes;
@@ -426,10 +348,9 @@ void PlanetDemo::initCamera() {
     FirstPersonSpectatorCameraSettings cameraSettings;
     cameraSettings.fieldOfView = g_CameraFOV;
     cameraSettings.zNear = 0.1;
-    // cameraSettings.zFar =  g_EarthRadius + 100000; //200000;
-    cameraSettings.zFar =  200;
-    // cameraSettings.acceleration = glm::vec3(500 * km);
-    //    // cameraSettings.velocity = glm::vec3(1000 * km);
+    cameraSettings.zFar =  g_EarthRadius + 10000; //200000;
+    cameraSettings.acceleration = glm::vec3(50 * km);
+    cameraSettings.velocity = glm::vec3(200 * km);
     cameraSettings.aspectRatio = static_cast<float>(width) / static_cast<float>(height);
 
     camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
@@ -438,10 +359,10 @@ void PlanetDemo::initCamera() {
     // auto rotX = glm::rotate(glm::mat4{1}, pitch, {1, 0, 0});
     // auto rotY = glm::rotate(glm::mat4{1}, yaw, {0, 1, 0});
     //
-    // glm::vec3 pos{0, 0, -(g_EarthRadius + 10000)};
-    // // pos = (rotX  * rotY * glm::vec4(pos, 1)).xyz();
-    // auto target = pos + glm::vec3{0.0011957388, 0.9735858440, 0.2283589840};
-    camera->lookAt({0, 0, 5}, glm::vec3(0, 0, 0), {0, 1, 0});
+    glm::vec3 pos{0, 0, -(g_EarthRadius + 100)};
+    // pos = (rotX  * rotY * glm::vec4(pos, 1)).xyz();
+    auto target = pos + glm::vec3{0.0011957388, 0.9735858440, 0.2283589840};
+    camera->lookAt(pos, target, {0, 0, -1});
     // camera->position(pos);
     // camera->rotate(glm::degrees(yaw), glm::degrees(pitch), 0);
 }
@@ -453,6 +374,7 @@ void PlanetDemo::loadTextures() {
 void PlanetDemo::newFrame() {
     camera->newFrame();
     updateConstantBuffers();
+    wataData.upload_constant_buffers();
 }
 
 void PlanetDemo::creatSkyBox() {
@@ -615,37 +537,18 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
     if (advanceFrame) {
+        m_WaterSimulation.evaluate(commandBuffer, wataData);
         m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_EarthPlanet);
         m_EarthPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
-        m_WaterDeformer.apply_deformation(commandBuffer, m_EarthPlanet);
-        if (m_EnableFileLogging && m_FileLoggingFrameCount < m_MaxFileLoggingFrames) {
-            m_MeshUpdater.capture_frame_buffer_dumps(commandBuffer, m_EarthPlanet.m_CBTMesh, m_EarthPlanet.m_BaseMesh,
-                                                     m_LebMatrixCache.get_leb_matrix_buffer(), m_FrameIndex);
-            m_PendingBufferDumpFrameIndex = m_FrameIndex;
-            ++m_FileLoggingFrameCount;
-        }
+        m_WaterDeformer.apply_deformation(commandBuffer, m_EarthPlanet, wataData);
         advanceFrame = false;
     }
 
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        m_EarthRenderer.render(commandBuffer, *camera.get(), globalDescriptorSet);
-        m_EarthPlanet.renderDebug(commandBuffer, globalDescriptorSet);
-
-        VkDeviceSize offset = 0;
-        static auto model = glm::scale(glm::mat4{1}, glm::vec3(g_EarthRadius));
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.primitive.pipeline.handle);
-        camera->push(commandBuffer, render.primitive.layout);
-        //
-        // vkCmdBindVertexBuffers(commandBuffer, 0, 1, &proxy.vertices.buffer, &offset);
-        // vkCmdBindIndexBuffer(commandBuffer, proxy.indexes,  0, VK_INDEX_TYPE_UINT32);
-        // vkCmdDrawIndexed(commandBuffer, proxy.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
-
-        // vkCmdBindVertexBuffers(commandBuffer, 0, 1, m_EarthPlanet.m_BaseMesh.vertexBuffer, &offset);
-        // vkCmdBindIndexBuffer(commandBuffer, m_EarthPlanet.m_BaseMesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        // vkCmdDrawIndexed(commandBuffer, m_EarthPlanet.m_BaseMesh.indexBuffer.sizeAs<uint32_t>(), 1, 0, 0, 0);
-
+        // m_EarthRenderer.render(commandBuffer, *camera.get(), globalDescriptorSet);
+        // m_EarthPlanet.renderDebug(commandBuffer, globalDescriptorSet);
         renderSkyBox(commandBuffer);
 
         renderUI(commandBuffer);
@@ -659,7 +562,7 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 void PlanetDemo::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::Begin("controls");
     ImGui::SetWindowSize({200, 200});
-    static bool play = false;
+    static bool play = true;
     if (ImGui::Button("advance")) {
        advanceFrame = true;
     } else {
@@ -667,10 +570,41 @@ void PlanetDemo::renderUI(VkCommandBuffer commandBuffer) {
     }
     ImGui::SameLine();
     ImGui::Checkbox("play", &play);
-    ImGui::Checkbox("logging", &m_EnableFileLogging);
-    ImGui::InputScalar("log frame limit", ImGuiDataType_U32, &m_MaxFileLoggingFrames);
+    ImGui::Checkbox("show water visualizer", &m_ShowWaterVisualizer);
 
     ImGui::End();
+
+    ImGui::SetNextWindowSize(ImVec2(450.0f, 300.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Scene Parameters");
+    {
+        ImGui::TextUnformatted("General");
+        ImGui::Separator();
+
+        const char* currentCBTType = cbt_large::g_CBTTypesNames[static_cast<uint32_t>(m_NewCBTType)];
+        if (ImGui::BeginCombo("CBT Type", currentCBTType)) {
+            for (uint32_t n = 0; n < static_cast<uint32_t>(CBTType::Count); ++n) {
+                const auto cbtType = static_cast<CBTType>(n);
+                const bool isSelected = m_NewCBTType == cbtType;
+                if (ImGui::Selectable(cbt_large::g_CBTTypesNames[n], isSelected)) {
+                    m_NewCBTType = cbtType;
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::TextUnformatted("Earth Water");
+        ImGui::Separator();
+        wataData.render_ui_global();
+        wataData.render_ui_patch();
+    }
+    ImGui::End();
+
+    if (m_ShowWaterVisualizer) {
+        m_WaterSimulation.visualizer(plugin<ImGuiPlugin>(IM_GUI_PLUGIN));
+    }
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
@@ -685,8 +619,11 @@ void PlanetDemo::renderSkyBox(VkCommandBuffer commandBuffer) {
 }
 
 void PlanetDemo::update(float time) {
-    camera->update(time);
-    setTitle(fmt::format("{}, camera : {}, view: {}, frame - {}", title, camera->position(), camera->viewDir, m_FrameIndex));
+    if (!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
+    wataData.update_simulation(time);
+    setTitle(fmt::format("{}, camera : {}, view: {}, fps - {}", title, camera->position(), camera->viewDir, framePerSecond));
 }
 
 void PlanetDemo::checkAppInputs() {
@@ -717,13 +654,6 @@ void PlanetDemo::checkAppInputs() {
 }
 
 void PlanetDemo::endFrame() {
-    const auto projectDir = (fs::current_path() / "planet").string();
-    m_MeshUpdater.write_pending_frame_buffer_dumps(projectDir);
-    if (m_PendingBufferDumpFrameIndex) {
-        write_constant_buffer_dumps(projectDir, *m_PendingBufferDumpFrameIndex, *global, m_EarthPlanet);
-        m_PendingBufferDumpFrameIndex.reset();
-    }
-
     if (m_MirrorPOV) {
         const auto cam = camera->camera;
         auto view = cam.view;
