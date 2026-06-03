@@ -1,6 +1,5 @@
 #pragma once
 
-#include "camera_base.h"
 #include "planet.hpp"
 
 class EarthRenderer {
@@ -16,7 +15,7 @@ public:
 
     void initialize();
 
-    void render(VkCommandBuffer commandBuffer, const BaseCameraController& camera, VkDescriptorSet& globalDescriptorSet);
+    void render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet);
 
     void createPipeline();
 

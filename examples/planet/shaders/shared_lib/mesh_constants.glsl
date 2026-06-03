@@ -20,15 +20,15 @@ layout(set = MESH_SET, binding = 0, scalar) readonly buffer GeometryUBO {
 };
 
 layout(set = MESH_SET, binding = 1, scalar) readonly buffer UpdateCB{
-    mat4 _UpdateViewProjectionMatrix;
-    mat4 _UpdateInvViewProjectionMatrix;
-    vec4 _FrustumPlanes[6];
-    vec3 _UpdateCameraPosition;
-    vec3 _UpdateCameraForward;
-    float _TriangleSize;
+    REAL4X4_DP _UpdateViewProjectionMatrix;
+    REAL4X4_DP _UpdateInvViewProjectionMatrix;
+    REAL4_DP _FrustumPlanes[6];
+    REAL3_DP _UpdateCameraPosition;
+    REAL3_DP _UpdateCameraForward;
+    REAL_DP _TriangleSize;
+    REAL_DP _UpdateFOV;
+    REAL_DP _UpdateFarPlaneDistance;
     uint _MaxSubdivisionDepth;
-    float _UpdateFOV;
-    float _UpdateFarPlaneDistance;
 };
 
 layout(set = MESH_SET, binding = 2, scalar) buffer NeighborsBuffer {
@@ -83,8 +83,8 @@ layout(set = MESH_SET, binding = 13, scalar) buffer LEBPositionBuffer {
 };
 
 layout(set = MESH_SET, binding = 14, scalar) readonly buffer PlanetCB {
-    vec3 _PlanetCenter;
-    float _PlanetRadius;
+    REAL3_DP _PlanetCenter;
+    REAL_DP _PlanetRadius;
 };
 
 layout(set = MESH_SET, binding = 15, scalar) buffer CurrentDisplacementBuffer {

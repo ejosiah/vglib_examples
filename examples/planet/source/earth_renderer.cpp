@@ -15,11 +15,10 @@ void EarthRenderer::initialize() {
     createPipeline();
 }
 
-void EarthRenderer::render(VkCommandBuffer commandBuffer, const BaseCameraController& camera, VkDescriptorSet& globalDescriptorSet) {
+void EarthRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout.handle, 0, 1, &globalDescriptorSet, 0, nullptr);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout.handle, 1, 1, &m_descriptorSet, 0, nullptr);
-    camera.push(commandBuffer, m_layout);
     vkCmdDrawIndirect(commandBuffer, m_planet->m_CBTMesh.indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
 }
 

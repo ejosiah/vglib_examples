@@ -5,41 +5,56 @@
 #include <glm/glm.hpp>
 
 #include <array>
+#include <type_traits>
 
 #include "VulkanBuffer.h"
 
-struct Plane {
-    glm::vec3 normal;
-    float d;
+#ifndef EnableDoublePrecisionLEB
+#define EnableDoublePrecisionLEB 1
+#endif
+
+inline constexpr bool UseDoublePrecisionPlanet = EnableDoublePrecisionLEB != 0;
+using PlanetScalar = std::conditional_t<UseDoublePrecisionPlanet, double, float>;
+using PlanetVec2 = glm::vec<2, PlanetScalar, glm::defaultp>;
+using PlanetVec3 = glm::vec<3, PlanetScalar, glm::defaultp>;
+using PlanetVec4 = glm::vec<4, PlanetScalar, glm::defaultp>;
+using PlanetMat4 = glm::mat<4, 4, PlanetScalar, glm::defaultp>;
+
+template<typename Scalar>
+struct PlaneT {
+    glm::vec<3, Scalar, glm::defaultp> normal;
+    Scalar d;
 };
 
 // Global constant buffer
-struct GlobalCB {
-    glm::mat4 ViewProjectionMatrix{0};
-    glm::mat4 InvViewProjectionMatrix{0};
-    glm::vec3 CameraPosition{};
-    glm::vec3 SunDirection{1};
-    glm::vec3 WireFrameColor{};
-    glm::vec2 ScreenSize{};
-    uint32_t FrameIndex;
-    float Time;
-    float CullFlag;
-    float FoV;
-    float WireFrameSize;
-    float ScreenSpaceShadow;
-    float FarPlaneDistance;
+template<typename Scalar>
+struct GlobalCBT {
+    glm::mat<4, 4, Scalar, glm::defaultp> ViewProjectionMatrix{0};
+    glm::mat<4, 4, Scalar, glm::defaultp> InvViewProjectionMatrix{0};
+    glm::vec<3, Scalar, glm::defaultp> CameraPosition{};
+    glm::vec<3, Scalar, glm::defaultp> SunDirection{1};
+    glm::vec<3, Scalar, glm::defaultp> WireFrameColor{};
+    glm::vec<2, Scalar, glm::defaultp> ScreenSize{};
+    Scalar Time{};
+    Scalar CullFlag{};
+    Scalar FoV{};
+    Scalar WireFrameSize{};
+    Scalar ScreenSpaceShadow{};
+    Scalar FarPlaneDistance{};
+    uint32_t FrameIndex{};
 };
 
-struct UpdateCB {
-    glm::mat4 ViewProjectionMatrix{1};
-    glm::mat4 InvViewProjectionMatrix{1};
-    std::array<glm::vec4, 6> FrustumPlanes{};
-    glm::vec3 CameraPosition{};
-    glm::vec3 CameraForward{};
-    float TriangleSize{};
+template<typename Scalar>
+struct UpdateCBT {
+    glm::mat<4, 4, Scalar, glm::defaultp> ViewProjectionMatrix{1};
+    glm::mat<4, 4, Scalar, glm::defaultp> InvViewProjectionMatrix{1};
+    std::array<glm::vec<4, Scalar, glm::defaultp>, 6> FrustumPlanes{};
+    glm::vec<3, Scalar, glm::defaultp> CameraPosition{};
+    glm::vec<3, Scalar, glm::defaultp> CameraForward{};
+    Scalar TriangleSize{};
+    Scalar FOV{};
+    Scalar FarPlaneDistance{};
     uint32_t MaxSubdivisionDepth{};
-    float FOV{};
-    float FarPlaneDistance{};
 };
 
 struct GeometryCB {
@@ -49,10 +64,16 @@ struct GeometryCB {
     uint32_t MaterialID{};
 };
 
-struct PlanetCB {
-    glm::vec3 center{};
-    float radius{};
+template<typename Scalar>
+struct PlanetCBT {
+    glm::vec<3, Scalar, glm::defaultp> center{};
+    Scalar radius{};
 };
+
+using Plane = PlaneT<PlanetScalar>;
+using GlobalCB = GlobalCBT<PlanetScalar>;
+using UpdateCB = UpdateCBT<PlanetScalar>;
+using PlanetCB = PlanetCBT<PlanetScalar>;
 
 struct DeformationData {
     glm::vec4 PatchSize;

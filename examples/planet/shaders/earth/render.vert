@@ -7,15 +7,15 @@
 #include "../shared_lib/constant_buffers.glsl"
 
 layout(set = 1, binding = 0, scalar) readonly buffer UpdateCB{
-    mat4 _UpdateViewProjectionMatrix;
-    mat4 _UpdateInvViewProjectionMatrix;
-    vec4 _FrustumPlanes[6];
-    vec3 _UpdateCameraPosition;
-    vec3 _UpdateCameraForward;
-    float _TriangleSize;
+    REAL4X4_DP _UpdateViewProjectionMatrix;
+    REAL4X4_DP _UpdateInvViewProjectionMatrix;
+    REAL4_DP _FrustumPlanes[6];
+    REAL3_DP _UpdateCameraPosition;
+    REAL3_DP _UpdateCameraForward;
+    REAL_DP _TriangleSize;
+    REAL_DP _UpdateFOV;
+    REAL_DP _UpdateFarPlaneDistance;
     uint _MaxSubdivisionDepth;
-    float _UpdateFOV;
-    float _UpdateFarPlaneDistance;
 };
 
 
@@ -57,9 +57,9 @@ void main() {
 //    REAL3_DP positionRWS = REAL3_DP(_CurrentVertexBuffer[triangle_id * 3 + local_vert_id]) + _UpdateCameraPosition;
 
     // Original position
-    vs.positionORWS = vec3(positionRWS - _CurrentDisplacementBuffer[triangle_id * 3 + local_vert_id]);
+    vs.positionORWS = vec3(positionRWS - REAL3_DP(_CurrentDisplacementBuffer[triangle_id * 3 + local_vert_id]));
     vs.positionRWS = vec3(positionRWS);
 
     // Apply the view projection
-    gl_Position = _ViewProjectionMatrix * vec4(positionRWS, 1.0);
+    gl_Position = vec4(_ViewProjectionMatrix * REAL4_DP(positionRWS, REAL_DP(1.0)));
 }

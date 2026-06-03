@@ -269,8 +269,8 @@ void PlanetDemo::prepareRender() {
         m_Time = 0;
 
         updateConstantBuffers();
-        m_updateCB.ViewProjectionMatrix = glm::scale(glm::mat4{1}, glm::vec3(0));
-        m_updateCB.InvViewProjectionMatrix = glm::scale(glm::mat4{1}, glm::vec3(0));
+        m_updateCB.ViewProjectionMatrix = glm::scale(PlanetMat4{1}, PlanetVec3{0});
+        m_updateCB.InvViewProjectionMatrix = glm::scale(PlanetMat4{1}, PlanetVec3{0});
         m_EarthPlanet.update_constant_buffers(m_updateCB);
         m_MeshUpdater.reset_buffers(cmd, m_EarthPlanet.m_descriptorSet, m_EarthPlanet.m_CBTDescriptorSet);
         m_MeshUpdater.prepare_indirection(cmd, m_EarthPlanet);
@@ -335,36 +335,18 @@ void PlanetDemo::initGeometry() {
 }
 
 void PlanetDemo::initCamera() {
-    // OrbitingCameraSettings cameraSettings;
-    // cameraSettings.orbitMinZoom = 0.1;
-    // cameraSettings.orbitMaxZoom = 512.0f;
-    // cameraSettings.offsetDistance = 1.0f;
-    // cameraSettings.modelHeight = 1.5;
-    // cameraSettings.fieldOfView = 60.0f;
-    // cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
-    //
-    // camera = std::make_unique<OrbitingCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-
-    FirstPersonSpectatorCameraSettings cameraSettings;
+    PlanetFirstPersonCameraSettings cameraSettings;
     cameraSettings.fieldOfView = g_CameraFOV;
-    cameraSettings.zNear = 0.1;
-    cameraSettings.zFar =  g_EarthRadius + 10000; //200000;
-    cameraSettings.acceleration = glm::vec3(50 * km);
-    cameraSettings.velocity = glm::vec3(200 * km);
-    cameraSettings.aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    cameraSettings.zNear = 1.0;
+    cameraSettings.zFar =  20000;
+    cameraSettings.acceleration = PlanetVec3(50 * km);
+    cameraSettings.velocity = PlanetVec3(200 * km);
+    cameraSettings.aspectRatio = static_cast<PlanetScalar>(width) / static_cast<PlanetScalar>(height);
 
-    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    // float yaw = -0.1f;
-    // float pitch = -glm::pi<float>() / 4.2f;
-    // auto rotX = glm::rotate(glm::mat4{1}, pitch, {1, 0, 0});
-    // auto rotY = glm::rotate(glm::mat4{1}, yaw, {0, 1, 0});
-    //
-    glm::vec3 pos{0, 0, -(g_EarthRadius + 100)};
-    // pos = (rotX  * rotY * glm::vec4(pos, 1)).xyz();
-    auto target = pos + glm::vec3{0.0011957388, 0.9735858440, 0.2283589840};
-    camera->lookAt(pos, target, {0, 0, -1});
-    // camera->position(pos);
-    // camera->rotate(glm::degrees(yaw), glm::degrees(pitch), 0);
+    camera = std::make_unique<PlanetFirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    PlanetVec3 pos{0, 0, -(static_cast<PlanetScalar>(g_EarthRadius) + PlanetScalar(100.0f))};
+    auto target = pos + PlanetVec3{0.0011957388, 0.9735858440, 0.2283589840};
+    camera->lookAt(pos, target, PlanetVec3{0, 0, -1});
 }
 
 void PlanetDemo::loadTextures() {
@@ -547,7 +529,7 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        // m_EarthRenderer.render(commandBuffer, *camera.get(), globalDescriptorSet);
+        m_EarthRenderer.render(commandBuffer, globalDescriptorSet);
         // m_EarthPlanet.renderDebug(commandBuffer, globalDescriptorSet);
         renderSkyBox(commandBuffer);
 
@@ -612,7 +594,12 @@ void PlanetDemo::renderSkyBox(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.layout.handle, 0, 1, &milkywayDescriptorSet, 0, nullptr);
-    camera->push(commandBuffer, render.skybox.layout);
+    const CameraT<float> skyboxCamera{
+        .model = glm::mat4(camera->camera.model),
+        .view = glm::mat4(camera->camera.view),
+        .proj = glm::mat4(camera->camera.proj),
+    };
+    vkCmdPushConstants(commandBuffer, render.skybox.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(skyboxCamera), &skyboxCamera);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, skybox.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, skybox.indexes, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, skybox.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
@@ -657,21 +644,21 @@ void PlanetDemo::endFrame() {
     if (m_MirrorPOV) {
         const auto cam = camera->camera;
         auto view = cam.view;
-        view[3] = glm::vec4{0, 0, 0, 1};
+        view[3] = PlanetVec4{0, 0, 0, 1};
         auto projection = cam.proj;
         auto viewProjection = projection * view;
         auto modelViewProjection = viewProjection;
         auto invViewProjection = glm::inverse(viewProjection);
 
-        static Frustum frustum;
-        Frustum::extractFrustum(frustum, modelViewProjection);
+        static PlanetFrustum frustum;
+        PlanetFrustum::extractFrustum(frustum, modelViewProjection);
 
         m_updateCB.ViewProjectionMatrix = viewProjection;
         m_updateCB.InvViewProjectionMatrix = invViewProjection;
         m_updateCB.CameraPosition = camera->position();
-        m_updateCB.CameraForward = -glm::vec3(view[0][2], view[1][2], view[2][2]);
+        m_updateCB.CameraForward = -PlanetVec3(view[0][2], view[1][2], view[2][2]);
         m_updateCB.FarPlaneDistance = camera->far();
-        m_updateCB.FOV = glm::radians(camera->fov * 0.5f);
+        m_updateCB.FOV = glm::radians(camera->fov * PlanetScalar(0.5));
         std::memcpy(m_updateCB.FrustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
 
         m_EarthPlanet.update_constant_buffers(m_updateCB);
@@ -696,19 +683,19 @@ void PlanetDemo::onPause() {
 void PlanetDemo::updateConstantBuffers() {
     const auto cam = camera->camera;
     auto view = cam.view;
-    view[3] = glm::vec4{0, 0, 0, 1};
+    view[3] = PlanetVec4{0, 0, 0, 1};
     auto viewProjection = cam.proj * view;
     auto invViewProjection = glm::inverse(viewProjection);
     global->ViewProjectionMatrix = viewProjection;
     global->InvViewProjectionMatrix = invViewProjection;
     global->CameraPosition = camera->position();
-    global->FoV = glm::radians(camera->fov * 0.5f);
-    global->ScreenSize = {width, height};
-    global->SunDirection = glm::vec3{glm::inversesqrt(3.f)}; // TODO update
+    global->FoV = glm::radians(camera->fov * PlanetScalar(0.5));
+    global->ScreenSize = PlanetVec2{static_cast<PlanetScalar>(width), static_cast<PlanetScalar>(height)};
+    global->SunDirection = PlanetVec3{glm::inversesqrt(PlanetScalar(3))}; // TODO update
     global->FrameIndex = m_FrameIndex;
     global->Time = elapsedTime;
     global->FarPlaneDistance = camera->far();
-    global->WireFrameColor = m_WireframeColor;
+    global->WireFrameColor = PlanetVec3(m_WireframeColor);
     global->WireFrameSize = m_WireframeSize;
     global->ScreenSpaceShadow = m_RayTracingPath ? 1.0f : 0.0f;
 }

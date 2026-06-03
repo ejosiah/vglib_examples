@@ -1,6 +1,8 @@
 #ifndef GLOBAL_CB_HLSL
 #define GLOBAL_CB_HLSL
 
+#include "../types.glsl"
+
 #extension GL_EXT_scalar_block_layout : enable
 
 #ifndef UINT32_MAX
@@ -13,19 +15,19 @@
 
 #ifdef GLOBAL_CB_SET
 layout(set = GLOBAL_CB_SET, binding = 0, scalar) readonly buffer GlobalCB {
-    mat4 _ViewProjectionMatrix;
-    mat4 _InvViewProjectionMatrix;
-    vec3 _CameraPosition;
-    vec3 _SunDirection;
-    vec3 _WireFrameColor;
-    vec2 _ScreenSize;
+    REAL4X4_DP _ViewProjectionMatrix;
+    REAL4X4_DP _InvViewProjectionMatrix;
+    REAL3_DP _CameraPosition;
+    REAL3_DP _SunDirection;
+    REAL3_DP _WireFrameColor;
+    REAL2_DP _ScreenSize;
+    REAL_DP _Time;
+    REAL_DP _CullFlag;
+    REAL_DP _FoV;
+    REAL_DP _WireFrameSize;
+    REAL_DP _ScreenSpaceShadow;
+    REAL_DP _FarPlaneDistance;
     uint _FrameIndex;
-    float _Time;
-    float _CullFlag;
-    float _FoV;
-    float _WireFrameSize;
-    float _ScreenSpaceShadow;
-    float _FarPlaneDistance;
 };
 
 

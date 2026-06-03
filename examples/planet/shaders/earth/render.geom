@@ -23,9 +23,9 @@ layout(location = 3) noperspective out vec3 dist;
 
 void main() {
     // Compute the vectors and the area
-    vec2 p0 = clip_space_to_pixel(gl_in[0].gl_Position, _ScreenSize.xy);
-    vec2 p1 = clip_space_to_pixel(gl_in[1].gl_Position, _ScreenSize.xy);
-    vec2 p2 = clip_space_to_pixel(gl_in[2].gl_Position, _ScreenSize.xy);
+    vec2 p0 = clip_space_to_pixel(gl_in[0].gl_Position, vec2(_ScreenSize.xy));
+    vec2 p1 = clip_space_to_pixel(gl_in[1].gl_Position, vec2(_ScreenSize.xy));
+    vec2 p2 = clip_space_to_pixel(gl_in[2].gl_Position, vec2(_ScreenSize.xy));
     vec2 v[3] = { p2 - p1, p2 - p0, p1 - p0 };
     float area = abs(v[1].x * v[2].y - v[1].y * v[2].x);
 

@@ -6,21 +6,21 @@
 #include "../shared_lib/constant_buffers.glsl"
 
 layout(set = 1, binding = 0, scalar) readonly buffer UpdateCB{
-    mat4 _UpdateViewProjectionMatrix;
-    mat4 _UpdateInvViewProjectionMatrix;
-    vec4 _FrustumPlanes[6];
-    vec3 _UpdateCameraPosition;
-    vec3 _UpdateCameraForward;
-    float _TriangleSize;
+    REAL4X4_DP _UpdateViewProjectionMatrix;
+    REAL4X4_DP _UpdateInvViewProjectionMatrix;
+    REAL4_DP _FrustumPlanes[6];
+    REAL3_DP _UpdateCameraPosition;
+    REAL3_DP _UpdateCameraForward;
+    REAL_DP _TriangleSize;
+    REAL_DP _UpdateFOV;
+    REAL_DP _UpdateFarPlaneDistance;
     uint _MaxSubdivisionDepth;
-    float _UpdateFOV;
-    float _UpdateFarPlaneDistance;
 };
 
 
 layout(set = 1, binding = 1, scalar) readonly buffer PlanetCB {
-    vec3 _PlanetCenter;
-    float _PlanetRadius;
+    REAL3_DP _PlanetCenter;
+    REAL_DP _PlanetRadius;
 };
 
 layout(location = 0) in struct {
@@ -44,10 +44,10 @@ void main() {
 //    vec3 lighting = evaluate_earth_lighting(positionOPS, fs_in.positionRWS, bool(_Attenuation));
     vec3 lighting = vec3(0, 0, 1);
 
-    lighting = apply_wireframe(lighting, _WireFrameColor, _WireFrameSize, dist);
+    lighting = apply_wireframe(lighting, vec3(_WireFrameColor), float(_WireFrameSize), dist);
 
     vec3 N = normalize(fs_in.normal);
-    vec3 V = normalize(_UpdateCameraForward);
+    vec3 V = normalize(vec3(_UpdateCameraForward));
     float ndov = dot(N, V);
 
     vec3 color = gl_FrontFacing ? vec3(0, 0, 1) : vec3(1, 0, 0);

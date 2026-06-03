@@ -36,7 +36,7 @@ void Planet::initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh) {
     initialize_cbt_mesh(mesh, cbt, *m_device, m_CBTMesh);
     initialize_base_mesh(mesh, *m_device, m_BaseMesh);
 
-    m_PlanetCBData = PlanetCB{ m_PlanetCenter, m_PlanetRadius };
+    m_PlanetCBData = PlanetCB{ PlanetVec3(m_PlanetCenter), PlanetScalar(m_PlanetRadius) };
     m_PlanetCB = m_device->createDeviceLocalBuffer(&m_PlanetCBData, sizeof(PlanetCB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     m_device->setName<VK_OBJECT_TYPE_BUFFER>(fmt::format("{}_planet_cb", m_name), m_PlanetCB.buffer);
 
@@ -53,8 +53,8 @@ void Planet::initialize(const cbt_large::CBT& cbt, const CPUMesh& mesh) {
 
     m_UpdateCB.gpu = m_device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(UpdateCB), fmt::format("{}_update_cb", m_name));
     m_UpdateCB.cpu = static_cast<UpdateCB*>(m_UpdateCB.gpu.map());
-    m_UpdateCB.cpu->ViewProjectionMatrix[3] = {0, 0, 0, 1};
-    m_UpdateCB.cpu->InvViewProjectionMatrix[3] = {0, 0, 0, 1};
+    m_UpdateCB.cpu->ViewProjectionMatrix[3] = PlanetVec4{0, 0, 0, 1};
+    m_UpdateCB.cpu->InvViewProjectionMatrix[3] = PlanetVec4{0, 0, 0, 1};
 
     createDescriptorSetLayouts();
     createPipelines();

@@ -8,10 +8,16 @@
 #if EnableDoublePrecisionLEB
 #define LEB_DOUBLE
 #define REAL_DP double
+#define REAL2_DP dvec2
 #define REAL3_DP dvec3
+#define REAL4_DP dvec4
+#define REAL4X4_DP dmat4
 #else
 #define REAL_DP float
+#define REAL2_DP vec2
 #define REAL3_DP vec3
+#define REAL4_DP vec4
+#define REAL4X4_DP mat4
 #endif
 
 #ifdef LEB_DOUBLE

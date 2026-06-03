@@ -2,6 +2,7 @@
 #include "constant_buffers.hpp"
 #include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
+#include "FirstPersonCamera.h"
 #include "cbt/large/cbt.h"
 #include "cpu_mesh.hpp"
 #include "earth_renderer.hpp"
@@ -11,6 +12,11 @@
 #include "WaterSimulation.hpp"
 #include "cbt/large/leb_matrix_cache.h"
 #include "cbt/large/cbt_utility.h"
+
+using PlanetCameraController = std::conditional_t<UseDoublePrecisionPlanet, DoubleBaseCameraController, BaseCameraController>;
+using PlanetFirstPersonCameraSettings = std::conditional_t<UseDoublePrecisionPlanet, DoubleFirstPersonSpectatorCameraSettings, FirstPersonSpectatorCameraSettings>;
+using PlanetFirstPersonCameraController = std::conditional_t<UseDoublePrecisionPlanet, DoubleFirstPersonCameraController, FirstPersonCameraController>;
+using PlanetFrustum = std::conditional_t<UseDoublePrecisionPlanet, DoubleFrustum, Frustum>;
 
 class PlanetDemo : public VulkanBaseApp{
 public:
@@ -95,7 +101,7 @@ protected:
     VulkanCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
-    std::unique_ptr<BaseCameraController> camera;
+    std::unique_ptr<PlanetCameraController> camera;
     std::unique_ptr<gltf::Loader> loader;
     BindlessDescriptor bindlessDescriptor;
     CPUMesh planetMesh;
