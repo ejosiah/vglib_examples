@@ -4,9 +4,8 @@
 
 #include "constant_buffers.hpp"
 
-using PlanetCameraController = std::conditional_t<UseDoublePrecisionPlanet, DoubleBaseCameraController, BaseCameraController>;
-using PlanetFirstPersonCameraSettings = std::conditional_t<UseDoublePrecisionPlanet, DoubleFirstPersonSpectatorCameraSettings, FirstPersonSpectatorCameraSettings>;
-using PlanetFirstPersonCameraController = std::conditional_t<UseDoublePrecisionPlanet, DoubleFirstPersonCameraController, FirstPersonCameraController>;
+using PlanetCameraController = std::conditional_t<UseDoublePrecisionPlanet, DoubleCameraController, CameraController>;
+using PlanetCameraSettings = std::conditional_t<UseDoublePrecisionPlanet, DoubleCameraSettings, CameraSettings>;
 using PlanetFrustum = std::conditional_t<UseDoublePrecisionPlanet, DoubleFrustum, Frustum>;
 
 class CameraManager {
@@ -42,18 +41,18 @@ public:
     }
 
     auto fieldOfView() const {
-        return _camera->fov;
+        return _camera->fieldOfView();
     }
 
     auto cameraMatrix() const {
-        return _camera->camera;
+        return _camera->cameraMatrix();
     }
 
     auto viewDirection() const {
-        return _camera->viewDir;
+        return _camera->viewDirection();
     }
 
 private:
-    std::unique_ptr<PlanetCameraController> _camera;
+    std::unique_ptr<CameraController> _camera;
 
 };
