@@ -1,12 +1,16 @@
 #include "earth_renderer.hpp"
 
 #include "AppContext.hpp"
+#include "WaterData.hpp"
 #include "descriptor_utils.hpp"
 #include "filemanager.hpp"
+
+#include <array>
 
 EarthRenderer::EarthRenderer(const Params &params)
     : m_device(&params.device)
     , m_planet(&params.planet)
+    , m_waterData(&params.waterData)
     , m_globalDescriptorSetLayout(params.globalDescriptorSetLayout){}
 
 void EarthRenderer::initialize() {
@@ -16,9 +20,18 @@ void EarthRenderer::initialize() {
 }
 
 void EarthRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
+    auto& atmosphere = AppContext::atmosphere();
+    const std::array sets{
+        globalDescriptorSet,
+        m_descriptorSet,
+        atmosphere.info.descriptorSet,
+        atmosphere.descriptor.uboDescriptorSet,
+        atmosphere.descriptor.lutDescriptorSet,
+        m_waterData->descriptor_set(),
+    };
+
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout.handle, 0, 1, &globalDescriptorSet, 0, nullptr);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout.handle, 1, 1, &m_descriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     vkCmdDrawIndirect(commandBuffer, m_planet->m_CBTMesh.indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
 }
 
@@ -37,6 +50,10 @@ void EarthRenderer::createPipeline() {
             .layout()
                 .addDescriptorSetLayout(m_globalDescriptorSetLayout)
                 .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::uniformDescriptorSet())
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
+                .addDescriptorSetLayout(WaterData::descriptorSetLayout)
             .name("earth_renderer")
         .build(m_layout);
 

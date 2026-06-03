@@ -2,11 +2,14 @@
 
 #include "planet.hpp"
 
+class WaterData;
+
 class EarthRenderer {
 public:
     struct Params {
         VulkanDevice &device;
         Planet &planet;
+        WaterData& waterData;
         VulkanDescriptorSetLayout globalDescriptorSetLayout;
     };
     EarthRenderer() = default;
@@ -27,6 +30,7 @@ protected:
 private:
     VulkanDevice* m_device;
     Planet* m_planet;
+    WaterData* m_waterData;
 
     VulkanDescriptorSetLayout m_globalDescriptorSetLayout;
     VulkanDescriptorSetLayout m_descriptorSetLayout;

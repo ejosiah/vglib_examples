@@ -2,7 +2,7 @@
 #define TYPES_GLSL
 
 #ifndef EnableDoublePrecisionLEB
-#define EnableDoublePrecisionLEB 1
+#define EnableDoublePrecisionLEB 0
 #endif
 
 #if EnableDoublePrecisionLEB

@@ -13,10 +13,19 @@
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
+#include <array>
 
 #include "math/geometry.hpp"
 
 namespace {
+glm::vec3 toAtmosphereVec3(const PlanetVec3& value) {
+    return {
+        static_cast<float>(value.x),
+        static_cast<float>(value.y),
+        static_cast<float>(value.z),
+    };
+}
+
 struct EdgeKey {
     int32_t a;
     int32_t b;
@@ -294,7 +303,10 @@ void PlanetDemo::initGeometry() {
     m_EarthPlanet.initialize(*cbt, planetMesh);
     m_EarthPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
-    m_EarthRenderer = { { device, m_EarthPlanet, globalDescriptorSetLayout} };
+    wataData = { device };
+    wataData.initialize();
+
+    m_EarthRenderer = { { device, m_EarthPlanet, wataData, globalDescriptorSetLayout} };
     m_EarthRenderer.initialize();
 
     m_MoonPlanet = Planet{ { "moon", device, globalDescriptorSetLayout, g_MoonRadius, g_MoonCenter, g_MoonImpostorToggle, g_MoonTriangleSize, MOON_MATERIAL } };
@@ -304,9 +316,6 @@ void PlanetDemo::initGeometry() {
     // TODO - move into planet and only create one CBTType shader, reload shader based on CBTType
     m_MeshUpdater = {device, globalDescriptorSetLayout};
     m_MeshUpdater.initialize(globalDescriptorSet);
-
-    wataData = { device };
-    wataData.initialize();
 
     m_WaterSimulation = { device };
     m_WaterSimulation.initialize();
@@ -355,6 +364,7 @@ void PlanetDemo::loadTextures() {
 
 void PlanetDemo::newFrame() {
     camera->newFrame();
+    updateAtmosphereInfo();
     updateConstantBuffers();
     wataData.upload_constant_buffers();
 }
@@ -486,7 +496,7 @@ void PlanetDemo::createRenderPipeline() {
             prototypes->cloneGraphicsPipeline()
                 .shaderStage()
                     .vertexShader(resource("skybox/skybox.vert.spv"))
-                    .fragmentShader(resource("equi_rect.frag.spv"))
+                    .fragmentShader(resource("skybox_atmosphere.frag.spv"))
                 .vertexInputState().clear()
                     .addVertexBindingDescription(0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX)
                     .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0)
@@ -496,6 +506,9 @@ void PlanetDemo::createRenderPipeline() {
                     .compareOpLessOrEqual()
                 .layout()
                     .addDescriptorSetLayout(textureDescriptorSetLayout)
+                    .addDescriptorSetLayout(AppContext::uniformDescriptorSet())
+                    .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
+                    .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
                 .name("skybox_render")
                 .build(render.skybox.layout);
     //    @formatter:on
@@ -530,9 +543,7 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
 
     renderToSwapChain([&]{
         m_EarthRenderer.render(commandBuffer, globalDescriptorSet);
-        // m_EarthPlanet.renderDebug(commandBuffer, globalDescriptorSet);
         renderSkyBox(commandBuffer);
-
         renderUI(commandBuffer);
     }, commandBuffer);
 
@@ -552,6 +563,7 @@ void PlanetDemo::renderUI(VkCommandBuffer commandBuffer) {
     }
     ImGui::SameLine();
     ImGui::Checkbox("play", &play);
+    ImGui::Checkbox("wireframe", &m_ActiveWireFrame);
     ImGui::Checkbox("show water visualizer", &m_ShowWaterVisualizer);
 
     ImGui::End();
@@ -592,8 +604,16 @@ void PlanetDemo::renderUI(VkCommandBuffer commandBuffer) {
 
 void PlanetDemo::renderSkyBox(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
+    auto& atmosphere = AppContext::atmosphere();
+    const std::array sets{
+        milkywayDescriptorSet,
+        atmosphere.info.descriptorSet,
+        atmosphere.descriptor.uboDescriptorSet,
+        atmosphere.descriptor.lutDescriptorSet,
+    };
+
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.layout.handle, 0, 1, &milkywayDescriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     const CameraT<float> skyboxCamera{
         .model = glm::mat4(camera->camera.model),
         .view = glm::mat4(camera->camera.view),
@@ -603,6 +623,18 @@ void PlanetDemo::renderSkyBox(VkCommandBuffer commandBuffer) {
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, skybox.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, skybox.indexes, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, skybox.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
+}
+
+void PlanetDemo::updateAtmosphereInfo() {
+    auto& info = *AppContext::atmosphere().info.cpu;
+    const auto& cam = camera->camera;
+    info.inverse_model = glm::inverse(glm::mat4(cam.model));
+    info.inverse_view = glm::inverse(glm::mat4(cam.view));
+    info.inverse_projection = glm::inverse(glm::mat4(cam.proj));
+    info.camera = glm::vec4(toAtmosphereVec3(camera->position()), 1.0f);
+    info.earthCenter = glm::vec4(toAtmosphereVec3(PlanetVec3(g_EarthCenter)), 1.0f);
+
+    info.sunDirection = glm::vec4{0, 0, -1, 1};
 }
 
 void PlanetDemo::update(float time) {
@@ -691,12 +723,12 @@ void PlanetDemo::updateConstantBuffers() {
     global->CameraPosition = camera->position();
     global->FoV = glm::radians(camera->fov * PlanetScalar(0.5));
     global->ScreenSize = PlanetVec2{static_cast<PlanetScalar>(width), static_cast<PlanetScalar>(height)};
-    global->SunDirection = PlanetVec3{glm::inversesqrt(PlanetScalar(3))}; // TODO update
+    global->SunDirection = AppContext::AtmosphereInfo().sunDirection;
     global->FrameIndex = m_FrameIndex;
     global->Time = elapsedTime;
     global->FarPlaneDistance = camera->far();
     global->WireFrameColor = PlanetVec3(m_WireframeColor);
-    global->WireFrameSize = m_WireframeSize;
+    global->WireFrameSize = m_ActiveWireFrame ? m_WireframeSize : 0.0f;
     global->ScreenSpaceShadow = m_RayTracingPath ? 1.0f : 0.0f;
 }
 

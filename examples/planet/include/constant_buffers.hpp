@@ -10,7 +10,7 @@
 #include "VulkanBuffer.h"
 
 #ifndef EnableDoublePrecisionLEB
-#define EnableDoublePrecisionLEB 1
+#define EnableDoublePrecisionLEB 0
 #endif
 
 inline constexpr bool UseDoublePrecisionPlanet = EnableDoublePrecisionLEB != 0;
@@ -32,7 +32,7 @@ struct GlobalCBT {
     glm::mat<4, 4, Scalar, glm::defaultp> ViewProjectionMatrix{0};
     glm::mat<4, 4, Scalar, glm::defaultp> InvViewProjectionMatrix{0};
     glm::vec<3, Scalar, glm::defaultp> CameraPosition{};
-    glm::vec<3, Scalar, glm::defaultp> SunDirection{1};
+    glm::vec<3, Scalar, glm::defaultp> SunDirection{0, 0, -1};
     glm::vec<3, Scalar, glm::defaultp> WireFrameColor{};
     glm::vec<2, Scalar, glm::defaultp> ScreenSize{};
     Scalar Time{};

@@ -67,6 +67,8 @@ protected:
 
     void renderSkyBox(VkCommandBuffer commandBuffer);
 
+    void updateAtmosphereInfo();
+
     void update(float time) override;
 
     void checkAppInputs() override;
