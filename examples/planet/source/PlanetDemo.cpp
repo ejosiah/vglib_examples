@@ -18,6 +18,12 @@
 #include "math/geometry.hpp"
 
 namespace {
+
+    glm::mat4 view;
+    glm::mat4 viewProjection;
+    glm::mat4 invViewProjection;
+    PlanetFrustum frustum;
+    
 glm::vec3 toAtmosphereVec3(const PlanetVec3& value) {
     return {
         static_cast<float>(value.x),
@@ -344,18 +350,7 @@ void PlanetDemo::initGeometry() {
 }
 
 void PlanetDemo::initCamera() {
-    PlanetFirstPersonCameraSettings cameraSettings;
-    cameraSettings.fieldOfView = g_CameraFOV;
-    cameraSettings.zNear = 1.0;
-    cameraSettings.zFar =  20000;
-    cameraSettings.acceleration = PlanetVec3(50 * km);
-    cameraSettings.velocity = PlanetVec3(200 * km);
-    cameraSettings.aspectRatio = static_cast<PlanetScalar>(width) / static_cast<PlanetScalar>(height);
-
-    camera = std::make_unique<PlanetFirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    PlanetVec3 pos{0, 0, -(static_cast<PlanetScalar>(g_EarthRadius) + PlanetScalar(100.0f))};
-    auto target = pos + PlanetVec3{0.0011957388, 0.9735858440, 0.2283589840};
-    camera->lookAt(pos, target, PlanetVec3{0, 0, -1});
+    camera.initialize(*this, { width, height});
 }
 
 void PlanetDemo::loadTextures() {
@@ -363,7 +358,7 @@ void PlanetDemo::loadTextures() {
 }
 
 void PlanetDemo::newFrame() {
-    camera->newFrame();
+    camera.newFrame();
     updateAtmosphereInfo();
     updateConstantBuffers();
     wataData.upload_constant_buffers();
@@ -615,9 +610,9 @@ void PlanetDemo::renderSkyBox(VkCommandBuffer commandBuffer) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     const CameraT<float> skyboxCamera{
-        .model = glm::mat4(camera->camera.model),
-        .view = glm::mat4(camera->camera.view),
-        .proj = glm::mat4(camera->camera.proj),
+        .model = glm::mat4(camera.cameraMatrix().model),
+        .view = glm::mat4(camera.cameraMatrix().view),
+        .proj = glm::mat4(camera.cameraMatrix().proj),
     };
     vkCmdPushConstants(commandBuffer, render.skybox.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(skyboxCamera), &skyboxCamera);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, skybox.vertices, &offset);
@@ -627,11 +622,11 @@ void PlanetDemo::renderSkyBox(VkCommandBuffer commandBuffer) {
 
 void PlanetDemo::updateAtmosphereInfo() {
     auto& info = *AppContext::atmosphere().info.cpu;
-    const auto& cam = camera->camera;
+    const auto& cam = camera.cameraMatrix();
     info.inverse_model = glm::inverse(glm::mat4(cam.model));
     info.inverse_view = glm::inverse(glm::mat4(cam.view));
     info.inverse_projection = glm::inverse(glm::mat4(cam.proj));
-    info.camera = glm::vec4(toAtmosphereVec3(camera->position()), 1.0f);
+    info.camera = glm::vec4(toAtmosphereVec3(camera.position()), 1.0f);
     info.earthCenter = glm::vec4(toAtmosphereVec3(PlanetVec3(g_EarthCenter)), 1.0f);
 
     info.sunDirection = glm::vec4{0, 0, -1, 1};
@@ -639,58 +634,26 @@ void PlanetDemo::updateAtmosphereInfo() {
 
 void PlanetDemo::update(float time) {
     if (!ImGui::IsAnyItemActive()) {
-        camera->update(time);
+        camera.update(time);
     }
     wataData.update_simulation(time);
-    setTitle(fmt::format("{}, camera : {}, view: {}, fps - {}", title, camera->position(), camera->viewDir, framePerSecond));
+    setTitle(fmt::format("{}, camera : {}, view: {}, fps - {}", title, camera.position(), camera.viewDirection(), framePerSecond));
 }
 
 void PlanetDemo::checkAppInputs() {
-    camera->processInput();
-
-    // if (!ImGui::IsAnyItemActive() && mouse.left.released) {
-    //     const auto cam = camera->camera;
-    //     auto uv = mouse.position / glm::vec2{width, height};
-    //     spdlog::info("mouse clicked at sp: {}: ", uv);
-    //     auto d = glm::vec2{-1.0f + 2.0f * uv.x, 1.0f - 2.0f * uv.y};
-    //     auto h = glm::inverse(cam.proj * cam.view) * glm::vec4(d.x, d.y, 1.0f, 1.0f);
-    //     auto target = glm::vec3(h) / h.w;
-    //
-    //     auto origin = camera->position();
-    //     spdlog::info("origin: {}, target: {}", origin, target);
-    //
-    //     auto draws = m_EarthPlanet.m_CBTMesh.indirectDrawBuffer.span<VkDrawIndirectCommand>();
-    //     auto vertices = m_EarthPlanet.m_CBTMesh.currentVertexBuffer.span<glm::vec3>();
-    //     auto indexes = m_EarthPlanet.m_CBTMesh.indexedBisectorBuffer.span<uint32_t>();
-    //     auto closestHit = findClosestHit(vertices, indexes, origin, target, draws.front().vertexCount);
-    //     if (closestHit.has_value()) {
-    //         auto [v0, v1, v2] = *closestHit;
-    //         spdlog::info("closest hit [{}, {}, {}]", v0, v1, v2);
-    //     }else {
-    //         spdlog::info("No hit found");
-    //     }
-    // }
+    camera.processInput();
 }
 
 void PlanetDemo::endFrame() {
     if (m_MirrorPOV) {
-        const auto cam = camera->camera;
-        auto view = cam.view;
-        view[3] = PlanetVec4{0, 0, 0, 1};
-        auto projection = cam.proj;
-        auto viewProjection = projection * view;
-        auto modelViewProjection = viewProjection;
-        auto invViewProjection = glm::inverse(viewProjection);
-
-        static PlanetFrustum frustum;
-        PlanetFrustum::extractFrustum(frustum, modelViewProjection);
-
+        
+        camera.get(view, viewProjection, invViewProjection, frustum);
         m_updateCB.ViewProjectionMatrix = viewProjection;
         m_updateCB.InvViewProjectionMatrix = invViewProjection;
-        m_updateCB.CameraPosition = camera->position();
+        m_updateCB.CameraPosition = camera.position();
         m_updateCB.CameraForward = -PlanetVec3(view[0][2], view[1][2], view[2][2]);
-        m_updateCB.FarPlaneDistance = camera->far();
-        m_updateCB.FOV = glm::radians(camera->fov * PlanetScalar(0.5));
+        m_updateCB.FarPlaneDistance = camera.far();
+        m_updateCB.FOV = glm::radians(camera.fieldOfView() * PlanetScalar(0.5));
         std::memcpy(m_updateCB.FrustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
 
         m_EarthPlanet.update_constant_buffers(m_updateCB);
@@ -713,20 +676,17 @@ void PlanetDemo::onPause() {
 }
 
 void PlanetDemo::updateConstantBuffers() {
-    const auto cam = camera->camera;
-    auto view = cam.view;
-    view[3] = PlanetVec4{0, 0, 0, 1};
-    auto viewProjection = cam.proj * view;
-    auto invViewProjection = glm::inverse(viewProjection);
+    camera.get(view, viewProjection, invViewProjection, frustum);
+    
     global->ViewProjectionMatrix = viewProjection;
     global->InvViewProjectionMatrix = invViewProjection;
-    global->CameraPosition = camera->position();
-    global->FoV = glm::radians(camera->fov * PlanetScalar(0.5));
+    global->CameraPosition = camera.position();
+    global->FoV = glm::radians(camera.fieldOfView() * PlanetScalar(0.5));
     global->ScreenSize = PlanetVec2{static_cast<PlanetScalar>(width), static_cast<PlanetScalar>(height)};
     global->SunDirection = AppContext::AtmosphereInfo().sunDirection;
     global->FrameIndex = m_FrameIndex;
     global->Time = elapsedTime;
-    global->FarPlaneDistance = camera->far();
+    global->FarPlaneDistance = camera.far();
     global->WireFrameColor = PlanetVec3(m_WireframeColor);
     global->WireFrameSize = m_ActiveWireFrame ? m_WireframeSize : 0.0f;
     global->ScreenSpaceShadow = m_RayTracingPath ? 1.0f : 0.0f;
