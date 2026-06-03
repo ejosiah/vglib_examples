@@ -3,6 +3,7 @@
 // Project includes
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <array>
 #include <type_traits>

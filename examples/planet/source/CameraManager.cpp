@@ -7,15 +7,17 @@ void CameraManager::initialize(InputManager& inputManager, const glm::ivec2& scr
     cameraSettings.fieldOfView = g_CameraFOV;
     cameraSettings.zNear = 1.0;
     cameraSettings.zFar =  20000;
-    cameraSettings.acceleration = PlanetVec3(50 * km);
-    cameraSettings.velocity = PlanetVec3(200 * km);
+    cameraSettings.acceleration = PlanetVec3(50 * m);
+    cameraSettings.velocity = PlanetVec3(200 * m);
     cameraSettings.aspectRatio = static_cast<PlanetScalar>(screenSize.x) / static_cast<PlanetScalar>(screenSize.y);
-    cameraSettings.mode = CameraMode::FIRST_PERSON;
+    cameraSettings.mode = m_CurrentMode;
 
     m_camera = std::make_unique<PlanetCameraController>(inputManager, cameraSettings);
     PlanetVec3 pos{0, 0, -(static_cast<PlanetScalar>(g_EarthRadius) + PlanetScalar(100.0f))};
     auto target = pos + PlanetVec3{0.0011957388, 0.9735858440, 0.2283589840};
     m_camera->lookAt(pos, target, PlanetVec3{0, 0, -1});
+
+    evaluateDistances();
 }
 
 void CameraManager::update(float deltaTime) {
