@@ -27,9 +27,11 @@ void MoonRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& global
 }
 
 void MoonRenderer::render_mesh(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
+    auto& atmosphere = AppContext::atmosphere();
     const std::array sets{
         globalDescriptorSet,
         m_descriptorSet,
+        atmosphere.info.descriptorSet,
         m_material->descriptor_set(),
     };
 
@@ -39,9 +41,11 @@ void MoonRenderer::render_mesh(VkCommandBuffer commandBuffer, VkDescriptorSet& g
 }
 
 void MoonRenderer::render_impostor(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
+    auto& atmosphere = AppContext::atmosphere();
     const std::array sets{
         globalDescriptorSet,
         m_descriptorSet,
+        atmosphere.info.descriptorSet,
         m_material->descriptor_set(),
     };
 
@@ -63,6 +67,7 @@ void MoonRenderer::createPipeline() {
             .layout()
                 .addDescriptorSetLayout(m_globalDescriptorSetLayout)
                 .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::uniformDescriptorSet())
                 .addDescriptorSetLayout(MoonMaterial::descriptorSetLayout)
             .name("moon_renderer")
         .build(m_layout);
@@ -82,6 +87,7 @@ void MoonRenderer::createPipeline() {
             .layout().clear()
                 .addDescriptorSetLayout(m_globalDescriptorSetLayout)
                 .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::uniformDescriptorSet())
                 .addDescriptorSetLayout(MoonMaterial::descriptorSetLayout)
             .name("moon_impostor_renderer")
         .build(m_impostorLayout);

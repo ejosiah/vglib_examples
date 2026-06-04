@@ -10,7 +10,20 @@ layout(set = 1, binding = 1, scalar) readonly buffer PlanetCB {
     REAL_DP _PlanetRadius;
 };
 
-#define MOON_MATERIAL_SET 2
+layout(set = 2, binding = 0) uniform AtmosphereInfo {
+    mat4 inverse_model;
+    mat4 inverse_view;
+    mat4 inverse_projection;
+
+    vec4 camera;
+    vec4 earthCenter;
+    vec4 sunDirection;
+    vec4 whitePoint;
+    vec2 sunSize;
+    float exposure;
+} atmosphereInfo;
+
+#define MOON_MATERIAL_SET 3
 #define MOON_MATERIAL_DISABLE_PLANET_CB
 #include "material_common.glsl"
 #include "../transforms.glsl"
@@ -288,7 +301,7 @@ void main() {
     bsdfData.normalWS = normalize(geometricNormal - elevationSG - detailSG);
     float NdotV = sanitize_normal(bsdfData.normalWS, bsdfData.viewWS);
 
-    vec3 lightDir = normalize(vec3(_SunDirection));
+    vec3 lightDir = normalize(atmosphereInfo.sunDirection.xyz);
     vec3 lighting = evaluate_bsdf(bsdfData, NdotV, lightDir);
     lighting = apply_wireframe(lighting, vec3(_WireFrameColor), float(_WireFrameSize), dist);
     lighting = tone_map(lighting);

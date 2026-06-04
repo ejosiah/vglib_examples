@@ -366,7 +366,7 @@ std::string Demo::menu() const {
 
         return ss.str();
     }else{
-        auto currentMode = cameraController->mode();
+        auto currentMode = cameraController->modeToString();
         auto orbitStyle = "";
         auto rotationSpeed = "";
         auto verticalSync = settings.vSync ? "enabled" : "disabled";

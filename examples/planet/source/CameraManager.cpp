@@ -6,6 +6,8 @@
 
 #include <algorithm>
 
+#include "cubic_spline.hpp"
+
 namespace {
     const char* g_CameraModeNames[] = { "Flight", "FPS" };
     const char* g_ClippingModeNames[] = { "Automatic", "Manual" };
@@ -23,8 +25,8 @@ void CameraManager::initialize(InputManager& inputManager, const glm::ivec2& scr
     cameraSettings.fieldOfView = g_CameraFOV;
     cameraSettings.zNear = 0.1;
     cameraSettings.zFar =  100;
-    cameraSettings.acceleration = PlanetVec3(50 * km);
-    cameraSettings.velocity = PlanetVec3(200 * km);
+    cameraSettings.acceleration = PlanetVec3(50 * m);
+    cameraSettings.velocity = PlanetVec3(200 * m);
     cameraSettings.aspectRatio = static_cast<PlanetScalar>(screenSize.x) / static_cast<PlanetScalar>(screenSize.y);
     cameraSettings.mode = CameraMode::FLIGHT;
 
@@ -74,7 +76,7 @@ void CameraManager::changeMode(CameraMode newMode) {
         auto up = glm::vec3{ -0.073183073, 0.680172738, -0.729389666};
         m_camera->lookAt(pos, glm::vec3(0), up);
     } else {
-        m_camera->lookAt({-466256.719, 4333448.5, -4647015}, glm::vec3(0), -m_camera->viewDirection());
+        m_camera->lookAt({642808.875, 6273863.00, -911702.687}, glm::vec3(0), {0, 1, 0});
     }
 }
 
@@ -92,29 +94,29 @@ void CameraManager::renderUI() {
 
     static auto nearFar = glm::vec2{m_camera->near(), m_camera->far()};
     if (ImGui::CollapsingHeader("Base Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-        // static glm::vec3 pos;
-        // static float fov;
-        // static glm::vec3 scaleOffset;
-        //
-        // pos = glm::vec3{m_camera->position()};
-        // fov = glm::radians(m_camera->fieldOfView());
-        // scaleOffset = glm::vec3{};
-        // // Base properties
-        // if (ImGui::InputFloat3("Position", &pos.x)) {
-        //     m_camera->position(pos);
-        // }
-        // ImGui::InputFloat3("Angles", &m_angles.x);
-        //
-        // if (ImGui::SliderFloat("FOV", &fov, 0.001, 0.8)) {
-        //     m_camera->fieldOfView(glm::degrees(fov));
-        // }
-        //
-        // ImGui::InputFloat3("Scale Offset", &scaleOffset.x);
-        //
-        // if (ImGui::InputFloat2("Near/Far", &nearFar.x)) {
-        //     m_camera->near(nearFar.x);
-        //     m_camera->far(nearFar.y);
-        // }
+        static glm::vec3 pos;
+        static float fov;
+        static glm::vec3 scaleOffset;
+
+        pos = glm::vec3{m_camera->position()};
+        fov = glm::radians(m_camera->fieldOfView());
+        scaleOffset = glm::vec3{};
+        // Base properties
+        if (ImGui::InputFloat3("Position", &pos.x)) {
+            m_camera->position(pos);
+        }
+        ImGui::InputFloat3("Angles", &m_angles.x);
+
+        if (ImGui::SliderFloat("FOV", &fov, 0.001, 0.8)) {
+            m_camera->fieldOfView(glm::degrees(fov));
+        }
+
+        ImGui::InputFloat3("Scale Offset", &scaleOffset.x);
+
+        if (ImGui::InputFloat2("Near/Far", &nearFar.x)) {
+            m_camera->near(nearFar.x);
+            m_camera->far(nearFar.y);
+        }
 
     }
 
@@ -241,9 +243,36 @@ void CameraManager::renderUI() {
 }
 
 void CameraManager::update(float deltaTime) {
-    evaluateDistances();
-    evaluateCameraMatrices();
-    m_camera->update(deltaTime);
+    if (!m_IsPlaying) {
+        m_camera->update(deltaTime);
+    } else {
+        if (m_PlayTime >= m_Duration) {
+            if (m_LoopAnimation) {
+                // Mark that we are playing
+                m_IsPlaying = true;
+
+                // Reset the current play time
+                m_PlayTime = 0.0;
+                m_FrameIndex = 0;
+            } else {
+                m_IsPlaying = false;
+                m_camera->position(m_SavedPosition);
+            }
+        } else {
+            auto pos = evaluate_catmull_rom_spline<glm::dvec3, double>(m_PositionSpline, m_PlayTime / m_Duration, m_LoopAnimation);
+            m_camera->position(pos);
+
+            auto rot = evaluate_catmull_rom_spline<glm::quat, float>(m_RotationSpline, m_PlayTime / m_Duration, m_LoopAnimation);
+            rot = glm::normalize(rot);
+            m_camera->orientation(glm::conjugate(rot));
+
+
+            // Add the time
+            m_PlayTime += deltaTime;
+        }
+        evaluateDistances();
+        evaluateCameraMatrices();
+    }
 }
 
 void CameraManager::get(glm::mat4& view, glm::mat4 &viewProjection, glm::mat4 &invViewProjection, PlanetFrustum &frustum) const {
