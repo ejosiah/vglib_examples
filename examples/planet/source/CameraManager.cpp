@@ -31,14 +31,7 @@ void CameraManager::initialize(InputManager& inputManager, const glm::ivec2& scr
     m_Speed = 1.0f;
 
     m_camera = std::make_unique<PlanetCameraController>(inputManager, cameraSettings);
-    PlanetVec3 pos{0, 0, -(static_cast<PlanetScalar>(g_EarthRadius) * PlanetScalar(40.0f))};
-
-    m_camera->rotate(glm::degrees(m_angles.x), glm::degrees(m_angles.y), 0);
-
-    auto view = glm::mat3(m_camera->cameraMatrix().view);
-    pos = view * pos;
-    auto up = glm::vec3{ -0.073183073, 0.680172738, -0.729389666};
-    m_camera->lookAt(pos, glm::vec3(0), up);
+    changeMode(CameraMode::FLIGHT);
 
     evaluateDistances();
     evaluateCameraMatrices();
@@ -71,6 +64,18 @@ void CameraManager::save_camera_path(const fs::path &path) {
 }
 
 void CameraManager::changeMode(CameraMode newMode) {
+    m_camera->setMode(newMode);
+    if (newMode == CameraMode::FLIGHT) {
+        m_camera->resetOrientation();
+        PlanetVec3 pos{0, 0, -g_EarthRadius * 40.0f};
+        m_camera->rotate(glm::degrees(m_angles.x), glm::degrees(m_angles.y), 0);
+        auto view = glm::mat3(m_camera->cameraMatrix().view);
+        pos = view * pos;
+        auto up = glm::vec3{ -0.073183073, 0.680172738, -0.729389666};
+        m_camera->lookAt(pos, glm::vec3(0), up);
+    } else {
+        m_camera->lookAt({-466256.719, 4333448.5, -4647015}, glm::vec3(0), -m_camera->viewDirection());
+    }
 }
 
 uint32_t CameraManager::play_frame_index() const {
@@ -85,19 +90,32 @@ void CameraManager::renderUI() {
     ImGui::Begin("Camera controls");
 
 
-    static auto pos = glm::vec3{m_camera->position()};
-    static auto fov = m_camera->fieldOfView();
-    static auto scaleOffset = glm::vec3{};
     static auto nearFar = glm::vec2{m_camera->near(), m_camera->far()};
     if (ImGui::CollapsingHeader("Base Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-        // Base properties
-        ImGui::InputFloat("Position", &pos.x);
-        ImGui::InputFloat3("Angles", &m_angles.x);
-        ImGui::SliderFloat("FOV", &fov, 0.001, 0.8);
-        ImGui::InputFloat3("Scale Offset", &scaleOffset.x);
+        // static glm::vec3 pos;
+        // static float fov;
+        // static glm::vec3 scaleOffset;
+        //
+        // pos = glm::vec3{m_camera->position()};
+        // fov = glm::radians(m_camera->fieldOfView());
+        // scaleOffset = glm::vec3{};
+        // // Base properties
+        // if (ImGui::InputFloat3("Position", &pos.x)) {
+        //     m_camera->position(pos);
+        // }
+        // ImGui::InputFloat3("Angles", &m_angles.x);
+        //
+        // if (ImGui::SliderFloat("FOV", &fov, 0.001, 0.8)) {
+        //     m_camera->fieldOfView(glm::degrees(fov));
+        // }
+        //
+        // ImGui::InputFloat3("Scale Offset", &scaleOffset.x);
+        //
+        // if (ImGui::InputFloat2("Near/Far", &nearFar.x)) {
+        //     m_camera->near(nearFar.x);
+        //     m_camera->far(nearFar.y);
+        // }
 
-        // Camera speed
-        ImGui::InputFloat2("Near/Far", &nearFar.x);
     }
 
     if (ImGui::CollapsingHeader("Control", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -120,8 +138,7 @@ void CameraManager::renderUI() {
             ImGui::EndCombo();
         }
         if (newCameraMode != m_camera->mode()) {
-            m_camera->setMode(newCameraMode);
-
+            changeMode(newCameraMode);
 
             // Previous mode
             const char* currentClippingItem = g_ClippingModeNames[(uint32_t)m_ClippingMode];
@@ -220,11 +237,6 @@ void CameraManager::renderUI() {
         }
     }
 
-    m_camera->position(pos);
-    m_camera->fieldOfView(fov);
-    m_camera->near(nearFar.x);
-    m_camera->far(nearFar.y);
-
     ImGui::End();
 }
 
@@ -261,7 +273,7 @@ void CameraManager::evaluateCameraMatrices() {
         PlanetScalar moonElevation = m_DistanceToPlanetCenter.y - g_MoonRadius;
 
         if (earthElevation < 2000.0 || moonElevation < 5000.0f) {
-            nearP = 0.1f;
+            nearP = 1.0;
             farP = 200000.0f;
         }
         else {
