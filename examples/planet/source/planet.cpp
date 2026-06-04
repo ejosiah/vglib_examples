@@ -86,6 +86,12 @@ void Planet::createDebugPipeline() {
     .build(m_debug.layout);
 }
 
+void Planet::visibility(const PlanetVec3 &cameraPosition, PlanetScalar &distance, bool &isVisible, bool& isUpdatable) {
+    distance = glm::length(m_PlanetCenter - cameraPosition);
+    isVisible = distance < m_ToggleDistance;
+    isUpdatable = distance < m_ToggleDistance * 1.5;
+}
+
 void Planet::renderDebug(VkCommandBuffer commandBuffer, VkDescriptorSet globalDescriptorSet) {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_debug.layout.handle, 0, 1, &globalDescriptorSet, 0, nullptr);

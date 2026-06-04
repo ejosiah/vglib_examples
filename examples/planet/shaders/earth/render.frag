@@ -11,11 +11,13 @@
 #include "atmosphere/bruneton_api.glsl"
 
 #define WATER_DATA_SET 5
+#define MILKYWAY_SET 6
 #define NUM_SG_BANDS 4u
 #define SG_BAND_ATTENUATION_START 10.0
 #define SG_BAND_ATTENUATION_END 20.0
 #define BAND_ROUGHNESS_START 15.0
 #define BAND_ROUGHNESS_END 30.0
+#define MILKYWAY_NIGHT_LIGHT_SCALE 0.08
 
 layout(set = 1, binding = 0, scalar) readonly buffer UpdateCB {
     REAL4X4_DP _UpdateViewProjectionMatrix;
@@ -57,6 +59,7 @@ layout(set = WATER_DATA_SET, binding = 0, scalar) readonly buffer DeformationDat
 };
 
 layout(set = WATER_DATA_SET, binding = 4, rgba16f) uniform image2D SurfaceGradientBuffer[4];
+layout(set = MILKYWAY_SET, binding = 0) uniform sampler2D MilkyWayTexture;
 
 layout(location = 0) in struct {
     vec3 positionRWS;
@@ -86,6 +89,7 @@ float sanitize_normal(inout vec3 normalWS, vec3 viewWS, vec3 positionRWS);
 vec3 EvaluateNormal(REAL2_DP sampleUV, mat3 localFrame, float distanceToCamera, vec4 patchSize, uint patchFlags, bool attenuation);
 float EvaluateRoughness(float distanceToCamera, vec4 patchSize, vec4 patchRoughness);
 vec3 EvaluateSunLightColor(vec3 upVector, float elevation, vec3 sunDirection);
+vec2 direction_to_equirect_uv(vec3 direction);
 vec3 EvaluateDirectLighting(BSDFData bsdfData, float NdotV, vec3 lightDir, vec3 lightColor);
 vec3 EvaluateIndirectLighting(BSDFData bsdfData, REAL3_DP positionPS, vec3 lightDir);
 void AdjustReflectionVector(inout vec3 R, vec3 baseNormal, inout float attenuation);
@@ -109,6 +113,13 @@ void main() {
 
 float saturate(float value) {
     return clamp(value, 0.0, 1.0);
+}
+
+vec2 direction_to_equirect_uv(vec3 direction) {
+    direction = normalize(direction);
+    float u = atan(direction.z, direction.x) * (1.0 / (2.0 * PI)) + 0.5;
+    float v = asin(clamp(direction.y, -1.0, 1.0)) * (1.0 / PI) + 0.5;
+    return vec2(u, v);
 }
 
 REAL_DP sqrt_real(REAL_DP value) {
@@ -278,7 +289,11 @@ vec3 EvaluateSunLightColor(vec3 upVector, float elevation, vec3 sunDirection) {
         ? (ray_sphere_intersect_nearest(upVector * r, sunDirection, vec3(0.0), ATMOSPHERE.bottom_radius) != -1.0 ? 0.0 : 1.0)
         : 1.0;
     float viewZenithCosAngle = dot(sunDirection, upVector);
-    return GetTransmittanceToSun(ATMOSPHERE, TRANSMITTANCE_TEXTURE, r, viewZenithCosAngle) * earthShadow;
+    vec3 sunLight = GetTransmittanceToSun(ATMOSPHERE, TRANSMITTANCE_TEXTURE, r, viewZenithCosAngle) * earthShadow;
+    vec3 milkyway = texture(MilkyWayTexture, direction_to_equirect_uv(upVector)).rgb * MILKYWAY_NIGHT_LIGHT_SCALE;
+    float directLight = max(max(sunLight.r, sunLight.g), sunLight.b);
+    float darkness = 1.0 - saturate(directLight);
+    return sunLight + milkyway * darkness;
 }
 
 float F_Schlick(float f0, float f90, float u) {

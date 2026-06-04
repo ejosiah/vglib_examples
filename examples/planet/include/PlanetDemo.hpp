@@ -84,6 +84,7 @@ protected:
     struct {
         Pipeline primitive;
         Pipeline skybox;
+        Pipeline skyboxMilkyway;
     } render;
 
     struct {
@@ -113,8 +114,8 @@ protected:
     GlobalCB* global{};
     VulkanBuffer globalBuffer;
 
-    Planet m_EarthPlanet;
-    Planet m_MoonPlanet;
+    Planet m_Earth;
+    Planet m_Moon;
     EarthRenderer m_EarthRenderer;
     MoonRenderer m_MoonRenderer;
     LebMatrixCache m_LebMatrixCache;
@@ -150,6 +151,9 @@ protected:
     float m_WireframeSize{ 0.5 };
     uint32_t m_Occupancy{ 0 };
     UpdateCB m_updateCB;
+
+    float m_SunElevation{-glm::half_pi<float>()};
+    float m_SunRotation{-pi};
 
     bool m_MirrorPOV{true};
 

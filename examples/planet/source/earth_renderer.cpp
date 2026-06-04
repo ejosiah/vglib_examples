@@ -11,7 +11,9 @@ EarthRenderer::EarthRenderer(const Params &params)
     : m_device(&params.device)
     , m_planet(&params.planet)
     , m_waterData(&params.waterData)
-    , m_globalDescriptorSetLayout(params.globalDescriptorSetLayout){}
+    , m_globalDescriptorSetLayout(params.globalDescriptorSetLayout)
+    , m_textureDescriptorSetLayout(params.textureDescriptorSetLayout)
+    , m_milkywayDescriptorSet(params.milkywayDescriptorSet){}
 
 void EarthRenderer::initialize() {
     createLayoutDescriptorSet();
@@ -19,7 +21,15 @@ void EarthRenderer::initialize() {
     createPipeline();
 }
 
-void EarthRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
+void EarthRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet, bool isVisible) {
+    if (isVisible) {
+        render_mesh(commandBuffer, globalDescriptorSet);
+    } else {
+        render_impostor(commandBuffer, globalDescriptorSet);
+    }
+}
+
+void EarthRenderer::render_mesh(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
     auto& atmosphere = AppContext::atmosphere();
     const std::array sets{
         globalDescriptorSet,
@@ -28,11 +38,29 @@ void EarthRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& globa
         atmosphere.descriptor.uboDescriptorSet,
         atmosphere.descriptor.lutDescriptorSet,
         m_waterData->descriptor_set(),
+        m_milkywayDescriptorSet,
     };
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     vkCmdDrawIndirect(commandBuffer, m_planet->m_CBTMesh.indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+}
+
+void EarthRenderer::render_impostor(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
+    auto& atmosphere = AppContext::atmosphere();
+    const std::array sets{
+        globalDescriptorSet,
+        m_descriptorSet,
+        atmosphere.info.descriptorSet,
+        atmosphere.descriptor.uboDescriptorSet,
+        atmosphere.descriptor.lutDescriptorSet,
+        m_waterData->descriptor_set(),
+        m_milkywayDescriptorSet,
+    };
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_impostorPipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_impostorLayout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 }
 
 void EarthRenderer::createPipeline() {
@@ -54,9 +82,32 @@ void EarthRenderer::createPipeline() {
                 .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
                 .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
                 .addDescriptorSetLayout(WaterData::descriptorSetLayout)
+                .addDescriptorSetLayout(m_textureDescriptorSetLayout)
             .name("earth_renderer")
         .build(m_layout);
 
+    m_impostorPipeline =
+        AppContext::prototypes().cloneGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(FileManager::resource("impostor.vert.spv"))
+                .fragmentShader(FileManager::resource("earth_impostor.frag.spv"))
+            .vertexInputState().clear()
+            .inputAssemblyState()
+                .triangles()
+            .rasterizationState()
+                .cullNone()
+            .depthStencilState()
+                .compareOpLessOrEqual()
+            .layout().clear()
+                .addDescriptorSetLayout(m_globalDescriptorSetLayout)
+                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::uniformDescriptorSet())
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.uboDescriptorSetLayout)
+                .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
+                .addDescriptorSetLayout(WaterData::descriptorSetLayout)
+                .addDescriptorSetLayout(m_textureDescriptorSetLayout)
+            .name("earth_impostor_renderer")
+        .build(m_impostorLayout);
 }
 
 void EarthRenderer::createLayoutDescriptorSet() {

@@ -73,11 +73,13 @@ public:
     const PlanetCB& get_planet_cb_data() const { return m_PlanetCBData; }
     const UpdateCB& get_update_cb_data() const { return *m_UpdateCB.cpu; }
 
-    void createDebugPipeline();
+
+    void visibility(const PlanetVec3& cameraPosition, PlanetScalar& distance, bool& isVisible, bool& isUpdatable);
 
     void renderDebug(VkCommandBuffer commandBuffer, VkDescriptorSet globalDescriptorSet);
 
 protected:
+    void createDebugPipeline();
     std::vector<PipelineMetaData> metadata();
 
     void createPipelines();
@@ -94,7 +96,7 @@ private:
     // Static properties
     float m_PlanetRadius = 0.0;
     float m_ToggleDistance = 0.0;
-    glm::dvec3 m_PlanetCenter = { 0.0, 0.0, 0.0 };
+    PlanetVec3 m_PlanetCenter{ 0.0, 0.0, 0.0 };
     uint32_t m_MaterialID = UINT32_MAX;
 
     // Modifiable properties

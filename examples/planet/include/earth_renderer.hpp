@@ -11,6 +11,8 @@ public:
         Planet &planet;
         WaterData& waterData;
         VulkanDescriptorSetLayout globalDescriptorSetLayout;
+        VulkanDescriptorSetLayout textureDescriptorSetLayout;
+        VkDescriptorSet milkywayDescriptorSet;
     };
     EarthRenderer() = default;
 
@@ -18,11 +20,15 @@ public:
 
     void initialize();
 
-    void render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet);
+    void render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet, bool isVisible);
 
     void createPipeline();
 
 protected:
+    void render_mesh(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet);
+
+    void render_impostor(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet);
+
     void createLayoutDescriptorSet();
 
     void updateDescriptorSetLayout();
@@ -33,9 +39,13 @@ private:
     WaterData* m_waterData;
 
     VulkanDescriptorSetLayout m_globalDescriptorSetLayout;
+    VulkanDescriptorSetLayout m_textureDescriptorSetLayout;
     VulkanDescriptorSetLayout m_descriptorSetLayout;
     VkDescriptorSet m_descriptorSet{};
+    VkDescriptorSet m_milkywayDescriptorSet{};
 
     VulkanPipelineLayout m_layout;
     VulkanPipeline m_pipeline;
+    VulkanPipelineLayout m_impostorLayout;
+    VulkanPipeline m_impostorPipeline;
 };

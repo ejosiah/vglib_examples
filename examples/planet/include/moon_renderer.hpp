@@ -18,11 +18,15 @@ public:
 
     void initialize();
 
-    void render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet);
+    void render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet, bool isVisible);
 
     void createPipeline();
 
 protected:
+    void render_mesh(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet);
+
+    void render_impostor(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet);
+
     void createLayoutDescriptorSet();
 
     void updateDescriptorSetLayout();
@@ -38,4 +42,6 @@ private:
 
     VulkanPipelineLayout m_layout;
     VulkanPipeline m_pipeline;
+    VulkanPipelineLayout m_impostorLayout;
+    VulkanPipeline m_impostorPipeline;
 };

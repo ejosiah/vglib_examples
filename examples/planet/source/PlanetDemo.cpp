@@ -23,6 +23,12 @@ namespace {
     glm::mat4 viewProjection;
     glm::mat4 invViewProjection;
     PlanetFrustum frustum;
+    PlanetScalar earthDistance;
+    bool earthIsVisible{};
+    bool earthIsUpdatable{};
+    PlanetScalar moonDistance;
+    bool moonIsVisible{};
+    bool moonIsUpdatable{};
     
 glm::vec3 toAtmosphereVec3(const PlanetVec3& value) {
     return {
@@ -287,21 +293,21 @@ void PlanetDemo::prepareRender() {
         updateConstantBuffers();
         m_updateCB.ViewProjectionMatrix = glm::scale(PlanetMat4{1}, PlanetVec3{0});
         m_updateCB.InvViewProjectionMatrix = glm::scale(PlanetMat4{1}, PlanetVec3{0});
-        m_EarthPlanet.update_constant_buffers(m_updateCB);
-        m_MeshUpdater.reset_buffers(cmd, m_EarthPlanet.m_descriptorSet, m_EarthPlanet.m_CBTDescriptorSet);
-        m_MeshUpdater.prepare_indirection(cmd, m_EarthPlanet);
-        m_EarthPlanet.evaluate_leb(cmd, globalDescriptorSet, true, true);
+        m_Earth.update_constant_buffers(m_updateCB);
+        m_MeshUpdater.reset_buffers(cmd, m_Earth.m_descriptorSet, m_Earth.m_CBTDescriptorSet);
+        m_MeshUpdater.prepare_indirection(cmd, m_Earth);
+        m_Earth.evaluate_leb(cmd, globalDescriptorSet, true, true);
         wataData.update_simulation(static_cast<float>(m_Time));
         wataData.upload_constant_buffers();
         m_WaterSimulation.evaluate(cmd, wataData);
-        m_WaterDeformer.apply_deformation(cmd, m_EarthPlanet, wataData);
+        m_WaterDeformer.apply_deformation(cmd, m_Earth, wataData);
 
         m_MoonMaterial.upload_constant_buffers();
-        m_MoonPlanet.update_constant_buffers(m_updateCB);
-        m_MeshUpdater.reset_buffers(cmd, m_MoonPlanet.m_descriptorSet, m_MoonPlanet.m_CBTDescriptorSet);
-        m_MeshUpdater.prepare_indirection(cmd, m_MoonPlanet);
-        m_MoonPlanet.evaluate_leb(cmd, globalDescriptorSet, true, true);
-        m_MoonDeformer.apply_deformation(cmd, m_MoonPlanet, m_MoonMaterial);
+        m_Moon.update_constant_buffers(m_updateCB);
+        m_MeshUpdater.reset_buffers(cmd, m_Moon.m_descriptorSet, m_Moon.m_CBTDescriptorSet);
+        m_MeshUpdater.prepare_indirection(cmd, m_Moon);
+        m_Moon.evaluate_leb(cmd, globalDescriptorSet, true, true);
+        m_MoonDeformer.apply_deformation(cmd, m_Moon, m_MoonMaterial);
     });
     m_FrameIndex = 0;
 }
@@ -313,24 +319,24 @@ void PlanetDemo::initGeometry() {
     planetMesh = CPUMesh::load_cpu_mesh(resource("icosahedron.ccm"), cbtNumElements);
     m_LebMatrixCache.intialize(device, LEB_MATRIX_CACHE_SIZE);
 
-    m_EarthPlanet = Planet{ { "earth", device, globalDescriptorSetLayout, g_EarthRadius, g_EarthCenter, g_EarthImpostorToggle, g_EarthTriangleSize, EARTH_MATERIAL } };
-    m_EarthPlanet.initialize(*cbt, planetMesh);
-    m_EarthPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
+    m_Earth = Planet{ { "earth", device, globalDescriptorSetLayout, g_EarthRadius, g_EarthCenter, g_EarthImpostorToggle, g_EarthTriangleSize, EARTH_MATERIAL } };
+    m_Earth.initialize(*cbt, planetMesh);
+    m_Earth.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
     wataData = { device };
     wataData.initialize();
 
-    m_EarthRenderer = { { device, m_EarthPlanet, wataData, globalDescriptorSetLayout} };
+    m_EarthRenderer = { { device, m_Earth, wataData, globalDescriptorSetLayout, textureDescriptorSetLayout, milkywayDescriptorSet } };
     m_EarthRenderer.initialize();
 
-    m_MoonPlanet = Planet{ { "moon", device, globalDescriptorSetLayout, g_MoonRadius, g_MoonCenter, g_MoonImpostorToggle, g_MoonTriangleSize, MOON_MATERIAL } };
-    m_MoonPlanet.initialize(*cbt, planetMesh);
-    m_MoonPlanet.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
+    m_Moon = Planet{ { "moon", device, globalDescriptorSetLayout, g_MoonRadius, g_MoonCenter, g_MoonImpostorToggle, g_MoonTriangleSize, MOON_MATERIAL } };
+    m_Moon.initialize(*cbt, planetMesh);
+    m_Moon.updateLEBDescriptorSet(m_LebMatrixCache.get_leb_matrix_buffer());
 
     m_MoonMaterial = { device };
-    m_MoonMaterial.initialize(m_MoonPlanet);
+    m_MoonMaterial.initialize(m_Moon);
 
-    m_MoonRenderer = { { device, m_MoonPlanet, m_MoonMaterial, globalDescriptorSetLayout } };
+    m_MoonRenderer = { { device, m_Moon, m_MoonMaterial, globalDescriptorSetLayout } };
     m_MoonRenderer.initialize();
 
     // TODO - move into planet and only create one CBTType shader, reload shader based on CBTType
@@ -378,7 +384,9 @@ void PlanetDemo::newFrame() {
     camera.newFrame();
     updateAtmosphereInfo();
     updateConstantBuffers();
-    wataData.upload_constant_buffers();
+    if (earthIsUpdatable) {
+        wataData.upload_constant_buffers();
+    }
     m_MoonMaterial.upload_constant_buffers();
 }
 
@@ -526,12 +534,31 @@ void PlanetDemo::createRenderPipeline() {
                     .addDescriptorSetLayout(AppContext::atmosphere().descriptor.lutDescriptorSetLayout)
                 .name("skybox_render")
                 .build(render.skybox.layout);
+
+        render.skyboxMilkyway.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("skybox/skybox.vert.spv"))
+                    .fragmentShader(resource("equi_rect.frag.spv"))
+                .vertexInputState().clear()
+                    .addVertexBindingDescription(0, sizeof(glm::vec3), VK_VERTEX_INPUT_RATE_VERTEX)
+                    .addVertexAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0)
+                .rasterizationState()
+                    .cullFrontFace()
+                .depthStencilState()
+                    .compareOpLessOrEqual()
+                .layout()
+                    .addDescriptorSetLayout(textureDescriptorSetLayout)
+                .name("skybox_milkyway_render")
+                .build(render.skyboxMilkyway.layout);
     //    @formatter:on
 }
 
 
 void PlanetDemo::onSwapChainDispose() {
     dispose(render.primitive.pipeline);
+    dispose(render.skybox.pipeline);
+    dispose(render.skyboxMilkyway.pipeline);
 }
 
 void PlanetDemo::onSwapChainRecreation() {
@@ -546,20 +573,32 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    m_WaterSimulation.evaluate(commandBuffer, wataData);
-    m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_EarthPlanet);
-    m_EarthPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
-    m_WaterDeformer.apply_deformation(commandBuffer, m_EarthPlanet, wataData);
+    m_Earth.visibility(camera.position(), earthDistance, earthIsVisible, earthIsUpdatable);
+    m_Moon.visibility(camera.position(), moonDistance, moonIsVisible, moonIsUpdatable);
 
-    m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_MoonPlanet);
-    m_MoonPlanet.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
-    m_MoonDeformer.apply_deformation(commandBuffer, m_MoonPlanet, m_MoonMaterial);
+    if (earthIsVisible) {
+        m_WaterSimulation.evaluate(commandBuffer, wataData);
+    }
+
+    if (earthIsUpdatable) {
+        m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_Earth);
+        m_Earth.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
+        m_WaterDeformer.apply_deformation(commandBuffer, m_Earth, wataData);
+    }
+
+    if (moonIsUpdatable) {
+        m_MeshUpdater.update(commandBuffer, globalDescriptorSet, m_Moon);
+        m_Moon.evaluate_leb(commandBuffer, globalDescriptorSet, m_RayTracingPath);
+        m_MoonDeformer.apply_deformation(commandBuffer, m_Moon, m_MoonMaterial);
+    }
+
+    // TODO validate mesh
 
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        m_EarthRenderer.render(commandBuffer, globalDescriptorSet);
-        m_MoonRenderer.render(commandBuffer, globalDescriptorSet);
+        m_EarthRenderer.render(commandBuffer, globalDescriptorSet, earthIsVisible);
+        m_MoonRenderer.render(commandBuffer, globalDescriptorSet, moonIsVisible);
         renderSkyBox(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
@@ -616,27 +655,39 @@ void PlanetDemo::renderUI(VkCommandBuffer commandBuffer) {
     if (m_ShowWaterVisualizer) {
         m_WaterSimulation.visualizer(plugin<ImGuiPlugin>(IM_GUI_PLUGIN));
     }
+
+    camera.renderUI();
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
 void PlanetDemo::renderSkyBox(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
-    auto& atmosphere = AppContext::atmosphere();
-    const std::array sets{
-        milkywayDescriptorSet,
-        atmosphere.info.descriptorSet,
-        atmosphere.descriptor.uboDescriptorSet,
-        atmosphere.descriptor.lutDescriptorSet,
-    };
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     const CameraT<float> skyboxCamera{
         .model = glm::mat4(camera.cameraMatrix().model),
         .view = glm::mat4(camera.cameraMatrix().view),
         .proj = glm::mat4(camera.cameraMatrix().proj),
     };
-    vkCmdPushConstants(commandBuffer, render.skybox.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(skyboxCamera), &skyboxCamera);
+
+    if (earthIsVisible) {
+        auto& atmosphere = AppContext::atmosphere();
+        const std::array sets{
+            milkywayDescriptorSet,
+            atmosphere.info.descriptorSet,
+            atmosphere.descriptor.uboDescriptorSet,
+            atmosphere.descriptor.lutDescriptorSet,
+        };
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skybox.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdPushConstants(commandBuffer, render.skybox.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(skyboxCamera), &skyboxCamera);
+    } else {
+        const std::array sets{ milkywayDescriptorSet };
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skyboxMilkyway.pipeline.handle);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.skyboxMilkyway.layout.handle, 0, sets.size(), sets.data(), 0, nullptr);
+        vkCmdPushConstants(commandBuffer, render.skyboxMilkyway.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(skyboxCamera), &skyboxCamera);
+    }
+
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, skybox.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, skybox.indexes, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, skybox.indexes.sizeAs<uint32_t>(), 1, 0, 0, 0);
@@ -651,14 +702,21 @@ void PlanetDemo::updateAtmosphereInfo() {
     info.camera = glm::vec4(toAtmosphereVec3(camera.position()), 1.0f);
     info.earthCenter = glm::vec4(toAtmosphereVec3(PlanetVec3(g_EarthCenter)), 1.0f);
 
-    info.sunDirection = glm::vec4{0, 0, -1, 1};
+    auto sinPhi = glm::sin(-m_SunRotation);
+    auto cosPhi = glm::cos(-m_SunRotation);
+    auto sinTheta = glm::sin(-m_SunElevation);
+    auto cosTheta = glm::cos(-m_SunElevation);
+    auto sunDirection = glm::normalize(glm::vec3{ sinTheta * sinPhi, cosTheta, sinTheta * cosPhi });
+    info.sunDirection = glm::vec4{sunDirection, 1};
 }
 
 void PlanetDemo::update(float time) {
     if (!ImGui::IsAnyItemActive()) {
         camera.update(time);
     }
-    wataData.update_simulation(time);
+    if (earthIsUpdatable) {
+        wataData.update_simulation(time);
+    }
     setTitle(fmt::format("{}, camera : {}, view: {}, fps - {}", title, camera.position(), camera.viewDirection(), framePerSecond));
 }
 
@@ -678,8 +736,8 @@ void PlanetDemo::endFrame() {
         m_updateCB.FOV = glm::radians(camera.fieldOfView() * PlanetScalar(0.5));
         std::memcpy(m_updateCB.FrustumPlanes.data(), frustum.cp.data(), BYTE_SIZE(frustum.cp));
 
-        m_EarthPlanet.update_constant_buffers(m_updateCB);
-        m_MoonPlanet.update_constant_buffers(m_updateCB);
+        m_Earth.update_constant_buffers(m_updateCB);
+        m_Moon.update_constant_buffers(m_updateCB);
     }
     m_Time = elapsedTime;
 

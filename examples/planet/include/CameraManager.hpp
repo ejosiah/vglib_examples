@@ -39,9 +39,21 @@ public:
 
     void initialize(InputManager& inputManager, const glm::ivec2& screenSize);
 
-    void newFrame() {
-        m_camera->newFrame();
-    }
+    bool newFrame();
+
+    void loadpath(const fs::path& path);
+
+    void setup_play_path();
+
+    void stop_play_path();
+
+    void save_camera_path(const fs::path& path);
+
+    void changeMode(CameraMode newMode);
+
+    [[nodiscard]] uint32_t play_frame_index() const;
+
+    void renderUI();
 
     void update(float deltaTime);
 
@@ -77,7 +89,7 @@ public:
 
     void evaluateDistances();
 
-    void evaluateClipPlanes();
+    void evaluateCameraMatrices();
 
 private:
     std::unique_ptr<CameraController> m_camera;
@@ -89,7 +101,7 @@ private:
 
     // Flag that defines if we can interact with the camera
     bool m_ActiveInteraction = false;
-    std::string m_PathsDir;
+    fs::path m_PathsDir;
 
     // Speed
     float m_Speed = 0.0f;
@@ -101,13 +113,13 @@ private:
     bool m_IsPlaying = false;
     bool m_LoopAnimation = true;
     float m_PlayTime = 0.0f;
+    glm::vec3 m_scaleOffset{};
     uint32_t m_FrameIndex = 0;
     glm::dvec3 m_SavedPosition = {};
     std::vector<glm::dvec3> m_PositionSpline;
-    std::vector<glm::vec3> m_RotationSpline;
+    std::vector<glm::quat> m_RotationSpline;
 
     std::vector<Transform> m_ControlPoints = {};
 
-    CameraMode m_CurrentMode = CameraMode::FIRST_PERSON;
     glm::vec3 m_angles{-0.1, -pi / 4.2, 0.0 };
 };

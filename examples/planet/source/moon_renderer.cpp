@@ -18,7 +18,15 @@ void MoonRenderer::initialize() {
     createPipeline();
 }
 
-void MoonRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
+void MoonRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet, bool isVisible) {
+    if (isVisible) {
+        render_mesh(commandBuffer, globalDescriptorSet);
+    } else {
+        render_impostor(commandBuffer, globalDescriptorSet);
+    }
+}
+
+void MoonRenderer::render_mesh(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
     const std::array sets{
         globalDescriptorSet,
         m_descriptorSet,
@@ -28,6 +36,18 @@ void MoonRenderer::render(VkCommandBuffer commandBuffer, VkDescriptorSet& global
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
     vkCmdDrawIndirect(commandBuffer, m_planet->m_CBTMesh.indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+}
+
+void MoonRenderer::render_impostor(VkCommandBuffer commandBuffer, VkDescriptorSet& globalDescriptorSet) {
+    const std::array sets{
+        globalDescriptorSet,
+        m_descriptorSet,
+        m_material->descriptor_set(),
+    };
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_impostorPipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_impostorLayout.handle, 0, COUNT(sets), sets.data(), 0, nullptr);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 }
 
 void MoonRenderer::createPipeline() {
@@ -46,6 +66,25 @@ void MoonRenderer::createPipeline() {
                 .addDescriptorSetLayout(MoonMaterial::descriptorSetLayout)
             .name("moon_renderer")
         .build(m_layout);
+
+    m_impostorPipeline =
+        AppContext::prototypes().cloneGraphicsPipeline()
+            .shaderStage()
+                .vertexShader(FileManager::resource("impostor.vert.spv"))
+                .fragmentShader(FileManager::resource("moon_impostor.frag.spv"))
+            .vertexInputState().clear()
+            .inputAssemblyState()
+                .triangles()
+            .rasterizationState()
+                .cullNone()
+            .depthStencilState()
+                .compareOpLessOrEqual()
+            .layout().clear()
+                .addDescriptorSetLayout(m_globalDescriptorSetLayout)
+                .addDescriptorSetLayout(m_descriptorSetLayout)
+                .addDescriptorSetLayout(MoonMaterial::descriptorSetLayout)
+            .name("moon_impostor_renderer")
+        .build(m_impostorLayout);
 }
 
 void MoonRenderer::createLayoutDescriptorSet() {

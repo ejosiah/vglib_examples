@@ -26,6 +26,7 @@ constexpr uint32_t g_WaterSimResolution = 256;
 constexpr uint32_t g_WaterSimBandCount = 4;
 constexpr uint32_t g_WaterSimSurfaceGradientMipCount = 5;
 constexpr float pi = glm::pi<float>();
+constexpr float half_pi = glm::half_pi<float>();
 constexpr glm::vec4 g_WaterSimPatchSize = glm::vec4({ 5.0f * 216.0f * pi * pi * pi, 5 * pi * pi * 36.0f, 5.0f * pi * 6, 5.0f });
 constexpr glm::vec4 g_WaterSimPatchRoughness = glm::vec4({ 0.08, 0.04, 0.02, 0.002 });
 
