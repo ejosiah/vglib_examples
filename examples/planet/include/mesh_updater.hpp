@@ -32,7 +32,9 @@ public:
     void update(VkCommandBuffer cmd, VkDescriptorSet globalDescriptorSetLayout, Planet& planet);
 
     // Make sure the mesh's topology is valid
-    void validate(VkCommandBuffer cmd, const CBTMesh& mesh, VulkanBuffer geometryCB);
+    void reset_validation(VkCommandBuffer cmd);
+    void validate(VkCommandBuffer cmd, const CBTMesh& mesh, const VulkanBuffer& geometryCB);
+    void resolve_validation(VkCommandBuffer cmd);
 
     // Reset the buffers
     void reset_buffers(VkCommandBuffer cmd,  VkDescriptorSet meshDescriptorSet, VkDescriptorSet cbtDescriptorSet) const;

@@ -52,10 +52,14 @@ namespace {
     constexpr auto ReduceSecondPass1M = "ReduceSecondPass1M";
     constexpr auto BisectorIndexation = "BisectorIndexation";
     constexpr auto PrepareBisectorIndirect = "PrepareBisectorIndirect";
+    constexpr auto Validate = "Validate";
 
     constexpr uint32_t WorkgroupSize = 64;
     constexpr auto StorageAndIndirectUsage =
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    constexpr auto ValidationBufferUsage =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    constexpr auto ReadbackBufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     int32_t CbtType128K = static_cast<int32_t>(CBTType::OCBT_128K);
     int32_t CbtType256K = static_cast<int32_t>(CBTType::OCBT_256K);
     int32_t CbtType512K = static_cast<int32_t>(CBTType::OCBT_512K);
@@ -143,8 +147,8 @@ void MeshUpdater::initialize(VkDescriptorSet globalDescriptorSet) {
     m_globalDescriptorSet = globalDescriptorSet;
     indirectBuffer = m_Device->createBuffer(StorageAndIndirectUsage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(VkDispatchIndirectCommand) * 3);
     memoryBuffer = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int32_t) * 2);
-    validationBuffer = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int32_t) * 2);
-    validationBufferRB = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(int32_t) * 2);
+    validationBuffer = m_Device->createBuffer(ValidationBufferUsage, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(int32_t) * 2);
+    validationBufferRB = m_Device->createBuffer(ReadbackBufferUsage, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(int32_t) * 2);
     occupancyBufferRB = m_Device->createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_TO_CPU, sizeof(uint32_t) * 2);
 
     createDescriptorSetLayout();
@@ -427,6 +431,12 @@ std::vector<PipelineMetaData> MeshUpdater::metadata() {
             .shadePath = FileManager::resource("mesh_prepare_bisector_indirect.comp.spv"),
             .layouts = { &Planet::meshDescriptorSetLayout },
         },
+        {
+            .name = Validate,
+            .shadePath = FileManager::resource("mesh_validate.comp.spv"),
+            .layouts = { &m_descriptorSetLayout, &Planet::meshDescriptorSetLayout },
+            .ranges = { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) } },
+        },
     };
 }
 
@@ -634,4 +644,53 @@ void MeshUpdater::prepare_indirection(VkCommandBuffer cmd, const Planet& planet)
 
         Barrier::computeWriteToDrawIndirect(cmd);
     }, cmd, "prepare_indirect_draw_dispatch");
+}
+
+void MeshUpdater::reset_validation(VkCommandBuffer cmd) {
+    m_Device->section([&] {
+        validationBuffer.clear(cmd);
+        Barriers::pushAndFlush(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    }, cmd, "reset_validation");
+}
+
+void MeshUpdater::validate(VkCommandBuffer cmd, const CBTMesh& mesh, const VulkanBuffer& geometryCB) {
+    (void)geometryCB;
+
+    m_Device->section([&] {
+        const auto layout = m_compute.layout(Validate);
+        const auto numGroups = (mesh.totalNumElements + WorkgroupSize - 1) / WorkgroupSize;
+        const auto currentNeighborsBufferIndex = mesh.currentNeighborsBufferIdx;
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compute.pipeline(Validate));
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &m_descriptorSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 1, 1, &mesh.descriptorSet, 0, nullptr);
+        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(currentNeighborsBufferIndex), &currentNeighborsBufferIndex);
+        vkCmdDispatch(cmd, numGroups, 1, 1);
+
+        Barriers::pushAndFlush(cmd,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    }, cmd, "validate");
+}
+
+void MeshUpdater::resolve_validation(VkCommandBuffer cmd) {
+    m_Device->section([&] {
+        Barrier::computeWriteToTransferRead(cmd);
+        const VkBufferCopy copy{ 0, 0, validationBuffer.size };
+        vkCmdCopyBuffer(cmd, validationBuffer, validationBufferRB, 1, &copy);
+        Barrier::transferWriteToHostRead(cmd, validationBufferRB);
+    }, cmd, "resolve_validation");
+}
+
+bool MeshUpdater::check_if_valid() {
+    const auto* buffer = static_cast<const uint32_t*>(validationBufferRB.map());
+    const bool valid = buffer[0] == 0;
+    validationBufferRB.unmap();
+    return valid;
 }

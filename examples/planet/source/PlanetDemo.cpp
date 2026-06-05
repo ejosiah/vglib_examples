@@ -592,7 +592,12 @@ VkCommandBuffer *PlanetDemo::buildCommandBuffers(uint32_t imageIndex, uint32_t &
         m_MoonDeformer.apply_deformation(commandBuffer, m_Moon, m_MoonMaterial);
     }
 
-    // TODO validate mesh
+    if (m_EnableValidation) {
+        m_MeshUpdater.reset_validation(commandBuffer);
+        m_MeshUpdater.validate(commandBuffer, m_Earth.m_CBTMesh, m_Earth.m_GeometryCB);
+        m_MeshUpdater.validate(commandBuffer, m_Moon.m_CBTMesh, m_Moon.m_GeometryCB);
+        m_MeshUpdater.resolve_validation(commandBuffer);
+    }
 
     clearColor(0, 0, 1);
 
@@ -620,6 +625,7 @@ void PlanetDemo::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SameLine();
     ImGui::Checkbox("play", &play);
     ImGui::Checkbox("wireframe", &m_ActiveWireFrame);
+    ImGui::Checkbox("validation", &m_EnableValidation);
     ImGui::Checkbox("show water visualizer", &m_ShowWaterVisualizer);
 
     ImGui::End();
@@ -725,6 +731,11 @@ void PlanetDemo::checkAppInputs() {
 }
 
 void PlanetDemo::endFrame() {
+    if (m_EnableValidation) {
+        vkQueueWaitIdle(device.queues.graphics);
+        assert(m_MeshUpdater.check_if_valid() && "Validation failed.");
+    }
+
     if (m_MirrorPOV) {
         
         camera.get(view, viewProjection, invViewProjection, frustum);
