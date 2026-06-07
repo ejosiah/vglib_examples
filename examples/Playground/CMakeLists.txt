@@ -1,6 +1,7 @@
 if (NOT NO_OPENCL)
     find_package(OpenCL QUIET)
 endif()
+find_package(benchmark REQUIRED)
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 
@@ -12,7 +13,7 @@ set(SPV_DIR "${CMAKE_CURRENT_LIST_DIR}/spv")
 compile_glsl_directory(SRC_DIR "${GLSL_SOURCE_DIR}" OUT_DIR "${SPV_DIR}" INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/data/shaders")
 
 add_executable(playground ${CPP_FILES} ${HPP_FILES})
-target_link_libraries(playground VulkanBase Denoiser ImGuiPlugin common)
+target_link_libraries(playground VulkanBase Denoiser ImGuiPlugin common benchmark::benchmark)
 
 if (OpenCL_FOUND)
     include_directories("${OpenCL_INCLUDE_DIRS}")

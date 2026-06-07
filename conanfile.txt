@@ -20,6 +20,7 @@ array/0.1
 cpr/1.10.0
 nlohmann_json/3.11.3
 ktx/4.4.2
+benchmark/1.9.1
 
 [generators]
 CMakeDeps

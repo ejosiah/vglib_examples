@@ -28,6 +28,9 @@
 #include "sun_calc.hpp"
 #include <nlohmann/json.hpp>
 #include <cstdlib>
+#include <linear_system.hpp>
+#include <linalg/linalg.hpp>
+#include "linear_solver_eval.hpp"
 
 auto GSeris(auto a, auto r, auto n) {
     return a * std::pow(r, n - 1);
@@ -56,14 +59,17 @@ void random_image() {
     stbi_write_png("random4.png", w, w, c, randoms.data(), w * c);
 }
 
-int main() {
+int main(int argc, char** argv) {
     fs::current_path("../../../../examples/");
     FileManager::instance().addSearchPathFront("../data");
-    auto now = std::chrono::system_clock::now();
-    auto sunPos = sun_calc::get_sun_position_from_current_location(now);
-    fmt::print("sun: [azimuth: {}, altitude: {}]\n", glm::degrees(sunPos.azimuth), glm::degrees(sunPos.altitude));
 
-    auto moonPos = sun_calc::get_moon_position_from_current_location(now);
-    fmt::print("moon: [azimuth: {}, altitude: {}]\n", glm::degrees(moonPos.azimuth), glm::degrees(moonPos.altitude));
+    constexpr size_t system_size = 16 * 16;
+    auto system = linear_system::load(FileManager::resource("linear_system/euler_spd_16.txt"));
+    auto dm = linear_system::create_matrix<linalg::dense_row_matrix<float, system_size, system_size>>(system);
+    auto sm = linear_system::create_matrix<linalg::sparse_csr_matrix<float, system_size, system_size>>(system);
+    auto b = linear_system::create_vector<linalg::vector<float, system_size>>(system);
+    auto source = linear_solver_eval::make_dataset_info(system, "euler_spd_16");
+
+    linear_solver_eval::run(source, dm, sm, b, argc, argv);
 
 }

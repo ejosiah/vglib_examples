@@ -23,3 +23,7 @@ compile_glsl_directory(SRC_DIR "${COMMON_GLSL_SOURCE_DIR}" OUT_DIR "${COMMON_SPV
 
 add_library(common ${HEADER_FILES} ${SOURCE_FILES})
 target_link_libraries(common PUBLIC VulkanBase ${OPEN_VDB_LIBS} ${CONAN_LIBS})
+
+add_executable(linear_system_generator
+        ${CMAKE_CURRENT_LIST_DIR}/tools/linear_system_generator.cpp)
+target_link_libraries(linear_system_generator PRIVATE VulkanBase nlohmann_json::nlohmann_json)
