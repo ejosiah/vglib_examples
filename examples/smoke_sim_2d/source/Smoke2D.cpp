@@ -335,9 +335,9 @@ VkCommandBuffer *Smoke2D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 
 //    fluidSolver.renderVectorField(commandBuffer);
 //    renderSource(commandBuffer);
-//    renderSmoke(commandBuffer);
+    renderSmoke(commandBuffer);
 //    renderTemperature(commandBuffer);
-    fieldVisualizer.renderStreamLines(commandBuffer);
+    // fieldVisualizer.renderStreamLines(commandBuffer);
 //    fieldVisualizer.renderPressure(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -675,7 +675,7 @@ int main(){
         settings.enableResize = false;
         settings.width = 1200;
         settings.height = 1000;
-
+        settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         auto app = Smoke2D{ settings };
         app.run();
     }catch(std::runtime_error& err){
