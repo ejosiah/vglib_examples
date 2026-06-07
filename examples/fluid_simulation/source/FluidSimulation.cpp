@@ -129,11 +129,11 @@ void FluidSimulation::initColorField() {
 
     color.name = "dye";
     color.diffuseRate = diffuseRate;
-//    color.update = [&](VkCommandBuffer commandBuffer, Field& field){
-//        addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
-//        addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
-//        addDyeSource(commandBuffer, field,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
-//    };
+    color.update = [&](VkCommandBuffer commandBuffer, Field& field){
+        addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
+        addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
+        addDyeSource(commandBuffer, field,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
+    };
 }
 
 void FluidSimulation::initColorQuantity() {
@@ -387,6 +387,11 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
 //    fieldVisualizer.renderPressure(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
+
+    fluidSolver.runSimulation(commandBuffer);
+    fluidSolver2->runSimulation(commandBuffer);
+    fieldVisualizer.update(commandBuffer);
+
     vkEndCommandBuffer(commandBuffer);
 
     return &commandBuffer;
@@ -429,11 +434,6 @@ void FluidSimulation::runSimulation() {
 //    static int count = 0;
 //    if(count > 0) return;
 //    ++count;
-    device.graphicsCommandPool().oneTimeCommand([&](auto commandBuffer){
-        fluidSolver.runSimulation(commandBuffer);
-        fluidSolver2->runSimulation(commandBuffer);
-        fieldVisualizer.update(commandBuffer);
-    });
 
 }
 
@@ -464,7 +464,7 @@ eular::ExternalForce FluidSimulation::userInputForce2() {
 void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, Field &field, glm::vec3 color, glm::vec2 source) {
 
     dyeSource.constants.dt = fluidSolver.dt();
-    dyeSource.constants.color.rgb = color;
+    dyeSource.constants.color = color;
     dyeSource.constants.source = source;
     fluidSolver.withRenderPass(commandBuffer, field.framebuffer[out], [&](auto commandBuffer){
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.pipeline.handle);
@@ -481,7 +481,7 @@ void FluidSimulation::addDyeSource1(VkCommandBuffer commandBuffer, eular::Field&
     sets[1] = field.descriptorSet[1];
 
     dyeSource.constants.dt = fluidSolver2->dt();
-    dyeSource.constants.color.rgb = color;
+    dyeSource.constants.color = color;
     dyeSource.constants.source = source;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute.pipeline.handle);
@@ -542,13 +542,6 @@ void FluidSimulation::createSamplers() {
 }
 
 void FluidSimulation::beforeDeviceCreation() {
-    VkDescriptorSetLayoutBinding binding {
-            .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
-    };
-
     auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
     devFeatures13->maintenance4 = VK_TRUE;
     devFeatures13->synchronization2 = VK_TRUE;
@@ -580,6 +573,7 @@ int main(){
         settings.height = 600;
         settings.depthTest = true;
         settings.vSync = true;
+        settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
 //        spdlog::set_level(spdlog::level::err);
         auto app = FluidSimulation{settings };
         app.run();

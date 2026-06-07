@@ -18,8 +18,10 @@ vec3 accumColor(vec2 coord){
 }
 
 void main(){
-    vec2 d = (source - uv);
-    color.rgb = sourceColor.rgb * exp(-dot(d, d)/radius);
-    color.rgb /= dt;
-    color.rgb += accumColor(uv);
+    vec2 sourceUv = gl_FragCoord.xy / vec2(textureSize(sourceField, 0));
+    vec2 d = (source - sourceUv);
+    vec3 dye = sourceColor.rgb * exp(-dot(d, d)/radius);
+    dye /= dt;
+    dye += accumColor(sourceUv);
+    color = vec4(dye, 0);
 }
