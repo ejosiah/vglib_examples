@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(vglib_examples)
+enable_testing()
 
 set(CMAKE_CXX_STANDARD 20)
 

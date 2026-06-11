@@ -185,7 +185,7 @@ namespace eular::spd_generator {
                 .poissonIterations(cfg.poisson_iterations)
                 .viscosity(0.0f)
                 .ensureBoundaryCondition(true)
-                .poissonEquationSolver(eular::LinearSolverStrategy::RBGS)
+                .useGaussSeidelSolver()
                 .build();
 
         device.firstActiveCommandPool().oneTimeCommand([&](VkCommandBuffer command_buffer) {

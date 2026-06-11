@@ -42,8 +42,6 @@ void FluidSimulation::initFluidSolver() {
 
 
     float dx = 1.0f/float(width);
-    std::vector<glm::vec4> field;
-    eular::VectorFieldSource2D field2d;
     float maxLength = MIN_FLOAT;
     constexpr auto two_pi = glm::two_pi<float>();
     for(int i = 0; i < height; i++){
@@ -56,29 +54,29 @@ void FluidSimulation::initFluidSolver() {
 //            glm::vec2 u{glm::sin(two_pi * x), 0}; // divergent fields 2;
 //            glm::vec2 u{y, x}; // divergent fields 3;
             maxLength = glm::max(glm::length(u), maxLength);
-            field.emplace_back(u , 0, 0);
-            field2d.push_back(u);
         }
     }
 
-    auto stagingBuffer = device.createStagingBuffer(BYTE_SIZE(field));
-    stagingBuffer.copy(field);
-
-    fluidSolver = FluidSolver2D{&device, &descriptorPool, &renderPass, &fileManager(), {width, height}};
-    fluidSolver.init();
-    fluidSolver.set(stagingBuffer);
-    fluidSolver.add(color);
-    fluidSolver.dt((5.0f * dx)/maxLength);
-    fluidSolver.add(userInputForce());
-    fluidSolver.showVectors(true);
+    fluidSolver =
+        eular::FluidSolver::Builder{ &device, &descriptorPool }
+            .gridSize({ width, height})
+            .generate([&](auto x, auto y){ return glm::vec2{ glm::sin(two_pi * y), glm::sin(two_pi * x) }; })
+            .add(userInputForce())
+            .useGaussSeidelSolver()
+            .ensureBoundaryCondition(false)
+            .add(color)
+            .dt((5.0f * dx)/maxLength)
+    .build();
     
     fluidSolver2 = 
         eular::FluidSolver::Builder{ &device, &descriptorPool }
             .gridSize({ width, height})
             .generate([&](auto x, auto y){ return glm::vec2{ glm::sin(two_pi * y), glm::sin(two_pi * x) }; })
             .add(userInputForce2())
+            .ensureBoundaryCondition(false)
             .add(color1)
             .dt((5.0f * dx)/maxLength)
+            .useConjugateGradientSolver()
         .build();
 }
 
@@ -106,33 +104,39 @@ void FluidSimulation::initColorField() {
     }
 //    field = allocation;
 
-    textures::create(device, color.field.texture[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.field[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
             , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
-    textures::create(device, color.field.texture[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.field[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
             , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
 
 
-    textures::create(device, color.source.texture[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.source[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
             , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
-    textures::create(device, color.source.texture[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.source[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
             , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
 
-    device.setName<VK_OBJECT_TYPE_IMAGE>(fmt::format("{}_{}", "color_field", 0), color.field.texture[0].image.image);
-    device.setName<VK_OBJECT_TYPE_IMAGE>(fmt::format("{}_{}", "color_field", 1), color.field.texture[1].image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE>(fmt::format("{}_{}", "color_field", 0), color.field[0].image.image);
+    device.setName<VK_OBJECT_TYPE_IMAGE>(fmt::format("{}_{}", "color_field", 1), color.field[1].image.image);
 
-    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color_field", 0), color.field.texture[0].imageView.handle);
-    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color_field", 1), color.field.texture[1].imageView.handle);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color_field", 0), color.field[0].imageView.handle);
+    device.setName<VK_OBJECT_TYPE_IMAGE_VIEW>(fmt::format("{}_{}", "color_field", 1), color.field[1].imageView.handle);
+
+    color.field[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    color.field[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    color.source[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    color.source[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 
     color.name = "dye";
     color.diffuseRate = diffuseRate;
-    color.update = [&](VkCommandBuffer commandBuffer, Field& field){
-        addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
-        addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
-        addDyeSource(commandBuffer, field,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
+    color.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
+        addDyeSource(commandBuffer, field, gc, {0.004, -0.002, -0.002}, {0.2, 0.2});
+        addDyeSource(commandBuffer, field, gc, {-0.002, -0.002, 0.004}, {0.5, 0.9});
+        addDyeSource(commandBuffer, field, gc, {-0.002, 0.004, -0.002}, {0.8, 0.2});
     };
 }
 
@@ -238,32 +242,43 @@ void FluidSimulation::createComputePipeline() {
     auto module = device.createShaderModule(resource("force.comp.spv"));
     auto stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
+    forceGen.layout = device.createPipelineLayout( fluidSolver->forceFieldSetLayouts(),
+                                                   { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen.constants) } } );
     forceGen2.layout = device.createPipelineLayout( fluidSolver2->forceFieldSetLayouts(),
                                                   { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen.constants) } } );
 
     auto computeCreateInfo = initializers::computePipelineCreateInfo();
     computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = forceGen.layout.handle;
+    forceGen.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("force_generator_left", forceGen.pipeline.handle);
+
     computeCreateInfo.layout = forceGen2.layout.handle;
     forceGen2.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("force_generator", forceGen2.pipeline.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("force_generator_right", forceGen2.pipeline.handle);
 
     // dye source
     module = device.createShaderModule(resource("color_source.comp.spv"));
     stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
 
-    dyeSource.compute.layout = device.createPipelineLayout( fluidSolver2->sourceFieldSetLayouts(),
+    dyeSource.compute.layout = device.createPipelineLayout( fluidSolver->sourceFieldSetLayouts(),
+                                                    { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants) } } );
+    dyeSource.compute2.layout = device.createPipelineLayout( fluidSolver2->sourceFieldSetLayouts(),
                                                     { { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants) } } );
 
     computeCreateInfo.stage = stage;
     computeCreateInfo.layout = dyeSource.compute.layout.handle;
     dyeSource.compute.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
-    device.setName<VK_OBJECT_TYPE_PIPELINE>("dye_source", dyeSource.compute.pipeline.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("dye_source_left", dyeSource.compute.pipeline.handle);
+
+    computeCreateInfo.layout = dyeSource.compute2.layout.handle;
+    dyeSource.compute2.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("dye_source_right", dyeSource.compute2.pipeline.handle);
 }
 
 
 void FluidSimulation::createRenderPipeline() {
     //    @formatter:off
-    auto& simRenderPass = fluidSolver.renderPass;
     auto builder = device.graphicsPipelineBuilder();
     render.pipeline =
         builder
@@ -319,39 +334,16 @@ void FluidSimulation::createRenderPipeline() {
             .inputAssemblyState()
                 .triangleStrip()
             .layout().clear()
-                .addDescriptorSetLayout(fluidSolver.textureSetLayout)
+                .addDescriptorSetLayout(fluidSolver->fieldDescriptorSetLayout())
                 .addDescriptorSetLayout(fluidSolver2->fieldDescriptorSetLayout())
             .name("fullscreen_quad")
         .build(screenQuad.layout);
-
-    forceGen.pipeline =
-        builder
-            .shaderStage()
-                .fragmentShader(resource("force.frag.spv"))
-            .layout().clear()
-                .addDescriptorSetLayouts({ fluidSolver.textureSetLayout })
-                .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(forceGen.constants))
-            .renderPass(simRenderPass)
-            .name("force_generator")
-        .build(forceGen.layout);
-
-    dyeSource.pipeline =
-        builder
-            .shaderStage()
-                .fragmentShader(resource("color_source.frag.spv"))
-            .layout().clear()
-                .addDescriptorSetLayouts({ fluidSolver.textureSetLayout })
-                .addPushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(dyeSource.constants))
-            .renderPass(simRenderPass)
-            .name("color_source")
-        .build(dyeSource.layout);
 
     //    @formatter:on
 }
 
 void FluidSimulation::onSwapChainDispose() {
     dispose(render.pipeline);
-    dispose(forceGen2.pipeline);
 }
 
 void FluidSimulation::onSwapChainRecreation() {
@@ -380,7 +372,6 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    fluidSolver.renderVectorField(commandBuffer);
     renderColorField(commandBuffer);
 //    renderDebugField(commandBuffer);
 //    fieldVisualizer.renderStreamLines(commandBuffer);
@@ -388,7 +379,7 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
 
     vkCmdEndRenderPass(commandBuffer);
 
-    fluidSolver.runSimulation(commandBuffer);
+    fluidSolver->runSimulation(commandBuffer);
     fluidSolver2->runSimulation(commandBuffer);
     fieldVisualizer.update(commandBuffer);
 
@@ -437,13 +428,13 @@ void FluidSimulation::runSimulation() {
 
 }
 
-ExternalForce FluidSimulation::userInputForce() {
-    return [&](VkCommandBuffer commandBuffer, VkDescriptorSet descriptorSet){
-        forceGen.constants.dt = fluidSolver.dt();
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, forceGen.pipeline.handle);
-        vkCmdPushConstants(commandBuffer, forceGen.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(forceGen.constants), &forceGen.constants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, forceGen.layout.handle, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
-        vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+eular::ExternalForce FluidSimulation::userInputForce() {
+    return [&](VkCommandBuffer commandBuffer, std::span<VkDescriptorSet> forceFieldSets, glm::uvec3 gc){
+        forceGen.constants.dt = fluidSolver->dt();
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen.pipeline.handle);
+        vkCmdPushConstants(commandBuffer, forceGen.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceGen.constants), &forceGen.constants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, forceGen.layout.handle, 0, COUNT(forceFieldSets), forceFieldSets.data(), 0, VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
         forceGen.constants.force.x = 0;
         forceGen.constants.force.y = 0;
     };
@@ -461,17 +452,20 @@ eular::ExternalForce FluidSimulation::userInputForce2() {
     };
 }
 
-void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, Field &field, glm::vec3 color, glm::vec2 source) {
+void FluidSimulation::addDyeSource(VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc, glm::vec3 color, glm::vec2 source) {
+    static std::array<VkDescriptorSet, 2> sets;
+    sets[0] = field.descriptorSet[0];
+    sets[1] = field.descriptorSet[1];
 
-    dyeSource.constants.dt = fluidSolver.dt();
+    dyeSource.constants.dt = fluidSolver->dt();
     dyeSource.constants.color = color;
     dyeSource.constants.source = source;
-    fluidSolver.withRenderPass(commandBuffer, field.framebuffer[out], [&](auto commandBuffer){
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.pipeline.handle);
-        vkCmdPushConstants(commandBuffer, dyeSource.layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(dyeSource.constants), &dyeSource.constants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, dyeSource.layout.handle, 0, 1, &field.descriptorSet[in], 0, VK_NULL_HANDLE);
-        vkCmdDraw(commandBuffer, 4, 1, 0, 0);
-    });
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, dyeSource.compute.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants), &dyeSource.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
+
     field.swap();
 }
 
@@ -484,9 +478,9 @@ void FluidSimulation::addDyeSource1(VkCommandBuffer commandBuffer, eular::Field&
     dyeSource.constants.color = color;
     dyeSource.constants.source = source;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute.pipeline.handle);
-    vkCmdPushConstants(commandBuffer, dyeSource.compute.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants), &dyeSource.constants);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute2.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, dyeSource.compute2.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dyeSource.constants), &dyeSource.constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, dyeSource.compute2.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
 
     field.swap();

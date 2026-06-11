@@ -1,12 +1,8 @@
 #pragma once
 
 #include "VulkanBaseApp.h"
-#include "fluid_solver_2d.h"
 #include "fluid/FluidSolver2.hpp"
 #include "fluid/FieldVisualizer.hpp"
-
-
-using ColorField = Field;
 
 class FluidSimulation : public VulkanBaseApp{
 public:
@@ -49,11 +45,11 @@ protected:
 
     void runSimulation();
 
-    ExternalForce userInputForce();
+    eular::ExternalForce userInputForce();
 
     eular::ExternalForce userInputForce2();
 
-    void addDyeSource(VkCommandBuffer commandBuffer, Field& field, glm::vec3 color, glm::vec2 source);
+    void addDyeSource(VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc, glm::vec3 color, glm::vec2 source);
 
     void addDyeSource1(VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc, glm::vec3 color, glm::vec2 source);
 
@@ -111,7 +107,7 @@ protected:
         struct {
             VulkanPipeline pipeline;
             VulkanPipelineLayout layout;
-        } compute;
+        } compute, compute2;
         struct{
             glm::vec3 color{1};
             glm::vec2 source;
@@ -123,7 +119,7 @@ protected:
     static const int in{0};
     static const int out{1};
 
-    Quantity color;
+    eular::Quantity color;
     eular::Quantity color1;
 
     struct {
@@ -135,7 +131,7 @@ protected:
     VulkanBuffer debugBuffer;
     VulkanSampler valueSampler;
     VulkanSampler linearSampler;
-    FluidSolver2D fluidSolver;
+    std::unique_ptr<eular::FluidSolver> fluidSolver;
     std::unique_ptr<eular::FluidSolver> fluidSolver2;
     FieldVisualizer fieldVisualizer;
     float diffuseRate = 0;

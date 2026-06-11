@@ -1,10 +1,8 @@
 #include "VulkanBaseApp.h"
-#include "fluid_solver_2d.h"
 #include "fluid/FluidSolver2.hpp"
 #include "fluid/FieldVisualizer.hpp"
 
-using TemperatureAndDensity = Quantity;
-using TemperatureAndDensity1 = eular::Quantity;
+using TemperatureAndDensity = eular::Quantity;
 
 class Smoke2D : public VulkanBaseApp{
 public:
@@ -23,6 +21,8 @@ protected:
 
     void updateDescriptorSets();
 
+    void initBoundaryTexture();
+
     void createCommandPool();
 
     void createPipelineCache();
@@ -37,11 +37,7 @@ protected:
 
     void initTemperatureAndDensityField();
 
-    void initTemperatureAndDensityField1();
-
     void initSolver();
-
-    void copy(VkCommandBuffer commandBuffer, Texture& source, const VulkanBuffer& destination);
 
     void onSwapChainDispose() override;
 
@@ -49,14 +45,9 @@ protected:
 
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
-    void emitSmoke(VkCommandBuffer commandBuffer, Field &field);
-
     void emitSmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
 
-    bool decaySmoke(VkCommandBuffer commandBuffer, Field &field);
-
     bool decaySmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
-
 
     void updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
 
@@ -64,7 +55,7 @@ protected:
 
     void renderSmoke(VkCommandBuffer commandBuffer);
 
-    void renderSource(VkCommandBuffer commandBuffer);
+    void renderBoundary(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -74,10 +65,7 @@ protected:
 
     void onPause() override;
 
-    ExternalForce buoyancyForce();
-
-    eular::ExternalForce buoyancyForce1();
-
+    eular::ExternalForce buoyancyForce();
 
 //#define toKelvin(celsius) (273.15f + celsius)
 #define toKelvin(celsius) (celsius)
@@ -87,17 +75,12 @@ protected:
     static constexpr float MIN_TEMP = toKelvin(-20);  // celsius
     static constexpr float AMBIENT_TEMP = toKelvin(0); // celsius
     static constexpr float MAX_TEMP = toKelvin(100); // celsius
-    static constexpr float TARGET_TEMP = toKelvin(150); // celsius
+    static constexpr float TARGET_TEMP = toKelvin(260); // celsius
     static constexpr float TIME_STEP = 0.004166666666; // seconds
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
     } render;
-
-    struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
-    } compute;
 
     struct {
         VulkanPipelineLayout layout;
@@ -109,19 +92,17 @@ protected:
     } temperatureRender;
 
     struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } compute;
         struct{
-            glm::vec2 location{0.5, 0.98};
+            glm::vec2 location{0.5, 0.94};
             float tempTarget{TARGET_TEMP};
             float ambientTemp{AMBIENT_TEMP};
-            float radius{0.001};
-            float tempRate{0.5}; // 1
-            float densityRate{0.3};
+            float radius{0.0045};
+            float tempRate{8};
+            float densityRate{28};
             float decayRate{5};
             float dt{TIME_STEP};
             float time{0};
@@ -129,18 +110,16 @@ protected:
     } emitter;
 
     struct {
-        VulkanPipelineLayout layout;
-        VulkanPipeline pipeline;
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } compute;
         struct{
-            glm::vec2 location{0.5, 0.98};
-            float densityDecayRate{0.1};
-            float temperatureDecayRate{0.001};
+            glm::vec2 location{0.5, 0.94};
+            float densityDecayRate{0.045};
+            float temperatureDecayRate{0.02};
             float dt{TIME_STEP};
-            float radius{0.001};
+            float radius{0.0045};
         } constants;
     } smokeDecay;
 
@@ -153,21 +132,24 @@ protected:
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
         struct {
-            glm::vec3 dye{2, 255, 255};
+            glm::vec3 dye{2.4, 4.15, 4.9};
         } constants;
     } smokeRender;
 
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
+    } boundaryRender;
+
+    struct {
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
         } compute;
         struct{
             glm::vec2 up{0, -1};
-            float tempFactor{1}; // 0.1
-            float densityFactory{0};
+            float tempFactor{0.45};
+            float densityFactory{0.08};
         } constants;
     } buoyancyForceGen;
 
@@ -178,16 +160,21 @@ protected:
     VulkanBuffer screenQuad;
 
     TemperatureAndDensity temperatureAndDensity;
-    TemperatureAndDensity1 temperatureAndDensity1;
-    FluidSolver2D fluidSolver;
-    std::unique_ptr<eular::FluidSolver> fluidSolver1;
+    std::unique_ptr<eular::FluidSolver> fluidSolver;
     VulkanDescriptorSetLayout ambientTempSet;
     VkDescriptorSet ambientTempDescriptorSet;
+    Texture boundaryTexture;
+    VulkanDescriptorSetLayout computeBoundarySetLayout;
+    VkDescriptorSet computeBoundaryDescriptorSet{};
+    VulkanDescriptorSetLayout boundaryRenderSetLayout;
+    VkDescriptorSet boundaryRenderDescriptorSet{};
     VulkanBuffer ambientTempBuffer;
     float* ambientTemp{};
     float* temps;
     VulkanBuffer tempField;
     VulkanBuffer debugBuffer;
+    Action* toggleBoundary{};
+    bool showBoundary{false};
     bool dynamicAmbientTemp{false};
     int fwidth{};
     FieldVisualizer fieldVisualizer;
