@@ -4,6 +4,11 @@
 #include "ImGuiPlugin.hpp"
 #include "AppContext.hpp"
 #include "ExtensionChain.hpp"
+#include "Barrier.hpp"
+
+#include <array>
+#include <cmath>
+#include <format>
 
 YetAnotherFluidSim::YetAnotherFluidSim(const Settings& settings) : VulkanBaseApp("Yet another fluid simulation", settings) {
     fileManager().addSearchPathFront(".");
@@ -49,45 +54,344 @@ void YetAnotherFluidSim::initCamera() {
 }
 
 void YetAnotherFluidSim::initSceneProperties() {
-    scenes[Scene::Tank] = {};
+    auto cScale = to<float>(height)/simSize.y;
+    simSize.x = to<float>(width)/ cScale;
+    domainSize.x = domainSize.y / simSize.y * simSize.x;
+
+    scenes[Scene::Tank] = {
+        .color = {},
+        .resolution = 50,
+        .iterations = 40,
+        .timeStep = 0.01666667,
+        .gravity = -9.81,
+        .pressure = true
+    };
 
     scenes[Scene::WindTunnel] = {
         .resolution = 100,
-        .gravity =  0.0f
-        // Smoke/dye
+        .iterations = 40,
+        .timeStep = 1.f/120.f,
+        .gravity =  0.0f,
+        .smoke = true
     };
 
     scenes[Scene::Paint] = {
         .resolution = 100,
-        .gravity =  0.0f
-        // paint/ Smoke/dye
+        .gravity =  0.0f,
+        .smoke = true
     };
 
 }
 
 void YetAnotherFluidSim::initSolver() {
     const auto& props = scenes.at(scene);
-    const auto aspect = swapChain.aspectRatio();
-    solverGridSize = {
-        std::max(1u, static_cast<uint32_t>(aspect * float(props.resolution))),
-        std::max(1u, props.resolution)
-    };
+    const auto h = domainSize.y/props.resolution;
+    solverGridSize = { domainSize.x/h, domainSize.y/h };
+    const auto simulationFrequency = to<int>(std::round(1.0f / props.timeStep));
+    fixedUpdate.frequency(simulationFrequency > 0 ? simulationFrequency : 1);
 
-    gravityConstants.gravityY = props.gravity;
+    forceConstants.speed = props.gravity;
+    forceConstants.mode = 0;
 
-    solver =
+    auto builder =
         eular::FluidSolver::Builder{&device, &descriptorPool}
             .gridSize(solverGridSize)
             .density(1000.0f)
             .dt(props.timeStep)
-            .poissonIterations(static_cast<int>(props.iterations))
-            .generate([](float, float) { return glm::vec2{0.0f}; })
-            .add(gravityForce())
-            .useGaussSeidelSolver()
-            .ensureBoundaryCondition(true)
-        .build();
+            .poissonIterations(to<int>(props.iterations/2))
+            .add(force())
+            .closedDomain()
+            .useConjugateGradientSolver();
 
+    if (scene == Scene::Tank) {
+        builder.add(force());
+    }
+
+    if (scene == Scene::WindTunnel || scene == Scene::Paint) {
+        initSmoke();
+        builder.add(smoke);
+    }
+
+    if (scene == Scene::WindTunnel) {
+        forceConstants.speed = 0.4f;
+        forceConstants.mode = 1;
+
+        builder.openBoundaryEdges(eular::FluidSolver::BoundaryEdgeRight);
+    }
+    if (scene == Scene::Paint) {
+        forceConstants.mode = 2;
+    }
+
+    solver = builder.build();
+
+    initObstacleCollider();
+    initCpuSolver();
     initVisualizer();
+
+    glm::mat4 projection = vkn::ortho(0, domainSize.x, 0, domainSize.y);
+    glm::mat4 view = glm::scale(glm::mat4{1}, {1, 1, 1});
+    obstacleConstants.transform = view * projection;
+    obstacleConstants.size = 2.0f * obstacleConstants.radius * to<float>(height) / domainSize.y;
+    obstacleConstants.color = props.color;
+    obstacleConstants.domainMin = glm::vec2{0.0f};
+    obstacleConstants.domainMax = domainSize;
+    obstacleConstants.scene = static_cast<uint32_t>(scene);
+    obstacleSimulationPosition = obstacleConstants.position;
+    showPressure = props.pressure;
+    showSmoke = props.smoke;
+    showStreamLines = props.streamLines;
+}
+
+void YetAnotherFluidSim::initCpuSolver() {
+    if (scene != Scene::Tank) {
+        cpuSolver.reset();
+        return;
+    }
+
+    const auto& props = scenes.at(scene);
+    const auto sampleCount = to<std::size_t>(solverGridSize.x) * to<std::size_t>(solverGridSize.y);
+    const auto fieldByteSize = to<VkDeviceSize>(sampleCount * sizeof(float));
+
+    auto params = CpuFluidSolver::Params{
+        .numX = to<int32_t>(solverGridSize.x),
+        .numY = to<int32_t>(solverGridSize.y),
+        .numIterations = to<int32_t>(props.iterations),
+        .density = 1000.0f,
+        .gravity = -std::abs(props.gravity),
+        .h = 1.0f / to<float>(props.resolution),
+        .dt = props.timeStep
+    };
+
+    cpuSolver = std::make_unique<CpuFluidSolver>(params);
+    auto& mask = cpuSolver->fluidMask();
+    const auto paddedSize = cpuSolver->size();
+    for (auto x = 0; x < paddedSize.x; ++x) {
+        for (auto y = 0; y < paddedSize.y; ++y) {
+            const auto isSolid = x == 0 || x == paddedSize.x - 1 || y == 0;
+            mask[cpuSolver->index(x, y)] = isSolid ? 0.0f : 1.0f;
+        }
+    }
+
+    cpuSolver->updateObstacle({0.4, 0.5}, true);
+
+    cpuUUpload.assign(sampleCount, 0.0f);
+    cpuVUpload.assign(sampleCount, 0.0f);
+    cpuPressureUpload.assign(sampleCount, 0.0f);
+    cpuUUploadBuffer = device.createStagingBuffer(fieldByteSize);
+    cpuVUploadBuffer = device.createStagingBuffer(fieldByteSize);
+    cpuPressureUploadBuffer = device.createStagingBuffer(fieldByteSize);
+
+    copyCpuFieldsToUploadBuffers();
+}
+
+void YetAnotherFluidSim::updateCpuSolver() {
+    if (!cpuSolver) {
+        return;
+    }
+
+    cpuSolver->simulate();
+    copyCpuFieldsToUploadBuffers();
+}
+
+void YetAnotherFluidSim::copyCpuFieldsToUploadBuffers() {
+    if (!cpuSolver) {
+        return;
+    }
+
+    const auto& u = cpuSolver->uField();
+    const auto& v = cpuSolver->vField();
+    const auto& pressure = cpuSolver->pressureField();
+    for (auto y = 0u; y < solverGridSize.y; ++y) {
+        for (auto x = 0u; x < solverGridSize.x; ++x) {
+            const auto dst = to<std::size_t>(y) * solverGridSize.x + x;
+            const auto i = to<int32_t>(x + 1);
+            const auto j = to<int32_t>(y + 1);
+            const auto src = cpuSolver->index(i, j);
+            cpuUUpload[dst] = 0.5f * (u[src] + u[cpuSolver->index(i + 1, j)]);
+            cpuVUpload[dst] = 0.5f * (v[src] + v[cpuSolver->index(i, j + 1)]);
+            cpuPressureUpload[dst] = pressure[src];
+        }
+    }
+
+    const auto fieldByteSize = to<VkDeviceSize>(cpuUUpload.size() * sizeof(float));
+    cpuUUploadBuffer.copy(cpuUUpload.data(), fieldByteSize);
+    cpuVUploadBuffer.copy(cpuVUpload.data(), fieldByteSize);
+    cpuPressureUploadBuffer.copy(cpuPressureUpload.data(), fieldByteSize);
+}
+
+void YetAnotherFluidSim::uploadCpuFields(VkCommandBuffer commandBuffer) {
+    if (!cpuSolver) {
+        return;
+    }
+
+    auto& vectorField = solver->vectorField();
+    uploadCpuField(commandBuffer, cpuUUploadBuffer, vectorField.u);
+    uploadCpuField(commandBuffer, cpuVUploadBuffer, vectorField.v);
+    uploadCpuField(commandBuffer, cpuPressureUploadBuffer, solver->pressureField());
+}
+
+void YetAnotherFluidSim::uploadCpuField(VkCommandBuffer commandBuffer, const VulkanBuffer& buffer, eular::Field& field) {
+    field[0].image.copyFromBuffer(commandBuffer, buffer, VK_IMAGE_LAYOUT_GENERAL);
+    field[1].image.copyFromBuffer(commandBuffer, buffer, VK_IMAGE_LAYOUT_GENERAL);
+    Barrier::transferWriteToComputeRead(commandBuffer);
+}
+
+void YetAnotherFluidSim::initObstacleCollider() {
+    const auto width = solverGridSize.x;
+    const auto height = solverGridSize.y;
+
+    obstacleColliderField.name = "yet_another_fluid_sim_obstacle_collider";
+    obstacleColliderVelocityField.name = "yet_another_fluid_sim_obstacle_collider_velocity";
+
+    std::vector<glm::vec2> colliderData(
+        to<std::size_t>(width) * height,
+        glm::vec2{1.0f, eular::colliderTypeValue(eular::ColliderType::Sdf)});
+    std::vector<glm::vec2> velocityData(to<std::size_t>(width) * height, glm::vec2{0.0f});
+
+    for(auto i = 0u; i < 2; ++i) {
+        textures::create(device, obstacleColliderField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT,
+                         colliderData.data(), {width, height, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
+        textures::create(device, obstacleColliderVelocityField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT,
+                         velocityData.data(), {width, height, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
+        obstacleColliderField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+        obstacleColliderVelocityField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+        device.setName<VK_OBJECT_TYPE_IMAGE>(std::format("{}_{}", obstacleColliderField.name, i),
+                                             obstacleColliderField[i].image.image);
+        device.setName<VK_OBJECT_TYPE_IMAGE>(std::format("{}_{}", obstacleColliderVelocityField.name, i),
+                                             obstacleColliderVelocityField[i].image.image);
+    }
+
+    auto writes = initializers::writeDescriptorSets<12>();
+    auto writeOffset = createFieldDescriptorSet(writes, 0, obstacleColliderField);
+    writeOffset = createFieldDescriptorSet(writes, writeOffset, obstacleColliderVelocityField);
+    writes.resize(writeOffset);
+    device.updateDescriptorSets(writes);
+
+    for(auto& write : writes) {
+        if(write.pImageInfo) delete write.pImageInfo;
+    }
+
+    const std::array<eular::Collider, 1> colliders{{
+        {obstacleColliderField.descriptorSet[eular::in], obstacleColliderVelocityField.descriptorSet[eular::in]}
+    }};
+    solver->setColliders(colliders);
+}
+
+uint32_t YetAnotherFluidSim::createFieldDescriptorSet(std::vector<VkWriteDescriptorSet>& writes, uint32_t writeOffset, eular::Field& field) {
+    auto sets = descriptorPool.allocate({solver->fieldDescriptorSetLayout(), solver->fieldDescriptorSetLayout()});
+
+    field.descriptorSet[0] = sets[0];
+    field.descriptorSet[1] = sets[1];
+
+    writes[writeOffset].dstSet = field.descriptorSet[0];
+    writes[writeOffset].dstBinding = 0;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[0];
+    writes[writeOffset].dstBinding = 1;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[0];
+    writes[writeOffset].dstBinding = 2;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[1];
+    writes[writeOffset].dstBinding = 0;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[1];
+    writes[writeOffset].dstBinding = 1;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[1];
+    writes[writeOffset].dstBinding = 2;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    return writeOffset;
+}
+
+void YetAnotherFluidSim::updateObstacleCollider(VkCommandBuffer commandBuffer) {
+    const std::array<VkDescriptorSet, 2> sets{
+        obstacleColliderField.descriptorSet[eular::in],
+        obstacleColliderVelocityField.descriptorSet[eular::in]
+    };
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("obstacle"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("obstacle"),
+                            0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, compute.layout("obstacle"), VK_SHADER_STAGE_COMPUTE_BIT,
+                       0, sizeof(obstacleConstants), &obstacleConstants);
+    vkCmdDispatch(commandBuffer, (solverGridSize.x + 31u) / 32u, (solverGridSize.y + 31u) / 32u, 1);
+
+    Barriers::pushAndFlush(commandBuffer, obstacleColliderField[eular::in].image, DEFAULT_SUB_RANGE,
+                           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                           VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+    Barriers::pushAndFlush(commandBuffer, obstacleColliderVelocityField[eular::in].image, DEFAULT_SUB_RANGE,
+                           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                           VK_ACCESS_2_SHADER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+}
+
+void YetAnotherFluidSim::updatePaintSmoke(VkCommandBuffer commandBuffer) {
+    if(scene != Scene::Paint) {
+        return;
+    }
+
+    const std::array<VkDescriptorSet, 2> sets{
+        smoke.field.descriptorSet[eular::in],
+        obstacleColliderField.descriptorSet[eular::in]
+    };
+
+    paintSmokeSourceConstants.frame = static_cast<uint32_t>(fixedUpdate.frames());
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("paint_smoke_source"));
+    vkCmdPushConstants(commandBuffer, compute.layout("paint_smoke_source"), VK_SHADER_STAGE_COMPUTE_BIT,
+                       0, sizeof(paintSmokeSourceConstants), &paintSmokeSourceConstants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("paint_smoke_source"),
+                            0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdDispatch(commandBuffer, (solverGridSize.x + 31u) / 32u, (solverGridSize.y + 31u) / 32u, 1);
+
+    Barriers::pushAndFlush(commandBuffer, smoke.field[eular::in].image, DEFAULT_SUB_RANGE,
+                           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                           VK_ACCESS_2_SHADER_WRITE_BIT,
+                           VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+}
+
+void YetAnotherFluidSim::runSimulationStep(VkCommandBuffer commandBuffer) {
+    const auto dt = fixedUpdate.period() > 0.0f ? fixedUpdate.period() : scenes[scene].timeStep;
+    obstacleConstants.velocity = (obstacleConstants.position - obstacleSimulationPosition) / dt;
+    obstacleSimulationPosition = obstacleConstants.position;
+    forceConstants.point = obstacleConstants.position;
+    forceConstants.velocity = obstacleConstants.velocity;
+    forceConstants.domainMin = obstacleConstants.domainMin;
+    forceConstants.domainMax = obstacleConstants.domainMax;
+    forceConstants.radius = obstacleConstants.radius;
+    forceConstants.dt = dt;
+
+    updateObstacleCollider(commandBuffer);
+    updatePaintSmoke(commandBuffer);
+    solver->runSimulation(commandBuffer);
 }
 
 void YetAnotherFluidSim::initVisualizer() {
@@ -96,16 +400,57 @@ void YetAnotherFluidSim::initVisualizer() {
         { width, height }, solverGridSize
     };
 
+    visualizer.setDomain(domainSize);
     visualizer.init();
     visualizer.set(solver.get());
+    visualizer.initFieldDumpReadback(fs::current_path() / "yet_another_fluid_sim" / "debug_dumps");
 }
 
-eular::ExternalForce YetAnotherFluidSim::gravityForce() {
+void YetAnotherFluidSim::initSmoke() {
+    smokeField.assign(solverGridSize.x * solverGridSize.y, scene == Scene::Paint ? 0.0f : 1.0f);
+
+    if(scene == Scene::WindTunnel) {
+        const auto pipeH = 0.1 * solverGridSize.y;
+        const auto minJ = to<int>(0.5f * to<float>(solverGridSize.y) - 0.5f*pipeH);
+        const auto maxJ = to<int>(0.5f * to<float>(solverGridSize.y) + 0.5f*pipeH);
+
+        for (auto j = minJ; j < maxJ; ++j) {
+            smokeField[j * solverGridSize.x] = 0.0;
+        }
+    }
+
+    textures::create(device, smoke.field[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, smokeField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+    textures::create(device, smoke.field[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, smokeField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+
+    std::vector<float> sourceField(smokeField.size(), 0.0f);
+    textures::create(device, smoke.source[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, sourceField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+    textures::create(device, smoke.source[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, sourceField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
+
+    smoke.field[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    smoke.field[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    smoke.source[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+    smoke.source[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+    smoke.name = "smoke";
+    smoke.field.name = "smoke";
+    smoke.diffuseRate = 0;
+}
+
+eular::ExternalForce YetAnotherFluidSim::force() {
     return [&](VkCommandBuffer commandBuffer, std::span<VkDescriptorSet> forceFieldSets, glm::uvec3 gc){
-        gravityConstants.gravityY = scenes.at(scene).gravity;
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("gravity"));
-        vkCmdPushConstants(commandBuffer, compute.layout("gravity"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(gravityConstants), &gravityConstants);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("gravity"), 0, COUNT(forceFieldSets), forceFieldSets.data(), 0, VK_NULL_HANDLE);
+        auto& vectorField = solver->vectorField();
+        const std::array<VkDescriptorSet, 5> sets{
+            forceFieldSets[0],
+            forceFieldSets[1],
+            solver->colliderField().descriptorSet[eular::in],
+            vectorField.u.descriptorSet[eular::in],
+            vectorField.v.descriptorSet[eular::in]
+        };
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("force"));
+        vkCmdPushConstants(commandBuffer, compute.layout("force"), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceConstants), &forceConstants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("force"), 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
     };
 }
@@ -124,6 +469,10 @@ void YetAnotherFluidSim::beforeDeviceCreation() {
 
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
     devFeatures12->scalarBlockLayout = VK_TRUE;
+
+    auto dsFeatures = findExtension<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT, deviceCreateNextChain);
+    dsFeatures->extendedDynamicState3ColorBlendEnable = VK_TRUE;
+    dsFeatures->extendedDynamicState3ColorBlendEquation = VK_TRUE;
 
     AppContext::addExtensions(deviceCreateNextChain);
 }
@@ -164,14 +513,47 @@ void YetAnotherFluidSim::createPipelineCache() {
 
 void YetAnotherFluidSim::createComputePipeline() {
     forceFieldSetLayouts = solver->forceFieldSetLayouts();
-    auto range = VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(gravityConstants)};
+    forceFieldSetLayouts.push_back(solver->fieldDescriptorSetLayout());
+    forceFieldSetLayouts.push_back(solver->fieldDescriptorSetLayout());
+    forceFieldSetLayouts.push_back(solver->fieldDescriptorSetLayout());
+    obstacleColliderSetLayouts = {
+        solver->fieldDescriptorSetLayout(),
+        solver->fieldDescriptorSetLayout()
+    };
+    paintSmokeSetLayouts = {
+        solver->fieldDescriptorSetLayout(),
+        solver->fieldDescriptorSetLayout()
+    };
+    auto forceRange = VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(forceConstants)};
+    auto obstacleRange = VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(obstacleConstants)};
+    auto paintSmokeSourceRange = VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(paintSmokeSourceConstants)};
 
-    compute = ComputePipelines{&device, {{
-        "gravity",
-        resource("gravity.comp.spv"),
-        {&forceFieldSetLayouts[0], &forceFieldSetLayouts[1]},
-        {range}
-    }}};
+    compute = ComputePipelines{&device, {
+        {
+            "force",
+            resource("force_generator.comp.spv"),
+            {
+                &forceFieldSetLayouts[0],
+                &forceFieldSetLayouts[1],
+                &forceFieldSetLayouts[2],
+                &forceFieldSetLayouts[3],
+                &forceFieldSetLayouts[4],
+            },
+            {forceRange}
+        },
+        {
+            "obstacle",
+            resource("obstacle.comp.spv"),
+            {&obstacleColliderSetLayouts[0], &obstacleColliderSetLayouts[1]},
+            {obstacleRange}
+        },
+        {
+            "paint_smoke_source",
+            resource("paint_smoke_source.comp.spv"),
+            {&paintSmokeSetLayouts[0], &paintSmokeSetLayouts[1]},
+            {paintSmokeSourceRange}
+        }
+    }};
     compute.createPipelines();
 }
 
@@ -182,41 +564,94 @@ void YetAnotherFluidSim::createRenderPipeline() {
         render.pipeline =
             builder
                 .shaderStage()
-                    .vertexShader(resource("pass_through.vert.spv"))
-                    .fragmentShader(resource("pass_through.frag.spv"))
+                    .vertexShader(resource("render.vert.spv"))
+                    .fragmentShader(resource("render.frag.spv"))
+                .vertexInputState()
+                    .clear()
+                .inputAssemblyState()
+                    .triangleStrip()
+                .rasterizationState()
+                    .cullNone()
+                .dynamicState()
+                    .colorBlendEnable()
+                    .colorBlendEquation()
+                .depthStencilState()
+                    .compareOpAlways()
+                .layout()
+                    .clear()
+                    .addDescriptorSetLayout(solver->fieldDescriptorSetLayout())
+                    .addPushConstantRange(VK_SHADER_STAGE_ALL, 0, sizeof(obstacleConstants))
                 .name("render")
                 .build(render.layout);
+
+        obstacleRender.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("obstacle.vert.spv"))
+                    .fragmentShader(resource("obstacle.frag.spv"))
+                .vertexInputState()
+                    .clear()
+                .inputAssemblyState()
+                    .points()
+                .rasterizationState()
+                    .cullNone()
+                .depthStencilState()
+                    .compareOpAlways()
+                .layout()
+                    .clear()
+                    .addPushConstantRange(VK_SHADER_STAGE_ALL, 0, sizeof(obstacleConstants))
+                .name("obstacle_render")
+                .build(obstacleRender.layout);
     //    @formatter:on
 }
 
 
 void YetAnotherFluidSim::onSwapChainDispose() {
     dispose(render.pipeline);
+    dispose(obstacleRender.pipeline);
 }
 
 void YetAnotherFluidSim::onSwapChainRecreation() {
-    updateDescriptorSets();
+    scene = newScene;
+    initSolver();
+    createComputePipeline();
+    createRenderPipeline();
     createRenderPipeline();
 }
 
 VkCommandBuffer *YetAnotherFluidSim::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
+    visualizer.writePendingFieldDump();
+
     numCommandBuffers = 1;
     auto& commandBuffer = commandBuffers[imageIndex];
 
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    clearColor(1, 1, 1);
+    clearColor(1, 0, 0);
 
-    if (advance) {
-        solver->runSimulation(commandBuffer);
-        advance = false;
-    }
+    fixedUpdate([&] {
+        runSimulationStep(commandBuffer);
+    });
+
+    // uploadCpuFields(commandBuffer);
     visualizer.update(commandBuffer);
 
     renderToSwapChain([&]{
-        visualizer.renderDebugFields(commandBuffer);
+        // visualizer.renderDebugFields(commandBuffer);
+        if (showPressure) {
+            obstacleConstants.color = glm::vec4(0);
+            visualizer.renderPressure(commandBuffer);
+        } else {
+            obstacleConstants.color = scenes[scene].color;
+        }
+
+
+        renderSmoke(commandBuffer);
         // visualizer.renderVectorField(commandBuffer);
+        // visualizer.renderStreamLines(commandBuffer);
+        visualizer.renderBoundary(commandBuffer);
+        renderObstacle(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
@@ -225,23 +660,118 @@ VkCommandBuffer *YetAnotherFluidSim::buildCommandBuffers(uint32_t imageIndex, ui
     return &commandBuffer;
 }
 
+void YetAnotherFluidSim::renderSmoke(VkCommandBuffer commandBuffer) {
+    if (!showSmoke) return;
+    const auto set = smoke.field.descriptorSet[eular::in];
+    if(set == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkBool32 enable = VK_TRUE;
+    vkCmdSetColorBlendEnableEXT(commandBuffer, 0, 1, &enable);
+
+    static VkColorBlendEquationEXT blend{};
+    blend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blend.colorBlendOp =  VK_BLEND_OP_ADD;
+    blend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blend.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    if (showPressure) {
+        blend.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend.colorBlendOp =  VK_BLEND_OP_REVERSE_SUBTRACT;
+    }
+
+    vkCmdSetColorBlendEquationEXT(commandBuffer, 0, 1, &blend);
+
+
+    auto constants = obstacleConstants;
+    constants.scene = static_cast<uint32_t>(scene);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, render.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(constants), &constants);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.layout.handle,
+                            0, 1, &set, 0, VK_NULL_HANDLE);
+    vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+
+    enable = VK_FALSE;
+    vkCmdSetColorBlendEnableEXT(commandBuffer, 0, 1, &enable);
+}
+
+void YetAnotherFluidSim::renderObstacle(VkCommandBuffer commandBuffer) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, obstacleRender.pipeline.handle);
+    vkCmdPushConstants(commandBuffer, obstacleRender.layout.handle, VK_SHADER_STAGE_ALL, 0, sizeof(obstacleConstants), &obstacleConstants);
+    vkCmdDraw(commandBuffer, 1, 1, 0, 0);
+}
+
 void YetAnotherFluidSim::renderUI(VkCommandBuffer cmdBuf) {
     ImGui::Begin("Settings");
     ImGui::SetWindowSize({});
 
-    advance = ImGui::Button("advance");
+    if (ImGui::Button("Wind Tunnel")) {
+        newScene = Scene::WindTunnel;
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("Tank")) {
+        newScene = Scene::Tank;
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("Paint")) {
+        newScene = Scene::Paint;
+    }
+    ImGui::SameLine();
+
+    ImGui::Checkbox("Streamlines", &showStreamLines);
+    ImGui::SameLine();
+
+    ImGui::Checkbox("Pressure", &showPressure);
+    ImGui::SameLine();
+
+    ImGui::Checkbox("Smoke", &showSmoke);
+    ImGui::SameLine();
+
+
     ImGui::End();
 
     plugin(IM_GUI_PLUGIN).draw(cmdBuf);
 }
 
 void YetAnotherFluidSim::update(float time) {
+    auto title = fmt::format("{}, obstacle {}, fps {}", this->title, obstacleConstants.position, framePerSecond);
+    glfwSetWindowTitle(window, title.c_str());
+    fixedUpdate.advance(time);
     camera->update(time);
     auto cam = camera->cam();
+    // updateCpuSolver();
 }
 
 void YetAnotherFluidSim::checkAppInputs() {
     camera->processInput();
+
+    auto& o = obstacleConstants;
+    const auto pos3 = mousePositionToWorldSpace({ .proj = obstacleConstants.transform});
+    const auto mousePosition = glm::vec2(pos3);
+    const auto leftPressed = mouse.left.held && !leftMouseWasHeld;
+
+    if(leftPressed) {
+        const auto dist = glm::distance(mousePosition, o.position) - o.radius;
+        obstacleDragActive = dist < 0.0f;
+        obstacleDragOffset = obstacleDragActive ? o.position - mousePosition : glm::vec2{0.0f};
+    }
+
+    if(mouse.left.held && obstacleDragActive) {
+        o.position = mousePosition + obstacleDragOffset;
+    }
+
+    if(mouse.left.released || !mouse.left.held) {
+        obstacleDragActive = false;
+    }
+
+    leftMouseWasHeld = mouse.left.held;
 }
 
 void YetAnotherFluidSim::cleanup() {
@@ -253,13 +783,20 @@ void YetAnotherFluidSim::onPause() {
     VulkanBaseApp::onPause();
 }
 
+void YetAnotherFluidSim::endFrame() {
+    if (scene != newScene) {
+        scene = newScene;
+        invalidateSwapChain();
+    }
+}
+
 
 int main(){
     try{
         fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1900;
-        settings.height = 881;
+        settings.height = 720;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
         settings.enableBindlessDescriptors = true;

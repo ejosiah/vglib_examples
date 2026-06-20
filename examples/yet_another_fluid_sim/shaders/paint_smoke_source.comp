@@ -1,0 +1,22 @@
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 2, r32f) uniform writeonly image2D smokeFieldOut;
+layout(set = 1, binding = 0) uniform sampler2D colliderField;
+
+layout(push_constant) uniform Constants {
+    uint frame;
+};
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(smokeFieldOut);
+    if(any(greaterThanEqual(gid, size))) return;
+
+    float collider = texelFetch(colliderField, gid, 0).x;
+    if(collider < 0.0) {
+        float smoke = 0.5 + 0.5 * sin(0.1 * float(frame));
+        imageStore(smokeFieldOut, gid, vec4(smoke, 0.0, 0.0, 0.0));
+    }
+}

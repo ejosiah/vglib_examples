@@ -1,0 +1,57 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+
+#define FORCE_MODE_GRAVITY 0U
+#define FORCE_MODE_WIND 1U
+#define FORCE_MODE_POINT 2U
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 0) uniform sampler2D force_field_in;
+layout(set = 1, binding = 2) uniform writeonly image2D force_field_out;
+layout(set = 2, binding = 0) uniform sampler2D boundary_field;
+layout(set = 3, binding = 0) uniform sampler2D vector_field_u;
+layout(set = 4, binding = 0) uniform sampler2D vector_field_v;
+
+layout(push_constant) uniform Constants {
+    vec2 point;
+    vec2 velocity;
+    vec2 domainMin;
+    vec2 domainMax;
+    float speed;
+    uint mode;
+    float radius;
+    float dt;
+};
+
+vec2 accumForce(ivec2 coord) {
+    return texelFetch(force_field_in, coord, 0).xy;
+}
+
+vec2 vectorField(ivec2 coord) {
+    return vec2(
+        texelFetch(vector_field_u, coord, 0).x,
+        texelFetch(vector_field_v, coord, 0).x);
+}
+
+ivec2 gid = ivec2(gl_GlobalInvocationID);
+ivec2 grid_size = textureSize(force_field_in, 0);
+vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
+
+void main() {
+    if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
+
+    vec2 accumulated = accumForce(gid);
+
+    vec2 du = accumulated;
+    if(mode == FORCE_MODE_GRAVITY) {
+        du += vec2(0.0, speed);
+    } else if(mode == FORCE_MODE_WIND && gid.x == 1) {
+        du += (vec2(speed, 0.0) - vectorField(gid)) / max(dt, 0.000001);
+    }
+
+    imageStore(force_field_out, gid, vec4(du,  0, 0));
+}

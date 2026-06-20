@@ -1,0 +1,43 @@
+#version 460
+
+#define BOUNDARY_TYPE_NONE (~0u)
+#define BOUNDARY_TYPE_SDF 1u
+
+layout(local_size_x = 32, local_size_y = 32) in;
+
+layout(set = 0, binding = 2, rg32f) uniform writeonly image2D collider;
+layout(set = 1, binding = 2, rg32f) uniform writeonly image2D velocity;
+
+layout(push_constant) uniform Constants {
+    mat4 transform;
+    vec4 color;
+    vec2 position;
+    vec2 velocity;
+    vec2 domainMin;
+    vec2 domainMax;
+    float radius;
+    float size;
+    uint scene;
+} o;
+
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID);
+    ivec2 size = imageSize(collider);
+    if(any(greaterThanEqual(gid, size))) return;
+
+    vec2 uv = (vec2(gid) + 0.5) / vec2(size);
+    vec2 p = mix(o.domainMin, o.domainMax, uv);
+    float sdf = length(p - o.position) - o.radius;
+    vec2 v = o.velocity;
+
+    if(sdf < 0) {
+        imageStore(collider, gid, vec4(sdf, BOUNDARY_TYPE_SDF, 0, 0));
+        imageStore(velocity, gid, vec4(v, 0, 0));
+    }else {
+        imageStore(collider, gid, vec4(1.0, BOUNDARY_TYPE_NONE, 0, 0));
+        imageStore(velocity, gid, vec4(0));
+    }
+
+}
+
