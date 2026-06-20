@@ -184,7 +184,7 @@ namespace eular::spd_generator {
                 .dt(static_cast<float>(cfg.time_step))
                 .poissonIterations(cfg.poisson_iterations)
                 .viscosity(0.0f)
-                .ensureBoundaryCondition(true)
+                .enableWrapping()
                 .useGaussSeidelSolver()
                 .build();
 

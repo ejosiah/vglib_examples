@@ -12,7 +12,6 @@
 
 YetAnotherFluidSim::YetAnotherFluidSim(const Settings& settings) : VulkanBaseApp("Yet another fluid simulation", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../dependencies/glTF-Sample-Assets/Models");
     fileManager().addSearchPathFront("../data");
     fileManager().addSearchPathFront("../data/textures");
     fileManager().addSearchPathFront("../data/shaders");
@@ -27,9 +26,7 @@ YetAnotherFluidSim::YetAnotherFluidSim(const Settings& settings) : VulkanBaseApp
 void YetAnotherFluidSim::initApp() {
     initCamera();
     createDescriptorPool();
-    initBindlessDescriptor();
     AppContext::init(device, descriptorPool, swapChain, renderPass);
-    initLoader();
     createDescriptorSetLayouts();
     updateDescriptorSets();
     createCommandPool();
@@ -84,6 +81,10 @@ void YetAnotherFluidSim::initSceneProperties() {
 }
 
 void YetAnotherFluidSim::initSolver() {
+    visualizer.releaseDescriptorSets();
+    releaseObstacleColliderDescriptorSets();
+    solver.reset();
+
     const auto& props = scenes.at(scene);
     const auto h = domainSize.y/props.resolution;
     solverGridSize = { domainSize.x/h, domainSize.y/h };
@@ -99,21 +100,21 @@ void YetAnotherFluidSim::initSolver() {
             .density(1000.0f)
             .dt(props.timeStep)
             .poissonIterations(to<int>(props.iterations/2))
-            .add(force())
+            .addExternalForce(force())
             .closedDomain()
-            .useConjugateGradientSolver();
+            .useGaussSeidelSolver();
 
     if (scene == Scene::Tank) {
-        builder.add(force());
+        builder.addExternalForce(force());
     }
 
     if (scene == Scene::WindTunnel || scene == Scene::Paint) {
         initSmoke();
-        builder.add(smoke);
+        builder.addQuantity(smoke, "smoke", smokeField);
     }
 
     if (scene == Scene::WindTunnel) {
-        forceConstants.speed = 0.4f;
+        forceConstants.speed = 2.f;
         forceConstants.mode = 1;
 
         builder.openBoundaryEdges(eular::FluidSolver::BoundaryEdgeRight);
@@ -237,6 +238,8 @@ void YetAnotherFluidSim::uploadCpuField(VkCommandBuffer commandBuffer, const Vul
 }
 
 void YetAnotherFluidSim::initObstacleCollider() {
+    releaseObstacleColliderDescriptorSets();
+
     const auto width = solverGridSize.x;
     const auto height = solverGridSize.y;
 
@@ -276,6 +279,25 @@ void YetAnotherFluidSim::initObstacleCollider() {
         {obstacleColliderField.descriptorSet[eular::in], obstacleColliderVelocityField.descriptorSet[eular::in]}
     }};
     solver->setColliders(colliders);
+}
+
+void YetAnotherFluidSim::releaseObstacleColliderDescriptorSets() {
+    releaseFieldDescriptorSets(obstacleColliderField);
+    releaseFieldDescriptorSets(obstacleColliderVelocityField);
+}
+
+void YetAnotherFluidSim::releaseDescriptorSet(VkDescriptorSet& descriptorSet) {
+    if(descriptorSet == VK_NULL_HANDLE) {
+        return;
+    }
+
+    descriptorPool.free(descriptorSet);
+    descriptorSet = VK_NULL_HANDLE;
+}
+
+void YetAnotherFluidSim::releaseFieldDescriptorSets(eular::Field& field) {
+    releaseDescriptorSet(field.descriptorSet[eular::in]);
+    releaseDescriptorSet(field.descriptorSet[eular::out]);
 }
 
 uint32_t YetAnotherFluidSim::createFieldDescriptorSet(std::vector<VkWriteDescriptorSet>& writes, uint32_t writeOffset, eular::Field& field) {
@@ -395,6 +417,8 @@ void YetAnotherFluidSim::runSimulationStep(VkCommandBuffer commandBuffer) {
 }
 
 void YetAnotherFluidSim::initVisualizer() {
+    visualizer.releaseDescriptorSets();
+
     visualizer = FieldVisualizer{
         &device, &descriptorPool, &renderPass, solver->fieldDescriptorSetLayout(),
         { width, height }, solverGridSize
@@ -407,7 +431,7 @@ void YetAnotherFluidSim::initVisualizer() {
 }
 
 void YetAnotherFluidSim::initSmoke() {
-    smokeField.assign(solverGridSize.x * solverGridSize.y, scene == Scene::Paint ? 0.0f : 1.0f);
+    smokeField.assign(solverGridSize.x * solverGridSize.y, 0.0f);
 
     if(scene == Scene::WindTunnel) {
         const auto pipeH = 0.1 * solverGridSize.y;
@@ -415,25 +439,10 @@ void YetAnotherFluidSim::initSmoke() {
         const auto maxJ = to<int>(0.5f * to<float>(solverGridSize.y) + 0.5f*pipeH);
 
         for (auto j = minJ; j < maxJ; ++j) {
-            smokeField[j * solverGridSize.x] = 0.0;
+            smokeField[j * solverGridSize.x] = 1.0f;
         }
     }
 
-    textures::create(device, smoke.field[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, smokeField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-    textures::create(device, smoke.field[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, smokeField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-
-    std::vector<float> sourceField(smokeField.size(), 0.0f);
-    textures::create(device, smoke.source[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, sourceField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-    textures::create(device, smoke.source[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, sourceField.data(), glm::uvec3(solverGridSize, 1), VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-
-    smoke.field[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-    smoke.field[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-
-    smoke.source[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-    smoke.source[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-
-    smoke.name = "smoke";
-    smoke.field.name = "smoke";
     smoke.diffuseRate = 0;
 }
 
@@ -453,12 +462,6 @@ eular::ExternalForce YetAnotherFluidSim::force() {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("force"), 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
         vkCmdDispatch(commandBuffer,  gc.x, gc.y, gc.z);
     };
-}
-
-void YetAnotherFluidSim::initBindlessDescriptor() {
-    bindlessDescriptor = plugin<BindLessDescriptorPlugin>(PLUGIN_NAME_BINDLESS_DESCRIPTORS).descriptorSet();
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0);
-    bindlessDescriptor.reserveSlots(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0);
 }
 
 void YetAnotherFluidSim::beforeDeviceCreation() {
@@ -490,11 +493,6 @@ void YetAnotherFluidSim::createDescriptorPool() {
     descriptorPool = device.createDescriptorPool(maxSets, poolSizes, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
 }
 
-
-void YetAnotherFluidSim::initLoader() {
-    loader = std::make_unique<gltf::Loader>(&device, &descriptorPool, &bindlessDescriptor);
-    loader->start();
-}
 
 void YetAnotherFluidSim::createDescriptorSetLayouts() {
 }
@@ -616,7 +614,6 @@ void YetAnotherFluidSim::onSwapChainRecreation() {
     initSolver();
     createComputePipeline();
     createRenderPipeline();
-    createRenderPipeline();
 }
 
 VkCommandBuffer *YetAnotherFluidSim::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
@@ -651,7 +648,7 @@ VkCommandBuffer *YetAnotherFluidSim::buildCommandBuffers(uint32_t imageIndex, ui
         // visualizer.renderVectorField(commandBuffer);
         // visualizer.renderStreamLines(commandBuffer);
         visualizer.renderBoundary(commandBuffer);
-        renderObstacle(commandBuffer);
+        // renderObstacle(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
@@ -775,7 +772,9 @@ void YetAnotherFluidSim::checkAppInputs() {
 }
 
 void YetAnotherFluidSim::cleanup() {
-    loader->stop();
+    visualizer.releaseDescriptorSets();
+    releaseObstacleColliderDescriptorSets();
+    solver.reset();
     AppContext::shutdown();
 }
 
@@ -799,10 +798,11 @@ int main(){
         settings.height = 720;
         settings.depthTest = true;
         settings.enabledFeatures.wideLines = true;
-        settings.enableBindlessDescriptors = true;
+        settings.enableBindlessDescriptors = false;
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;

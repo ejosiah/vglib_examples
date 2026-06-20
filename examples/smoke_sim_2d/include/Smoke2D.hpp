@@ -2,6 +2,8 @@
 #include "fluid/FluidSolver2.hpp"
 #include "fluid/FieldVisualizer.hpp"
 
+#include <vector>
+
 using TemperatureAndDensity = eular::Quantity;
 
 class Smoke2D : public VulkanBaseApp{
@@ -21,7 +23,11 @@ protected:
 
     void updateDescriptorSets();
 
-    void initBoundaryTexture();
+    void initColliderTexture();
+
+    void initColliderFieldDescriptorSets();
+
+    uint32_t createFieldDescriptorSet(std::vector<VkWriteDescriptorSet>& writes, uint32_t writeOffset, eular::Field& field);
 
     void createCommandPool();
 
@@ -35,7 +41,7 @@ protected:
 
     void beforeDeviceCreation() override;
 
-    void initTemperatureAndDensityField();
+    std::vector<glm::vec4> initTemperatureAndDensityField();
 
     void initSolver();
 
@@ -55,7 +61,7 @@ protected:
 
     void renderSmoke(VkCommandBuffer commandBuffer);
 
-    void renderBoundary(VkCommandBuffer commandBuffer);
+    void renderCollider(VkCommandBuffer commandBuffer);
 
     void update(float time) override;
 
@@ -139,7 +145,7 @@ protected:
     struct {
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
-    } boundaryRender;
+    } colliderRender;
 
     struct {
         struct {
@@ -163,18 +169,19 @@ protected:
     std::unique_ptr<eular::FluidSolver> fluidSolver;
     VulkanDescriptorSetLayout ambientTempSet;
     VkDescriptorSet ambientTempDescriptorSet;
-    Texture boundaryTexture;
-    VulkanDescriptorSetLayout computeBoundarySetLayout;
-    VkDescriptorSet computeBoundaryDescriptorSet{};
-    VulkanDescriptorSetLayout boundaryRenderSetLayout;
-    VkDescriptorSet boundaryRenderDescriptorSet{};
+    eular::Field colliderField;
+    eular::Field colliderVelocityField;
+    VulkanDescriptorSetLayout computeColliderSetLayout;
+    VkDescriptorSet computeColliderDescriptorSet{};
+    VulkanDescriptorSetLayout colliderRenderSetLayout;
+    VkDescriptorSet colliderRenderDescriptorSet{};
     VulkanBuffer ambientTempBuffer;
     float* ambientTemp{};
     float* temps;
     VulkanBuffer tempField;
     VulkanBuffer debugBuffer;
-    Action* toggleBoundary{};
-    bool showBoundary{false};
+    Action* toggleCollider{};
+    bool showCollider{false};
     bool dynamicAmbientTemp{false};
     int fwidth{};
     FieldVisualizer fieldVisualizer;

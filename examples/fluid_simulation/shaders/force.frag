@@ -16,8 +16,13 @@ vec2 accumForce(vec2 coord){
     return texture(forceField, fract(coord)).xy;
 }
 
+vec2 periodicDelta(vec2 from, vec2 to) {
+    vec2 delta = from - to;
+    return delta - round(delta);
+}
+
 void main(){
-    vec2 d = (center - uv);
+    vec2 d = periodicDelta(center, uv);
     du.xy = force * exp(-dot(d, d)/radius);
     du.xy /= dt;
     du.xy += accumForce(uv);

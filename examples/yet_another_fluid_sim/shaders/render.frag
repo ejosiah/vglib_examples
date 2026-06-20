@@ -35,7 +35,7 @@ vec3 getSciColor(float value, float minValue, float maxValue) {
 }
 
 void main() {
-    vec3 smoke = texture(smokeField, uv).rrr;
+    vec3 smoke = 1 - texture(smokeField, uv).rrr;
 
     if(scene == SCENE_PAINT) {
         fragColor = vec4(getSciColor(smoke.r, 0.0, 1.0), smoke.r);

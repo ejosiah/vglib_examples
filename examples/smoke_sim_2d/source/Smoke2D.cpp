@@ -4,6 +4,7 @@
 #include "gpu/algorithm.h"
 #include "ExtensionChain.hpp"
 #include <cmath>
+#include <format>
 
 Smoke2D::Smoke2D(const Settings& settings) :
         VulkanBaseApp("2D Smoke Simulation", settings)
@@ -19,7 +20,7 @@ Smoke2D::Smoke2D(const Settings& settings) :
     fileManager().addSearchPath("../data/textures");
     fileManager().addSearchPath("../data");
 
-    toggleBoundary = &mapToKey(Key::B, "Toggle boundary overlay", Action::detectInitialPressOnly());
+    toggleCollider = &mapToKey(Key::B, "Toggle collider overlay", Action::detectInitialPressOnly());
 }
 
 void Smoke2D::initApp() {
@@ -27,8 +28,9 @@ void Smoke2D::initApp() {
     initFullScreenQuad();
     createDescriptorPool();
     createDescriptorSet();
-    initBoundaryTexture();
+    initColliderTexture();
     initSolver();
+    initColliderFieldDescriptorSets();
     initFieldVisualizer();
     updateDescriptorSets();
     createCommandPool();
@@ -102,73 +104,145 @@ void Smoke2D::updateDescriptorSets() {
 
 }
 
-void Smoke2D::initBoundaryTexture() {
+void Smoke2D::initColliderTexture() {
     const auto width = static_cast<uint32_t>(fwidth);
     const auto simHeight = static_cast<uint32_t>(height);
-    constexpr auto topCornerOpening = 10u;
-    constexpr auto sourceOpeningPadding = 0;
-    const auto sourceCenterX = static_cast<int>(std::lround(emitter.constants.location.x * static_cast<float>(width - 1)));
-    const auto sourceRadiusPixels = static_cast<int>(std::ceil(std::sqrt(emitter.constants.radius) * static_cast<float>(width)));
-    const auto sourceOpeningHalfWidth = sourceRadiusPixels + sourceOpeningPadding / 2;
+    std::vector<glm::vec2> colliderData(
+        width * simHeight,
+        glm::vec2{1.0f, eular::colliderTypeValue(eular::ColliderType::Wall)});
 
-    std::vector<float> boundary(width * simHeight, 0.0f);
-    for(auto y = 0u; y < simHeight; ++y) {
-        for(auto x = 0u; x < width; ++x) {
-            const auto sideWall = (x == 0 || x == width - 1) && y >= topCornerOpening;
-            const auto sourceOpening = std::abs(static_cast<int>(x) - sourceCenterX) <= sourceOpeningHalfWidth;
-            const auto bottomWall = y == simHeight - 1; // && !sourceOpening;
+    std::vector<glm::vec2> colliderVelocity(width * simHeight, glm::vec2{0.0f});
+    colliderField.name = "smoke_collider";
+    colliderVelocityField.name = "smoke_collider_velocity";
+    for(auto i = 0u; i < 2; ++i) {
+        textures::create(device, colliderField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, colliderData.data(), {width, simHeight, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
+        textures::create(device, colliderVelocityField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, colliderVelocity.data(), {width, simHeight, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
+        colliderField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+        colliderVelocityField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 
-            if(sideWall || bottomWall) {
-                boundary[y * width + x] = 1.0f;
-            }
-        }
+        device.setName<VK_OBJECT_TYPE_IMAGE>(std::format("{}_{}", colliderField.name, i), colliderField[i].image.image);
+        device.setName<VK_OBJECT_TYPE_IMAGE>(std::format("{}_{}", colliderVelocityField.name, i), colliderVelocityField[i].image.image);
     }
 
-    textures::create(device, boundaryTexture, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT,
-                     boundary.data(), {width, simHeight, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(float));
-    device.setName<VK_OBJECT_TYPE_IMAGE>("smoke_boundary_texture", boundaryTexture.image.image);
-
-    computeBoundarySetLayout =
+    computeColliderSetLayout =
         device.descriptorSetLayoutBuilder()
-            .name("smoke_boundary_texture_compute")
+            .name("smoke_collider_textures_compute")
             .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(1)
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
         .createLayout();
 
-    boundaryRenderSetLayout =
+    colliderRenderSetLayout =
         device.descriptorSetLayoutBuilder()
-            .name("smoke_boundary_texture_render")
+            .name("smoke_collider_texture_render")
             .binding(0)
                 .descriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_FRAGMENT_BIT)
         .createLayout();
 
-    computeBoundaryDescriptorSet = descriptorPool.allocate({computeBoundarySetLayout}).front();
-    boundaryRenderDescriptorSet = descriptorPool.allocate({boundaryRenderSetLayout}).front();
+    computeColliderDescriptorSet = descriptorPool.allocate({computeColliderSetLayout}).front();
+    colliderRenderDescriptorSet = descriptorPool.allocate({colliderRenderSetLayout}).front();
 
-    auto writes = initializers::writeDescriptorSets<2>();
-    VkDescriptorImageInfo boundaryInfo{
-        boundaryTexture.sampler.handle,
-        boundaryTexture.imageView.handle,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    auto writes = initializers::writeDescriptorSets<3>();
+    VkDescriptorImageInfo colliderInfo{
+        colliderField[eular::in].sampler.handle,
+        colliderField[eular::in].imageView.handle,
+        VK_IMAGE_LAYOUT_GENERAL
+    };
+    VkDescriptorImageInfo colliderVelocityInfo{
+        colliderVelocityField[eular::in].sampler.handle,
+        colliderVelocityField[eular::in].imageView.handle,
+        VK_IMAGE_LAYOUT_GENERAL
     };
 
-    writes[0].dstSet = computeBoundaryDescriptorSet;
+    writes[0].dstSet = computeColliderDescriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[0].descriptorCount = 1;
-    writes[0].pImageInfo = &boundaryInfo;
+    writes[0].pImageInfo = &colliderInfo;
 
-    writes[1].dstSet = boundaryRenderDescriptorSet;
-    writes[1].dstBinding = 0;
+    writes[1].dstSet = computeColliderDescriptorSet;
+    writes[1].dstBinding = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &boundaryInfo;
+    writes[1].pImageInfo = &colliderVelocityInfo;
+
+    writes[2].dstSet = colliderRenderDescriptorSet;
+    writes[2].dstBinding = 0;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].descriptorCount = 1;
+    writes[2].pImageInfo = &colliderInfo;
 
     device.updateDescriptorSets(writes);
+}
+
+void Smoke2D::initColliderFieldDescriptorSets() {
+    auto writes = initializers::writeDescriptorSets<12>();
+    auto writeOffset = createFieldDescriptorSet(writes, 0, colliderField);
+    writeOffset = createFieldDescriptorSet(writes, writeOffset, colliderVelocityField);
+    writes.resize(writeOffset);
+    device.updateDescriptorSets(writes);
+
+    for(auto& write : writes) {
+        if(write.pImageInfo) delete write.pImageInfo;
+    }
+}
+
+uint32_t Smoke2D::createFieldDescriptorSet(std::vector<VkWriteDescriptorSet>& writes, uint32_t writeOffset, eular::Field& field) {
+    auto sets = descriptorPool.allocate({fluidSolver->fieldDescriptorSetLayout(), fluidSolver->fieldDescriptorSetLayout()});
+
+    field.descriptorSet[0] = sets[0];
+    field.descriptorSet[1] = sets[1];
+
+    writes[writeOffset].dstSet = field.descriptorSet[0];
+    writes[writeOffset].dstBinding = 0;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[0];
+    writes[writeOffset].dstBinding = 1;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[0];
+    writes[writeOffset].dstBinding = 2;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[0].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[1];
+    writes[writeOffset].dstBinding = 0;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[1];
+    writes[writeOffset].dstBinding = 1;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    writes[writeOffset].dstSet = field.descriptorSet[1];
+    writes[writeOffset].dstBinding = 2;
+    writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[writeOffset].descriptorCount = 1;
+    writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[1].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+    ++writeOffset;
+
+    return writeOffset;
 }
 
 void Smoke2D::createCommandPool() {
@@ -238,7 +312,7 @@ void Smoke2D::createRenderPipeline() {
             .name("smoke_render")
         .build(smokeRender.layout);
 
-    boundaryRender.pipeline =
+    colliderRender.pipeline =
         builder
             .shaderStage()
                 .fragmentShader(resource("boundary_render.frag.spv"))
@@ -255,9 +329,9 @@ void Smoke2D::createRenderPipeline() {
                     .dstAlphaBlendFactor().oneMinusSrcAlpha()
                     .add()
             .layout().clear()
-                .addDescriptorSetLayout(boundaryRenderSetLayout)
-            .name("boundary_render")
-        .build(boundaryRender.layout);
+                .addDescriptorSetLayout(colliderRenderSetLayout)
+            .name("collider_render")
+        .build(colliderRender.layout);
     //    @formatter:on
 }
 
@@ -321,7 +395,7 @@ void Smoke2D::createComputePipeline() {
 void Smoke2D::onSwapChainDispose() {
     dispose(temperatureRender.pipeline);
     dispose(smokeRender.pipeline);
-    dispose(boundaryRender.pipeline);
+    dispose(colliderRender.pipeline);
 }
 
 void Smoke2D::onSwapChainRecreation() {
@@ -352,10 +426,11 @@ VkCommandBuffer *Smoke2D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 
     vkCmdBeginRenderPass(commandBuffer, &rPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    fieldVisualizer.renderVectorField(commandBuffer);
-    // renderSmoke(commandBuffer);
-    if(showBoundary) {
-        renderBoundary(commandBuffer);
+    renderSmoke(commandBuffer);
+    // fieldVisualizer.renderVectorField(commandBuffer);
+    // fieldVisualizer.renderPressure(commandBuffer);
+    if(showCollider) {
+        fieldVisualizer.renderBoundary(commandBuffer, glm::vec4{1.0f, 0.0f, 0.0f, 0.85f}, true);
     }
     // renderTemperature(commandBuffer);
     // fieldVisualizer.renderStreamLines(commandBuffer);
@@ -396,12 +471,12 @@ void Smoke2D::renderSmoke(VkCommandBuffer commandBuffer) {
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
 
-void Smoke2D::renderBoundary(VkCommandBuffer commandBuffer) {
+void Smoke2D::renderCollider(VkCommandBuffer commandBuffer) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, screenQuad, &offset);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, boundaryRender.pipeline.handle);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, boundaryRender.layout.handle,
-                            0, 1, &boundaryRenderDescriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, colliderRender.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, colliderRender.layout.handle,
+                            0, 1, &colliderRenderDescriptorSet, 0, VK_NULL_HANDLE);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }
 
@@ -415,9 +490,9 @@ void Smoke2D::update(float time) {
 void Smoke2D::checkAppInputs() {
     VulkanBaseApp::checkAppInputs();
 
-    if(toggleBoundary->isPressed()) {
-        showBoundary = !showBoundary;
-        spdlog::info("Boundary overlay: {}", showBoundary ? "on" : "off");
+    if(toggleCollider->isPressed()) {
+        showCollider = !showCollider;
+        spdlog::info("Collider overlay: {}", showCollider ? "on" : "off");
     }
 
 }
@@ -430,32 +505,9 @@ void Smoke2D::onPause() {
     VulkanBaseApp::onPause();
 }
 
-void Smoke2D::initTemperatureAndDensityField() {
+std::vector<glm::vec4> Smoke2D::initTemperatureAndDensityField() {
     std::vector<glm::vec4> field(fwidth * height, {AMBIENT_TEMP, 0, 0, 0});
 
-    textures::create(device, temperatureAndDensity.field[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
-            , field.data(), {fwidth, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-            , sizeof(float));
-    textures::create(device, temperatureAndDensity.field[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
-            , field.data(), {fwidth, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-            , sizeof(float));
-
-    std::vector<glm::vec4> allocation(fwidth * height);
-    textures::create(device, temperatureAndDensity.source[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
-            , allocation.data(), {fwidth, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-            , sizeof(float));
-    textures::create(device, temperatureAndDensity.source[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
-            , allocation.data(), {fwidth, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-            , sizeof(float));
-
-    temperatureAndDensity.field[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-    temperatureAndDensity.field[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-    temperatureAndDensity.source[0].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-    temperatureAndDensity.source[1].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
-
-    temperatureAndDensity.name = "temperature_and_density";
-    temperatureAndDensity.field.name = "temperature_and_density";
-    temperatureAndDensity.source.name = "temperature_and_density_source";
 //    temperatureAndDensity.diffuseRate = 1e-7;
     temperatureAndDensity.diffuseRate = 0;
     temperatureAndDensity.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
@@ -472,18 +524,20 @@ void Smoke2D::initTemperatureAndDensityField() {
             return false;
         }
     );
+
+    return field;
 }
 
 void Smoke2D::initSolver() {
-    initTemperatureAndDensityField();
+    auto temperatureAndDensityData = initTemperatureAndDensityField();
     fluidSolver =
         eular::FluidSolver::Builder{ &device, &descriptorPool }
             .gridSize({fwidth, height})
-            .boundary(computeBoundaryDescriptorSet)
-            // .ensureBoundaryCondition(false)
+            .closedDomain()
+            .openBoundaryEdges(eular::FluidSolver::BoundaryEdgeTop)
             .vorticityConfinementScale(6)
-            .add(temperatureAndDensity)
-            .add(buoyancyForce())
+            .addQuantity(temperatureAndDensity, "temperature_and_density", temperatureAndDensityData)
+            .addExternalForce(buoyancyForce())
             .useConjugateGradientSolver()
             // .poissonIterations(100)
             .dt(TIME_STEP)

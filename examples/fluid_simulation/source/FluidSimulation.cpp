@@ -61,10 +61,10 @@ void FluidSimulation::initFluidSolver() {
         eular::FluidSolver::Builder{ &device, &descriptorPool }
             .gridSize({ width, height})
             .generate([&](auto x, auto y){ return glm::vec2{ glm::sin(two_pi * y), glm::sin(two_pi * x) }; })
-            .add(userInputForce())
+            .addExternalForce(userInputForce())
             .useGaussSeidelSolver()
-            .ensureBoundaryCondition(false)
-            .add(color)
+            .closedDomain()
+            .addQuantity(color)
             .dt((5.0f * dx)/maxLength)
     .build();
     
@@ -72,9 +72,9 @@ void FluidSimulation::initFluidSolver() {
         eular::FluidSolver::Builder{ &device, &descriptorPool }
             .gridSize({ width, height})
             .generate([&](auto x, auto y){ return glm::vec2{ glm::sin(two_pi * y), glm::sin(two_pi * x) }; })
-            .add(userInputForce2())
-            .ensureBoundaryCondition(false)
-            .add(color1)
+            .addExternalForce(userInputForce2())
+            .closedDomain()
+            .addQuantity(color1)
             .dt((5.0f * dx)/maxLength)
             .useConjugateGradientSolver()
         .build();
@@ -375,7 +375,7 @@ VkCommandBuffer *FluidSimulation::buildCommandBuffers(uint32_t imageIndex, uint3
     renderColorField(commandBuffer);
 //    renderDebugField(commandBuffer);
 //    fieldVisualizer.renderStreamLines(commandBuffer);
-//    fieldVisualizer.renderPressure(commandBuffer);
+    // fieldVisualizer.renderVectorField(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -551,12 +551,12 @@ void FluidSimulation::beforeDeviceCreation() {
 
 void FluidSimulation::initializeFluidVisualizer() {
     fieldVisualizer = FieldVisualizer{
-        &device, &descriptorPool, &renderPass, fluidSolver2->fieldDescriptorSetLayout(),
+        &device, &descriptorPool, &renderPass, fluidSolver->fieldDescriptorSetLayout(),
         { width/2, height }, { width/2, height }
     };
 
     fieldVisualizer.init();
-    fieldVisualizer.set(fluidSolver2.get());
+    fieldVisualizer.set(fluidSolver.get());
 }
 
 int main(){

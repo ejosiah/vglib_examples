@@ -20,6 +20,11 @@ vec2 accumForce(vec2 coord){
     return texture(force_field_in, fract(coord)).xy;
 }
 
+vec2 periodicDelta(vec2 from, vec2 to) {
+    vec2 delta = from - to;
+    return delta - round(delta);
+}
+
 ivec2 gid = ivec2(gl_GlobalInvocationID);
 ivec2 grid_size = textureSize(force_field_in, 0);
 vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
@@ -27,7 +32,7 @@ vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
 void main() {
     if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
 
-    vec2 d = (center - uv);
+    vec2 d = periodicDelta(center, uv);
     vec2 du = force * exp(-dot(d, d)/radius);
     du.xy /= dt;
     du.xy += accumForce(uv);

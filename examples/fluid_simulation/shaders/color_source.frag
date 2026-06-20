@@ -17,9 +17,14 @@ vec3 accumColor(vec2 coord){
     return texture(sourceField, fract(coord)).rgb;
 }
 
+vec2 periodicDelta(vec2 from, vec2 to) {
+    vec2 delta = from - to;
+    return delta - round(delta);
+}
+
 void main(){
     vec2 sourceUv = gl_FragCoord.xy / vec2(textureSize(sourceField, 0));
-    vec2 d = (source - sourceUv);
+    vec2 d = periodicDelta(source, sourceUv);
     vec3 dye = sourceColor.rgb * exp(-dot(d, d)/radius);
     dye /= dt;
     dye += accumColor(sourceUv);

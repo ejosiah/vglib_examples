@@ -41,6 +41,14 @@ ivec2 gid = ivec2(gl_GlobalInvocationID);
 ivec2 grid_size = textureSize(force_field_in, 0);
 vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
 
+float windInletWeight() {
+    vec2 domainSize = max(domainMax - domainMin, vec2(0.000001));
+    vec2 cellSize = domainSize / vec2(grid_size);
+    float inletWidth = max(4.0 * cellSize.x, 0.05 * domainSize.x);
+    float x = mix(domainMin.x, domainMax.x, uv.x) - domainMin.x;
+    return 1.0 - smoothstep(0.0, inletWidth, x);
+}
+
 void main() {
     if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
 
@@ -49,8 +57,12 @@ void main() {
     vec2 du = accumulated;
     if(mode == FORCE_MODE_GRAVITY) {
         du += vec2(0.0, speed);
-    } else if(mode == FORCE_MODE_WIND && gid.x == 1) {
-        du += (vec2(speed, 0.0) - vectorField(gid)) / max(dt, 0.000001);
+    } else if(mode == FORCE_MODE_WIND && gid.x > 0) {
+        float inlet = windInletWeight();
+        if(inlet > 0.0) {
+            float responseTime = max(6.0 * dt, 0.05);
+            du += inlet * (vec2(speed, 0.0) - vectorField(gid)) / responseTime;
+        }
     }
 
     imageStore(force_field_out, gid, vec4(du,  0, 0));

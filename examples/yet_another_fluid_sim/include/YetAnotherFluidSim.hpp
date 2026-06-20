@@ -1,4 +1,3 @@
-#include "gltf/GltfLoader.hpp"
 #include "VulkanBaseApp.h"
 
 #include "CpuFluidSolver.hpp"
@@ -57,6 +56,12 @@ protected:
 
     void initObstacleCollider();
 
+    void releaseObstacleColliderDescriptorSets();
+
+    void releaseDescriptorSet(VkDescriptorSet& descriptorSet);
+
+    void releaseFieldDescriptorSets(eular::Field& field);
+
     void updateObstacleCollider(VkCommandBuffer commandBuffer);
 
     void updatePaintSmoke(VkCommandBuffer commandBuffer);
@@ -64,8 +69,6 @@ protected:
     void runSimulationStep(VkCommandBuffer commandBuffer);
 
     uint32_t createFieldDescriptorSet(std::vector<VkWriteDescriptorSet>& writes, uint32_t writeOffset, eular::Field& field);
-
-    void initBindlessDescriptor();
 
     void beforeDeviceCreation() override;
 
@@ -78,8 +81,6 @@ protected:
     void createCommandPool();
 
     void createPipelineCache();
-
-    void initLoader();
 
     void createComputePipeline();
 
@@ -115,7 +116,7 @@ protected:
     struct {
         glm::mat4 transform{1};
         glm::vec4 color{0.98f, 0.45f, 0.0f, 1.0f};
-        glm::vec2 position{0.36f, 0.51f};
+        glm::vec2 position{0.4f, 0.5f};
         glm::vec2 velocity{};
         glm::vec2 domainMin{0.0f};
         glm::vec2 domainMax{1.0f};
@@ -143,11 +144,9 @@ protected:
     std::vector<VkCommandBuffer> commandBuffers;
     VulkanPipelineCache pipelineCache;
     std::unique_ptr<BaseCameraController> camera;
-    std::unique_ptr<gltf::Loader> loader;
-    BindlessDescriptor bindlessDescriptor;
 
-    Scene scene{Scene::Paint};
-    Scene newScene{Scene::Paint};
+    Scene scene{Scene::WindTunnel};
+    Scene newScene{Scene::WindTunnel};
 
     bool advance{};
     FixedUpdate fixedUpdate;

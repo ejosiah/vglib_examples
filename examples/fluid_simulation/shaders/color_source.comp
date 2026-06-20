@@ -19,6 +19,11 @@ vec3 accumColor(vec2 coord){
     return texture(source_field_in, fract(coord)).rgb;
 }
 
+vec2 periodicDelta(vec2 from, vec2 to) {
+    vec2 delta = from - to;
+    return delta - round(delta);
+}
+
 ivec2 gid = ivec2(gl_GlobalInvocationID);
 ivec2 grid_size = textureSize(source_field_in, 0);
 vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
@@ -27,7 +32,7 @@ vec3 color = vec3(0);
 void main() {
     if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
 
-    vec2 d = (source - uv);
+    vec2 d = periodicDelta(source, uv);
     color = sourceColor.rgb * exp(-dot(d, d)/radius);
     color /= dt;
     color += accumColor(uv);
