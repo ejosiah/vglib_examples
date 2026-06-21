@@ -1,6 +1,6 @@
 #version 450 core
 
-layout(set = 0, binding = 0) uniform sampler2D forceField;
+layout(set = 0, binding = 0) uniform sampler3D forceField;
 
 layout(push_constant) uniform Constants{
     vec2 force;
@@ -13,7 +13,7 @@ layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 du;
 
 vec2 accumForce(vec2 coord){
-    return texture(forceField, fract(coord)).xy;
+    return texture(forceField, vec3(fract(coord), 0.5)).xy;
 }
 
 vec2 periodicDelta(vec2 from, vec2 to) {

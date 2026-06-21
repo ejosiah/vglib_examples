@@ -175,6 +175,8 @@ protected:
     glm::vec2 domainSize{0.0, 1.0};
     Smoke smoke;
     std::vector<float> smokeField;
+    std::vector<float> windTunnelSmokeSource;
+    VulkanBuffer windTunnelSmokeSourceUploadBuffer;
 
     struct {
         glm::vec2 point{};

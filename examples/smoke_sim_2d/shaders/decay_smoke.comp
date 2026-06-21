@@ -3,8 +3,8 @@
 
 layout(local_size_x = 32, local_size_y = 32) in;
 
-layout(set = 0, binding = 0) uniform sampler2D tempAndDensity_field_in;
-layout(set = 1, binding = 2) uniform writeonly image2D tempAndDensity_field_out;
+layout(set = 0, binding = 0) uniform sampler3D tempAndDensity_field_in;
+layout(set = 1, binding = 2) uniform writeonly image3D tempAndDensity_field_out;
 
 layout(push_constant) uniform Constants {
     vec2  location;
@@ -16,14 +16,14 @@ layout(push_constant) uniform Constants {
 
 
 ivec2 gid = ivec2(gl_GlobalInvocationID);
-ivec2 grid_size = textureSize(tempAndDensity_field_in, 0);
+ivec2 grid_size = textureSize(tempAndDensity_field_in, 0).xy;
 vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
 vec4 valuesOut = vec4(0);
 
 void main() {
     if(gid.x >= grid_size.x || gid.y >= grid_size.y) return;
 
-    vec2 values = texture(tempAndDensity_field_in, fract(uv)).xy;
+    vec2 values = texture(tempAndDensity_field_in, vec3(fract(uv), 0.5)).xy;
     float temp = values.x;
     float density = values.y;
 
@@ -32,5 +32,5 @@ void main() {
     valuesOut.x = temp * exp(-temperatureDecayRate * dt) * mask;
     valuesOut.y = density * exp(-densityDecayRate * dt) * mask;
 
-    imageStore(tempAndDensity_field_out, gid, valuesOut);
+    imageStore(tempAndDensity_field_out, ivec3(gid, 0), valuesOut);
 }

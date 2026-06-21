@@ -5,8 +5,8 @@
 
 layout(local_size_x = 32, local_size_y = 32) in;
 
-layout(set = 0, binding = 0) uniform sampler2D source_field_in;
-layout(set = 1, binding = 2) uniform writeonly image2D source_field_out;
+layout(set = 0, binding = 0) uniform sampler3D source_field_in;
+layout(set = 1, binding = 2) uniform writeonly image3D source_field_out;
 
 layout(push_constant, scalar) uniform Constants{
     vec3 sourceColor;
@@ -16,7 +16,7 @@ layout(push_constant, scalar) uniform Constants{
 };
 
 vec3 accumColor(vec2 coord){
-    return texture(source_field_in, fract(coord)).rgb;
+    return texture(source_field_in, vec3(fract(coord), 0.5)).rgb;
 }
 
 vec2 periodicDelta(vec2 from, vec2 to) {
@@ -25,7 +25,7 @@ vec2 periodicDelta(vec2 from, vec2 to) {
 }
 
 ivec2 gid = ivec2(gl_GlobalInvocationID);
-ivec2 grid_size = textureSize(source_field_in, 0);
+ivec2 grid_size = textureSize(source_field_in, 0).xy;
 vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
 vec3 color = vec3(0);
 
@@ -37,5 +37,5 @@ void main() {
     color /= dt;
     color += accumColor(uv);
 
-    imageStore(source_field_out, gid, vec4(color, 0));
+    imageStore(source_field_out, ivec3(gid, 0), vec4(color, 0));
 }

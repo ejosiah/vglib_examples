@@ -6,8 +6,8 @@
 
 layout(local_size_x = 32, local_size_y = 32) in;
 
-layout(set = 0, binding = 0) uniform sampler2D force_field_in;
-layout(set = 1, binding = 2) uniform writeonly image2D force_field_out;
+layout(set = 0, binding = 0) uniform sampler3D force_field_in;
+layout(set = 1, binding = 2) uniform writeonly image3D force_field_out;
 
 layout(push_constant) uniform Constants {
     vec2 force;
@@ -17,7 +17,7 @@ layout(push_constant) uniform Constants {
 };
 
 vec2 accumForce(vec2 coord){
-    return texture(force_field_in, fract(coord)).xy;
+    return texture(force_field_in, vec3(fract(coord), 0.5)).xy;
 }
 
 vec2 periodicDelta(vec2 from, vec2 to) {
@@ -26,7 +26,7 @@ vec2 periodicDelta(vec2 from, vec2 to) {
 }
 
 ivec2 gid = ivec2(gl_GlobalInvocationID);
-ivec2 grid_size = textureSize(force_field_in, 0);
+ivec2 grid_size = textureSize(force_field_in, 0).xy;
 vec2 uv = (vec2(gid) + 0.5)/grid_size.xy;
 
 void main() {
@@ -37,5 +37,5 @@ void main() {
     du.xy /= dt;
     du.xy += accumForce(uv);
 
-    imageStore(force_field_out, gid, vec4(du,  0, 0));
+    imageStore(force_field_out, ivec3(gid, 0), vec4(du,  0, 0));
 }

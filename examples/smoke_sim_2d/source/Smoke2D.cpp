@@ -115,8 +115,8 @@ void Smoke2D::initColliderTexture() {
     colliderField.name = "smoke_collider";
     colliderVelocityField.name = "smoke_collider_velocity";
     for(auto i = 0u; i < 2; ++i) {
-        textures::create(device, colliderField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, colliderData.data(), {width, simHeight, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
-        textures::create(device, colliderVelocityField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, colliderVelocity.data(), {width, simHeight, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
+        textures::create(device, colliderField[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32_SFLOAT, colliderData.data(), {width, simHeight, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
+        textures::create(device, colliderVelocityField[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32_SFLOAT, colliderVelocity.data(), {width, simHeight, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
         colliderField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
         colliderVelocityField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
 

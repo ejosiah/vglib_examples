@@ -104,18 +104,18 @@ void FluidSimulation::initColorField() {
     }
 //    field = allocation;
 
-    textures::create(device, color.field[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.field[0], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
-    textures::create(device, color.field[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.field[1], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
 
 
-    textures::create(device, color.source[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.source[0], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
-    textures::create(device, color.source[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color.source[1], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
 
@@ -163,18 +163,18 @@ void FluidSimulation::initColorQuantity() {
     }
 //    field = allocation;
 
-    textures::create(device, color1.field[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color1.field[0], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
-    textures::create(device, color1.field[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color1.field[1], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , field.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
 
 
-    textures::create(device, color1.source[0], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color1.source[0], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
-    textures::create(device, color1.source[1], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT
+    textures::create(device, color1.source[1], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32B32A32_SFLOAT
             , allocation.data(), {width, height, 1}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
             , sizeof(float));
 

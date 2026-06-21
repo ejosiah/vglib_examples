@@ -2,7 +2,7 @@
 
 #define SCENE_PAINT 2u
 
-layout(set = 0, binding = 0) uniform sampler2D smokeField;
+layout(set = 0, binding = 0) uniform sampler3D smokeField;
 
 layout(push_constant) uniform Constants {
     mat4 transform;
@@ -35,7 +35,7 @@ vec3 getSciColor(float value, float minValue, float maxValue) {
 }
 
 void main() {
-    vec3 smoke = 1 - texture(smokeField, uv).rrr;
+    vec3 smoke = 1 - texture(smokeField, vec3(uv, 0.5)).rrr;
 
     if(scene == SCENE_PAINT) {
         fragColor = vec4(getSciColor(smoke.r, 0.0, 1.0), smoke.r);

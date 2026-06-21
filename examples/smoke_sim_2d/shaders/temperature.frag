@@ -1,6 +1,6 @@
 #version 460 core
 
-layout(set = 0, binding = 0) uniform sampler2D temperatureField;
+layout(set = 0, binding = 0) uniform sampler3D temperatureField;
 
 layout(push_constant) uniform Constants{
     float minTemp;
@@ -29,7 +29,7 @@ vec3 tenMinutePhysicsColor(float t) {
 }
 
 void main(){
-    float temp = texture(temperatureField, vUv).x;
+    float temp = texture(temperatureField, vec3(vUv, 0.5)).x;
     float level = (temp - minTemp) / (maxTemp - minTemp);
     fragColor = vec4(tenMinutePhysicsColor(level), 1.0);
 }

@@ -252,9 +252,9 @@ void YetAnotherFluidSim::initObstacleCollider() {
     std::vector<glm::vec2> velocityData(to<std::size_t>(width) * height, glm::vec2{0.0f});
 
     for(auto i = 0u; i < 2; ++i) {
-        textures::create(device, obstacleColliderField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT,
+        textures::create(device, obstacleColliderField[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32_SFLOAT,
                          colliderData.data(), {width, height, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
-        textures::create(device, obstacleColliderVelocityField[i], VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT,
+        textures::create(device, obstacleColliderVelocityField[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32_SFLOAT,
                          velocityData.data(), {width, height, 1u}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, sizeof(glm::vec2));
         obstacleColliderField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
         obstacleColliderVelocityField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
@@ -425,6 +425,8 @@ void YetAnotherFluidSim::initVisualizer() {
     };
 
     visualizer.setDomain(domainSize);
+    visualizer.setBoundaryColor(glm::vec4{0.0f, 0.0f, 0.0f, 1.0f});
+    visualizer.setBoundaryWidth(1.0f);
     visualizer.init();
     visualizer.set(solver.get());
     visualizer.initFieldDumpReadback(fs::current_path() / "yet_another_fluid_sim" / "debug_dumps");
@@ -432,15 +434,28 @@ void YetAnotherFluidSim::initVisualizer() {
 
 void YetAnotherFluidSim::initSmoke() {
     smokeField.assign(solverGridSize.x * solverGridSize.y, 0.0f);
+    windTunnelSmokeSource.assign(solverGridSize.x * solverGridSize.y, 0.0f);
 
     if(scene == Scene::WindTunnel) {
         const auto pipeH = 0.1 * solverGridSize.y;
         const auto minJ = to<int>(0.5f * to<float>(solverGridSize.y) - 0.5f*pipeH);
         const auto maxJ = to<int>(0.5f * to<float>(solverGridSize.y) + 0.5f*pipeH);
+        const auto sourceRate = 1.0f / scenes[scene].timeStep;
 
+        constexpr auto inletColumn = 1;
         for (auto j = minJ; j < maxJ; ++j) {
-            smokeField[j * solverGridSize.x] = 1.0f;
+            windTunnelSmokeSource[j * solverGridSize.x + inletColumn] = sourceRate;
         }
+
+        const auto byteSize = to<VkDeviceSize>(windTunnelSmokeSource.size() * sizeof(float));
+        windTunnelSmokeSourceUploadBuffer = device.createStagingBuffer(byteSize);
+        windTunnelSmokeSourceUploadBuffer.copy(windTunnelSmokeSource.data(), byteSize);
+
+        smoke.update = [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3) {
+            uploadCpuField(commandBuffer, windTunnelSmokeSourceUploadBuffer, field);
+        };
+    } else {
+        smoke.update = [](VkCommandBuffer, eular::Field&, glm::uvec3) {};
     }
 
     smoke.diffuseRate = 0;
@@ -648,7 +663,7 @@ VkCommandBuffer *YetAnotherFluidSim::buildCommandBuffers(uint32_t imageIndex, ui
         // visualizer.renderVectorField(commandBuffer);
         // visualizer.renderStreamLines(commandBuffer);
         visualizer.renderBoundary(commandBuffer);
-        // renderObstacle(commandBuffer);
+        renderObstacle(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
