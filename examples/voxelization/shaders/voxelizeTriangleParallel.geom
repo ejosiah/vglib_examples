@@ -6,7 +6,7 @@
 
 #define THIN 0
 #define FAT  1
-#define THICKNESS THIN
+#define THICKNESS FAT
 
 layout(triangles) in;
 layout(triangle_strip, max_vertices = 3) out;

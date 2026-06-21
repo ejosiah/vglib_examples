@@ -5,13 +5,29 @@
 #include "ImGuiPlugin.hpp"
 #include "Barrier.hpp"
 
+namespace {
+    constexpr auto MaxVoxelTransforms = 128u * 128u * 128u;
+
+    struct HybridClassifierConstants {
+        glm::mat4 worldToVoxelTransform{1};
+        float cutoffArea{};
+        uint32_t voxelSize{};
+        uint32_t triangleCount{};
+        uint32_t _pad{};
+    };
+}
+
 Voxelization::Voxelization(const Settings& settings) : VulkanBaseApp("Computatinal Voxelization", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/voxelization");
-    fileManager().addSearchPathFront("../../examples/voxelization/data");
-    fileManager().addSearchPathFront("../../examples/voxelization/spv");
-    fileManager().addSearchPathFront("../../examples/voxelization/models");
-    fileManager().addSearchPathFront("../../examples/voxelization/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("voxelization");
+    fileManager().addSearchPathFront("voxelization/data");
+    fileManager().addSearchPathFront("voxelization/spv");
+    fileManager().addSearchPathFront("voxelization/models");
+    fileManager().addSearchPathFront("voxelization/textures");
 }
 
 void Voxelization::initApp() {
@@ -55,7 +71,7 @@ void Voxelization::createDescriptorPool() {
 }
 
 void Voxelization::createDescriptorSetLayouts() {
-    voxels.descriptorSetLayout = 
+    voxels.descriptorSetLayout =
         device.descriptorSetLayoutBuilder()
             .name("voxel_set_layout")
             .binding(0)
@@ -75,11 +91,67 @@ void Voxelization::createDescriptorSetLayouts() {
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
             .createLayout();
-    
+
     voxels.descriptorSet = descriptorPool.allocate( { voxels.descriptorSetLayout }).front();
+
+    model.hybrid.descriptorSetLayout =
+        device.descriptorSetLayoutBuilder()
+            .name("hybrid_classifier_set_layout")
+            .binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(4)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .binding(5)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
+            .createLayout();
+
+    model.hybrid.descriptorSet = descriptorPool.allocate({ model.hybrid.descriptorSetLayout }).front();
 }
 
 void Voxelization::updateDescriptorSets(){
+    updateHybridClassifierDescriptorSet();
+}
+
+void Voxelization::updateHybridClassifierDescriptorSet() {
+    auto writes = initializers::writeDescriptorSets<6>();
+    std::array<VkDescriptorBufferInfo, 6> bufferInfo{
+        {
+            { model.vertices, 0, VK_WHOLE_SIZE },
+            { model.indices, 0, VK_WHOLE_SIZE },
+            { model.hybrid.triangleIndices, 0, VK_WHOLE_SIZE },
+            { model.hybrid.fragmentIndices, 0, VK_WHOLE_SIZE },
+            { model.hybrid.stats, 0, VK_WHOLE_SIZE },
+            { model.hybrid.drawCommands, 0, VK_WHOLE_SIZE },
+        }
+    };
+
+    for(uint32_t i = 0; i < COUNT(writes); ++i) {
+        writes[i].dstSet = model.hybrid.descriptorSet;
+        writes[i].dstBinding = i;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[i].descriptorCount = 1;
+        writes[i].pBufferInfo = &bufferInfo[i];
+    }
+
+    device.updateDescriptorSets(writes);
 }
 
 void Voxelization::createCommandPool() {
@@ -116,6 +188,17 @@ void Voxelization::createRenderPipeline() {
                     .vertexShader(resource("voxelizeFragmentParallel.vert.spv"))
                     .geometryShader(resource("voxelizeFragmentParallel.geom.spv"))
                     .fragmentShader(resource("voxelizeFragmentParallel.frag.spv"))
+                .rasterizationState()
+                    .cullNone()
+                .depthStencilState()
+                    .disableDepthTest()
+                    .disableDepthWrite()
+                    .compareOpAlways()
+                .colorBlendState()
+                    .attachment()
+                    .clear()
+                    .colorWriteMask(0)
+                    .add()
                 .dynamicState()
                     .primitiveTopology()
                 .layout().clear()
@@ -176,6 +259,22 @@ void Voxelization::createComputePipelines() {
 
     pipelines.genVoxelTransforms.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
     device.setName<VK_OBJECT_TYPE_PIPELINE>("generate_voxel_xforms", pipelines.genVoxelTransforms.pipeline.handle);
+
+    module = device.createShaderModule(resource("hybrid_classify.comp.spv"));
+    stage = initializers::shaderStage({ module, VK_SHADER_STAGE_COMPUTE_BIT});
+
+    VkPushConstantRange constants{};
+    constants.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    constants.offset = 0;
+    constants.size = sizeof(HybridClassifierConstants);
+
+    pipelines.hybridClassifier.layout = device.createPipelineLayout({ model.hybrid.descriptorSetLayout }, { constants });
+
+    computeCreateInfo.stage = stage;
+    computeCreateInfo.layout = pipelines.hybridClassifier.layout.handle;
+
+    pipelines.hybridClassifier.pipeline = device.createComputePipeline(computeCreateInfo, pipelineCache.handle);
+    device.setName<VK_OBJECT_TYPE_PIPELINE>("hybrid_triangle_classifier", pipelines.hybridClassifier.pipeline.handle);
 }
 
 
@@ -191,12 +290,42 @@ void Voxelization::onSwapChainRecreation() {
     initFloor();
 }
 
+void Voxelization::beforeDeviceCreation() {
+    auto devFeatures13 = findExtension<VkPhysicalDeviceVulkan13Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, deviceCreateNextChain);
+    devFeatures13->synchronization2 = VK_TRUE;
+    devFeatures13->dynamicRendering = VK_TRUE;
+    devFeatures13->maintenance4 = VK_TRUE;
+
+    AppContext::addExtensions(deviceCreateNextChain);
+}
+
 VkCommandBuffer *Voxelization::buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) {
     numCommandBuffers = 1;
     auto& commandBuffer = commandBuffers[imageIndex];
 
+    updateUI();
+
+    if(recreateVoxelStorage) {
+        device.wait();
+        createVoxelStorage();
+        recreateVoxelStorage = false;
+        refreshVoxel = true;
+    }
+
+    if(method == Method::Hybrid && model.hybrid.dirty) {
+        device.wait();
+    }
+
     VkCommandBufferBeginInfo beginInfo = initializers::commandBufferBeginInfo();
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+    if(method == Method::Hybrid && model.hybrid.dirty) {
+        classifyHybridTriangles(commandBuffer);
+    }
+
+    if(refreshVoxel) {
+        clearVoxels(commandBuffer);
+    }
 
     static std::array<VkClearValue, 2> clearValues;
     clearValues[0].color = {0, 0, 1, 1};
@@ -222,16 +351,16 @@ VkCommandBuffer *Voxelization::buildCommandBuffers(uint32_t imageIndex, uint32_t
         rayMarch(commandBuffer);
     }
 
-//    if(refreshVoxel) {
+    if(refreshVoxel) {
         voxelize(commandBuffer);
-//    }
+    }
     renderUI(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
-//    if(refreshVoxel) {
+    if(refreshVoxel) {
         generateVoxelTransforms(commandBuffer);
         refreshVoxel = false;
-//    }
+    }
 
     vkEndCommandBuffer(commandBuffer);
 
@@ -272,7 +401,7 @@ void Voxelization::loadModel() {
     spdlog::info("bounds [min : {}, max: {} ]", mesh.bounds.min, mesh.bounds.max);
 
     auto dim = mesh.bounds.max - mesh.bounds.min;
-    auto invMaxAxis = 1.f/glm::max(dim.x, glm::max(dim.y, dim.x));
+    auto invMaxAxis = 1.f/glm::max(dim.x, glm::max(dim.y, dim.z));
     voxels.transform = glm::scale(glm::mat4{1}, glm::vec3(invMaxAxis));
     voxels.transform = glm::translate(voxels.transform, -mesh.bounds.min);
 
@@ -280,8 +409,9 @@ void Voxelization::loadModel() {
     auto tmax = voxels.transform * glm::vec4(mesh.bounds.max, 1);
     spdlog::info("bounds [min : {}, max: {} ]", tmin.xyz(), tmax.xyz());
 
-    model.vertices = device.createDeviceLocalBuffer(mesh.vertices.data(), BYTE_SIZE(mesh.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    model.indices = device.createDeviceLocalBuffer(mesh.indices.data(), BYTE_SIZE(mesh.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    model.vertices = device.createDeviceLocalBuffer(mesh.vertices.data(), BYTE_SIZE(mesh.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    model.indices = device.createDeviceLocalBuffer(mesh.indices.data(), BYTE_SIZE(mesh.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    createHybridClassificationBuffers();
 }
 
 void Voxelization::initCube() {
@@ -292,9 +422,46 @@ void Voxelization::initCube() {
 
 void Voxelization::initVoxelData() {
     VoxelData data{};
+    data.maxVoxels = static_cast<int>(MaxVoxelTransforms);
     voxels.dataBuffer = device.createCpuVisibleBuffer(&data, sizeof(data), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     voxels.data = reinterpret_cast<VoxelData*>(voxels.dataBuffer.map());
-    voxels.transforms = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, sizeof(glm::mat4) * 500000, "voxel_transforms_buffer");
+    voxels.transforms = device.createBuffer(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY,
+        sizeof(glm::mat4) * MaxVoxelTransforms,
+        "voxel_transforms_buffer");
+}
+
+void Voxelization::createHybridClassificationBuffers() {
+    model.hybrid.sourceTriangleCount = model.indices.sizeAs<uint32_t>() / 3;
+    const auto indexBufferSize = model.indices.size;
+
+    model.hybrid.triangleIndices = device.createBuffer(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY,
+        indexBufferSize,
+        "hybrid_triangle_parallel_indices");
+
+    model.hybrid.fragmentIndices = device.createBuffer(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY,
+        indexBufferSize,
+        "hybrid_fragment_parallel_indices");
+
+    model.hybrid.stats = device.createBuffer(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_TO_CPU,
+        sizeof(HybridStats),
+        "hybrid_classifier_stats");
+    model.hybrid.statsData = reinterpret_cast<HybridStats*>(model.hybrid.stats.map());
+
+    model.hybrid.drawCommands = device.createBuffer(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY,
+        sizeof(VkDrawIndexedIndirectCommand) * 2,
+        "hybrid_classifier_draw_commands");
+
+    model.hybrid.dirty = true;
 }
 
 void Voxelization::renderModel(VkCommandBuffer commandBuffer) {
@@ -321,7 +488,8 @@ void Voxelization::renderVoxels(VkCommandBuffer commandBuffer) {
 
     vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     vkCmdSetCullMode(commandBuffer, VK_CULL_MODE_BACK_BIT);
-    vkCmdDrawIndexed(commandBuffer, cube.indices.sizeAs<uint32_t>(), voxels.data->numVoxels, 0, 0, 0);
+    auto numVoxels = static_cast<uint32_t>(glm::max(voxels.data->numVoxels, 0));
+    vkCmdDrawIndexed(commandBuffer, cube.indices.sizeAs<uint32_t>(), glm::min(numVoxels, MaxVoxelTransforms), 0, 0, 0);
 }
 
 void Voxelization::rayMarch(VkCommandBuffer commandBuffer) {
@@ -336,13 +504,13 @@ void Voxelization::rayMarch(VkCommandBuffer commandBuffer) {
     AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
-void Voxelization::renderUI(VkCommandBuffer commandBuffer) {
+void Voxelization::updateUI() {
     ImGui::Begin("Voxelization");
     ImGui::SetWindowSize({0, 0});
     ImGui::Text("Method:");
     ImGui::Indent(16);
 
-    static int methodOpt = static_cast<int>(method);
+    int methodOpt = static_cast<int>(method);
     ImGui::RadioButton("Triangle", &methodOpt, static_cast<int>(Method::TriangleParallel));
     ImGui::SameLine();
     ImGui::RadioButton("Fragment", &methodOpt, static_cast<int>(Method::FragmentParallel));
@@ -350,14 +518,27 @@ void Voxelization::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::RadioButton("Hybrid", &methodOpt, static_cast<int>(Method::Hybrid));
     ImGui::Indent(-16);
 
+    float hybridCutoff = model.hybrid.cutoffArea;
+    if(method == Method::Hybrid) {
+        ImGui::Text("Hybrid:");
+        ImGui::Indent(16);
+        ImGui::SliderFloat("Cutoff", &hybridCutoff, 0.0f, 50.0f, "%.2f voxels^2");
+        const auto smallTriangles = model.hybrid.statsData ? model.hybrid.statsData->triangleCount : 0u;
+        const auto largeTriangles = model.hybrid.statsData ? model.hybrid.statsData->fragmentCount : 0u;
+        ImGui::Text("Small / large: %u / %u", smallTriangles, largeTriangles);
+        ImGui::Indent(-16);
+    }
+
     ImGui::Text("Voxel Size:");
     ImGui::Indent(16);
-    static int vSize = voxels.size;
+    int vSize = static_cast<int>(voxels.size);
     ImGui::RadioButton("128", &vSize, 128);
     ImGui::SameLine();
     ImGui::RadioButton("256", &vSize, 256);
     ImGui::SameLine();
     ImGui::RadioButton("512", &vSize, 512);
+    ImGui::InputInt("Resolution", &vSize, 1, 8);
+    vSize = glm::clamp(vSize, 1, 512);
     ImGui::Indent(-16);
 
     ImGui::Text("Render:");
@@ -373,30 +554,117 @@ void Voxelization::renderUI(VkCommandBuffer commandBuffer) {
 
     ImGui::End();
 
-    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+    const auto newMethod = static_cast<Method>(methodOpt);
+    const auto newSize = static_cast<uint32_t>(vSize);
 
-    refreshVoxel |= vSize != voxels.size;
-    voxels.size = vSize;
-    method = static_cast<Method>(methodOpt);
+    if(newMethod != method) {
+        method = newMethod;
+        refreshVoxel = true;
+        model.hybrid.dirty = method == Method::Hybrid;
+    }
+
+    if(newSize != voxels.size) {
+        voxels.size = newSize;
+        recreateVoxelStorage = true;
+        model.hybrid.dirty = true;
+    }
+
+    if(hybridCutoff != model.hybrid.cutoffArea) {
+        model.hybrid.cutoffArea = hybridCutoff;
+        model.hybrid.dirty = true;
+        refreshVoxel = true;
+    }
+}
+
+void Voxelization::renderUI(VkCommandBuffer commandBuffer) {
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+}
+
+void Voxelization::clearVoxels(VkCommandBuffer commandBuffer) {
+    VkImageSubresourceRange range = DEFAULT_SUB_RANGE;
+
+    VkImageMemoryBarrier toTransfer{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    toTransfer.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toTransfer.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransfer.image = voxels.texture.image;
+    toTransfer.subresourceRange = range;
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &toTransfer);
+
+    VkClearColorValue clearValue{};
+    clearValue.uint32[0] = 0u;
+    vkCmdClearColorImage(commandBuffer, voxels.texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearValue, 1, &range);
+
+    VkImageMemoryBarrier toGeneral{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    toGeneral.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toGeneral.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    toGeneral.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    toGeneral.image = voxels.texture.image;
+    toGeneral.subresourceRange = range;
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &toGeneral);
 }
 
 void Voxelization::voxelize(VkCommandBuffer commandBuffer) {
-    fragmentParallelVoxelization(commandBuffer);
+    switch(method) {
+        case Method::TriangleParallel:
+            triangleParallelVoxelization(commandBuffer);
+            break;
+        case Method::FragmentParallel:
+            fragmentParallelVoxelization(commandBuffer);
+            break;
+        case Method::Hybrid:
+            hybridVoxelization(commandBuffer);
+            break;
+    }
 }
 
 void Voxelization::triangleParallelVoxelization(VkCommandBuffer commandBuffer) {
+    triangleParallelVoxelization(commandBuffer, model.indices, model.indices.sizeAs<uint32_t>());
+}
+
+void Voxelization::triangleParallelVoxelization(VkCommandBuffer commandBuffer, const VulkanBuffer& indices, uint32_t indexCount) {
+    if(indexCount == 0 || indices.empty()) return;
+
     VkDeviceSize offset = 0;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangle.pipeline.handle);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangle.layout.handle, 0, 1, &voxels.descriptorSet, 0, VK_NULL_HANDLE);
     vkCmdPushConstants(commandBuffer, pipelines.triangle.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(voxels.transform));
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, model.vertices, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, model.indices, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(commandBuffer, indices, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    vkCmdDrawIndexed(commandBuffer, model.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 }
 
 void Voxelization::fragmentParallelVoxelization(VkCommandBuffer commandBuffer) {
+    fragmentParallelVoxelization(commandBuffer, model.indices, model.indices.sizeAs<uint32_t>());
+}
+
+void Voxelization::fragmentParallelVoxelization(VkCommandBuffer commandBuffer, const VulkanBuffer& indices, uint32_t indexCount) {
+    if(indexCount == 0 || indices.empty()) return;
+
     static std::array<glm::mat4, 2> pushConstants{};
     VkDeviceSize offset = 0;
     pushConstants[0] = voxels.transform;
@@ -406,14 +674,125 @@ void Voxelization::fragmentParallelVoxelization(VkCommandBuffer commandBuffer) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.fragment.layout.handle, 0, 1, &voxels.descriptorSet, 0, VK_NULL_HANDLE);
     vkCmdPushConstants(commandBuffer, pipelines.fragment.layout.handle, VK_SHADER_STAGE_ALL, 0, BYTE_SIZE(pushConstants), pushConstants.data());
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, model.vertices, &offset);
-    vkCmdBindIndexBuffer(commandBuffer, model.indices, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(commandBuffer, indices, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    vkCmdDrawIndexed(commandBuffer, model.indices.sizeAs<uint32_t>(), 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+}
+
+void Voxelization::hybridVoxelization(VkCommandBuffer commandBuffer) {
+    triangleParallelVoxelizationIndirect(commandBuffer);
+    fragmentParallelVoxelizationIndirect(commandBuffer);
+}
+
+void Voxelization::classifyHybridTriangles(VkCommandBuffer commandBuffer) {
+    std::array<VkDrawIndexedIndirectCommand, 2> drawCommands{};
+    drawCommands[0].instanceCount = 1;
+    drawCommands[1].instanceCount = 1;
+
+    vkCmdUpdateBuffer(commandBuffer, model.hybrid.drawCommands, 0, BYTE_SIZE(drawCommands), drawCommands.data());
+    vkCmdFillBuffer(commandBuffer, model.hybrid.stats, 0, sizeof(HybridStats), 0);
+
+    std::array<VkBufferMemoryBarrier, 2> transferToCompute{};
+    for(auto& barrier : transferToCompute) {
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.offset = 0;
+        barrier.size = VK_WHOLE_SIZE;
+    }
+    transferToCompute[0].buffer = model.hybrid.stats;
+    transferToCompute[1].buffer = model.hybrid.drawCommands;
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0,
+        nullptr,
+        COUNT(transferToCompute),
+        transferToCompute.data(),
+        0,
+        nullptr);
+
+    HybridClassifierConstants constants{};
+    constants.worldToVoxelTransform = voxels.transform;
+    constants.cutoffArea = model.hybrid.cutoffArea;
+    constants.voxelSize = voxels.size;
+    constants.triangleCount = model.hybrid.sourceTriangleCount;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines.hybridClassifier.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines.hybridClassifier.layout.handle, 0, 1, &model.hybrid.descriptorSet, 0, nullptr);
+    vkCmdPushConstants(commandBuffer, pipelines.hybridClassifier.layout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(HybridClassifierConstants), &constants);
+    vkCmdDispatch(commandBuffer, glm::max(1u, (model.hybrid.sourceTriangleCount + 63u) / 64u), 1, 1);
+
+    std::array<VkBufferMemoryBarrier, 4> computeToDraw{};
+    for(auto& barrier : computeToDraw) {
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.offset = 0;
+        barrier.size = VK_WHOLE_SIZE;
+    }
+
+    computeToDraw[0].dstAccessMask = VK_ACCESS_INDEX_READ_BIT;
+    computeToDraw[0].buffer = model.hybrid.triangleIndices;
+    computeToDraw[1].dstAccessMask = VK_ACCESS_INDEX_READ_BIT;
+    computeToDraw[1].buffer = model.hybrid.fragmentIndices;
+    computeToDraw[2].dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    computeToDraw[2].buffer = model.hybrid.drawCommands;
+    computeToDraw[3].dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    computeToDraw[3].buffer = model.hybrid.stats;
+
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_HOST_BIT,
+        0,
+        0,
+        nullptr,
+        COUNT(computeToDraw),
+        computeToDraw.data(),
+        0,
+        nullptr);
+
+    model.hybrid.dirty = false;
+    refreshVoxel = true;
+}
+
+void Voxelization::triangleParallelVoxelizationIndirect(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangle.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangle.layout.handle, 0, 1, &voxels.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pipelines.triangle.layout.handle, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(voxels.transform));
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, model.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, model.hybrid.triangleIndices, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    vkCmdDrawIndexedIndirect(commandBuffer, model.hybrid.drawCommands, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+}
+
+void Voxelization::fragmentParallelVoxelizationIndirect(VkCommandBuffer commandBuffer) {
+    static std::array<glm::mat4, 2> pushConstants{};
+    VkDeviceSize offset = 0;
+    pushConstants[0] = voxels.transform;
+    pushConstants[1] = fpMatrix(glm::ivec3(voxels.size));
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.fragment.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.fragment.layout.handle, 0, 1, &voxels.descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdPushConstants(commandBuffer, pipelines.fragment.layout.handle, VK_SHADER_STAGE_ALL, 0, BYTE_SIZE(pushConstants), pushConstants.data());
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, model.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, model.hybrid.fragmentIndices, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    vkCmdDrawIndexedIndirect(commandBuffer, model.hybrid.drawCommands, sizeof(VkDrawIndexedIndirectCommand), 1, sizeof(VkDrawIndexedIndirectCommand));
 }
 
 void Voxelization::generateVoxelTransforms(VkCommandBuffer commandBuffer) {
-    glm::uvec3 wg{ glm::max(1u, voxels.size/8)};
+    glm::uvec3 wg{ glm::max(1u, (voxels.size + 7u)/8u)};
 
 
     VkImageMemoryBarrier voxelBarrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
@@ -423,11 +802,12 @@ void Voxelization::generateVoxelTransforms(VkCommandBuffer commandBuffer) {
     voxelBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     voxelBarrier.image = voxels.texture.image;
     voxelBarrier.subresourceRange = DEFAULT_SUB_RANGE;
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, 0, 0, 0, 1, &voxelBarrier);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, 0, 0, 0, 1, &voxelBarrier);
 
     VoxelData data{};
     data.worldToVoxelTransform = voxels.transform;
     data.voxelToWordTransform = glm::inverse(voxels.transform);
+    data.maxVoxels = static_cast<int>(MaxVoxelTransforms);
     vkCmdUpdateBuffer(commandBuffer, voxels.dataBuffer, 0, sizeof(VoxelData), &data);
     Barrier::transferWriteToComputeRead(commandBuffer, voxels.dataBuffer);
 
@@ -501,9 +881,6 @@ void Voxelization::updateVoxelDescriptorSet() {
 }
 
 void Voxelization::endFrame() {
-    if(refreshVoxel) {
-        createVoxelStorage();
-    }
 }
 
 glm::mat4 Voxelization::fpMatrix(glm::ivec3 voxelDim) {
@@ -531,7 +908,7 @@ glm::mat4 Voxelization::fpMatrix(glm::ivec3 voxelDim) {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.width = 1024;
         settings.width = 1024;
@@ -540,6 +917,10 @@ int main(){
         settings.enabledFeatures.geometryShader = VK_TRUE;
         settings.enabledFeatures.vertexPipelineStoresAndAtomics = VK_TRUE;
         settings.enabledFeatures.fragmentStoresAndAtomics = VK_TRUE;
+        settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
         std::unique_ptr<Plugin> imGui = std::make_unique<ImGuiPlugin>();
 
         auto app = Voxelization{ settings };

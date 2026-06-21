@@ -14,11 +14,15 @@
 
 OpenVdbViewer::OpenVdbViewer(const Settings& settings) : VulkanBaseApp("Open Vdb viewer", settings) {
     fileManager().addSearchPathFront(".");
-    fileManager().addSearchPathFront("../../examples/open_vdb_viewer");
-    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/data");
-    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/spv");
-    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/models");
-    fileManager().addSearchPathFront("../../examples/open_vdb_viewer/textures");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("open_vdb_viewer");
+    fileManager().addSearchPathFront("open_vdb_viewer/data");
+    fileManager().addSearchPathFront("open_vdb_viewer/spv");
+    fileManager().addSearchPathFront("open_vdb_viewer/models");
+    fileManager().addSearchPathFront("open_vdb_viewer/textures");
 
     static VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT feature{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT};
     feature.mutableDescriptorType = VK_TRUE;
@@ -963,7 +967,7 @@ void OpenVdbViewer::endFrame() {
 
 int main(){
     try{
-
+        fs::current_path("../../../../examples/");
         Settings settings;
         settings.depthTest = true;
         settings.enabledFeatures.geometryShader = VK_TRUE;

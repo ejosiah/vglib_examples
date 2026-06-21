@@ -127,6 +127,4 @@ void main()
         //z-loop
     }
     //xy-overlap test
-
-    discard;
 }

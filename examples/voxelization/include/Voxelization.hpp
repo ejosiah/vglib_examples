@@ -5,6 +5,14 @@ struct VoxelData {
     glm::mat4 worldToVoxelTransform{1};
     glm::mat4 voxelToWordTransform{1};
     int numVoxels{};
+    int maxVoxels{};
+};
+
+struct HybridStats {
+    uint32_t triangleIndexCount{};
+    uint32_t fragmentIndexCount{};
+    uint32_t triangleCount{};
+    uint32_t fragmentCount{};
 };
 
 class Voxelization : public VulkanBaseApp {
@@ -40,6 +48,10 @@ protected:
 
     void updateVoxelDescriptorSet();
 
+    void createHybridClassificationBuffers();
+
+    void updateHybridClassifierDescriptorSet();
+
     void createCommandPool();
 
     void createPipelineCache();
@@ -52,6 +64,8 @@ protected:
 
     void onSwapChainRecreation() override;
 
+    void beforeDeviceCreation() override;
+
     VkCommandBuffer *buildCommandBuffers(uint32_t imageIndex, uint32_t &numCommandBuffers) override;
 
     void renderModel(VkCommandBuffer commandBuffer);
@@ -60,13 +74,29 @@ protected:
 
     void rayMarch(VkCommandBuffer commandBuffer);
 
+    void updateUI();
+
     void renderUI(VkCommandBuffer commandBuffer);
+
+    void clearVoxels(VkCommandBuffer commandBuffer);
 
     void voxelize(VkCommandBuffer commandBuffer);
 
     void triangleParallelVoxelization(VkCommandBuffer commandBuffer);
 
+    void triangleParallelVoxelization(VkCommandBuffer commandBuffer, const VulkanBuffer& indices, uint32_t indexCount);
+
     void fragmentParallelVoxelization(VkCommandBuffer commandBuffer);
+
+    void fragmentParallelVoxelization(VkCommandBuffer commandBuffer, const VulkanBuffer& indices, uint32_t indexCount);
+
+    void hybridVoxelization(VkCommandBuffer commandBuffer);
+
+    void classifyHybridTriangles(VkCommandBuffer commandBuffer);
+
+    void triangleParallelVoxelizationIndirect(VkCommandBuffer commandBuffer);
+
+    void fragmentParallelVoxelizationIndirect(VkCommandBuffer commandBuffer);
 
     static glm::mat4 fpMatrix(glm::ivec3 voxelDim);
 
@@ -103,10 +133,14 @@ protected:
         struct {
             VulkanPipelineLayout layout;
             VulkanPipeline pipeline;
+        } hybridClassifier;
+        struct {
+            VulkanPipelineLayout layout;
+            VulkanPipeline pipeline;
         } rayMarch;
     } pipelines;
 
-    Method method = Method::TriangleParallel;
+    Method method = Method::FragmentParallel;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -117,6 +151,18 @@ protected:
     struct {
         VulkanBuffer vertices;
         VulkanBuffer indices;
+        struct {
+            VulkanDescriptorSetLayout descriptorSetLayout;
+            VkDescriptorSet descriptorSet{};
+            VulkanBuffer triangleIndices;
+            VulkanBuffer fragmentIndices;
+            VulkanBuffer stats;
+            VulkanBuffer drawCommands;
+            HybridStats* statsData{};
+            uint32_t sourceTriangleCount{};
+            float cutoffArea{4.0f};
+            bool dirty{true};
+        } hybrid;
     } model;
 
     struct {
@@ -143,6 +189,7 @@ protected:
     } bounds;
 
     bool refreshVoxel{true};
+    bool recreateVoxelStorage{};
 
     RenderType renderType = RenderType::Default;
 };

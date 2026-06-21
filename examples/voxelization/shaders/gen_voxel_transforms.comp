@@ -12,6 +12,7 @@ layout(set = 0, binding = 2) buffer Params {
     mat4 worldToVoxelTransform;
     mat4 voxelToWordTransform;
     int numVoxels;
+    int maxVoxels;
 };
 
 void main() {
@@ -25,6 +26,8 @@ void main() {
 
     if(value == 1) {
         int index = atomicAdd(numVoxels, 1);
+        if(index >= maxVoxels) return;
+
         vec3 pos = (vec3(gid) + 0.5) * invDim;;
 
         mat4 transform = mat4(1);
