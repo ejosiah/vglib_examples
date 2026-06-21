@@ -102,7 +102,7 @@ void YetAnotherFluidSim::initSolver() {
             .poissonIterations(to<int>(props.iterations/2))
             .addExternalForce(force())
             .closedDomain()
-            .useGaussSeidelSolver();
+            .useConjugateGradientSolver();
 
     if (scene == Scene::Tank) {
         builder.addExternalForce(force());
@@ -117,6 +117,8 @@ void YetAnotherFluidSim::initSolver() {
         forceConstants.speed = 2.f;
         forceConstants.mode = 1;
 
+        // builder.vorticityConfinementScale(6.0f);
+        builder.useMacCormackAdvection();
         builder.openBoundaryEdges(eular::FluidSolver::BoundaryEdgeRight);
     }
     if (scene == Scene::Paint) {
@@ -663,7 +665,7 @@ VkCommandBuffer *YetAnotherFluidSim::buildCommandBuffers(uint32_t imageIndex, ui
         // visualizer.renderVectorField(commandBuffer);
         // visualizer.renderStreamLines(commandBuffer);
         visualizer.renderBoundary(commandBuffer);
-        renderObstacle(commandBuffer);
+        // renderObstacle(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
