@@ -1,0 +1,54 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_debug_printf : enable
+
+struct Bounds {
+    vec3 min;
+    vec3 max;
+};
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler3D tempAndDensity_field_in;
+layout(set = 1, binding = 2) uniform writeonly image3D tempAndDensity_field_out;
+
+layout(set = 2, binding = 0, scalar) buffer Cosntants {
+    mat4 worldToVoxel;
+    mat4 voxelToWorld;
+    Bounds domain;
+    Bounds emitterBounds;
+    ivec3 resolution;
+    vec3 up;
+    float ambientTemp;
+    float minValue;
+    float maxValue;
+    float tempFactor;
+    float densityFactory;
+    uint numCells;
+};
+
+#include "smoke_common.glsl"
+
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    if(any(greaterThanEqual(gid, resolution))) return;
+
+    vec3 uvw = (vec3(gid) + 0.5)/vec3(resolution);
+    vec3 pos = remapToDomain(uvw);
+    vec3 center = (emitterBounds.min + emitterBounds.max) * 0.5;
+    vec3 halfDim = (emitterBounds.max - emitterBounds.min) * 0.5;
+    float sdf = sdfBox(pos - center, halfDim);
+
+    vec4 oldValue = texture(tempAndDensity_field_in, uvw);
+
+    float temp = mapper(sdf, oldValue.x);
+    float density = mapper(sdf, oldValue.y);
+
+//    if(temp > 0) {
+//        debugPrintfEXT("p: [%.2f, %.2f, %.2f], temp: %f, density: %f\n", pos.x, pos.y, pos.z, temp, density);
+//    }
+
+    imageStore(tempAndDensity_field_out, gid, vec4(temp, density, 0, 0));
+}

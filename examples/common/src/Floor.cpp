@@ -44,8 +44,10 @@ void Floor::createPipeline() {
 			.build(_layout);
 }
 
-void Floor::render(VkCommandBuffer commandBuffer, BaseCameraController& camera, const std::vector<VkDescriptorSet> descriptorSets) {
-    static glm::mat4 identity{1};
+void Floor::render(VkCommandBuffer commandBuffer,
+                   BaseCameraController& camera,
+                   const std::vector<VkDescriptorSet> descriptorSets,
+                   const glm::mat4& model) {
     VkDeviceSize offset = 0;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline.handle);
@@ -54,7 +56,7 @@ void Floor::render(VkCommandBuffer commandBuffer, BaseCameraController& camera, 
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout.handle, 0, descriptorSets.size(), descriptorSets.data(), 0, VK_NULL_HANDLE);
     }
 
-    camera.push(commandBuffer, _layout, identity, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    camera.push(commandBuffer, _layout, model, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, _vertices, &offset);
     vkCmdDraw(commandBuffer, 4, 1, 0, 0);
 }

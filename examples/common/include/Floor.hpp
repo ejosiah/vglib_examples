@@ -24,7 +24,10 @@ public:
 
     void createPipeline();
 
-    void render(VkCommandBuffer commandBuffer, BaseCameraController& camera, const std::vector<VkDescriptorSet> descriptorSets = {});
+    void render(VkCommandBuffer commandBuffer,
+                BaseCameraController& camera,
+                const std::vector<VkDescriptorSet> descriptorSets = {},
+                const glm::mat4& model = glm::mat4{1});
 
 private:
     VulkanDevice* _device{};

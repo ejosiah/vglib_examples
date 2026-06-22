@@ -124,6 +124,8 @@ public:
 
     static void drawCube(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
 
+    static void drawCubeOutline(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
+
     static void shutdown();
 
     static void updateSunDirection(glm::vec3 direction);
@@ -198,6 +200,9 @@ private:
             VulkanBuffer vertices;
             VulkanBuffer indexes;
         } cube;
+        struct {
+            VulkanBuffer vertices;
+        } cubeOutline;
     } _shapes;
 
     Atmosphere _atmosphere;

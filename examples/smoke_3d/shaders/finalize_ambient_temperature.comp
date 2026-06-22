@@ -1,0 +1,44 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_debug_printf : enable
+
+struct Bounds {
+    vec3 min;
+    vec3 max;
+};
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer Constants {
+    mat4 worldToVoxel;
+    mat4 voxelToWorld;
+    Bounds domain;
+    Bounds emitterBounds;
+    ivec3 resolution;
+    vec3 up;
+    float ambientTemp;
+    float minValue;
+    float maxValue;
+    float tempFactor;
+    float densityFactory;
+    uint numCells;
+};
+
+layout(set = 0, binding = 1, scalar) readonly buffer AmbientTemperaturePartialSums {
+    float partialSums[];
+};
+
+void main() {
+    const uint groupsX = (uint(resolution.x) + 7u) / 8u;
+    const uint groupsZ = (uint(resolution.z) + 7u) / 8u;
+    const uint numGroups = groupsX * groupsZ;
+    float sum = 0.0;
+
+    for (uint i = 0; i < numGroups; ++i) {
+        sum += partialSums[i];
+    }
+
+    ambientTemp = numCells == 0u ? 0.0 : sum / float(numCells);
+//    debugPrintfEXT("sum: %f, ambient temp: %f\n", sum, ambientTemp);
+}

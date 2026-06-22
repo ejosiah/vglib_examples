@@ -1,0 +1,64 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+
+struct Bounds {
+    vec3 min;
+    vec3 max;
+};
+
+layout(local_size_x = 8, local_size_y = 1, local_size_z = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler3D tempAndDensityField;
+
+layout(set = 1, binding = 0, scalar) buffer Constants {
+    mat4 worldToVoxel;
+    mat4 voxelToWorld;
+    Bounds domain;
+    Bounds emitterBounds;
+    ivec3 resolution;
+    vec3 up;
+    float ambientTemp;
+    float minValue;
+    float maxValue;
+    float tempFactor;
+    float densityFactory;
+    uint numCells;
+};
+
+layout(set = 1, binding = 1, scalar) writeonly buffer AmbientTemperaturePartialSums {
+    float partialSums[];
+};
+
+shared float localSum[64];
+
+void main() {
+    const uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+    const uint z = gl_WorkGroupID.z * gl_WorkGroupSize.z + gl_LocalInvocationID.z;
+    float sum = 0.0;
+
+    if (x < uint(resolution.x) && z < uint(resolution.z)) {
+        for (int y = 0; y < resolution.y; ++y) {
+            sum += texelFetch(tempAndDensityField, ivec3(int(x), y, int(z)), 0).x;
+        }
+    }
+
+    sum = subgroupAdd(sum);
+    if (subgroupElect()) {
+        localSum[gl_SubgroupID] = sum;
+    }
+
+    barrier();
+
+    if (gl_LocalInvocationIndex == 0u) {
+        sum = 0.0;
+        for (uint i = 0; i < gl_NumSubgroups; ++i) {
+            sum += localSum[i];
+        }
+
+        uint index = gl_WorkGroupID.z * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+        partialSums[index] = sum;
+    }
+}

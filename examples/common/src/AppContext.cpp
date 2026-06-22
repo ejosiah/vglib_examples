@@ -117,6 +117,9 @@ void AppContext::createShapes() {
     prim = primitives::cube();
     _shapes.cube.vertices = _device->createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     _shapes.cube.indexes = _device->createDeviceLocalBuffer(prim.indices.data(), BYTE_SIZE(prim.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+    prim = primitives::cubeOutline();
+    _shapes.cubeOutline.vertices = _device->createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
 void AppContext::initAtmosphere() {
@@ -230,7 +233,9 @@ void AppContext::initFloor() {
 }
 
 void AppContext::renderFloor(VkCommandBuffer commandBuffer, BaseCameraController &camera) {
-    instance._floor.render(commandBuffer, camera);
+    glm::mat4 floorTransform{1};
+    floorTransform[3].y = -0.005f;
+    instance._floor.render(commandBuffer, camera, {}, floorTransform);
 }
 
 void AppContext::drawSphere(VkCommandBuffer commandBuffer, uint32_t instanceCount) {
@@ -245,6 +250,13 @@ void AppContext::drawCube(VkCommandBuffer commandBuffer, uint32_t instanceCount)
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, instance._shapes.cube.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, instance._shapes.cube.indexes, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, instance._shapes.cube.indexes.sizeAs<uint32_t>(), instanceCount, 0, 0, 0);
+}
+
+void AppContext::drawCubeOutline(VkCommandBuffer commandBuffer, uint32_t instanceCount) {
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, instance._shapes.cubeOutline.vertices, &offset);
+    vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+    vkCmdDraw(commandBuffer, instance._shapes.cubeOutline.vertices.sizeAs<Vertex>(), instanceCount, 0, 0);
 }
 
 void AppContext::addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std::vector<std::reference_wrapper<VulkanImage>> &images,
