@@ -18,10 +18,13 @@ layout(set = 1, binding = 0, scalar) buffer Cosntants {
     ivec3 resolution;
     vec3 up;
     float ambientTemp;
+	float tempSum;
     float minValue;
     float maxValue;
     float tempFactor;
     float densityFactory;
+    float smokeDecayFactor;
+    float temperatureDecayFactor;
     uint numCells;
 };
 
@@ -37,6 +40,9 @@ layout(location = 0) in struct {
 
 layout(location = 0) out vec4 fragColor;
 
+#define LPOS vec3( -0.5, 1.8, 0.9)
+#define LCOL (vec3( 1.0 ))
+
 bool testUnitCube(vec3 o, vec3 rd, out float tmin, out float tmax);
 bool outOfBounds(vec3 pos);
 void getParticipatingMedia(out float sigmaS, out float sigmaE, in vec3 pos);
@@ -45,7 +51,6 @@ vec3 evaluateLight(in vec3 pos);
 float volumetricShadow(in vec3 from, in vec3 to);
 
 float phaseFunction() {
-    return 1;
     return 1.0/(4.0*3.14);
 }
 
@@ -62,13 +67,13 @@ void main() {
     float tEnter;
     float tExit;
     vec4 scatterTransmission = vec4(0, 0, 0, 1);
-    vec3 lightPos = vec3(0);
+    vec3 lightPos = vec3(-0.5, 1.8, 0.9);
     bool hasDensity = false;
     if(testUnitCube(rayOrigin, rayDirection, tEnter, tExit)) {
         ivec3 voxelDim = textureSize(tempAndDensityField, 0);
         int maxDim = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
         float delta = 1.0 / float(maxDim);
-        float t = max(tEnter, 0.0) + delta * 0.5;
+        float t = max(tEnter, 0.0) + delta * 0.3;
         int maxSteps = max(1, int(ceil((tExit - t) / delta)) + 1);
 
         float sigmaS = 0.0;
@@ -136,21 +141,48 @@ bool outOfBounds(vec3 pos) {
 void getParticipatingMedia(out float sigmaS, out float sigmaE, in vec3 pos) {
     vec2 tempAndDensity = texture(tempAndDensityField, pos).xy;
     float density = max(tempAndDensity.y, 0.0);
-    sigmaS = density;
+    sigmaS = density * 10;
 
-    const float sigmaA = density * 1e10;
+    const float sigmaA = density * 200;
     sigmaE = max(0.000000001, sigmaA + sigmaS); // to avoid division by zero extinction
 
 }
 
 vec3 evaluateLight(in vec3 pos) {
-    return vec3(1);
+    vec3 lightPos = LPOS;
+    vec3 lightCol = LCOL;
+    vec3 L = lightPos-pos;
+    return lightCol * 1.0/dot(L,L);
 }
 
 vec3 evaluateLight(in vec3 pos, in vec3 normal) {
-    return vec3(1);
+    vec3 lightPos = LPOS;
+    vec3 L = lightPos-pos;
+    float distanceToL = length(L);
+    vec3 Lnorm = L/distanceToL;
+    return max(0.0,dot(normal,Lnorm)) * evaluateLight(pos);
 }
 
 float volumetricShadow(in vec3 from, in vec3 to) {
-    return 1.0;
+    float shadow = 1.0;
+    float sigmaS = 0.0;
+    float sigmaE = 0.0;
+
+    ivec3 voxelDim = textureSize(tempAndDensityField, 0);
+    int maxDim = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
+
+    float tEnter, tExit;
+    vec3 dir = normalize(to - from);
+    testUnitCube(from, dir, tEnter, tExit);
+    int numSteps = 4;
+    float delta = (tExit - tEnter)/float(numSteps);
+
+    float t = 0;
+    for(int i = 0; i < numSteps; ++i) {
+        vec3 pos = from + dir * t;
+        getParticipatingMedia(sigmaS, sigmaE, pos);
+        shadow *= exp(-sigmaE * delta);
+        t += delta;
+    }
+    return shadow;
 }

@@ -6,7 +6,7 @@ vec3 remapToDomain(vec3 pos) {
 }
 
 vec3 voxelToWorldUv(vec3 uvw) {
-    return uvw.xzy;
+    return uvw;
 }
 
 float smearedHeavisideSdf(float phi) {

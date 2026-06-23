@@ -11,11 +11,10 @@ struct Bounds {
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
-layout(set = 0, binding = 0) uniform sampler3D force_field_in;
-layout(set = 1, binding = 2) uniform writeonly image3D force_field_out;
-layout(set = 2, binding = 0) uniform sampler3D tempAndDensityField;
+layout(set = 0, binding = 0) uniform sampler3D tempAndDensityField;
+layout(set = 1, binding = 2) uniform writeonly image3D tempAndDensityFieldOut;
 
-layout(set = 3, binding = 0, scalar) buffer Cosntants {
+layout(set = 2, binding = 0, scalar) buffer Cosntants {
     mat4 worldToVoxel;
     mat4 voxelToWorld;
     Bounds domain;
@@ -39,10 +38,10 @@ void main() {
     ivec3 gid = ivec3(gl_GlobalInvocationID);
     if(any(greaterThanEqual(gid, resolution))) return;
 
-    vec2 values = texelFetch(tempAndDensityField, gid, 0).xy;
+    vec2 values = texelFetch(tempAndDensityField, gid, 0).xy * (1 - vec2(temperatureDecayFactor, smokeDecayFactor));
     float temp = values.x;
     float density = values.y;
-    vec3 buoyancy =  (densityFactory * density + tempFactor * (temp - ambientTemp)) * up;
-    imageStore(force_field_out, gid, vec4(buoyancy, 0));
+
+    imageStore(tempAndDensityFieldOut, gid, vec4(temp, density, 0, 0));
 
 }

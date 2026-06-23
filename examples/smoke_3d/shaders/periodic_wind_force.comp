@@ -1,0 +1,71 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+
+struct Bounds {
+    vec3 min;
+    vec3 max;
+};
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler3D forceFieldIn;
+layout(set = 1, binding = 2) uniform writeonly image3D forceFieldOut;
+
+layout(set = 2, binding = 0, scalar) buffer Constants {
+    mat4 worldToVoxel;
+    mat4 voxelToWorld;
+    Bounds domain;
+    Bounds emitterBounds;
+    ivec3 resolution;
+    vec3 up;
+    float ambientTemp;
+	float tempSum;
+    float minValue;
+    float maxValue;
+    float tempFactor;
+    float densityFactory;
+    float smokeDecayFactor;
+    float temperatureDecayFactor;
+    uint numCells;
+};
+
+layout(push_constant) uniform WindConstants {
+    vec4 positionRadius;
+    vec4 directionStrength;
+    float time;
+    float period;
+    uint enabled;
+    float pulseMin;
+};
+
+#include "smoke_common.glsl"
+
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    if(any(greaterThanEqual(gid, resolution))) return;
+
+    vec3 uvw = (vec3(gid) + 0.5) / vec3(resolution);
+    vec3 force = texture(forceFieldIn, uvw).xyz;
+
+    if(enabled != 0u) {
+        vec3 pos = remapToDomain(uvw);
+        vec3 source = positionRadius.xyz;
+        vec3 direction = normalize(directionStrength.xyz);
+        float radius = max(positionRadius.w, 0.0001);
+
+        vec3 offset = pos - source;
+        float along = dot(offset, direction);
+        vec3 lateral = offset - along * direction;
+        float lateralWeight = exp(-dot(lateral, lateral) / (radius * radius));
+        float inletWeight = smoothstep(0.0, radius, along);
+
+        float pulsePhase = 0.5 + 0.5 * sin(6.28318530718 * time / max(period, 0.0001));
+        float pulse = mix(clamp(pulseMin, 0.0, 1.0), 1.0, pulsePhase);
+
+        force += direction * directionStrength.w * pulse * inletWeight * lateralWeight;
+    }
+
+    imageStore(forceFieldOut, gid, vec4(force, 0.0));
+}

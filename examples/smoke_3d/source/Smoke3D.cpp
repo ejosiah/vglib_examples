@@ -7,6 +7,8 @@
 #include "Barrier.hpp"
 #include "Vertex.h"
 
+#include <cstddef>
+
 
 Smoke3D::Smoke3D(const Settings& settings) : VulkanBaseApp("smoke 3d", settings) {
     fileManager().addSearchPathFront(".");
@@ -23,6 +25,7 @@ Smoke3D::Smoke3D(const Settings& settings) : VulkanBaseApp("smoke 3d", settings)
 }
 
 void Smoke3D::initApp() {
+    createCollider();
     initSimData();
     initCamera();
     createDescriptorPool();
@@ -43,19 +46,10 @@ void Smoke3D::initSimData() {
     simData.worldToVoxel = toLocalSpace(simData.domain);
     simData.voxelToWorld = glm::inverse(simData.worldToVoxel);
     simData.numCells = simData.resolution.x * simData.resolution.y * simData.resolution.z;
-    ambientTemperatureGroupCount = {
-        (static_cast<uint32_t>(simData.resolution.x) + 7u) / 8u,
-        (static_cast<uint32_t>(simData.resolution.z) + 7u) / 8u
-    };
 
     auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     simDataBuffer = device.createDeviceLocalBuffer(&simData, sizeof(simData), usage);
     device.setName<VK_OBJECT_TYPE_BUFFER>("sim_data_buffer", simDataBuffer.buffer);
-
-    const auto numAmbientTemperatureGroups = ambientTemperatureGroupCount.x * ambientTemperatureGroupCount.y;
-    ambientTemperaturePartialSums = device.createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY,
-                                                        sizeof(float) * numAmbientTemperatureGroups,
-                                                        "ambient_temperature_partial_sums");
 }
 
 void Smoke3D::initSolver() {
@@ -67,12 +61,15 @@ void Smoke3D::initSolver() {
         .gridSize(glm::vec3(simData.resolution))
         .closedDomain()
         .vorticityConfinementScale(6)
+        .useMacCormackAdvection()
         .addQuantity(temperatureAndDensity, "temperature_and_density", temperatureAndDensityData)
         .addExternalForce(buoyancyForce())
+        .addExternalForce(periodicWindForce())
         .useGaussSeidelSolver()
-        // .poissonIterations(100)
         .dt(fixedUpdate.period())
     .build();
+
+    initObstacleCollider();
 }
 
 eular::ExternalForce Smoke3D::buoyancyForce() {
@@ -88,6 +85,38 @@ eular::ExternalForce Smoke3D::buoyancyForce() {
     };
 }
 
+eular::ExternalForce Smoke3D::periodicWindForce() {
+    return [&](VkCommandBuffer commandBuffer, std::span<VkDescriptorSet> forceFieldSets, glm::uvec3 gc){
+        auto center = (simData.domain.min + simData.domain.max) * 0.5f;
+        const auto c = glm::cos(windControls.angle);
+        const auto s = glm::sin(windControls.angle);
+        const glm::vec3 radial{c, 0.0f, s};
+        const glm::vec3 direction{-c, 0.0f, -s};
+        const float height = glm::mix(simData.domain.min.y, simData.domain.max.y, windControls.height);
+        const glm::vec3 position{center.x + windControls.distance * radial.x, height,
+                                 center.z + windControls.distance * radial.z};
+
+        windConstants.positionRadius = glm::vec4(position, windControls.radius);
+        windConstants.directionStrength = glm::vec4(direction, windControls.strength);
+        windConstants.time = fluidSolver->elapsedTime();
+        windConstants.period = windControls.period;
+        windConstants.enabled = windControls.enabled ? 1u : 0u;
+        windConstants.pulseMin = windControls.pulseMin;
+
+        static std::array<VkDescriptorSet, 3> sets;
+        sets[0] = forceFieldSets[eular::in];
+        sets[1] = forceFieldSets[eular::out];
+        sets[2] = simDescriptorSet;
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("periodic_wind_force"));
+        vkCmdPushConstants(commandBuffer, compute.layout("periodic_wind_force"), VK_SHADER_STAGE_COMPUTE_BIT,
+                           0, sizeof(windConstants), &windConstants);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("periodic_wind_force"),
+                                0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+        vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
+    };
+}
+
 std::vector<glm::vec4> Smoke3D::initTemperatureAndDensityField() {
     std::vector<glm::vec4> field(simData.numCells, glm::vec4(0));
 
@@ -97,9 +126,9 @@ std::vector<glm::vec4> Smoke3D::initTemperatureAndDensityField() {
         emitSmoke(commandBuffer, field, gc);
     };
 
-    temperatureAndDensity.postAdvectActions.emplace_back([&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
-        return decaySmoke(commandBuffer, field, gc);
-    });
+    // temperatureAndDensity.postAdvectActions.emplace_back([&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
+    //     return decaySmoke(commandBuffer, field, gc);
+    // });
 
     temperatureAndDensity.postAdvectActions.emplace_back(
         [&](VkCommandBuffer commandBuffer, eular::Field& field, glm::uvec3 gc){
@@ -119,6 +148,100 @@ void Smoke3D::initCamera() {
     cameraSettings.horizontalFov = true;
     camera = std::make_unique<SpectatorCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
     camera->lookAt({-5, 2, 3}, {0, 0, 0}, {0, 1, 0});
+}
+
+void Smoke3D::createCollider() {
+    auto prim = primitives::sphere(10, 10, obstacle.radius, glm::translate(glm::mat4{1}, obstacle.position), {1, 1, 0, 1}, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    sphere.vertices = device.createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    sphere.indices = device.createDeviceLocalBuffer(prim.indices.data(), BYTE_SIZE(prim.indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+}
+
+void Smoke3D::initObstacleCollider() {
+    const auto width = static_cast<uint32_t>(simData.resolution.x);
+    const auto height = static_cast<uint32_t>(simData.resolution.y);
+    const auto depth = static_cast<uint32_t>(simData.resolution.z);
+    const auto cellCount = width * height * depth;
+
+    obstacleColliderField.name = "smoke_3d_obstacle_collider";
+    obstacleColliderVelocityField.name = "smoke_3d_obstacle_collider_velocity";
+
+    std::vector<glm::vec2> colliderData(cellCount, glm::vec2{1.0f, eular::colliderTypeValue(eular::ColliderType::Sdf)});
+    std::vector<glm::vec2> velocityData(cellCount, glm::vec2{0.0f});
+
+    for(uint32_t z = 0; z < depth; ++z) {
+        for(uint32_t y = 0; y < height; ++y) {
+            for(uint32_t x = 0; x < width; ++x) {
+                const glm::vec3 uvw = (glm::vec3{x, y, z} + 0.5f) / glm::vec3{simData.resolution};
+                const glm::vec3 position = glm::mix(simData.domain.min, simData.domain.max, uvw);
+                const float sdf = glm::length(position - obstacle.position) - obstacle.radius;
+                const auto index = (z * height + y) * width + x;
+                colliderData[index] = {sdf, eular::colliderTypeValue(eular::ColliderType::Sdf)};
+            }
+        }
+    }
+
+    for(auto i = 0u; i < 2; ++i) {
+        textures::create(device, obstacleColliderField[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32_SFLOAT,
+                         colliderData.data(), {width, height, depth}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                         sizeof(glm::vec2));
+        textures::create(device, obstacleColliderVelocityField[i], VK_IMAGE_TYPE_3D, VK_FORMAT_R32G32_SFLOAT,
+                         velocityData.data(), {width, height, depth}, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                         sizeof(glm::vec2));
+        obstacleColliderField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+        obstacleColliderVelocityField[i].image.transitionLayout(device.graphicsCommandPool(), VK_IMAGE_LAYOUT_GENERAL);
+
+        device.setName<VK_OBJECT_TYPE_IMAGE>(std::format("{}_{}", obstacleColliderField.name, i),
+                                             obstacleColliderField[i].image.image);
+        device.setName<VK_OBJECT_TYPE_IMAGE>(std::format("{}_{}", obstacleColliderVelocityField.name, i),
+                                             obstacleColliderVelocityField[i].image.image);
+    }
+
+    auto writes = initializers::writeDescriptorSets<12>();
+    auto writeOffset = createFieldDescriptorSet(writes, 0, obstacleColliderField);
+    writeOffset = createFieldDescriptorSet(writes, writeOffset, obstacleColliderVelocityField);
+    writes.resize(writeOffset);
+    device.updateDescriptorSets(writes);
+
+    for(auto& write : writes) {
+        delete write.pImageInfo;
+    }
+
+    const std::array<eular::Collider, 1> colliders{{
+        {obstacleColliderField.descriptorSet[eular::in], obstacleColliderVelocityField.descriptorSet[eular::in]}
+    }};
+    fluidSolver->setColliders(colliders);
+}
+
+uint32_t Smoke3D::createFieldDescriptorSet(std::vector<VkWriteDescriptorSet>& writes, uint32_t writeOffset, eular::Field& field) {
+    auto sets = descriptorPool.allocate({fluidSolver->fieldDescriptorSetLayout(), fluidSolver->fieldDescriptorSetLayout()});
+
+    field.descriptorSet[0] = sets[0];
+    field.descriptorSet[1] = sets[1];
+
+    for(uint32_t i = 0; i < 2; ++i) {
+        writes[writeOffset].dstSet = field.descriptorSet[i];
+        writes[writeOffset].dstBinding = 0;
+        writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[writeOffset].descriptorCount = 1;
+        writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[i].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+        ++writeOffset;
+
+        writes[writeOffset].dstSet = field.descriptorSet[i];
+        writes[writeOffset].dstBinding = 1;
+        writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        writes[writeOffset].descriptorCount = 1;
+        writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[i].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+        ++writeOffset;
+
+        writes[writeOffset].dstSet = field.descriptorSet[i];
+        writes[writeOffset].dstBinding = 2;
+        writes[writeOffset].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[writeOffset].descriptorCount = 1;
+        writes[writeOffset].pImageInfo = new VkDescriptorImageInfo{VK_NULL_HANDLE, field[i].imageView.handle, VK_IMAGE_LAYOUT_GENERAL};
+        ++writeOffset;
+    }
+
+    return writeOffset;
 }
 
 void Smoke3D::initBindlessDescriptor() {
@@ -166,31 +289,20 @@ void Smoke3D::createDescriptorSetLayouts() {
                 .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .shaderStages(VK_SHADER_STAGE_ALL)
-            .binding(1)
-                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .shaderStages(VK_SHADER_STAGE_COMPUTE_BIT)
             .createLayout();
 
     simDescriptorSet = descriptorPool.allocate({ simDescriptorSetLayout }).front();
 }
 
 void Smoke3D::updateDescriptorSets(){
-    auto writes = initializers::writeDescriptorSets<2>();
+    auto writes = initializers::writeDescriptorSets<1>();
     VkDescriptorBufferInfo simInfo{ simDataBuffer, 0, VK_WHOLE_SIZE };
-    VkDescriptorBufferInfo ambientTemperatureInfo{ ambientTemperaturePartialSums, 0, VK_WHOLE_SIZE };
 
     writes[0].dstSet = simDescriptorSet;
     writes[0].dstBinding = 0;
     writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[0].descriptorCount = 1;
     writes[0].pBufferInfo = &simInfo;
-
-    writes[1].dstSet = simDescriptorSet;
-    writes[1].dstBinding = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[1].descriptorCount = 1;
-    writes[1].pBufferInfo = &ambientTemperatureInfo;
 
     device.updateDescriptorSets(writes);
 }
@@ -290,9 +402,14 @@ VkCommandBuffer *Smoke3D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     renderToSwapChain([&]{
         AppContext::renderFloor(commandBuffer, *camera);
 
+        renderObstacle(commandBuffer);
         renderSmoke(commandBuffer);
-        // renderEmitter(commandBuffer);
-        // renderDomain(commandBuffer);
+
+        if (showOutline) {
+            renderEmitter(commandBuffer);
+            renderDomain(commandBuffer);
+        }
+        renderUI(commandBuffer);
     }, commandBuffer);
 
     vkEndCommandBuffer(commandBuffer);
@@ -325,7 +442,42 @@ void Smoke3D::renderSmoke(VkCommandBuffer commandBuffer) {
     AppContext::renderClipSpaceQuad(commandBuffer);
 }
 
+void Smoke3D::renderObstacle(VkCommandBuffer commandBuffer) {
+    AppContext::renderSolid(commandBuffer, *camera, [&]() {
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, sphere.vertices, &offset);
+        vkCmdBindIndexBuffer(commandBuffer, sphere.indices, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(commandBuffer, sphere.indices.sizeAs<uint>(), 1, 0, 0, 0);
+    });
+}
+
+void Smoke3D::renderUI(VkCommandBuffer commandBuffer) {
+    ImGui::Begin("Smoke 3D");
+    ImGui::SetWindowSize({});
+
+    ImGui::Checkbox("Wind", &windControls.enabled);
+    ImGui::SliderAngle("Rotate Y", &windControls.angle, 0.0f, 360.0f);
+    ImGui::SliderFloat("Height", &windControls.height, 0.0f, 1.0f);
+    ImGui::SliderFloat("Distance", &windControls.distance, 0.0f, 1.5f);
+    ImGui::SliderFloat("Radius", &windControls.radius, 0.02f, 1.0f);
+    ImGui::SliderFloat("Strength", &windControls.strength, 0.0f, 80.0f);
+    ImGui::SliderFloat("Period", &windControls.period, 0.1f, 8.0f);
+    ImGui::SliderFloat("Minimum pulse", &windControls.pulseMin, 0.0f, 1.0f);
+
+    ImGui::Checkbox("Outline", &showOutline);
+
+    ImGui::End();
+    plugin(IM_GUI_PLUGIN).draw(commandBuffer);
+}
+
+void Smoke3D::clearTemperatureSum(VkCommandBuffer commandBuffer) {
+    vkCmdFillBuffer(commandBuffer, simDataBuffer, offsetof(SimData, tempSum), sizeof(float), 0);
+    Barrier::transferWriteToComputeRead(commandBuffer, simDataBuffer);
+}
+
 void Smoke3D::emitSmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc) {
+    clearTemperatureSum(commandBuffer);
+
     static std::array<VkDescriptorSet, 3> sets;
     sets[0] = field.descriptorSet[eular::in];
     sets[1] = field.descriptorSet[eular::out];
@@ -335,36 +487,39 @@ void Smoke3D::emitSmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm:
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("smoke_source"),
                             0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
+    Barrier::computeWriteToRead(commandBuffer, simDataBuffer);
     field.swap();
 }
 
 bool Smoke3D::decaySmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc) {
-    return false;
+    static std::array<VkDescriptorSet, 3> sets;
+    sets[0] = field.descriptorSet[eular::in];
+    sets[1] = field.descriptorSet[eular::out];
+    sets[2] = simDescriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("decay_smoke"));
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("decay_smoke"),
+                            0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
+    return true;
 }
 
 void Smoke3D::updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc) {
-    static std::array<VkDescriptorSet, 2> sets;
-    sets[0] = field.descriptorSet[eular::in];
-    sets[1] = simDescriptorSet;
-
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("update_ambient_temperature"));
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("update_ambient_temperature"),
-                            0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
-    vkCmdDispatch(commandBuffer, ambientTemperatureGroupCount.x, 1, ambientTemperatureGroupCount.y);
-    Barrier::computeWriteToRead(commandBuffer, ambientTemperaturePartialSums);
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("finalize_ambient_temperature"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("finalize_ambient_temperature"),
                             0, 1, &simDescriptorSet, 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
     Barrier::computeWriteToRead(commandBuffer, simDataBuffer);
 }
 
 void Smoke3D::update(float time) {
-    auto title = fmt::format("{}, fps {}", this->title, framePerSecond);
+    auto title = fmt::format("{}, camera: {}, fps {}", this->title, camera->position(), framePerSecond);
     glfwSetWindowTitle(window, title.c_str());
     fixedUpdate.advance(time);
-    camera->update(time);
+
+    if (!ImGui::IsAnyItemActive()) {
+        camera->update(time);
+    }
     auto cam = camera->cam();
 }
 
@@ -391,19 +546,25 @@ std::vector<PipelineMetaData> Smoke3D::pipelines() {
             .layouts = { &sourceFieldSetLayouts[0], &sourceFieldSetLayouts[1], &simDescriptorSetLayout }
         },
         {
+            .name = "decay_smoke",
+            .shadePath = resource("decay_smoke.comp.spv"),
+            .layouts = { &sourceFieldSetLayouts[0], &sourceFieldSetLayouts[1], &simDescriptorSetLayout }
+        },
+        {
             .name = "buoyancy_force",
             .shadePath = resource("buoyancy_force.comp.spv"),
             .layouts = { &forceFieldSetLayouts[0], &forceFieldSetLayouts[1], &sourceFieldSetLayouts[0]
                         , &simDescriptorSetLayout }
         },
         {
-            .name = "update_ambient_temperature",
-            .shadePath = resource("update_ambient_temperature.comp.spv"),
-            .layouts = { &sourceFieldSetLayouts[0], &simDescriptorSetLayout }
+            .name = "periodic_wind_force",
+            .shadePath = resource("periodic_wind_force.comp.spv"),
+            .layouts = { &forceFieldSetLayouts[0], &forceFieldSetLayouts[1], &simDescriptorSetLayout },
+            .ranges = {{ VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(WindConstants) }}
         },
         {
-            .name = "finalize_ambient_temperature",
-            .shadePath = resource("finalize_ambient_temperature.comp.spv"),
+            .name = "update_ambient_temperature",
+            .shadePath = resource("update_ambient_temperature.comp.spv"),
             .layouts = { &simDescriptorSetLayout }
         }
     };

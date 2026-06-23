@@ -3,6 +3,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_shader_atomic_float : require
 
 struct Bounds {
     vec3 min;
@@ -22,10 +23,13 @@ layout(set = 2, binding = 0, scalar) buffer Cosntants {
     ivec3 resolution;
     vec3 up;
     float ambientTemp;
+	float tempSum;
     float minValue;
     float maxValue;
     float tempFactor;
     float densityFactory;
+    float smokeDecayFactor;
+    float temperatureDecayFactor;
     uint numCells;
 };
 
@@ -45,6 +49,11 @@ void main() {
 
     float temp = mapper(sdf, oldValue.x);
     float density = mapper(sdf, oldValue.y);
+
+    temp *= 1 - temperatureDecayFactor;
+    density *= 1 - smokeDecayFactor;
+
+    atomicAdd(tempSum, temp);
 
 //    if(temp > 0) {
 //        debugPrintfEXT("p: [%.2f, %.2f, %.2f], temp: %f, density: %f\n", pos.x, pos.y, pos.z, temp, density);
