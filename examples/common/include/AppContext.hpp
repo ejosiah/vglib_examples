@@ -119,12 +119,13 @@ public:
 
     static void renderFloor(VkCommandBuffer commandBuffer, BaseCameraController& camera);
 
-    static void
-    drawSphere(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
+    static void drawSphere(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
 
     static void drawCube(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
 
     static void drawCubeOutline(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
+
+    static void drawVector(VkCommandBuffer commandBuffer, uint32_t instanceCount = 1);
 
     static void shutdown();
 
@@ -203,6 +204,10 @@ private:
         struct {
             VulkanBuffer vertices;
         } cubeOutline;
+        struct {
+            VulkanBuffer vertices;
+            VulkanBuffer indexes;
+        } vector;
     } _shapes;
 
     Atmosphere _atmosphere;

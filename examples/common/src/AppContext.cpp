@@ -2,6 +2,7 @@
 #include "FileManager.hpp"
 #include "Vertex.h"
 #include "ExtensionChain.hpp"
+#include "Mesh.h"
 #include "primitives.h"
 
 AppContext::AppContext(VulkanDevice &device, VulkanDescriptorPool& descriptorPool, VulkanSwapChain& swapChain, VulkanRenderPass& renderPass)
@@ -120,6 +121,11 @@ void AppContext::createShapes() {
 
     prim = primitives::cubeOutline();
     _shapes.cubeOutline.vertices = _device->createDeviceLocalBuffer(prim.vertices.data(), BYTE_SIZE(prim.vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    std::vector<mesh::Mesh> meshes;
+    mesh::load(meshes, resource("vector.obj"));
+    _shapes.vector.vertices = _device->createDeviceLocalBuffer(meshes[0].vertices.data(), BYTE_SIZE(meshes[0].vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    _shapes.vector.indexes = _device->createDeviceLocalBuffer(meshes[0].indices.data(), BYTE_SIZE(meshes[0].indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 
 void AppContext::initAtmosphere() {
@@ -257,6 +263,13 @@ void AppContext::drawCubeOutline(VkCommandBuffer commandBuffer, uint32_t instanc
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, instance._shapes.cubeOutline.vertices, &offset);
     vkCmdSetPrimitiveTopology(commandBuffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
     vkCmdDraw(commandBuffer, instance._shapes.cubeOutline.vertices.sizeAs<Vertex>(), instanceCount, 0, 0);
+}
+
+void AppContext::drawVector(VkCommandBuffer commandBuffer, uint32_t instanceCount) {
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, instance._shapes.vector.vertices, &offset);
+    vkCmdBindIndexBuffer(commandBuffer, instance._shapes.vector.indexes, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffer, instance._shapes.vector.indexes.sizeAs<uint32_t>(), instanceCount, 0, 0, 0);
 }
 
 void AppContext::addImageMemoryBarriers(VkCommandBuffer commandBuffer, const std::vector<std::reference_wrapper<VulkanImage>> &images,
