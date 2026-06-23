@@ -46,6 +46,7 @@ void Smoke3D::initSimData() {
     simData.worldToVoxel = toLocalSpace(simData.domain);
     simData.voxelToWorld = glm::inverse(simData.worldToVoxel);
     simData.numCells = simData.resolution.x * simData.resolution.y * simData.resolution.z;
+    numCells = simData.numCells;
 
     auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     simDataBuffer = device.createDeviceLocalBuffer(&simData, sizeof(simData), usage);
@@ -259,6 +260,10 @@ void Smoke3D::beforeDeviceCreation() {
     auto devFeatures12 = findExtension<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, deviceCreateNextChain);
     devFeatures12->scalarBlockLayout = VK_TRUE;
 
+    auto atomicFeatures = findExtension<VkPhysicalDeviceShaderAtomicFloatFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT, deviceCreateNextChain);
+    atomicFeatures->shaderBufferFloat32AtomicAdd = VK_TRUE;
+    atomicFeatures->shaderBufferFloat32Atomics = VK_TRUE;
+
     AppContext::addExtensions(deviceCreateNextChain);
 }
 
@@ -329,6 +334,20 @@ void Smoke3D::createRenderPipeline() {
                     .primitiveTopology()
                 .name("render")
                 .build(render.layout);
+    //    @formatter:off
+        vector.pipeline =
+            prototypes->cloneGraphicsPipeline()
+                .shaderStage()
+                    .vertexShader(resource("render_vector_field.vert.spv"))
+                    .fragmentShader(resource("flat.frag.spv"))
+                .name("render_vector_field")
+                .layout()
+                    .addDescriptorSetLayout(sourceFieldSetLayouts[0])
+                    .addDescriptorSetLayout(sourceFieldSetLayouts[0])
+                    .addDescriptorSetLayout(sourceFieldSetLayouts[0])
+                    .addDescriptorSetLayout(sourceFieldSetLayouts[0])
+                    .addDescriptorSetLayout(simDescriptorSetLayout)
+                .build(vector.layout);
 
         auto rayMarchBuilder = prototypes->cloneGraphicsPipeline();
         rayMarch.pipeline =
@@ -402,6 +421,7 @@ VkCommandBuffer *Smoke3D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     renderToSwapChain([&]{
         AppContext::renderFloor(commandBuffer, *camera);
 
+        renderVectorField(commandBuffer);
         renderObstacle(commandBuffer);
         renderSmoke(commandBuffer);
 
@@ -470,6 +490,20 @@ void Smoke3D::renderUI(VkCommandBuffer commandBuffer) {
     plugin(IM_GUI_PLUGIN).draw(commandBuffer);
 }
 
+void Smoke3D::renderVectorField(VkCommandBuffer commandBuffer) {
+    static std::array<VkDescriptorSet, 5> sets;
+    sets[0] = fluidSolver->vectorField().u.descriptorSet[eular::in];
+    sets[1] = fluidSolver->vectorField().v.descriptorSet[eular::in];
+    sets[2] = fluidSolver->vectorField().w.descriptorSet[eular::in];
+    sets[3] = temperatureAndDensity.field.descriptorSet[eular::in];
+    sets[4] = simDescriptorSet;
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vector.pipeline.handle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vector.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    camera->push(commandBuffer, vector.layout);
+    AppContext::drawVector(commandBuffer, numCells);
+}
+
 void Smoke3D::clearTemperatureSum(VkCommandBuffer commandBuffer) {
     vkCmdFillBuffer(commandBuffer, simDataBuffer, offsetof(SimData, tempSum), sizeof(float), 0);
     Barrier::transferWriteToComputeRead(commandBuffer, simDataBuffer);
@@ -484,8 +518,7 @@ void Smoke3D::emitSmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm:
     sets[2] = simDescriptorSet;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline("smoke_source"));
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("smoke_source"),
-                            0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout("smoke_source"), 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     vkCmdDispatch(commandBuffer, gc.x, gc.y, gc.z);
     Barrier::computeWriteToRead(commandBuffer, simDataBuffer);
     field.swap();
@@ -583,6 +616,7 @@ int main(){
         settings.deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
         settings.deviceExtensions.push_back(VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+        settings.deviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
         settings.uniqueQueueFlags = VK_QUEUE_TRANSFER_BIT;
         settings.enabledFeatures.fillModeNonSolid = VK_TRUE;
         settings.enabledFeatures.multiDrawIndirect = VK_TRUE;

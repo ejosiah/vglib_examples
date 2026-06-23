@@ -67,6 +67,8 @@ protected:
 
     void renderUI(VkCommandBuffer commandBuffer);
 
+    void renderVectorField(VkCommandBuffer commandBuffer);
+
     void clearTemperatureSum(VkCommandBuffer commandBuffer);
 
     void emitSmoke(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
@@ -96,6 +98,11 @@ protected:
         VulkanPipelineLayout layout;
         VulkanPipeline pipeline;
     } rayMarch;
+
+    struct {
+        VulkanPipelineLayout layout;
+        VulkanPipeline pipeline;
+    } vector;
 
     VulkanDescriptorPool descriptorPool;
     VulkanCommandPool commandPool;
@@ -167,6 +174,6 @@ protected:
         VulkanBuffer vertices;
         VulkanBuffer indices;
     } sphere;
-
+    uint32_t numCells;
 };
 
