@@ -5,12 +5,12 @@
 #include "ImGuiPlugin.hpp"
 
 VolumeRendering::VolumeRendering(const Settings& settings) : VulkanBaseApp("Volume Rendering", settings) {
-    fileManager.addSearchPathFront(".");
-    fileManager.addSearchPathFront("../../examples/volume_rendering");
-    fileManager.addSearchPathFront("../../examples/volume_rendering/data");
-    fileManager.addSearchPathFront("../../examples/volume_rendering/spv");
-    fileManager.addSearchPathFront("../../examples/volume_rendering/models");
-    fileManager.addSearchPathFront("../../examples/volume_rendering/textures");
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../../examples/volume_rendering");
+    fileManager().addSearchPathFront("../../examples/volume_rendering/data");
+    fileManager().addSearchPathFront("../../examples/volume_rendering/spv");
+    fileManager().addSearchPathFront("../../examples/volume_rendering/models");
+    fileManager().addSearchPathFront("../../examples/volume_rendering/textures");
 }
 
 void VolumeRendering::initApp() {
