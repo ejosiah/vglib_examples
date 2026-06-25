@@ -4,6 +4,7 @@
 #include "DescriptorSetBuilder.hpp"
 #include "ImGuiPlugin.hpp"
 #include "Barrier.hpp"
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace {
     constexpr auto MaxVoxelTransforms = 128u * 128u * 128u;

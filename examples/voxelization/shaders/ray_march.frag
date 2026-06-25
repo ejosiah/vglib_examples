@@ -18,9 +18,10 @@ layout(set = 0, binding = 2) buffer Params {
     mat4 worldToVoxelTransform;
     mat4 voxelToWordTransform;
     int numVoxels;
+    int maxVoxels;
 };
 
-bool test(vec3 o, vec3 rd, out vec3 pos);
+bool testUnitCube(vec3 o, vec3 rd, out float tmin, out float tmax);
 
 bool outOfBounds(vec3 pos);
 
@@ -29,30 +30,32 @@ layout(location = 0) out vec4 fragColor;
 void main() {
     gl_FragDepth = 1;
 
-    vec3 o = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
-    vec3 rd = normalize(fs_in.direction);
+    vec3 worldOrigin = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
+    vec3 worldDirection = normalize(fs_in.direction);
 
-    vec3 pos;
+    vec3 rayOrigin = (worldToVoxelTransform * vec4(worldOrigin, 1)).xyz;
+    vec3 rayDirection = normalize((worldToVoxelTransform * vec4(worldDirection, 0)).xyz);
 
-    if(test(o, rd, pos)) {
-        vec3 tn = dFdx(pos);
-        vec3 bn = dFdy(pos);
-        vec3 n = normalize(cross(tn, bn));
+    float tEnter;
+    float tExit;
 
+    if(testUnitCube(rayOrigin, rayDirection, tEnter, tExit)) {
         ivec3 voxelDim = textureSize(Voxels, 0);
-        int maxSteps = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
-        float delta = 1/float(maxSteps);
-        vec3 start = (worldToVoxelTransform * vec4(pos, 1)).xyz + sign(rd) * 0.5/vec3(voxelDim);
-        for(int i = 0; i < maxSteps; ++i) {
-            pos = start + rd * delta * i;
+        int maxDim = max(voxelDim.x, max(voxelDim.y, voxelDim.z));
+        float delta = 1.0 / float(maxDim);
+        float t = max(tEnter, 0.0) + delta * 0.5;
+        int maxSteps = max(1, int(ceil((tExit - t) / delta)) + 1);
+
+        for(int i = 0; i < maxSteps; ++i, t += delta) {
+            vec3 pos = rayOrigin + rayDirection * t;
 
             if(outOfBounds(pos)) break;
 
             uint val = texture(Voxels, pos).r;
             if(val == 1) {
 
-                pos = (voxelToWordTransform * vec4(pos, 1)).xyz;
-                vec4 clipPos = proj * view * model * vec4(pos, 1);
+                vec3 worldPos = (voxelToWordTransform * vec4(pos, 1)).xyz;
+                vec4 clipPos = proj * view * model * vec4(worldPos, 1);
                 clipPos /= clipPos.w;
 
                 gl_FragDepth = clipPos.z;
@@ -65,18 +68,18 @@ void main() {
     }
 }
 
-bool test(vec3 o, vec3 rd, out vec3 pos) {
-    float tmin = 0;
-    float tmax = 1e10;
+bool testUnitCube(vec3 o, vec3 rd, out float tmin, out float tmax) {
+    tmin = 0;
+    tmax = 1e10;
 
     for(int i = 0; i < 3; ++i) {
         if(abs(rd[i]) < 1e-6){
             // ray is parallel to slab. No hit if origin not within slab
-            if(o[i] < bmin[i] || o[i] > bmax[i]) return false;
+            if(o[i] < 0 || o[i] > 1) return false;
         }else {
             float invRd = 1.0/rd[i];
-            float t1 = (bmin[i] - o[i]) * invRd;
-            float t2 = (bmax[i] - o[i]) * invRd;
+            float t1 = (0 - o[i]) * invRd;
+            float t2 = (1 - o[i]) * invRd;
 
             if(t1 > t2) {
                 float temp = t1;
@@ -88,8 +91,7 @@ bool test(vec3 o, vec3 rd, out vec3 pos) {
             if(tmin > tmax) return false;
         }
     }
-    pos = o + rd * tmin;
-    return true;
+    return tmax >= max(tmin, 0.0);
 }
 
 bool outOfBounds(vec3 pos) {
