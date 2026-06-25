@@ -2,7 +2,17 @@
 #include "PrimitivesApp.h"
 
 PrimitivesApp::PrimitivesApp(const Settings &settings):VulkanBaseApp("primitives", settings) {
-
+    fileManager().addSearchPathFront(".");
+    fileManager().addSearchPathFront("../data");
+    fileManager().addSearchPathFront("../data/textures");
+    fileManager().addSearchPathFront("../data/shaders");
+    fileManager().addSearchPathFront("../data/shaders/phong");
+    fileManager().addSearchPathFront("../data/models");
+    fileManager().addSearchPathFront("Primitives");
+    fileManager().addSearchPathFront("Primitives/data");
+    fileManager().addSearchPathFront("Primitives/spv");
+    fileManager().addSearchPathFront("Primitives/models");
+    fileManager().addSearchPathFront("Primitives/textures");
 }
 
 void PrimitivesApp::initApp() {
@@ -50,13 +60,13 @@ VkCommandBuffer *PrimitivesApp::buildCommandBuffers(uint32_t imageIndex, uint32_
 
     auto& object = objects[currentPrimitiveIndex];
     if(object.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP){
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangleStripPipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.triangleStripPipeline.handle);
     }else{
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.trianglePipeline);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.trianglePipeline.handle);
     }
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout.handle, 0, 1, &descriptorSet, 0, VK_NULL_HANDLE);
     cameraController->push(commandBuffer, layout);
-    vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(lightParams), &lightParams);
+    vkCmdPushConstants(commandBuffer, layout.handle, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Camera), sizeof(lightParams), &lightParams);
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, object.vertices, &offset);
     vkCmdBindIndexBuffer(commandBuffer, object.indices, offset, VK_INDEX_TYPE_UINT32);
@@ -148,8 +158,8 @@ void PrimitivesApp::createPrimitives() {
 }
 
 void PrimitivesApp::createPipeline() {
-    auto vertexShaderModule = VulkanShaderModule{"../../data/shaders/phong/phong.vert.spv", device};
-    auto fragmentShaderModule = VulkanShaderModule{"../../data/shaders/phong/phong.frag.spv", device};
+    auto vertexShaderModule = device.createShaderModule(resource("phong.vert.spv"));
+    auto fragmentShaderModule = device.createShaderModule(resource("phong.frag.spv"));
 
     std::vector<VkPipelineShaderStageCreateInfo> stages = initializers::vertexShaderStages(
             {
@@ -214,7 +224,7 @@ void PrimitivesApp::createPipeline() {
     createInfo.pDepthStencilState = &depthStencilState;
     createInfo.pColorBlendState = &blendState;
     createInfo.pDynamicState = &dynamicState;
-    createInfo.layout = layout;
+    createInfo.layout = layout.handle;
     createInfo.renderPass = renderPass;
     createInfo.subpass = 0;
     createInfo.basePipelineIndex = -1;
@@ -268,7 +278,7 @@ void PrimitivesApp::createDescriptorSet() {
     auto writes = initializers::writeDescriptorSets<1>();
     auto& write = writes[0];
 
-    VkDescriptorImageInfo info{ texture.sampler, texture.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorImageInfo info{ texture.sampler.handle, texture.imageView.handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     write.dstSet = descriptorSet;
     write.dstBinding = 0;
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -281,6 +291,7 @@ void PrimitivesApp::createDescriptorSet() {
 
 int main(){
     try{
+        fs::current_path("../../../../examples/");
         Settings settings{};
         settings.relativeMouseMode = true;
         settings.depthTest = true;
