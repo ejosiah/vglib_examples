@@ -665,7 +665,7 @@ VkCommandBuffer *YetAnotherFluidSim::buildCommandBuffers(uint32_t imageIndex, ui
         // visualizer.renderVectorField(commandBuffer);
         // visualizer.renderStreamLines(commandBuffer);
         visualizer.renderBoundary(commandBuffer);
-        // renderObstacle(commandBuffer);
+        renderObstacle(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
