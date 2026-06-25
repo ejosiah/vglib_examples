@@ -3,6 +3,7 @@
 #include "VulkanBaseApp.h"
 #include "fluid/FluidSolver2.hpp"
 #include "BoundingBox.hpp"
+#include "Floor.hpp"
 
 using TemperatureAndDensity3D = eular::Quantity;
 
@@ -24,6 +25,8 @@ protected:
     std::vector<glm::vec4> initTemperatureAndDensityField();
 
     void initCamera();
+
+    void initFloor();
 
     void createCollider();
 
@@ -63,6 +66,8 @@ protected:
 
     void renderSmoke(VkCommandBuffer commandBuffer);
 
+    void renderFloor(VkCommandBuffer commandBuffer);
+
     void renderObstacle(VkCommandBuffer commandBuffer);
 
     void renderUI(VkCommandBuffer commandBuffer);
@@ -78,7 +83,6 @@ protected:
     void updateAmbientTemperature(VkCommandBuffer commandBuffer, eular::Field &field, glm::uvec3 gc);
 
     void update(float time) override;
-
 
     void checkAppInputs() override;
 
@@ -157,7 +161,7 @@ protected:
         float smokeDecayFactor{0.001};
         float temperatureDecayFactor{0.001};
         uint32_t numCells{1};
-    } simData;
+    } simData{};
 
     VulkanBuffer simDataBuffer;
     VulkanDescriptorSetLayout simDescriptorSetLayout;
@@ -167,8 +171,11 @@ protected:
     eular::Field obstacleColliderField;
     eular::Field obstacleColliderVelocityField;
 
+    Floor floor;
+
     const glm::mat4 unitCubeToVoxel{toLocalSpace({ glm::vec3{-1}, glm::vec3{1} })};
     bool showOutline{};
+    bool showVectorField{};
 
     struct {
         VulkanBuffer vertices;

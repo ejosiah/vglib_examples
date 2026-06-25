@@ -21,8 +21,9 @@ void main() {
     vec3 o = (inverse(view) * vec4(0, 0, 0, 1)).xyz;
 
     vec3 n = vec3(0, 1, 0);
+    vec3 planeOrigin = model[3].xyz;
     vec3 rd = normalize(fs_in.direction);
-    float t = -dot(n, o) / dot(n, rd);
+    float t = dot(n, planeOrigin - o) / dot(n, rd);
 
     if(t > 0){
         vec3 p = o + rd * t;

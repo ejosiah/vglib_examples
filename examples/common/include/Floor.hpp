@@ -16,7 +16,7 @@ public:
           Prototypes& prototypes,
           const std::optional<std::string>& vertex = {},
           const std::optional<std::string>& fragment = {},
-          const std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts = {});
+          const std::vector<VulkanDescriptorSetLayout>& descriptorSetLayouts = {});
 
     void init();
 

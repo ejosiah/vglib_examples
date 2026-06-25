@@ -39,6 +39,7 @@ void Smoke3D::initApp() {
     createPipelineCache();
     createComputePipeline();
     createRenderPipeline();
+    initFloor();
 }
 
 void Smoke3D::initSimData() {
@@ -54,7 +55,7 @@ void Smoke3D::initSimData() {
 }
 
 void Smoke3D::initSolver() {
-    fixedUpdate.frequency(120);
+    fixedUpdate.frequency(60);
     auto temperatureAndDensityData = initTemperatureAndDensityField();
 
     fluidSolver =
@@ -147,8 +148,19 @@ void Smoke3D::initCamera() {
     cameraSettings.acceleration = glm::vec3(5);
     cameraSettings.aspectRatio = float(swapChain.extent.width)/float(swapChain.extent.height);
     cameraSettings.horizontalFov = true;
-    camera = std::make_unique<SpectatorCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
-    camera->lookAt({-5, 2, 3}, {0, 0, 0}, {0, 1, 0});
+    camera = std::make_unique<FirstPersonCameraController>(dynamic_cast<InputManager&>(*this), cameraSettings);
+    camera->lookAt({-1.4, 2, 1.3}, {0, 0, 0}, {0, 1, 0});
+}
+
+void Smoke3D::initFloor() {
+    floor = {
+        device, *prototypes,
+        resource("ray_march.vert.spv"),
+        resource("ray_march_floor.frag.spv"),
+        {sourceFieldSetLayouts[0], simDescriptorSetLayout}
+    };
+
+    floor.init();
 }
 
 void Smoke3D::createCollider() {
@@ -381,6 +393,8 @@ void Smoke3D::createRenderPipeline() {
                     .addDescriptorSetLayout(simDescriptorSetLayout)
                 .name("smoke_ray_march")
                 .build(rayMarch.layout);
+
+
     //    @formatter:on
 }
 
@@ -419,16 +433,13 @@ VkCommandBuffer *Smoke3D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
     clearColor(0, 0, 1);
 
     renderToSwapChain([&]{
-        AppContext::renderFloor(commandBuffer, *camera);
+        renderFloor(commandBuffer);
 
         renderVectorField(commandBuffer);
         renderObstacle(commandBuffer);
         renderSmoke(commandBuffer);
-
-        if (showOutline) {
-            renderEmitter(commandBuffer);
-            renderDomain(commandBuffer);
-        }
+        renderEmitter(commandBuffer);
+        renderDomain(commandBuffer);
         renderUI(commandBuffer);
     }, commandBuffer);
 
@@ -438,12 +449,14 @@ VkCommandBuffer *Smoke3D::buildCommandBuffers(uint32_t imageIndex, uint32_t &num
 }
 
 void Smoke3D::renderDomain(VkCommandBuffer commandBuffer) {
+    if (!showOutline) return;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     camera->push(commandBuffer, render.layout, simData.voxelToWorld * unitCubeToVoxel);
     AppContext::drawCubeOutline(commandBuffer);
 }
 
 void Smoke3D::renderEmitter(VkCommandBuffer commandBuffer) {
+    if (!showOutline) return;
     glm::mat4 transform = glm::inverse(toLocalSpace(simData.emitterBounds)) * unitCubeToVoxel;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, render.pipeline.handle);
     camera->push(commandBuffer, render.layout, transform);
@@ -460,6 +473,14 @@ void Smoke3D::renderSmoke(VkCommandBuffer commandBuffer) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, rayMarch.layout.handle, 0, COUNT(sets), sets.data(), 0, VK_NULL_HANDLE);
     camera->push(commandBuffer, rayMarch.layout, VK_SHADER_STAGE_ALL_GRAPHICS);
     AppContext::renderClipSpaceQuad(commandBuffer);
+}
+
+void Smoke3D::renderFloor(VkCommandBuffer commandBuffer) {
+    static std::vector<VkDescriptorSet> sets(2);
+    sets[0] = temperatureAndDensity.field.descriptorSet[eular::in];
+    sets[1] = simDescriptorSet;
+
+    floor.render(commandBuffer, *camera, sets);
 }
 
 void Smoke3D::renderObstacle(VkCommandBuffer commandBuffer) {
@@ -484,6 +505,8 @@ void Smoke3D::renderUI(VkCommandBuffer commandBuffer) {
     ImGui::SliderFloat("Period", &windControls.period, 0.1f, 8.0f);
     ImGui::SliderFloat("Minimum pulse", &windControls.pulseMin, 0.0f, 1.0f);
 
+    ImGui::Checkbox("Vector field", &showVectorField);
+    ImGui::SameLine();
     ImGui::Checkbox("Outline", &showOutline);
 
     ImGui::End();
@@ -491,6 +514,7 @@ void Smoke3D::renderUI(VkCommandBuffer commandBuffer) {
 }
 
 void Smoke3D::renderVectorField(VkCommandBuffer commandBuffer) {
+    if (!showVectorField) return;
     static std::array<VkDescriptorSet, 5> sets;
     sets[0] = fluidSolver->vectorField().u.descriptorSet[eular::in];
     sets[1] = fluidSolver->vectorField().v.descriptorSet[eular::in];

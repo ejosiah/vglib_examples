@@ -50,8 +50,8 @@ void main() {
     float temp = mapper(sdf, oldValue.x);
     float density = mapper(sdf, oldValue.y);
 
-    temp *= 1 - temperatureDecayFactor;
-    density *= 1 - smokeDecayFactor;
+//    temp *= 1 - temperatureDecayFactor;
+//    density *= 1 - smokeDecayFactor;
 
     atomicAdd(tempSum, temp);
 

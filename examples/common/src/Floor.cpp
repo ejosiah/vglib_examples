@@ -5,7 +5,7 @@ Floor::Floor(VulkanDevice& device,
              Prototypes& prototypes,
              const std::optional<std::string>& vertex,
              const std::optional<std::string>& fragment,
-             const std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts)
+             const std::vector<VulkanDescriptorSetLayout>& descriptorSetLayouts)
 : _device( &device )
 , _prototypes( &prototypes )
 , _vertexShader{ vertex }
