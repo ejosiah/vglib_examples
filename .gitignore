@@ -167,3 +167,4 @@ doc
 
 # logs
 **/*.log
+**/debug_dumps*
