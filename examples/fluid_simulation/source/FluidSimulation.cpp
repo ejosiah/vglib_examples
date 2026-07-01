@@ -129,11 +129,11 @@ void FluidSimulation::initColorField() {
 
     color.name = "dye";
     color.diffuseRate = diffuseRate;
-//    color.update = [&](VkCommandBuffer commandBuffer, Field& field){
-//        addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
-//        addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
-//        addDyeSource(commandBuffer, field,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
-//    };
+    color.update = [&](VkCommandBuffer commandBuffer, Field& field){
+        addDyeSource(commandBuffer, field, {0.004, -0.002, -0.002}, {0.2, 0.2});
+        addDyeSource(commandBuffer, field, {-0.002, -0.002, 0.004}, {0.5, 0.9});
+        addDyeSource(commandBuffer, field,  {-0.002, 0.004, -0.002}, {0.8, 0.2});
+    };
 }
 
 void FluidSimulation::initColorQuantity() {
